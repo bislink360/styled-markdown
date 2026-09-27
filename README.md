@@ -252,7 +252,7 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-1.0.0.vsix
+npm run package        # → styled-markdown-1.1.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
 ```
 

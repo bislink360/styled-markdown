@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.0 — 2026-09-27
+
+No breaking changes. Documents, CLI commands and flags, diagnostic codes, extension commands and settings are unchanged from 1.0.0.
+
+### Added
+- **npm package [`styled-markdown`](https://www.npmjs.com/package/styled-markdown)**: the full engine as a library (CommonJS, ESM and TypeScript types, zero runtime dependencies, browser-safe) plus the `smd` CLI (`npm install -g styled-markdown` or `npx styled-markdown`).
+- Library API: `renderSmd`, `renderPage`, `validateSmd`, `applyFixes`, `agentView`, `outline`, `smdToMarkdown`, `markdownToSmd`, `getDocumentInfo`, `extractTasks`, `parseFrontMatter`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS` and the format vocabulary.
+- The stylesheet as a package export: `styled-markdown/smd.css`.
+- Install docs for the VS Code Marketplace and npm; `npx styled-markdown skills install` for the agent skills.
+
+### Changed
+- `smd render` embeds the stylesheet and page runtime at build time, so it works from any copy of the CLI (npm, the skills' bundled `scripts/smd.cjs`), not only from the extension folder.
+- The CLI's version is injected at build time; `smd --version` output is unchanged.
+
+### Fixed
+- `smd render` failed with "media/ was not found next to this CLI" when run from the agent skills' bundled CLI.
+- `npm test` failed on Windows with Node.js < 21 (the `test/*.test.ts` glob was not expanded).
+
+### Internal
+- CI on every pull request and push to `main`: build and unit tests on Ubuntu and Windows, VS Code integration tests, and a backward-compatibility check against the last release.
+- `createMarkdownIt` is no longer exported from the engine's internal core module. It was never part of a published API.
+
 ## 1.0.0 — 2026-09-26
 
 First public release, implementing Styled Markdown spec v1.
