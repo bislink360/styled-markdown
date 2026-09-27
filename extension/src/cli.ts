@@ -6,7 +6,10 @@ import {
   validateSmd, SMD_VERSION, type Diagnostic, type TaskInfo,
 } from './core';
 import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
-import pkg from '../package.json';
+// Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
+// scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
+declare const __SMD_PKG_VERSION__: string;
+const pkg = { version: typeof __SMD_PKG_VERSION__ === 'string' ? __SMD_PKG_VERSION__ : '0.0.0-dev' };
 
 const HELP = `smd — Styled Markdown tool (spec v${SMD_VERSION})
 

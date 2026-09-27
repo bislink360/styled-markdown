@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: extension
+
+jobs:
+  test:
+    name: Build & unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - name: Build extension, CLI and npm package
+        run: npm run build:npm
+      - run: npm test
+      - name: Examples validate
+        run: node dist/cli.js validate ../examples ../docs/gallery
+      - name: Bundled skill CLIs are up to date
+        shell: bash
+        run: |
+          if ! git diff --quiet -- ../skills; then
+            echo "::error::skills/*/scripts/smd.cjs is stale. Run 'npm run build' in extension/ and commit the result."
+            git diff --stat -- ../skills
+            exit 1
+          fi
+      - name: npm package contents
+        working-directory: npm
+        run: npm pack --dry-run
+
+  vscode:
+    name: VS Code integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: Run integration tests in VS Code
+        run: xvfb-run -a node test/integration/run.mjs
+      - name: Package .vsix
+        run: npx vsce package --no-dependencies --out styled-markdown-ci.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: extension/styled-markdown-ci.vsix
+          retention-days: 7
+
+  compatibility:
+    name: Backward compatibility vs last release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # release tags are needed for the baseline
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Compare with the last vX.Y.Z tag
+        shell: bash
+        working-directory: .
+        run: |
+          script=.claude/skills/smd-release/scripts/release-check.mjs
+          if [ ! -f "$script" ]; then
+            echo "Compatibility checker not present on this branch yet; skipping." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          mode="--pr"
+          if [[ "${GITHUB_HEAD_REF:-}" == release/* ]]; then mode=""; fi
+          # VS Code tests run in their own job; unit tests are fast, so they run here too.
+          set +e
+          node "$script" $mode --skip-vscode --out release-report.md
+          status=$?
+          set -e
+          if [ -f release-report.md ]; then cat release-report.md >> "$GITHUB_STEP_SUMMARY"; fi
+          exit $status
