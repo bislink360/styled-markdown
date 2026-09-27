@@ -2,7 +2,10 @@ node_modules/
 extension/dist/
 extension/media/vendor/
 *.vsix
-.claude/
+# Local Claude settings and locally installed copies of the product skills (sources live in skills/)
+.claude/settings.local.json
+.claude/skills/styled-markdown-reader/
+.claude/skills/styled-markdown-writer/
 docs/gallery/html/
 .DS_Store
 Thumbs.db
