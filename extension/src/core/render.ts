@@ -49,7 +49,7 @@ const CALLOUT_ICONS: Record<string, string> = {
   note: '✎', info: 'ℹ', tip: '💡', success: '✔', warning: '⚠', danger: '⛔', question: '?',
 };
 
-export function createMarkdownIt(options: RenderOptions = {}): MarkdownIt {
+function createMarkdownIt(options: RenderOptions = {}): MarkdownIt {
   const md = new MarkdownIt({
     html: options.allowHtml ?? true,
     linkify: true,

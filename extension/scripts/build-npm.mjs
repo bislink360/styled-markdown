@@ -1,0 +1,36 @@
+// Builds the `styled-markdown` npm package into ../npm/dist:
+//   index.cjs / index.mjs  the library (engine only, browser-safe, zero runtime dependencies)
+//   cli.js                 the `smd` command (same bundle as the extension's CLI)
+//   types/                 TypeScript declarations (emitted by tsc -p tsconfig.npm.json)
+import * as esbuild from 'esbuild';
+import { copyFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const out = join(root, '..', 'npm', 'dist');
+rmSync(out, { recursive: true, force: true });
+mkdirSync(out, { recursive: true });
+
+const common = {
+  entryPoints: [join(root, 'src', 'core', 'index.ts')],
+  bundle: true,
+  minify: true,
+  sourcemap: false,
+  target: 'es2020',
+  legalComments: 'none',
+  define: {
+    __SMD_CSS__: JSON.stringify(readFileSync(join(root, 'media', 'smd.css'), 'utf8')),
+    __SMD_RUNTIME__: JSON.stringify(readFileSync(join(root, 'media', 'runtime.js'), 'utf8')),
+  },
+  logLevel: 'info',
+};
+
+await esbuild.build({ ...common, platform: 'node', format: 'cjs', outfile: join(out, 'index.cjs') });
+await esbuild.build({ ...common, platform: 'neutral', mainFields: ['module', 'main'], format: 'esm', outfile: join(out, 'index.mjs') });
+
+// Stylesheet for users who render fragments with renderSmd().
+copyFileSync(join(root, 'media', 'smd.css'), join(out, 'smd.css'));
+
+// The CLI is built by scripts/build.mjs; ship the identical file.
+copyFileSync(join(root, 'dist', 'cli.js'), join(out, 'cli.js'));

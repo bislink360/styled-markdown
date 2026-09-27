@@ -1,6 +1,6 @@
 // Bundles the extension and CLI with esbuild and copies browser vendor files into media/vendor.
 import * as esbuild from 'esbuild';
-import { cpSync, mkdirSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,6 +21,10 @@ const common = {
   format: 'cjs',
   sourcemap: true,
   loader: { '.md': 'text', '.smd': 'text' },
+  define: {
+    __SMD_CSS__: JSON.stringify(readFileSync(join(root, 'media', 'smd.css'), 'utf8')),
+    __SMD_RUNTIME__: JSON.stringify(readFileSync(join(root, 'media', 'runtime.js'), 'utf8')),
+  },
   minify: !watch,
   logLevel: 'info',
 };

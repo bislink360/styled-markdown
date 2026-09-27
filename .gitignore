@@ -7,3 +7,5 @@ docs/gallery/html/
 .DS_Store
 Thumbs.db
 .vscode-test/
+npm/dist/
+*.tgz

@@ -11,7 +11,8 @@
 
 <p align="center">
   <a href="https://github.com/bislink360/styled-markdown/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/bislink360/styled-markdown?label=release&color=4f46e5"></a>
-  <img alt="VS Code" src="https://img.shields.io/badge/VS%20Code-%E2%89%A5%201.90-007ACC">
+  <a href="https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown"><img alt="VS Code Marketplace" src="https://img.shields.io/visual-studio-marketplace/v/bislink360.styled-markdown?label=VS%20Code%20Marketplace&color=007ACC"></a>
+  <a href="https://www.npmjs.com/package/styled-markdown"><img alt="npm" src="https://img.shields.io/npm/v/styled-markdown?color=cb3837"></a>
   <img alt="Spec" src="https://img.shields.io/badge/spec-smd%20v1-7c3aed">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
 </p>
@@ -156,23 +157,33 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-1.0.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
-2. Install it:
+Install **[Styled Markdown](https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown)** from the Visual Studio Marketplace: search for **Styled Markdown** in the Extensions view (`Ctrl+Shift+X`), or run:
 
-   ```bash
-   code --install-extension styled-markdown-1.0.0.vsix
-   ```
+```bash
+code --install-extension bislink360.styled-markdown
+```
 
-   Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
-3. Open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS).
+Then open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS). An offline `.vsix` is also attached to every [release](https://github.com/bislink360/styled-markdown/releases/latest).
+
+### npm library and `smd` CLI
+
+```bash
+npm install -g styled-markdown     # the smd command
+npm install styled-markdown        # the library: render, validate, agent views (zero dependencies)
+```
+
+```ts
+import { renderSmd, validateSmd, agentView } from 'styled-markdown';
+```
+
+See the [package README](npm/README.md) for the API.
 
 Full instructions, building from source and troubleshooting: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 ### Agent skills
 
 ```bash
-git clone https://github.com/bislink360/styled-markdown.git
-node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs skills install --global
+npx styled-markdown skills install --global
 ```
 
 This installs both skills into `~/.claude/skills/` for Claude Code. For Claude.ai, the Claude API / Agent SDK, Copilot, Cursor and other agents, see **[docs/SKILLS.md](docs/SKILLS.md)**.
@@ -228,6 +239,7 @@ styled-markdown/
 ├── skills/
 │   ├── styled-markdown-reader/   agent skill: token-efficient reading
 │   └── styled-markdown-writer/   agent skill: authoring, with templates and references
+├── npm/                  the `styled-markdown` npm package (library + CLI)
 ├── examples/             example documents (+ rendered HTML)
 └── docs/                 guides, specification, gallery and screenshots
 ```
@@ -241,6 +253,7 @@ npm run build          # bundle extension + CLI; refresh the CLI bundled in skil
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
 npm run package        # → styled-markdown-1.0.0.vsix
+npm run build:npm      # → ../npm/dist (the npm package)
 ```
 
 Press **F5** in `extension/` to launch an Extension Development Host with the examples open. See [CONTRIBUTING.md](CONTRIBUTING.md).

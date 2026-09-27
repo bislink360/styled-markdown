@@ -24,7 +24,20 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 
 ## Install the VS Code extension
 
-### Option A — from the release (recommended)
+### Option A — from the Visual Studio Marketplace (recommended)
+
+1. Open the **Extensions** view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
+2. Search for **Styled Markdown** and click **Install** on *Styled Markdown (.smd)* by **bislink360**.
+
+Or from a terminal:
+
+```bash
+code --install-extension bislink360.styled-markdown
+```
+
+The listing: https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown. Updates install automatically.
+
+### Option B — from the release file (offline)
 
 1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-1.0.0.vsix`**.
 2. Install it with **one** of these methods.
@@ -45,7 +58,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 
 > Cursor, VSCodium and Windsurf use the same steps (`cursor --install-extension …`, `codium --install-extension …`).
 
-### Option B — build and install from source
+### Option C — build and install from source
 
 ```bash
 git clone https://github.com/bislink360/styled-markdown.git
@@ -90,6 +103,15 @@ All commands are in the Command Palette under **Styled Markdown:**. They cover o
 
 The CLI is a **single self-contained file** with no dependencies. Pick one method.
 
+**From npm (recommended):**
+
+```bash
+npm install -g styled-markdown
+smd --version       # smd 1.0.0 (Styled Markdown spec v1)
+```
+
+Or run it without installing: `npx styled-markdown <command>`. The same package is also a library; see [npm/README.md](../npm/README.md).
+
 **Use the copy bundled with the skills (no build needed):**
 
 ```bash
@@ -108,7 +130,6 @@ smd --version       # smd 1.0.0 (Styled Markdown spec v1)
 
 **Without linking:** `node extension/dist/cli.js <command>`.
 
-`smd render` needs the extension's `media/` folder next to the CLI, so use `extension/dist/cli.js` for rendering HTML. Every other command works from any copy.
 
 ## Use `smd` in CI
 
@@ -123,8 +144,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
-      - run: curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/main/skills/styled-markdown-reader/scripts/smd.cjs
-      - run: node smd.cjs validate docs/ --strict
+      - run: npx --yes styled-markdown validate docs/ --strict
 ```
 
 `validate` exits with code **1** on errors (and on warnings with `--strict`). Use `--json` for machine-readable output.

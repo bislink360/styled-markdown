@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, extractTasks, getDocumentInfo, markdownToSmd, outline, renderStandaloneHtml, smdToMarkdown,
+  agentView, applyFixes, extractTasks, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
   validateSmd, SMD_VERSION, type Diagnostic, type TaskInfo,
 } from './core';
 import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
@@ -108,10 +108,7 @@ function main(argv: string[]): number {
       return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today);
     case 'render': {
       const file = requireFile(positional[0]);
-      const mediaDir = path.join(__dirname, '..', 'media');
-      if (!fs.existsSync(path.join(mediaDir, 'smd.css'))) return fail('render needs the full extension folder (media/ was not found next to this CLI).');
-      const media = (f: string) => fs.readFileSync(path.join(mediaDir, f), 'utf8');
-      return write(value('-o'), renderStandaloneHtml(read(file), media('smd.css'), media('runtime.js'), { readFile: readerFor(file) }));
+      return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
     }
     case 'to-md':
       return write(value('-o'), smdToMarkdown(read(requireFile(positional[0])), { readFile: readerFor(positional[0]) }));

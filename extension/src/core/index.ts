@@ -1,6 +1,6 @@
 export * from './spec';
 export { parseFrontMatter } from './frontmatter';
-export { renderSmd, renderStandaloneHtml, createMarkdownIt, slugify } from './render';
+export { renderSmd, renderStandaloneHtml, slugify } from './render';
 export type { RenderOptions, RenderResult, Heading } from './render';
 export { validateSmd, applyFixes } from './validate';
 export { suggest } from './util';
@@ -13,3 +13,4 @@ export { agentView, outline, estimateTokens, inlineText } from './agentView';
 export type { AgentViewOptions, AgentViewResult } from './agentView';
 export { parseFenceInfo } from './fence';
 export { dueState } from './render';
+export { SMD_CSS, SMD_RUNTIME_JS, renderPage } from './assets';

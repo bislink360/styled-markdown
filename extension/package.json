@@ -275,7 +275,8 @@
     "test": "node --import tsx --test test/*.test.ts",
     "test:vscode": "npm run build && node test/integration/run.mjs",
     "package": "npm run build && vsce package --no-dependencies",
-    "vscode:prepublish": "npm run build"
+    "vscode:prepublish": "npm run build",
+    "build:npm": "npm run build && node scripts/build-npm.mjs && tsc -p tsconfig.npm.json"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

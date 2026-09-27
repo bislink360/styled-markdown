@@ -34,14 +34,14 @@ Claude Code discovers skills in two places:
 ### Option 1 — install with the CLI (recommended)
 
 ```bash
-git clone https://github.com/bislink360/styled-markdown.git
-
 # Personal: all your projects
-node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs skills install --global
+npx styled-markdown skills install --global
 
 # Project: run from your repository root, then commit .claude/skills/
-node /path/to/styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs skills install
+npx styled-markdown skills install
 ```
+
+Without npm, use the CLI bundled in this repository: `node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs skills install --global`.
 
 Output:
 

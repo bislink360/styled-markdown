@@ -1,0 +1,56 @@
+{
+  "name": "styled-markdown",
+  "version": "1.0.0",
+  "description": "Styled Markdown (.smd): Markdown for developers, PMs and AI agents. Render, validate, convert and create token-efficient agent views — library + `smd` CLI, zero dependencies.",
+  "author": "Roshan Alwis",
+  "license": "MIT",
+  "homepage": "https://github.com/bislink360/styled-markdown#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bislink360/styled-markdown.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/bislink360/styled-markdown/issues"
+  },
+  "keywords": [
+    "markdown",
+    "smd",
+    "styled-markdown",
+    "documentation",
+    "mermaid",
+    "katex",
+    "validator",
+    "cli",
+    "ai-agents",
+    "llm",
+    "tokens",
+    "prd",
+    "adr"
+  ],
+  "type": "commonjs",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./smd.css": "./dist/smd.css",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "smd": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  }
+}
