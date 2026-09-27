@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyFixes, validateSmd, type ValidateOptions } from '../src/core';
+import { anchorLine, linkAt } from '../src/core/links';
 
 const files: Record<string, string> = {
   'other.smd': '---\nsmd: 1\ntitle: Other\n---\n## Pricing rules\n\n## Refunds {#refund-policy}\n',
@@ -75,4 +76,25 @@ test('front matter related entries must exist', () => {
   assert.match(inline[0].message, /listed in "related"/);
   const block = check('---\nsmd: 1\nrelated:\n  - other.smd#nope\n  - gone.smd\n---\nBody');
   assert.deepEqual(block.map((d) => [d.code, d.line]), [['link/missing-anchor', 3], ['link/missing-file', 4]]);
+});
+
+test('linkAt finds the link target or reference under the cursor', () => {
+  const src = 'See [intro](#intro) and [the spec][spec].\n\n[spec]: other.smd#pricing-rules';
+  assert.equal(linkAt(src, 0, 0), undefined);
+  const inline = linkAt(src, 0, 14);
+  assert.deepEqual([inline?.link.target, inline?.start, inline?.end, inline?.reference], ['#intro', 12, 18, false]);
+  const ref = linkAt(src, 0, 30);
+  assert.deepEqual([ref?.link.target, ref?.link.line, ref?.start, ref?.reference], ['other.smd#pricing-rules', 2, 24, true]);
+  assert.equal(linkAt('[a][undefined]', 0, 2), undefined);
+  assert.equal(linkAt('```\n[a](#x)\n```', 1, 5), undefined);
+});
+
+test('anchorLine locates headings, {#id} blocks and HTML ids', () => {
+  const src = '---\nsmd: 1\n---\n## Intro\n\n## Refunds {#refund-policy}\n\n:::card{#price-card .wide} Price\nx\n:::\n\n<a id="legacy.v1"></a>';
+  assert.equal(anchorLine(src, 'intro'), 3);
+  assert.equal(anchorLine(src, 'refund-policy'), 5);
+  assert.equal(anchorLine(src, 'price-card'), 7);
+  assert.equal(anchorLine(src, 'legacy.v1'), 11);
+  assert.equal(anchorLine(src, 'legacy-v1'), undefined);
+  assert.equal(anchorLine(src, 'price'), undefined);
 });

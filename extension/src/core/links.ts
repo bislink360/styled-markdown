@@ -21,8 +21,8 @@ export interface LinkReference {
 export interface DocumentLinks {
   links: LinkTarget[];
   references: LinkReference[];
-  /** Normalized labels of every `[label]: target` definition. */
-  definitions: Set<string>;
+  /** Every `[label]: target` definition, by normalized label. The first definition of a label wins. */
+  definitions: Map<string, LinkTarget>;
 }
 
 // `](target "title")`: the tail of an inline link or image. Angle-bracket targets may contain spaces,
@@ -43,10 +43,13 @@ export function findLinks(text: string): DocumentLinks {
   const fm = parseFrontMatter(text);
   const links: LinkTarget[] = [];
   const references: LinkReference[] = [];
-  const definitions = new Set<string>();
-  const add = (target: string, line: number, column: number, kind: LinkTarget['kind']) => {
+  const definitions = new Map<string, LinkTarget>();
+  const add = (target: string, line: number, column: number, kind: LinkTarget['kind']): LinkTarget | undefined => {
     if (target.startsWith('<') && target.endsWith('>')) { target = target.slice(1, -1); column++; }
-    if (target) links.push({ target, line, column, kind });
+    if (!target) return undefined;
+    const link = { target, line, column, kind };
+    links.push(link);
+    return link;
   };
 
   if (fm.present && !fm.error) addRelated(fm.data.related, lines, fm.bodyStartLine, add);
@@ -66,8 +69,9 @@ export function findLinks(text: string): DocumentLinks {
 
     const def = DEFINITION.exec(line);
     if (def) {
-      definitions.add(normalizeLabel(def[2]));
-      add(def[3], i, def[1].length, 'definition');
+      const link = add(def[3], i, def[1].length, 'definition');
+      const label = normalizeLabel(def[2]);
+      if (link && !definitions.has(label)) definitions.set(label, link);
       continue;
     }
     for (const m of line.matchAll(INLINE_LINK)) add(m[1], i, m.index! + m[0].indexOf(m[1]), 'inline');
@@ -84,7 +88,7 @@ export function findLinks(text: string): DocumentLinks {
 
 function addRelated(
   related: unknown, lines: string[], end: number,
-  add: (target: string, line: number, column: number, kind: LinkTarget['kind']) => void,
+  add: (target: string, line: number, column: number, kind: LinkTarget['kind']) => unknown,
 ): void {
   const entries = typeof related === 'string' ? [related] : Array.isArray(related) ? related.filter((r): r is string => typeof r === 'string') : [];
   if (!entries.length) return;
@@ -126,4 +130,39 @@ export const isDocumentPath = (path: string): boolean => /\.(?:smd|md|markdown)$
 
 function unescapeHtml(s: string): string {
   return s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+
+/**
+ * The link target under a zero-based position, for go to definition. On a reference `[text][label]`,
+ * `link` is its definition and `reference` is true. `start`/`end` span what the cursor is on.
+ */
+export function linkAt(
+  text: string, line: number, character: number,
+): { link: LinkTarget; start: number; end: number; reference: boolean } | undefined {
+  const { links, references, definitions } = findLinks(text);
+  for (const link of links) {
+    if (link.line === line && character >= link.column && character <= link.column + link.target.length) {
+      return { link, start: link.column, end: link.column + link.target.length, reference: false };
+    }
+  }
+  for (const ref of references) {
+    const def = definitions.get(ref.label);
+    if (def && ref.line === line && character >= ref.column && character <= ref.endColumn) {
+      return { link: def, start: ref.column, end: ref.endColumn, reference: true };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Zero-based line that defines an id: a heading (by slug or `{#id}`), a block with `{#id}`, or an HTML
+ * element with `id`/`name`. Returns undefined when nothing in the document has that id.
+ */
+export function anchorLine(text: string, id: string): number | undefined {
+  const heading = renderSmd(text).headings.find((h) => h.slug === id);
+  if (heading) return heading.line;
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const attr = new RegExp(`\\{[^{}\\n]*#${escaped}(?=[\\s}])|\\s(?:id|name)\\s*=\\s*(["'])${escaped}\\1`);
+  const i = text.split(/\r?\n/).findIndex((l) => attr.test(l));
+  return i < 0 ? undefined : i;
 }

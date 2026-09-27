@@ -1,5 +1,7 @@
 // Runs inside a VS Code Extension Development Host (see run.mjs).
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const vscode = require('vscode');
 
@@ -122,6 +124,20 @@ const checks = {
   async 'smd language is registered with VS Code'() {
     const langs = await vscode.languages.getLanguages();
     assert.ok(langs.includes('smd'));
+  },
+
+  async 'go to definition follows anchors, cross-document links and references'() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'smd-def-'));
+    fs.writeFileSync(path.join(dir, 'other.smd'), '---\nsmd: 1\n---\nIntro\n\n## Pricing rules\n');
+    const main = path.join(dir, 'main.smd');
+    fs.writeFileSync(main, '## Intro\n\n[a](#intro) [b](other.smd#pricing-rules) [c][ref]\n\n[ref]: other.smd\n');
+    const doc = await vscode.workspace.openTextDocument(main);
+    const at = async (character) => {
+      const [loc] = await vscode.commands.executeCommand('vscode.executeDefinitionProvider', doc.uri, new vscode.Position(2, character));
+      return loc && [path.basename((loc.targetUri ?? loc.uri).fsPath), (loc.targetRange ?? loc.range).start.line];
+    };
+    const got = [await at(5), await at(20), await at(44), await at(1)];
+    assert.deepEqual(got, [['main.smd', 0], ['other.smd', 5], ['main.smd', 4], undefined], JSON.stringify(got));
   },
 };
 
