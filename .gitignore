@@ -9,3 +9,6 @@ Thumbs.db
 .vscode-test/
 npm/dist/
 *.tgz
+
+# Local planning (not committed)
+ROADMAP.smd
