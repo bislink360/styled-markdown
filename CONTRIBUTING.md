@@ -23,6 +23,16 @@ Press **F5** in `extension/` to run the extension in a development host.
 | Agent skills | `skills/*/SKILL.md`, references and templates. `npm run build` refreshes the bundled `scripts/smd.cjs`. |
 | Preview behaviour | `media/runtime.js`, `src/preview.ts` |
 
+## Continuous integration
+
+Every pull request to `main` runs [.github/workflows/ci.yml](.github/workflows/ci.yml):
+
+| Job | Checks |
+|---|---|
+| Build & unit tests (Ubuntu, Windows) | typecheck, build of extension/CLI/npm package, unit tests, examples validate, bundled skill CLIs are up to date, `npm pack` |
+| VS Code integration tests | the extension in a real VS Code (preview, diagnostics, quick fixes, completion, agent view), plus a `.vsix` build uploaded as an artifact |
+| Backward compatibility | `release-check.mjs` against the last `vX.Y.Z` tag; the report appears in the job summary. It fails on blocking issues, e.g. breaking changes without a major version on `release/*` branches. |
+
 ## Before opening a pull request
 
 - `npm run typecheck` and `npm test` pass. `npm run test:vscode` passes for editor-facing changes.
