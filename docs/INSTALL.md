@@ -86,7 +86,7 @@ Open **Settings** and search for `smd`:
 | `smd.preview.showAgentBlocks` | `collapsed` | How `:::agent` blocks appear in the preview: `collapsed`, `expanded` or `hidden` |
 | `smd.preview.allowHtml` | `true` | Render raw HTML in documents (scripts never run) |
 | `smd.validation.enabled` | `true` | Show problems as you type |
-| `smd.validation.checkLinks` | `true` | Warn about relative links and images that point to missing files |
+| `smd.validation.checkLinks` | `true` | Warn about relative links, images and `related:` entries that point to missing files or headings |
 
 Keyboard shortcuts:
 

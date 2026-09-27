@@ -240,8 +240,9 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `mermaid/type` · `mermaid/empty` | error / warning | Unknown diagram type (fix: closest type) / empty diagram |
 | `math/syntax` · `math/unclosed` | error | KaTeX parse error / unclosed `$$` |
 | `fence/unclosed` | error | Unclosed code fence |
-| `link/missing-anchor` | warning | `[x](#id)` with no matching heading |
-| `link/missing-file` | warning | Relative link/image target does not exist |
+| `link/missing-anchor` | warning | `[x](#id)` or `[x](other.smd#id)` with no heading or element with that id (fix: closest id) |
+| `link/missing-file` | warning | Relative link, image, reference definition, HTML `href`/`src` or `related:` entry does not exist |
+| `link/undefined-reference` | warning | `[text][label]` or `[label][]` with no `[label]: …` definition |
 | `attrs/required` | error / warning | Required attribute missing (`:::api` needs `method` and `path`; `:metric` should have `label`) |
 | `fence/embed-missing` · `fence/range` · `fence/embed-body` · `fence/lines-without-file` | error / warning | Embedded file missing or outside the workspace, bad line range, non-empty embed body, `lines` without `file` |
 | `task/overdue` | info | Open task past its `:due[…]` date |

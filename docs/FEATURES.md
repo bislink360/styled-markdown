@@ -324,7 +324,9 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | ```` ```mermaid flowchat ```` | `mermaid/type` | → `flowchart` |
 | `$$\frac{1}{$$` | `math/syntax` | — |
 | `file="nope.ts"` | `fence/embed-missing` | — |
-| `[x](#nowhere)` | `link/missing-anchor` | — |
+| `[x](#rolout)`, `[x](plan.smd#rolout)` | `link/missing-anchor` | → closest heading id |
+| `[x](gone.md)`, `related: [gone.smd]` | `link/missing-file` | — |
+| `[x][undefined-ref]` | `link/undefined-reference` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
 | overdue open task | `task/overdue` | — |
 
