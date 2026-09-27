@@ -62,12 +62,16 @@ const extPkg = readJson(join(EXT, 'package.json'));
 const npmPkgPath = join(ROOT, 'npm', 'package.json');
 const npmPkg = existsSync(npmPkgPath) ? readJson(npmPkgPath) : null;
 const version = extPkg.version;
+// --pr: feature/fix/docs/chore PRs don't bump versions; only release/vX.Y.Z branches do.
+const PR_MODE = flag('--pr');
 if (npmPkg && npmPkg.version !== version) failures.push(`Version mismatch: extension ${version} vs npm ${npmPkg.version}. They are released in lockstep.`);
-if (cmpSemver(version, BASE) <= 0) failures.push(`Version ${version} is not greater than the last release ${BASE}. Bump the version on the release branch.`);
 const changelogPath = join(EXT, 'CHANGELOG.md');
 const changelog = existsSync(changelogPath) ? readFileSync(changelogPath, 'utf8') : '';
-if (!new RegExp(`^## ${version.replace(/\./g, '\\.')}\\b`, 'm').test(changelog)) {
-  failures.push(`extension/CHANGELOG.md has no "## ${version}" entry.`);
+if (!PR_MODE) {
+  if (cmpSemver(version, BASE) <= 0) failures.push(`Version ${version} is not greater than the last release ${BASE}. Bump the version on the release branch.`);
+  if (!new RegExp(`^## ${version.replace(/\./g, '\\.')}\\b`, 'm').test(changelog)) {
+    failures.push(`extension/CHANGELOG.md has no "## ${version}" entry.`);
+  }
 }
 const cliSrc = readFileSync(join(EXT, 'src', 'cli.ts'), 'utf8');
 if (!/pkg\.version/.test(cliSrc)) review.push('The CLI no longer reports its version from package.json.');
@@ -306,18 +310,22 @@ const [bM, bm, bp] = semver(BASE), [vM, vm, vp] = semver(version);
 const actual = vM > bM ? 'major' : vm > bm ? 'minor' : vp > bp ? 'patch' : 'none';
 const required = breaking.length ? 'major' : features.length ? 'minor' : 'patch';
 const rank = { none: 0, patch: 1, minor: 2, major: 3 };
-if (rank[actual] < rank[required]) failures.push(`Version bump too small: ${BASE} → ${version} is a ${actual} bump, but the changes require a ${required} bump.`);
-if (actual === 'major' && !breaking.length) review.push(`${version} is a major bump but no breaking change was detected. Is that intended?`);
+if (!PR_MODE && rank[actual] < rank[required]) failures.push(`Version bump too small: ${BASE} → ${version} is a ${actual} bump, but the changes require a ${required} bump.`);
+if (!PR_MODE && actual === 'major' && !breaking.length) review.push(`${version} is a major bump but no breaking change was detected. Is that intended?`);
 
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
 const section = (title, items, empty) => `### ${title}\n\n${items.length ? items.map((i) => `- ${i.replace(/\n/g, '\n  ')}`).join('\n') : `_${empty}_`}\n`;
 const verdict = failures.length ? '❌ BLOCKED' : breaking.length ? '⚠️ READY ONLY AS A MAJOR RELEASE, after explicit human approval of the breaking changes' : review.length ? '🟡 READY after a human confirms the behaviour changes below' : '✅ READY';
-const report = `## Release check: ${BASE} → ${version}
+const header = PR_MODE ? `## Compatibility check vs ${BASE} (pull request)
+
+**Verdict:** ${verdict.replace('READY ONLY AS A MAJOR RELEASE', 'MERGEABLE ONLY INTO A MAJOR RELEASE')}
+**The next release must be at least:** ${required} · **Corpus:** ${corpus.length} documents` : `## Release check: ${BASE} → ${version}
 
 **Verdict:** ${verdict}
-**Required bump:** ${required} · **Actual bump:** ${actual} · **Corpus:** ${corpus.length} documents
+**Required bump:** ${required} · **Actual bump:** ${actual} · **Corpus:** ${corpus.length} documents`;
+const report = `${header}
 
 ${section('❌ Blocking failures', failures, 'none')}
 ${section('💥 Breaking changes (not backward compatible)', breaking, 'none detected')}

@@ -40,7 +40,7 @@ Copy this into the PR description:
 <one paragraph>
 
 ## Compatibility
-- [ ] `release-check.mjs` run; required bump: <patch|minor|major>
+- [ ] `release-check.mjs --pr` run; next release must be at least: <patch|minor|major>
 - [ ] Breaking changes: <none | list with migration notes>
 - [ ] Behaviour changes flagged by the checker reviewed: <list or none>
 

@@ -46,7 +46,8 @@ Before designing a change, read `references/compatibility.md`. It lists what cou
 From the repository root:
 
 ```bash
-node .claude/skills/smd-release/scripts/release-check.mjs            # compare with the last vX.Y.Z tag
+node .claude/skills/smd-release/scripts/release-check.mjs --pr       # on feature/fix/docs/chore PRs (no version bump expected)
+node .claude/skills/smd-release/scripts/release-check.mjs            # on release/vX.Y.Z branches (versions and changelog enforced)
 node .claude/skills/smd-release/scripts/release-check.mjs --skip-vscode --skip-tests   # quick iteration
 ```
 
