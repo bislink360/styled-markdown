@@ -1,0 +1,57 @@
+---
+smd: 1
+title: "ADR-0007: Use a managed event bus for order events"
+summary: Order events move from direct HTTP callbacks to a managed event bus (AWS EventBridge), so new consumers can subscribe without changing the order service.
+status: approved
+owners: ["@platform", "@api-team"]
+tags: [adr, architecture, events]
+updated: 2026-09-18
+---
+
+:::decision{status=accepted date=2026-09-18 owner=@platform} Publish order events to AWS EventBridge
+The order service publishes `order.created`, `order.paid` and `order.cancelled` to one EventBridge bus. Consumers subscribe with rules; the order service no longer calls them directly.
+:::
+
+## Context
+
+The order service calls four downstream services over HTTP after every order. Each new consumer means a code change and a deploy of the order service, and one slow consumer delays checkout (p95 +320 ms in August).
+
+```mermaid
+flowchart LR
+    O[Order service] -->|HTTP| E[Email]
+    O -->|HTTP| A[Analytics]
+    O -->|HTTP| L[Loyalty]
+    O -->|HTTP| W[Warehouse]
+```
+
+## Options considered
+
+| Option | Pros | Cons |
+| --- | --- | --- |
+| **EventBridge — chosen** | Managed, schema registry, per-rule retries and DLQ | AWS lock-in, 256 KB event limit |
+| Kafka (MSK) | High throughput, replay | Cluster operations; overkill for ~40 events/s |
+| Keep HTTP callbacks + queue per consumer | Small change | Still couples the order service to every consumer |
+
+## Consequences
+
+- :status[Positive]{color=green} New consumers need no order-service change; checkout latency no longer depends on consumers.
+- :status[Negative]{color=red} Delivery is at-least-once, so every consumer must be idempotent.
+
+:::risk{impact=medium likelihood=medium owner=@api-team status=open} Duplicate events cause double loyalty points
+Consumers de-duplicate on `eventId` for 24 hours; loyalty adds a unique constraint on `(orderId, reason)`.
+:::
+
+:::decision{status=superseded date=2026-06-02 owner=@platform} Add a retry queue in front of each HTTP consumer
+Superseded by this ADR.
+:::
+
+## Discussion notes {agent=skip}
+
+Architecture review on 2026-09-16 (attendees: platform, api-team, data). Data asked for replay; EventBridge archive covers 30 days, which is enough for their backfills. Kafka was discussed at length but nobody wanted to run it.
+
+:::agent Rules this decision implies
+- Publish events only through `events.publish()` in `libs/events`; never call consumers over HTTP.
+- Every event has `eventId` (UUID v7), `type`, `occurredAt` and `version`; add fields, never rename or remove them.
+- Consumers must be idempotent on `eventId`.
+- Events must stay under 64 KB; send IDs, not full objects.
+:::

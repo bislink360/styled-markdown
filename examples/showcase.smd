@@ -1,0 +1,224 @@
+---
+smd: 1
+title: Styled Markdown Showcase
+summary: A tour of every **.smd** feature — open the preview (Ctrl+K V) side by side with this file.
+status: review
+version: 1.0
+updated: 2026-09-26
+owners: ["@docs-team", "@platform"]
+tags: [example, reference]
+audience: both
+accent: indigo
+toc: true
+---
+
+## Everything from Markdown still works
+
+Plain **bold**, *italic*, ~~strike~~, `inline code`, [links](#callouts), autolinks like https://code.visualstudio.com, tables, lists and images.
+
+| Feature        | `.md` | `.smd` |
+| -------------- | :---: | :----: |
+| Text & tables  |  ✅   |   ✅   |
+| Colors         |  ❌   |   ✅   |
+| Diagrams       |  ⚠️   |   ✅   |
+| Validation     |  ❌   |   ✅   |
+
+- [x] Every `.md` file is already a valid `.smd` file
+- [x] Click a checkbox in the preview to toggle it in the source
+- [ ] Try it now
+
+## Inline styling
+
+Use **named colors** that adapt to light and dark themes: [red]{color=red}, [orange]{color=orange}, [green]{color=green}, [blue]{color=blue}, [purple]{color=purple} — or any hex like [#0ea5e9]{color="#0ea5e9"}.
+
+Combine attributes: [critical path]{color=red weight=bold}, [soft background]{bg=amber}, [outlined]{border=blue}, [big text]{size=lg}, [monospace]{font=mono}, [struck]{style=strike}. Highlight with ==double equals==.
+
+Inline directives: :badge[Shipped]{color=green} :badge[Beta]{color=amber} :badge[Deprecated]{color=red} · :status[On track]{color=green} · :status[At risk]{color=red} · press :kbd[Ctrl+Shift+P] · ping :mention[@platform] · progress :progress{value=65}
+
+## Callouts
+
+:::note
+A neutral note. Callouts can contain **any** Markdown, including lists and code.
+:::
+
+:::tip Pro tip
+Custom titles go right after the name.
+:::
+
+:::warning{collapsible} Breaking change in v2 (click to expand)
+The `render()` signature changed. Collapsible callouts start closed; use `{collapsible=open}` to start open.
+:::
+
+:::danger
+Never commit secrets to the repository.
+:::
+
+:::success Deployed
+Release 2.3.0 is live in all regions.
+:::
+
+:::question Open question
+Should we support Windows ARM in the first release?
+:::
+
+## Diagrams
+
+```mermaid
+flowchart LR
+    A[Write .smd] --> B{Validate}
+    B -- errors --> A
+    B -- ok --> C[Preview]
+    C --> D[Export HTML]
+    C --> E[Export .md for GitHub]
+```
+
+```mermaid
+sequenceDiagram
+    participant PM as Product
+    participant Dev as Developer
+    participant Bot as Agent
+    PM->>Dev: Spec (.smd)
+    Dev->>Bot: smd meta spec.smd --json
+    Bot-->>Dev: Outline, open tasks, agent notes
+```
+
+```mermaid
+pie title Effort split
+    "Design" : 20
+    "Build" : 55
+    "Test" : 25
+```
+
+## Layout
+
+::::columns
+:::column{width=50%}
+:::::card{accent=green} Frontend
+- React 19
+- :progress{value=80 color=green}
+:::::
+:::
+:::column
+:::::card{accent=blue} Backend
+- Go services
+- :progress{value=45 color=blue}
+:::::
+:::
+::::
+
+::::tabs
+:::tab npm
+```bash
+npm install
+npm run build
+```
+:::
+:::tab pnpm
+```bash
+pnpm install
+pnpm build
+```
+:::
+::::
+
+:::steps
+1. **Install** the extension from the `.vsix`.
+2. **Create** a file ending in `.smd`.
+3. **Preview** with :kbd[Ctrl+K V].
+:::
+
+:::box{bg=indigo align=center}
+A generic styled box — [any]{weight=bold} style attribute works here.
+:::
+
+:::details Implementation notes
+Hidden until expanded. Great for long logs or rationale.
+:::
+
+## Code with titles
+
+```ts title="src/greet.ts"
+export function greet(name: string): string {
+  return `Hello, ${name}!`;
+}
+```
+
+## Math
+
+Inline math like $E = mc^2$ and display math:
+
+$$
+\int_0^1 x^2\,dx = \frac{1}{3}
+$$
+
+## For product & project managers
+
+KPIs at a glance: :metric[42%]{label="Activation" delta="+3.1%" trend=up} :metric[1.8s]{label="p95 load" delta="-0.4s" trend=down good=down} :metric[312]{label="Open bugs" delta="+12" trend=up good=down}
+
+- [ ] Finalize pricing page copy :priority[P1] @maya :due[2026-10-02]
+- [ ] Legal review of new terms :priority[P0] @legal :due[2026-09-20]
+- [x] Kickoff with design :priority[P2] @sam :due[2026-09-10]
+
+:::decision{status=accepted date=2026-09-12 owner=@maya} Launch in the EU before the US
+EU customers make up 60% of the waitlist, and the GDPR work is already done.
+:::
+
+:::decision{status=superseded date=2026-08-01 owner=@maya} Launch everywhere at once
+Replaced by the EU-first decision above.
+:::
+
+:::risk{impact=high likelihood=medium owner=@ops status=open} Payment provider rate limits during launch
+Pre-warm the connection pool and ask the provider for a temporary quota increase.
+:::
+
+:::timeline
+- [x] **2026-09-01** — Discovery complete
+- [x] **2026-09-15** — Design sign-off
+- [ ] **2026-10-01** — Private beta
+- [ ] **2026-11-01** — General availability
+:::
+
+## For developers
+
+:::api{method=POST path="/v1/orders" auth="bearer token"} Create an order
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `items` | array | yes | At least one line item |
+| `coupon` | string | no | Validated server-side |
+
+**Responses:** `201` created · `409` duplicate idempotency key · `422` validation error
+:::
+
+Highlight lines with `{…}` after the language:
+
+```ts title="src/retry.ts" {2,4-5}
+export async function retry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let i = 1; ; i++) {
+    try { return await fn(); }
+    catch (e) {
+      if (i >= attempts) throw e;
+    }
+  }
+}
+```
+
+Embed real source so docs never drift from the code (lines 1–12 of a file in this repo):
+
+```ts file="src/pricing.ts" lines="1-12" {5}
+```
+
+## Background and history {agent=skip}
+
+This section is marked `{agent=skip}`: it shows a "humans only" tag here, and `smd agent` leaves it out so agents don't pay for history they don't need.
+
+## Audience-specific content
+
+:::agent Implementation constraints
+- Do not change the public API in `src/core/index.ts`.
+- Run `npm test` and `smd validate` before proposing changes.
+- Prefer named colors over hex values.
+:::
+
+:::human Why this matters
+Agents get precise constraints; humans see a short rationale and can expand the agent notes when curious.
+:::

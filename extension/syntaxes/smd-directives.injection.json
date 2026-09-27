@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "scopeName": "text.html.smd.directives",
+  "injectionSelector": "L:text.html.smd -markup.fenced_code -markup.inline.raw -meta.embedded -comment",
+  "patterns": [
+    { "include": "#container-open" },
+    { "include": "#container-close" },
+    { "include": "#math-block-delimiter" },
+    { "include": "#directive" },
+    { "include": "#styled-span" },
+    { "include": "#mark" },
+    { "include": "#math-inline" }
+  ],
+  "repository": {
+    "container-open": {
+      "match": "^\\s{0,3}(:{3,})\\s*([a-zA-Z][\\w-]*)(\\{[^}\\n]*\\})?(.*)$",
+      "captures": {
+        "1": { "name": "punctuation.definition.block.begin.smd" },
+        "2": { "name": "keyword.control.container.smd" },
+        "3": { "patterns": [{ "include": "#attrs" }] },
+        "4": { "name": "entity.name.section.container-title.smd" }
+      }
+    },
+    "container-close": {
+      "match": "^\\s{0,3}(:{3,})\\s*$",
+      "captures": { "1": { "name": "punctuation.definition.block.end.smd" } }
+    },
+    "math-block-delimiter": {
+      "match": "^\\s{0,3}(\\$\\$)",
+      "captures": { "1": { "name": "punctuation.definition.math.smd keyword.operator.math.smd" } }
+    },
+    "directive": {
+      "match": "(?<=^|[\\s(\\[{>*_~\"'-])(:)(badge|kbd|progress|mention|status|priority|due|metric)(?:(\\[)([^\\]\\n]*)(\\]))?(\\{[^}\\n]*\\})?",
+      "captures": {
+        "1": { "name": "punctuation.definition.directive.smd" },
+        "2": { "name": "support.function.directive.smd" },
+        "3": { "name": "punctuation.definition.string.begin.smd" },
+        "4": { "name": "string.other.directive-content.smd" },
+        "5": { "name": "punctuation.definition.string.end.smd" },
+        "6": { "patterns": [{ "include": "#attrs" }] }
+      }
+    },
+    "styled-span": {
+      "match": "(?<!!)(\\[)([^\\]\\n]*)(\\])(\\{[^}\\n]*\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.span.begin.smd" },
+        "2": { "name": "markup.italic.styled-span.smd" },
+        "3": { "name": "punctuation.definition.span.end.smd" },
+        "4": { "patterns": [{ "include": "#attrs" }] }
+      }
+    },
+    "mark": {
+      "match": "(==)(?=\\S)([^=\\n]+?)(?<=\\S)(==)",
+      "captures": {
+        "1": { "name": "punctuation.definition.mark.smd" },
+        "2": { "name": "markup.inserted.highlight.smd" },
+        "3": { "name": "punctuation.definition.mark.smd" }
+      }
+    },
+    "math-inline": {
+      "match": "(?<![\\\\$])(\\$)(?=[^\\s$])([^$\\n]+?)(?<=\\S)(\\$)(?!\\d)",
+      "captures": {
+        "1": { "name": "punctuation.definition.math.begin.smd" },
+        "2": { "name": "string.other.math.smd" },
+        "3": { "name": "punctuation.definition.math.end.smd" }
+      }
+    },
+    "attrs": {
+      "patterns": [
+        {
+          "match": "(\\{)|(\\})",
+          "captures": {
+            "1": { "name": "punctuation.definition.attributes.begin.smd" },
+            "2": { "name": "punctuation.definition.attributes.end.smd" }
+          }
+        },
+        {
+          "match": "([A-Za-z_][\\w-]*)\\s*(=)\\s*(\"[^\"]*\"|'[^']*'|[^\\s\"'}]+)",
+          "captures": {
+            "1": { "name": "entity.other.attribute-name.smd" },
+            "2": { "name": "punctuation.separator.key-value.smd" },
+            "3": { "name": "string.unquoted.attribute-value.smd" }
+          }
+        },
+        { "match": "\\.[A-Za-z0-9_-]+", "name": "entity.other.attribute-name.class.smd" },
+        { "match": "#[A-Za-z0-9_-]+", "name": "entity.other.attribute-name.id.smd" },
+        { "match": "[A-Za-z_][\\w-]*", "name": "entity.other.attribute-name.smd" }
+      ]
+    }
+  }
+}

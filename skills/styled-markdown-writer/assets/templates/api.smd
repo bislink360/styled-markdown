@@ -1,0 +1,56 @@
+---
+smd: 1
+title: "{{title}} API"
+summary: What the API does, who calls it, and how it is authenticated.
+status: draft
+owners: ["@api-team"]
+tags: [api, reference]
+updated: {{today}}
+toc: true
+---
+
+## Overview
+
+| | |
+| --- | --- |
+| **Base URL** | `https://api.example.com` |
+| **Auth** | Bearer token |
+| **Format** | JSON, UTF-8 |
+
+## Endpoints
+
+:::api{method=GET path="/v1/items" auth="bearer token"} List items
+| Query | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `limit` | integer | no | 1–100, default 20 |
+| `cursor` | string | no | From the previous page |
+
+**Responses:** `200` page of items
+:::
+
+:::api{method=POST path="/v1/items" auth="bearer token"} Create an item
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `name` | string | yes | 1–80 characters |
+
+**Responses:** `201` created · `422` validation errors (all fields at once)
+:::
+
+## Errors
+
+| Status | Meaning | Retry? |
+| --- | --- | --- |
+| `401` | Missing or invalid token | No |
+| `429` | Rate limited | Yes, after `Retry-After` |
+| `5xx` | Server error | Yes, with backoff |
+
+## Changelog
+
+:::timeline
+- **{{today}}** — v1 draft
+:::
+
+:::agent Rules for API changes
+- Every endpoint needs an OpenAPI entry and a contract test.
+- Never remove or rename a field in v1; add new fields instead.
+:::

@@ -1,0 +1,42 @@
+---
+smd: 1
+title: "ADR-NNNN: {{title}}"
+summary: The decision in one sentence, and the main reason.
+status: review
+owners: ["@owner"]
+tags: [adr]
+updated: {{today}}
+---
+
+:::decision{status=proposed date={{today}} owner=@owner} {{title}}
+State the decision in one or two sentences.
+:::
+
+## Context
+
+The forces at play: requirements, constraints, and what is true today that makes a decision necessary.
+
+## Options considered
+
+| Option | Pros | Cons |
+| --- | --- | --- |
+| **A — chosen** | … | … |
+| B | … | … |
+| C | … | … |
+
+## Consequences
+
+- :status[Positive]{color=green} What gets easier.
+- :status[Negative]{color=red} What gets harder, and what we accept.
+
+:::risk{impact=medium likelihood=low owner=@owner status=open} Main risk of this decision
+How we will notice, and what we would do.
+:::
+
+## Discussion notes {agent=skip}
+
+Meeting notes, links to threads, and history that led here.
+
+:::agent Rules this decision implies
+- Concrete rules code must follow because of this decision.
+:::

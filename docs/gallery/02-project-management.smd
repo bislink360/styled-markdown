@@ -1,0 +1,24 @@
+---
+smd: 1
+accent: indigo
+---
+
+:metric[38%]{label="Abandonment" delta="-2.1pp" trend=down good=down} :metric[€61]{label="Avg. order value" delta="+€3" trend=up} :metric[71s]{label="Time to pay" delta="+6s" trend=up good=down}
+
+- [ ] Idempotent order creation :priority[P0] @api-team :due[2026-10-03]
+- [ ] Legal review of new terms :priority[P1] @legal :due[2026-09-20]
+- [x] Kickoff with design :priority[P2] @sam :due[2026-09-10]
+
+:::decision{status=accepted date=2026-09-08 owner=@maya} Accordion layout on mobile, two columns on desktop
+Won usability testing on completion rate (91% vs 84%).
+:::
+
+:::risk{impact=high likelihood=medium owner=@payments status=open} Apple Pay domain verification delays launch
+Start verification in week 1; Google Pay can launch alone if needed.
+:::
+
+:::timeline
+- [x] **2026-09-15** — Kickoff, designs approved
+- [ ] **2026-10-20** — 10% A/B test
+- [ ] **2026-11-17** — 100% rollout
+:::

@@ -1,0 +1,342 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as vscode from 'vscode';
+import { readerFor } from './files';
+import {
+  CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
+  STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
+  parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
+} from './core';
+
+const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
+
+// ---------------------------------------------------------------------------
+// Diagnostics + quick fixes
+// ---------------------------------------------------------------------------
+
+const SEVERITY: Record<Diagnostic['severity'], vscode.DiagnosticSeverity> = {
+  error: vscode.DiagnosticSeverity.Error,
+  warning: vscode.DiagnosticSeverity.Warning,
+  info: vscode.DiagnosticSeverity.Information,
+  hint: vscode.DiagnosticSeverity.Hint,
+};
+
+/** Keeps the core diagnostic (with its fix) next to the VS Code one. */
+const fixes = new WeakMap<vscode.Diagnostic, NonNullable<Diagnostic['fix']>>();
+
+export class SmdDiagnostics implements vscode.Disposable {
+  readonly collection = vscode.languages.createDiagnosticCollection('smd');
+  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly disposables: vscode.Disposable[] = [];
+
+  constructor() {
+    this.disposables.push(
+      vscode.workspace.onDidOpenTextDocument((d) => this.update(d)),
+      vscode.workspace.onDidChangeTextDocument((e) => this.schedule(e.document)),
+      vscode.workspace.onDidCloseTextDocument((d) => this.collection.delete(d.uri)),
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration('smd.validation')) vscode.workspace.textDocuments.forEach((d) => this.update(d));
+      }),
+    );
+    vscode.workspace.textDocuments.forEach((d) => this.update(d));
+  }
+
+  schedule(document: vscode.TextDocument): void {
+    const key = document.uri.toString();
+    clearTimeout(this.timers.get(key));
+    this.timers.set(key, setTimeout(() => this.update(document), 300));
+  }
+
+  update(document: vscode.TextDocument): number {
+    if (document.languageId !== 'smd') return 0;
+    const config = vscode.workspace.getConfiguration('smd.validation', document.uri);
+    if (!config.get<boolean>('enabled', true)) {
+      this.collection.delete(document.uri);
+      return 0;
+    }
+    const dir = document.uri.scheme === 'file' ? path.dirname(document.uri.fsPath) : undefined;
+    const fileExists = dir && config.get<boolean>('checkLinks', true)
+      ? (rel: string) => fs.existsSync(path.resolve(dir, rel))
+      : undefined;
+    const items = validateSmd(document.getText(), { fileExists, readFile: readerFor(document) }).map((d) => {
+      const range = new vscode.Range(d.line, d.column, d.line, d.endColumn);
+      const diag = new vscode.Diagnostic(range, d.message, SEVERITY[d.severity]);
+      diag.source = 'smd';
+      diag.code = d.code;
+      if (d.fix) fixes.set(diag, d.fix);
+      return diag;
+    });
+    this.collection.set(document.uri, items);
+    return items.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).length;
+  }
+
+  dispose(): void {
+    this.timers.forEach((t) => clearTimeout(t));
+    this.collection.dispose();
+    this.disposables.forEach((d) => d.dispose());
+  }
+}
+
+class QuickFixProvider implements vscode.CodeActionProvider {
+  provideCodeActions(document: vscode.TextDocument, _range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
+    const actions: vscode.CodeAction[] = [];
+    for (const diag of context.diagnostics) {
+      const fix = fixes.get(diag);
+      if (!fix) continue;
+      const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
+      action.edit = new vscode.WorkspaceEdit();
+      action.edit.replace(document.uri, new vscode.Range(fix.line, fix.column, fix.line, fix.endColumn), fix.replacement);
+      action.diagnostics = [diag];
+      action.isPreferred = true;
+      actions.push(action);
+    }
+    return actions;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Completion
+// ---------------------------------------------------------------------------
+
+const ATTR_VALUES: Record<string, string[]> = {
+  color: [...NAMED_COLORS],
+  bg: [...NAMED_COLORS],
+  border: [...NAMED_COLORS],
+  accent: [...NAMED_COLORS],
+  size: Object.keys(SIZE_VALUES),
+  weight: Object.keys(WEIGHT_VALUES),
+  font: Object.keys(FONT_VALUES),
+  align: ALIGN_VALUES,
+  style: Object.keys(TEXT_STYLE_VALUES),
+  collapsible: ['open'],
+};
+
+class CompletionProvider implements vscode.CompletionItemProvider {
+  provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
+    const prefix = document.lineAt(position.line).text.slice(0, position.character);
+    const fm = parseFrontMatter(document.getText());
+
+    // Front matter keys and values
+    if (fm.present && position.line > 0 && position.line < fm.bodyStartLine - 1) {
+      const value = /^(status|audience|theme|accent):\s*(\w*)$/.exec(prefix);
+      if (value) {
+        const options = value[1] === 'status' ? STATUS_VALUES : value[1] === 'audience' ? AUDIENCE_VALUES
+          : value[1] === 'theme' ? ['auto', 'light', 'dark'] : [...NAMED_COLORS];
+        return options.map((o) => new vscode.CompletionItem(o, vscode.CompletionItemKind.EnumMember));
+      }
+      if (/^\w*$/.test(prefix)) {
+        return Object.entries(FRONTMATTER_KEYS).map(([key, doc]) => {
+          const item = new vscode.CompletionItem(key, vscode.CompletionItemKind.Property);
+          item.insertText = `${key}: `;
+          item.documentation = doc;
+          return item;
+        });
+      }
+      return undefined;
+    }
+
+    // Inside an attribute list: {key=value …
+    const brace = prefix.lastIndexOf('{');
+    if (brace > prefix.lastIndexOf('}')) {
+      const inside = prefix.slice(brace + 1);
+      const valueMatch = /([\w-]+)=["']?([^\s"'=]*)$/.exec(inside);
+      if (valueMatch) {
+        const owner = /^\s*:{3,}\s*([\w-]+)\{/.exec(prefix)?.[1];
+        const directiveName = /:([a-z][\w-]*)(?:\[[^\]]*\])?\{[^}]*$/.exec(prefix)?.[1];
+        const specValues = (owner && CONTAINERS[owner]?.values?.[valueMatch[1]])
+          ?? (directiveName && INLINE_DIRECTIVES[directiveName]?.values?.[valueMatch[1]]);
+        return (specValues || ATTR_VALUES[valueMatch[1]] || []).map((v) => {
+          const item = new vscode.CompletionItem(v, vscode.CompletionItemKind.EnumMember);
+          if (NAMED_COLORS.includes(v as never)) item.kind = vscode.CompletionItemKind.Color;
+          return item;
+        });
+      }
+      const container = /^\s*:{3,}\s*([\w-]+)\{/.exec(prefix);
+      const directive = /:([a-z][\w-]*)(?:\[[^\]]*\])?\{[^}]*$/.exec(prefix);
+      let keys: string[] = Object.keys(STYLE_KEYS);
+      if (container && CONTAINERS[container[1]]) keys = [...(CONTAINERS[container[1]].attrs ?? []), ...keys];
+      else if (directive && INLINE_DIRECTIVES[directive[1]]) keys = INLINE_DIRECTIVES[directive[1]].attrs;
+      return keys.map((k) => {
+        const item = new vscode.CompletionItem(k, vscode.CompletionItemKind.Property);
+        item.insertText = new vscode.SnippetString(`${k}=$0`);
+        item.documentation = STYLE_KEYS[k];
+        item.command = { command: 'editor.action.triggerSuggest', title: 'Suggest values' };
+        return item;
+      });
+    }
+
+    // Container names after :::
+    const open = /^\s*(:{3,})\s*([\w-]*)$/.exec(prefix);
+    if (open) {
+      return Object.entries(CONTAINERS).map(([name, spec], i) => {
+        const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Module);
+        item.documentation = new vscode.MarkdownString(spec.description);
+        item.sortText = String(i).padStart(2, '0');
+        const colons = open[1];
+        if (name === 'tabs') item.insertText = new vscode.SnippetString(`tabs\n${colons}tab \${1:First}\n$0\n${colons}\n${colons}tab \${2:Second}\n\n${colons}\n`);
+        else if (name === 'columns') item.insertText = new vscode.SnippetString(`columns\n${colons}column\n$0\n${colons}\n${colons}column\n\n${colons}\n`);
+        else item.insertText = new vscode.SnippetString(`${name}${spec.title ? ' ${1}' : ''}\n$0\n${colons}`);
+        return item;
+      });
+    }
+
+    // Diagram / code languages after ```
+    if (/^\s*(`{3,}|~{3,})\w*$/.test(prefix)) {
+      return ['mermaid', 'math', 'ts', 'js', 'json', 'yaml', 'bash', 'python', 'go', 'sql', 'diff'].map((l) =>
+        new vscode.CompletionItem(l, l === 'mermaid' || l === 'math' ? vscode.CompletionItemKind.Keyword : vscode.CompletionItemKind.Value));
+    }
+
+    // Inline directives :name
+    const inline = /(?:^|[\s(>*_-]):([a-z]*)$/.exec(prefix);
+    if (inline) {
+      const range = new vscode.Range(position.translate(0, -inline[1].length), position);
+      return Object.entries(INLINE_DIRECTIVES).map(([name, spec]) => {
+        const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Function);
+        item.range = range;
+        item.detail = spec.example;
+        item.documentation = spec.description;
+        const color = `{color=\${2|${NAMED_COLORS.join(',')}|}}`;
+        item.insertText = new vscode.SnippetString(
+          name === 'progress' ? 'progress{value=${1:50}}'
+            : name === 'kbd' ? 'kbd[${1:Ctrl+S}]'
+            : name === 'mention' ? 'mention[${1:@team}]'
+            : `${name}[\${1:text}]${color}`,
+        );
+        return item;
+      });
+    }
+
+    // Mermaid diagram types on the first line of a mermaid fence
+    if (position.line > 0 && /^\s*```\s*mermaid/.test(document.lineAt(position.line - 1).text) && /^\s*\w*$/.test(prefix)) {
+      return MERMAID_TYPES.map((t) => new vscode.CompletionItem(t, vscode.CompletionItemKind.Keyword));
+    }
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hover
+// ---------------------------------------------------------------------------
+
+class HoverProvider implements vscode.HoverProvider {
+  provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+    const line = document.lineAt(position.line).text;
+    const container = /^(\s*:{3,}\s*)([\w-]+)/.exec(line);
+    if (container) {
+      const start = container[1].length;
+      const end = start + container[2].length;
+      const spec = CONTAINERS[container[2]];
+      if (spec && position.character >= start && position.character <= end) {
+        const attrs = spec.attrs?.length ? `\n\nAttributes: \`${spec.attrs.join('`, `')}\` + style attributes` : '';
+        return new vscode.Hover(new vscode.MarkdownString(`**:::${container[2]}** — ${spec.description}${attrs}`),
+          new vscode.Range(position.line, start, position.line, end));
+      }
+    }
+    const range = document.getWordRangeAtPosition(position, /:[a-z][\w-]*/);
+    if (range) {
+      const name = document.getText(range).slice(1);
+      const spec = INLINE_DIRECTIVES[name];
+      if (spec) return new vscode.Hover(new vscode.MarkdownString(`**:${name}** — ${spec.description}\n\n\`${spec.example}\``), range);
+    }
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Color swatches for color=… / bg=… / accent: …
+// ---------------------------------------------------------------------------
+
+const LIGHT_HEX: Record<string, string> = {
+  red: '#dc2626', orange: '#ea580c', amber: '#d97706', yellow: '#ca8a04', green: '#16a34a', teal: '#0d9488',
+  cyan: '#0891b2', blue: '#2563eb', indigo: '#4f46e5', purple: '#9333ea', pink: '#db2777', gray: '#6b7280',
+};
+
+function hexToColor(hex: string): vscode.Color | undefined {
+  let h = hex.slice(1);
+  if (h.length === 3 || h.length === 4) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6 && h.length !== 8) return undefined;
+  const n = (i: number) => parseInt(h.slice(i, i + 2), 16) / 255;
+  return new vscode.Color(n(0), n(2), n(4), h.length === 8 ? n(6) : 1);
+}
+
+class ColorProvider implements vscode.DocumentColorProvider {
+  provideDocumentColors(document: vscode.TextDocument): vscode.ColorInformation[] {
+    const out: vscode.ColorInformation[] = [];
+    const re = /\b(?:color|bg|border|accent)\s*[=:]\s*["']?(#[0-9a-fA-F]{3,8}|[a-z]+)\b/g;
+    for (let i = 0; i < document.lineCount; i++) {
+      const text = document.lineAt(i).text;
+      for (const m of text.matchAll(re)) {
+        const value = m[1];
+        const color = value.startsWith('#') ? hexToColor(value) : LIGHT_HEX[value] ? hexToColor(LIGHT_HEX[value]) : undefined;
+        if (!color) continue;
+        const start = m.index! + m[0].lastIndexOf(value);
+        out.push(new vscode.ColorInformation(new vscode.Range(i, start, i, start + value.length), color));
+      }
+    }
+    return out;
+  }
+
+  provideColorPresentations(color: vscode.Color): vscode.ColorPresentation[] {
+    const hex = (n: number) => Math.round(n * 255).toString(16).padStart(2, '0');
+    const value = `#${hex(color.red)}${hex(color.green)}${hex(color.blue)}${color.alpha < 1 ? hex(color.alpha) : ''}`;
+    // Hex needs quotes inside attribute lists only when followed by other characters; quoting is always safe.
+    return [new vscode.ColorPresentation(`"${value}"`), new vscode.ColorPresentation(value)];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Outline + folding
+// ---------------------------------------------------------------------------
+
+class SymbolProvider implements vscode.DocumentSymbolProvider {
+  provideDocumentSymbols(document: vscode.TextDocument): vscode.DocumentSymbol[] {
+    const headings = renderSmd(document.getText()).headings;
+    const roots: vscode.DocumentSymbol[] = [];
+    const stack: Array<{ level: number; symbol: vscode.DocumentSymbol }> = [];
+    headings.forEach((h, i) => {
+      const next = headings.slice(i + 1).find((n) => n.level <= h.level);
+      const endLine = Math.max(h.line, (next ? next.line : document.lineCount) - 1);
+      const range = new vscode.Range(h.line, 0, endLine, document.lineAt(endLine).text.length);
+      const symbol = new vscode.DocumentSymbol(h.text || '(untitled)', `H${h.level}`, vscode.SymbolKind.String, range, document.lineAt(h.line).range);
+      while (stack.length && stack[stack.length - 1].level >= h.level) stack.pop();
+      if (stack.length) stack[stack.length - 1].symbol.children.push(symbol); else roots.push(symbol);
+      stack.push({ level: h.level, symbol });
+    });
+    return roots;
+  }
+}
+
+class FoldingProvider implements vscode.FoldingRangeProvider {
+  provideFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
+    const ranges: vscode.FoldingRange[] = [];
+    const stack: number[] = [];
+    let fence = -1;
+    for (let i = 0; i < document.lineCount; i++) {
+      const text = document.lineAt(i).text;
+      if (/^\s{0,3}(`{3,}|~{3,})/.test(text)) {
+        if (fence === -1) fence = i; else { ranges.push(new vscode.FoldingRange(fence, i)); fence = -1; }
+        continue;
+      }
+      if (fence !== -1) continue;
+      if (/^\s{0,3}:{3,}\s*[a-zA-Z]/.test(text)) stack.push(i);
+      else if (/^\s{0,3}:{3,}\s*$/.test(text) && stack.length) ranges.push(new vscode.FoldingRange(stack.pop()!, i));
+    }
+    const fm = parseFrontMatter(document.getText());
+    if (fm.present && fm.bodyStartLine > 1) ranges.push(new vscode.FoldingRange(0, fm.bodyStartLine - 1, vscode.FoldingRangeKind.Region));
+    return ranges;
+  }
+}
+
+export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdDiagnostics {
+  const diagnostics = new SmdDiagnostics();
+  context.subscriptions.push(
+    diagnostics,
+    vscode.languages.registerCodeActionsProvider(SELECTOR, new QuickFixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`'),
+    vscode.languages.registerHoverProvider(SELECTOR, new HoverProvider()),
+    vscode.languages.registerColorProvider(SELECTOR, new ColorProvider()),
+    vscode.languages.registerDocumentSymbolProvider(SELECTOR, new SymbolProvider()),
+    vscode.languages.registerFoldingRangeProvider(SELECTOR, new FoldingProvider()),
+  );
+  return diagnostics;
+}

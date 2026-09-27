@@ -1,0 +1,296 @@
+{
+  "name": "styled-markdown",
+  "displayName": "Styled Markdown (.smd)",
+  "description": "Markdown for humans and AI agents: callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
+  "version": "1.0.0",
+  "publisher": "bislink360",
+  "author": {
+    "name": "Roshan Alwis"
+  },
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1e1b4b",
+    "theme": "dark"
+  },
+  "homepage": "https://github.com/bislink360/styled-markdown#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bislink360/styled-markdown.git",
+    "directory": "extension"
+  },
+  "bugs": {
+    "url": "https://github.com/bislink360/styled-markdown/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Snippets",
+    "Visualization"
+  ],
+  "keywords": [
+    "markdown",
+    "smd",
+    "styled markdown",
+    "mermaid",
+    "documentation",
+    "prd",
+    "adr",
+    "ai agents",
+    "llm",
+    "tokens"
+  ],
+  "main": "./dist/extension.js",
+  "bin": {
+    "smd": "./dist/cli.js"
+  },
+  "activationEvents": [],
+  "contributes": {
+    "languages": [
+      {
+        "id": "smd",
+        "aliases": [
+          "Styled Markdown",
+          "smd"
+        ],
+        "extensions": [
+          ".smd"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./media/smd-icon.svg",
+          "dark": "./media/smd-icon.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "smd",
+        "scopeName": "text.html.smd",
+        "path": "./syntaxes/smd.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.frontmatter": "yaml"
+        }
+      },
+      {
+        "scopeName": "text.html.smd.directives",
+        "path": "./syntaxes/smd-directives.injection.json",
+        "injectTo": [
+          "text.html.smd"
+        ]
+      }
+    ],
+    "snippets": [
+      {
+        "language": "smd",
+        "path": "./snippets/smd.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "smd.openPreview",
+        "title": "Open Preview",
+        "category": "Styled Markdown",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "smd.openPreviewToSide",
+        "title": "Open Preview to the Side",
+        "category": "Styled Markdown",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "smd.exportHtml",
+        "title": "Export to HTML",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.exportMarkdown",
+        "title": "Export to Plain Markdown (.md)",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.convertFromMarkdown",
+        "title": "Convert Markdown File to .smd",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.validateWorkspace",
+        "title": "Validate All .smd Files in Workspace",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.showAgentView",
+        "title": "Show Agent View (what AI agents read)",
+        "category": "Styled Markdown",
+        "icon": "$(hubot)"
+      },
+      {
+        "command": "smd.showAgentViewBrief",
+        "title": "Show Brief Agent View",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.copyAgentView",
+        "title": "Copy Agent View to Clipboard",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.copyAgentSections",
+        "title": "Copy Sections for an Agent…",
+        "category": "Styled Markdown"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "smd.openPreviewToSide",
+          "when": "editorLangId == smd",
+          "group": "navigation"
+        },
+        {
+          "command": "smd.showAgentView",
+          "when": "editorLangId == smd",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "smd.exportHtml",
+          "when": "editorLangId == smd",
+          "group": "smd"
+        },
+        {
+          "command": "smd.exportMarkdown",
+          "when": "editorLangId == smd",
+          "group": "smd"
+        },
+        {
+          "command": "smd.copyAgentView",
+          "when": "editorLangId == smd",
+          "group": "smd"
+        },
+        {
+          "command": "smd.copyAgentSections",
+          "when": "editorLangId == smd",
+          "group": "smd"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "smd.convertFromMarkdown",
+          "when": "resourceExtname == .md",
+          "group": "smd"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "smd.exportHtml",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.exportMarkdown",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.showAgentView",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.showAgentViewBrief",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.copyAgentView",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.copyAgentSections",
+          "when": "editorLangId == smd"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "smd.openPreviewToSide",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "editorLangId == smd"
+      },
+      {
+        "command": "smd.openPreview",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorLangId == smd"
+      }
+    ],
+    "configuration": {
+      "title": "Styled Markdown",
+      "properties": {
+        "smd.preview.theme": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "light",
+            "dark"
+          ],
+          "default": "auto",
+          "description": "Preview color theme. 'auto' follows the VS Code theme."
+        },
+        "smd.preview.showAgentBlocks": {
+          "type": "string",
+          "enum": [
+            "collapsed",
+            "expanded",
+            "hidden"
+          ],
+          "default": "collapsed",
+          "description": "How :::agent blocks (content addressed to AI agents) are shown to humans in the preview."
+        },
+        "smd.preview.allowHtml": {
+          "type": "boolean",
+          "default": true,
+          "description": "Render raw HTML embedded in .smd files. Scripts never run in the preview."
+        },
+        "smd.validation.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show problems for invalid .smd syntax."
+        },
+        "smd.validation.checkLinks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn about relative links and images that point to missing files."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:vscode": "npm run build && node test/integration/run.mjs",
+    "package": "npm run build && vsce package --no-dependencies",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.25.0",
+    "highlight.js": "^11.12.0",
+    "js-yaml": "^4.1.0",
+    "katex": "^0.16.11",
+    "markdown-it": "^14.1.0",
+    "mermaid": "^11.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

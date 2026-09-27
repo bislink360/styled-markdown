@@ -1,0 +1,105 @@
+---
+smd: 1
+title: Saved Searches
+summary: Let users save a search with its filters and get notified when new results match. Targets the Q4 release.
+status: review
+owners: ["@product-search", "@api-team"]
+audience: both
+tags: [search, notifications, q4]
+version: 0.3
+updated: 2026-09-26
+accent: teal
+toc: true
+---
+
+## Overview
+
+| | |
+|---|---|
+| **Release** | :badge[Q4 2026]{color=teal} |
+| **Health** | :status[On track]{color=green} |
+| **Build progress** | :progress{value=35} |
+| **Design** | [Figma — Saved searches](https://example.com/figma) |
+
+Power users re-run the same 3–5 searches every day. Saving them removes [~40 seconds]{weight=bold} per search and lets us notify people when something new appears.
+
+:::question Open question
+Should saved searches be shareable with a team in v1, or only personal? *Decision needed by 2026-10-10.*
+:::
+
+## Requirements
+
+::::tabs
+:::tab Must have
+- [x] Save the current query and filters with a name
+- [ ] List, rename and delete saved searches
+- [ ] Daily email digest when new results match
+:::
+:::tab Nice to have
+- [ ] Share with a team
+- [ ] Slack notifications
+:::
+:::tab Out of scope
+- Real-time push notifications
+- Saved searches on mobile (Q1 2027)
+:::
+::::
+
+## User flow
+
+```mermaid
+flowchart LR
+    S[Search page] -->|Save search| N[Name it]
+    N --> L[(Saved searches)]
+    L -->|nightly job| J{New matches?}
+    J -- yes --> E[Email digest]
+    J -- no --> X[Do nothing]
+```
+
+## API
+
+::::columns
+:::column{width=55%}
+```http title="Create"
+POST /v1/saved-searches
+Content-Type: application/json
+
+{ "name": "Open P1 bugs", "query": "priority:p1 state:open" }
+```
+:::
+:::column
+:::::card{accent=teal} Limits
+- 50 saved searches per user
+- Name ≤ 80 characters
+- Digest at 08:00 in the user's time zone
+:::::
+:::
+::::
+
+:::warning Breaking change
+`GET /v1/search` will require the `filters` object instead of query-string filters. Clients must migrate before **2026-11-01**.
+:::
+
+## Rollout
+
+```mermaid
+gantt
+    dateFormat YYYY-MM-DD
+    section Build
+    API & storage      :a1, 2026-10-01, 14d
+    UI                 :a2, after a1, 10d
+    section Launch
+    Internal beta      :b1, after a2, 7d
+    GA                 :milestone, after b1, 0d
+```
+
+:::agent Implementation guidance
+- Store saved searches in the existing `user_prefs` Postgres schema; do **not** add a new database.
+- Reuse `SearchQuery.parse()` for validation — never hand-parse query strings.
+- Every new endpoint needs an OpenAPI entry in `api/openapi.yaml` and a contract test.
+- If the open question above is still unresolved, implement personal-only saved searches.
+:::
+
+:::human Why an agent block?
+Coding agents read the block above as constraints. People can skim past it — it's collapsed in the preview.
+:::

@@ -1,0 +1,201 @@
+---
+smd: 1
+title: Checkout Redesign — One-Page Checkout
+summary: Replace the 4-step checkout with a single page, add Apple Pay / Google Pay, and cut checkout abandonment from 38% to under 30% by the end of Q4 2026.
+status: approved
+owners: ["@maya (PM)", "@dev-checkout", "@design-commerce"]
+audience: both
+tags: [checkout, payments, conversion, q4]
+version: 1.4
+updated: 2026-09-26
+accent: indigo
+toc: true
+---
+
+## Snapshot
+
+:metric[38%]{label="Checkout abandonment" delta="+2.1pp" trend=up good=down} :metric[4]{label="Checkout steps" } :metric[€61]{label="Avg. order value" delta="+€3" trend=up} :metric[71s]{label="Median time to pay" delta="+6s" trend=up good=down}
+
+**Health:** :status[On track]{color=green} · **Release:** :badge[Q4 2026]{color=indigo} · **Build progress:** :progress{value=45}
+
+## Background {agent=skip}
+
+Our checkout was designed in 2019 for desktop web, when 70% of orders came from desktop. Today 64% of orders come from mobile, and the checkout has barely changed. Every quarterly survey since 2024 lists "checkout is slow / too many steps" among the top three complaints.
+
+In the 2025 planning cycle we tried incremental fixes: address autocomplete (shipped March 2025, −1.2pp abandonment), a progress indicator (June 2025, no measurable change) and saved cards for logged-in users (September 2025, −0.8pp). Each helped a little, but the structural problem remained: four page loads, each with its own validation round trip, on mobile networks.
+
+Competitor benchmarking in July 2026 (see the research deck) showed that 7 of our 10 closest competitors now use a single-page checkout, and 9 of 10 offer a wallet payment (Apple Pay or Google Pay) above the fold. The median competitor checkout completes in 38 seconds; ours takes 71.
+
+Leadership agreed in the Q3 business review that checkout is the single largest conversion lever for FY27, and approved a dedicated squad for Q4.
+
+:::human Research highlights
+- 23 moderated usability sessions (12 mobile, 11 desktop) in August 2026.
+- Biggest drop-off: the shipping-method step (41% of abandons), mostly because shipping costs appear too late.
+- Users who saw the total price including shipping on the first screen were 1.6× more likely to complete.
+- "I didn't know if my coupon worked" came up in 9 of 23 sessions.
+- Apple Pay users completed checkout in a median of 19 seconds in the prototype test.
+:::
+
+## Goals and non-goals
+
+**Goals**
+
+1. Reduce checkout abandonment from **38%** to **under 30%** within 8 weeks of GA.
+2. Median time-to-pay under **40 seconds** on mobile.
+3. Wallet payments (Apple Pay, Google Pay) used in at least **25%** of mobile orders.
+
+**Non-goals**
+
+- Changing the cart page (separate initiative in Q1 2027).
+- New payment providers beyond our current PSP.
+- Guest-to-account conversion flows.
+
+## Requirements
+
+::::tabs
+:::tab Must have
+- [x] Single page with collapsible sections: contact, shipping, payment, review :priority[P0] @dev-checkout
+- [ ] Shipping cost shown in the order summary before the address is complete (estimate by country) :priority[P0] @dev-checkout :due[2026-10-10]
+- [ ] Apple Pay and Google Pay buttons above the fold on mobile :priority[P0] @payments :due[2026-10-17]
+- [ ] Inline coupon validation with clear success and error states :priority[P1] @dev-checkout :due[2026-10-17]
+- [ ] Server-side validation returns all field errors in one response :priority[P1] @api-team :due[2026-09-25]
+- [ ] Idempotent order creation (safe retries on flaky mobile networks) :priority[P0] @api-team :due[2026-10-03]
+:::
+:::tab Should have
+- [ ] Remember the last used shipping method for logged-in users :priority[P2] @dev-checkout
+- [ ] Address autocomplete on the single page (reuse the existing provider) :priority[P2] @dev-checkout
+:::
+:::tab Won't have (this release)
+- One-click reorder
+- Buy now, pay later
+- Multi-currency display
+:::
+::::
+
+## Design {agent=skip}
+
+The design explores three layouts (accordion, long scroll, two-column). Accordion won usability testing on mobile (completion 91% vs 84% and 86%) and is what we ship. Desktop uses a two-column variant: form on the left, sticky order summary on the right.
+
+:::details Design review notes (2026-09-04)
+- Sections expand one at a time; completed sections collapse to a one-line summary with an "Edit" link.
+- Error states: inline under the field, plus a summary at the top of the section on submit.
+- The order summary always shows subtotal, shipping (estimate or final), discount and total.
+- Wallet buttons follow Apple and Google brand guidelines; no custom styling.
+- Accessibility: every section is a landmark; focus moves to the first invalid field on submit.
+- Dark mode uses the existing commerce tokens.
+- Motion: 150ms section expand, respects reduced-motion.
+- Copy review with legal is scheduled for 2026-10-06.
+:::
+
+## Architecture
+
+```mermaid
+sequenceDiagram
+    participant C as Checkout page
+    participant API as Checkout API
+    participant P as Pricing service
+    participant PSP as Payment provider
+    C->>API: POST /v1/checkout/quote (items, country)
+    API->>P: price(items, country, coupon)
+    P-->>API: subtotal, shipping estimate, discount
+    API-->>C: quote
+    C->>API: POST /v1/orders (Idempotency-Key)
+    API->>PSP: authorize(amount, wallet token)
+    PSP-->>API: authorized
+    API-->>C: 201 order
+```
+
+Pricing logic lives in one module and is shared by the quote and order endpoints:
+
+```ts file="src/pricing.ts" lines="7-13"
+```
+
+:::api{method=POST path="/v1/checkout/quote" auth="session"} Price the cart before an address is complete
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `items` | LineItem[] | yes | sku, quantity |
+| `country` | string | yes | ISO 3166-1 alpha-2, used for the shipping estimate |
+| `coupon` | string | no | Returns `couponError` instead of failing the request |
+
+**Responses:** `200` quote · `422` invalid items
+:::
+
+:::api{method=POST path="/v1/orders" auth="session"} Create the order and authorize payment
+Requires an `Idempotency-Key` header (UUID). Replays with the same key return the original response.
+
+**Responses:** `201` order created · `402` payment declined · `409` key reused with a different body · `422` validation errors (all fields at once)
+:::
+
+## Decisions
+
+:::decision{status=accepted date=2026-09-08 owner=@maya} Accordion layout on mobile, two-column on desktop
+Won usability testing on completion rate. See the design notes for details.
+:::
+
+:::decision{status=accepted date=2026-09-11 owner=@api-team} Idempotency keys on order creation
+Mobile retries currently create about 0.3% duplicate orders. Keys fix this and are required by the PSP for wallet payments anyway.
+:::
+
+:::decision{status=rejected date=2026-09-11 owner=@maya} Build our own wallet integration
+Our PSP already supports Apple Pay and Google Pay; building our own would add PCI scope for no benefit.
+:::
+
+## Risks
+
+:::risk{impact=high likelihood=medium owner=@payments status=open} Apple Pay domain verification delays launch
+Verification needs the production domain and a certificate from the PSP. Start in week 1 and have Google Pay ready to launch alone if needed.
+:::
+
+:::risk{impact=medium likelihood=low owner=@dev-checkout status=mitigated} Shipping estimate differs from the final price
+Show "estimated" until the postcode is complete. Differences above €1 trigger a visible price update with an explanation.
+:::
+
+## Rollout plan
+
+:::timeline
+- [x] **2026-09-15** — Squad kickoff, designs approved
+- [ ] **2026-10-06** — Internal dogfood (employees only)
+- [ ] **2026-10-20** — 10% A/B test, mobile web only
+- [ ] **2026-11-03** — 50% if abandonment is at least 3pp lower
+- [ ] **2026-11-17** — 100% and remove the old checkout
+:::
+
+:::warning Kill switch
+The old checkout stays deployable behind the `checkout_v2` flag until 2026-12-15. Any P0 incident rolls back to 0% immediately.
+:::
+
+## Analytics {agent=skip}
+
+Events are defined in the analytics tracking plan. The dashboard ("Checkout v2") tracks abandonment per section, wallet usage, and time to pay. Weekly readouts go to #checkout-v2 every Monday.
+
+:::details Full event list
+- `checkout_viewed` — page load, with cart value and item count
+- `checkout_section_opened` — section name
+- `checkout_section_completed` — section name, time spent
+- `checkout_field_error` — field name, error code
+- `checkout_coupon_applied` / `checkout_coupon_failed` — code, reason
+- `checkout_wallet_clicked` — wallet type
+- `checkout_payment_authorized` / `checkout_payment_declined` — method, amount band
+- `order_created` — order id, time to pay
+:::
+
+## Open questions
+
+:::question Should guest users see wallet buttons before entering an email?
+Apple Pay can provide the email, but marketing wants to capture it for abandoned-cart emails. Decision needed by **2026-10-01** from @maya and @marketing.
+:::
+
+## Implementation notes
+
+:::agent Engineering constraints
+- All prices are integer cents. Never use floats for money; reuse `subtotalCents` and `applyCoupon` from `src/pricing.ts`.
+- `POST /v1/orders` must be idempotent: store the key with the response for 24h, and return `409` if a key is reused with a different body.
+- Validation errors are returned all at once (`422` with a `fields` map); the client must not stop at the first error.
+- Everything new goes behind the `checkout_v2` feature flag; the old checkout must keep working untouched.
+- Every new endpoint needs an OpenAPI entry and a contract test.
+- If the open question about guest wallet buttons is unresolved, show wallet buttons only after the email field.
+:::
+
+:::human Thanks
+Big thanks to the 23 customers who joined research sessions, and to the payments team for the early PSP spike.
+:::

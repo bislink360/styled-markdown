@@ -1,0 +1,59 @@
+---
+smd: 1
+title: "Runbook: {{title}}"
+summary: What this runbook fixes, the symptoms that point here, and the expected time to mitigate.
+status: approved
+owners: ["@oncall-team"]
+tags: [runbook, oncall]
+updated: {{today}}
+---
+
+:::danger Before you start
+Actions that are unsafe during an incident (e.g. never restart the primary database).
+:::
+
+## Symptoms
+
+- Alert name / dashboard panel that fired
+- What users see
+
+## Triage
+
+:::steps
+1. **Confirm impact:** check the dashboard for error rate and latency.
+2. **Find the cause:** run the diagnostic command below.
+3. **Decide:** follow the matching mitigation.
+:::
+
+```bash title="diagnose"
+kubectl get pods -n <namespace>
+```
+
+## Mitigations
+
+::::tabs
+:::tab Cause A
+1. Mitigation step
+2. Verify recovery
+:::
+:::tab Cause B
+1. Mitigation step
+2. Verify recovery
+:::
+::::
+
+## Escalation
+
+| When | Who |
+| --- | --- |
+| No recovery after 15 minutes | :mention[@service-owner] |
+| Customer data at risk | :mention[@security] |
+
+## History {agent=skip}
+
+Past incidents that used this runbook, with links to post-mortems.
+
+:::agent Rules for automated responders
+- Only run read-only commands without human approval.
+- Never delete data or scale to zero.
+:::

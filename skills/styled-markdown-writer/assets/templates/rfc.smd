@@ -1,0 +1,67 @@
+---
+smd: 1
+title: "RFC: {{title}}"
+summary: The proposal in one or two sentences, and what feedback is needed by when.
+status: review
+owners: ["@author"]
+tags: [rfc, design]
+updated: {{today}}
+toc: true
+---
+
+## Problem
+
+What is broken or missing, with evidence.
+
+## Proposal
+
+The design, from the outside in.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Service
+    C->>S: request
+    S-->>C: response
+```
+
+## Detailed design
+
+### Data model
+
+```ts title="types.ts"
+export interface Example {
+  id: string;
+}
+```
+
+### API
+
+:::api{method=GET path="/v1/examples/{id}" auth="token"} Get one example
+**Responses:** `200` example · `404` not found
+:::
+
+## Alternatives considered
+
+:::details Alternative A — why not
+Reasoning.
+:::
+
+## Rollout and migration
+
+1. Step one
+2. Step two
+
+:::warning Compatibility
+What breaks for existing clients, and how they migrate.
+:::
+
+## Open questions
+
+:::question Unresolved question
+Who can answer it, and by when.
+:::
+
+:::agent Implementation constraints
+- Constraints for whoever implements this proposal.
+:::

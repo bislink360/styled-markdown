@@ -1,0 +1,35 @@
+---
+smd: 1
+title: "{{title}} — status {{today}}"
+summary: One sentence on overall health and the single most important thing leadership should know.
+status: approved
+owners: ["@owner"]
+tags: [status]
+updated: {{today}}
+---
+
+## Summary
+
+**Overall:** :status[On track]{color=green} · **Progress:** :progress{value=0}
+
+:metric[—]{label="Key metric"} :metric[—]{label="Second metric"}
+
+## Done this period
+
+- [x] Shipped item
+
+## Next period
+
+- [ ] Planned item :priority[P1] @owner :due[{{today}}]
+
+## Risks and blockers
+
+:::risk{impact=medium likelihood=medium owner=@owner status=open} Risk or blocker
+What we need, and from whom.
+:::
+
+## Decisions needed
+
+:::question Decision needed from leadership
+Options, recommendation, and the date it is needed by.
+:::

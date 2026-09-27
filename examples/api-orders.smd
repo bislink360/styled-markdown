@@ -1,0 +1,75 @@
+---
+smd: 1
+title: Orders API
+summary: Create, fetch and cancel orders. JSON over HTTPS, bearer-token auth, idempotent creation via the Idempotency-Key header.
+status: approved
+owners: ["@api-team"]
+tags: [api, reference, orders]
+version: 1.2
+updated: 2026-09-24
+toc: true
+---
+
+## Overview
+
+| | |
+| --- | --- |
+| **Base URL** | `https://api.example.com` |
+| **Auth** | `Authorization: Bearer <token>` |
+| **Rate limit** | 100 requests / second per token |
+
+:::tip Idempotency
+Send an `Idempotency-Key` (UUID) with every `POST`. Retrying with the same key and body returns the original response, so mobile clients can retry safely.
+:::
+
+## Endpoints
+
+:::api{method=POST path="/v1/orders" auth="bearer token"} Create an order
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `items` | LineItem[] | yes | At least one item |
+| `country` | string | yes | ISO 3166-1 alpha-2 |
+| `coupon` | string | no | Invalid coupons return `422` with `fields.coupon` |
+
+**Responses:** `201` order · `402` payment declined · `409` idempotency key reused with a different body · `422` validation errors (all fields at once)
+:::
+
+:::api{method=GET path="/v1/orders/{id}" auth="bearer token"} Get an order
+**Responses:** `200` order · `404` not found
+:::
+
+:::api{method=POST path="/v1/orders/{id}/cancel" auth="bearer token"} Cancel an order
+Only orders in `pending` or `paid` state can be cancelled; paid orders are refunded.
+
+**Responses:** `200` cancelled order · `409` order already shipped
+:::
+
+## Pricing logic
+
+Prices are integer cents. The API uses the shared pricing module (lines 7–13 highlighted):
+
+```ts file="src/pricing.ts" lines="1-17" {7-13}
+```
+
+## Errors
+
+| Status | Meaning | Retry? |
+| --- | --- | --- |
+| `401` | Missing or invalid token | No |
+| `409` | Conflict (see endpoint) | No |
+| `429` | Rate limited | Yes, after `Retry-After` |
+| `5xx` | Server error | Yes, with exponential backoff and the same idempotency key |
+
+## Changelog
+
+:::timeline
+- [x] **2026-09-24** — v1.2: `POST /v1/orders/{id}/cancel`
+- [x] **2026-08-10** — v1.1: `country` field, shipping estimates
+- [x] **2026-05-02** — v1.0
+:::
+
+:::agent Rules for API changes
+- Every endpoint needs an OpenAPI entry in `api/openapi.yaml` and a contract test.
+- Never remove or rename fields in v1; add new optional fields instead.
+- Money is always integer cents, named `…Cents`.
+:::

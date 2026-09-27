@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en" data-smd-theme-pref="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Styled Markdown">
+<title>Styled Markdown Showcase</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
+/* Styled Markdown — shared stylesheet for the VS Code preview and HTML export. */
+
+:root {
+  --smd-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+  --smd-font-serif: Georgia, Cambria, "Times New Roman", serif;
+  --smd-font-mono: "Cascadia Code", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  --smd-bg: #ffffff;
+  --smd-fg: #1f2328;
+  --smd-fg-muted: #59636e;
+  --smd-surface: #f6f8fa;
+  --smd-border: #d1d9e0;
+  --smd-code-bg: #f3f4f6;
+
+  --smd-red: #dc2626; --smd-orange: #ea580c; --smd-amber: #d97706; --smd-yellow: #ca8a04;
+  --smd-green: #16a34a; --smd-teal: #0d9488; --smd-cyan: #0891b2; --smd-blue: #2563eb;
+  --smd-indigo: #4f46e5; --smd-purple: #9333ea; --smd-pink: #db2777; --smd-gray: #6b7280;
+  --smd-muted: var(--smd-fg-muted);
+  --smd-accent-default: var(--smd-indigo);
+  --smd-soft: 13%;
+}
+
+:root[data-smd-theme="dark"] {
+  --smd-bg: #0f1117;
+  --smd-fg: #e6edf3;
+  --smd-fg-muted: #9198a1;
+  --smd-surface: #161b22;
+  --smd-border: #30363d;
+  --smd-code-bg: #1c2128;
+
+  --smd-red: #f87171; --smd-orange: #fb923c; --smd-amber: #fbbf24; --smd-yellow: #facc15;
+  --smd-green: #4ade80; --smd-teal: #2dd4bf; --smd-cyan: #22d3ee; --smd-blue: #60a5fa;
+  --smd-indigo: #818cf8; --smd-purple: #c084fc; --smd-pink: #f472b6; --smd-gray: #9ca3af;
+  --smd-accent-default: var(--smd-indigo);
+  --smd-soft: 18%;
+}
+
+:root {
+  --smd-red-soft: color-mix(in srgb, var(--smd-red) var(--smd-soft), transparent);
+  --smd-orange-soft: color-mix(in srgb, var(--smd-orange) var(--smd-soft), transparent);
+  --smd-amber-soft: color-mix(in srgb, var(--smd-amber) var(--smd-soft), transparent);
+  --smd-yellow-soft: color-mix(in srgb, var(--smd-yellow) var(--smd-soft), transparent);
+  --smd-green-soft: color-mix(in srgb, var(--smd-green) var(--smd-soft), transparent);
+  --smd-teal-soft: color-mix(in srgb, var(--smd-teal) var(--smd-soft), transparent);
+  --smd-cyan-soft: color-mix(in srgb, var(--smd-cyan) var(--smd-soft), transparent);
+  --smd-blue-soft: color-mix(in srgb, var(--smd-blue) var(--smd-soft), transparent);
+  --smd-indigo-soft: color-mix(in srgb, var(--smd-indigo) var(--smd-soft), transparent);
+  --smd-purple-soft: color-mix(in srgb, var(--smd-purple) var(--smd-soft), transparent);
+  --smd-pink-soft: color-mix(in srgb, var(--smd-pink) var(--smd-soft), transparent);
+  --smd-gray-soft: color-mix(in srgb, var(--smd-gray) var(--smd-soft), transparent);
+  --smd-muted-soft: var(--smd-surface);
+}
+
+html, body.smd-body {
+  background: var(--smd-bg);
+  color: var(--smd-fg);
+}
+
+body.smd-body {
+  margin: 0;
+  padding: 0 16px;
+  font-family: var(--smd-font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.smd-doc {
+  --smd-accent: var(--smd-accent-default);
+  --smd-accent-soft: color-mix(in srgb, var(--smd-accent) var(--smd-soft), transparent);
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 32px 0 96px;
+  overflow-wrap: break-word;
+}
+
+/* ---------- Typography ---------- */
+.smd-doc h1, .smd-doc h2, .smd-doc h3, .smd-doc h4, .smd-doc h5, .smd-doc h6 {
+  line-height: 1.25;
+  margin: 1.8em 0 0.6em;
+  font-weight: 650;
+  scroll-margin-top: 16px;
+}
+.smd-doc h1 { font-size: 2em; }
+.smd-doc h2 { font-size: 1.5em; padding-bottom: .3em; border-bottom: 1px solid var(--smd-border); }
+.smd-doc h3 { font-size: 1.25em; }
+.smd-doc h4 { font-size: 1.05em; }
+.smd-doc h5, .smd-doc h6 { font-size: .95em; color: var(--smd-fg-muted); }
+.smd-doc h2::before {
+  content: ""; display: inline-block; width: 4px; height: .9em; margin-right: .5em;
+  border-radius: 2px; background: var(--smd-accent); vertical-align: -0.08em;
+}
+.smd-doc p, .smd-doc ul, .smd-doc ol, .smd-doc blockquote, .smd-doc .smd-table-wrap, .smd-doc pre { margin: 0 0 1em; }
+.smd-doc a { color: var(--smd-accent); text-decoration: none; }
+.smd-doc a:hover { text-decoration: underline; }
+.smd-doc hr { border: 0; border-top: 1px solid var(--smd-border); margin: 2em 0; }
+.smd-doc img { max-width: 100%; border-radius: 6px; }
+.smd-doc blockquote {
+  margin-left: 0; padding: .1em 1em; color: var(--smd-fg-muted);
+  border-left: 4px solid var(--smd-border);
+}
+.smd-doc mark { background: var(--smd-yellow-soft); color: inherit; padding: 0 .2em; border-radius: 3px; box-shadow: inset 0 -2px 0 var(--smd-yellow); }
+.smd-doc kbd {
+  font-family: var(--smd-font-mono); font-size: .8em; padding: .1em .45em; border-radius: 5px;
+  border: 1px solid var(--smd-border); border-bottom-width: 2px; background: var(--smd-surface);
+}
+.smd-kbd-plus { color: var(--smd-fg-muted); padding: 0 .15em; font-size: .85em; }
+
+/* ---------- Code ---------- */
+.smd-doc code {
+  font-family: var(--smd-font-mono); font-size: .88em;
+  background: var(--smd-code-bg); padding: .15em .4em; border-radius: 5px;
+}
+.smd-code { position: relative; margin: 0 0 1em; border: 1px solid var(--smd-border); border-radius: 8px; overflow: hidden; background: var(--smd-code-bg); }
+.smd-code pre { margin: 0; padding: 14px 16px; overflow-x: auto; font-family: var(--smd-font-mono); font-size: .86em; line-height: 1.55; }
+.smd-code pre code { background: none; padding: 0; font-size: 1em; line-height: inherit; }
+.smd-code-title {
+  font-family: var(--smd-font-mono); font-size: .8em; padding: 6px 16px; color: var(--smd-fg-muted);
+  border-bottom: 1px solid var(--smd-border); background: var(--smd-surface);
+}
+.smd-code-lang {
+  position: absolute; top: 6px; right: 10px; font-size: .7em; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--smd-fg-muted); pointer-events: none;
+}
+.smd-copy {
+  position: absolute; bottom: 8px; right: 8px; opacity: 0; transition: opacity .15s;
+  font: 12px var(--smd-font-sans); padding: 3px 8px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--smd-border); background: var(--smd-bg); color: var(--smd-fg-muted);
+}
+.smd-code:hover .smd-copy { opacity: 1; }
+
+/* highlight.js tokens */
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta .hljs-keyword { color: var(--smd-purple); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute .hljs-string { color: var(--smd-green); }
+.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet { color: var(--smd-orange); }
+.hljs-title, .hljs-title.function_, .hljs-section { color: var(--smd-blue); }
+.hljs-type, .hljs-title.class_, .hljs-class .hljs-title { color: var(--smd-amber); }
+.hljs-attr, .hljs-attribute, .hljs-variable, .hljs-template-variable, .hljs-property { color: var(--smd-cyan); }
+.hljs-comment, .hljs-quote, .hljs-meta { color: var(--smd-fg-muted); font-style: italic; }
+.hljs-deletion { color: var(--smd-red); }
+.hljs-tag, .hljs-name { color: var(--smd-pink); }
+
+/* ---------- Tables ---------- */
+.smd-table-wrap { overflow-x: auto; }
+.smd-doc table { border-collapse: collapse; width: max-content; max-width: 100%; font-size: .94em; }
+.smd-doc th, .smd-doc td { border: 1px solid var(--smd-border); padding: 6px 12px; }
+.smd-doc th { background: var(--smd-surface); font-weight: 600; }
+.smd-doc tr:nth-child(2n) td { background: color-mix(in srgb, var(--smd-surface) 60%, transparent); }
+
+/* ---------- Tasks ---------- */
+.smd-task-list { list-style: none; padding-left: 1.2em; }
+.smd-task { position: relative; }
+.smd-task-box { margin: 0 .5em 0 -1.3em; vertical-align: -0.1em; accent-color: var(--smd-accent); cursor: pointer; }
+.smd-task-done > p, .smd-task-done { color: var(--smd-fg-muted); }
+
+/* ---------- Document header ---------- */
+.smd-doc-header {
+  padding: 24px 28px; margin: 0 0 32px; border-radius: 14px;
+  background: linear-gradient(135deg, var(--smd-accent-soft), transparent 70%), var(--smd-surface);
+  border: 1px solid var(--smd-border);
+}
+.smd-doc-top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .82em; color: var(--smd-fg-muted); }
+.smd-dot { opacity: .6; }
+.smd-doc-title { margin: .35em 0 .2em !important; font-size: 2.1em !important; border: 0 !important; }
+.smd-doc-title::before { display: none !important; }
+.smd-doc-summary { font-size: 1.08em; color: var(--smd-fg-muted); margin: 0 0 .6em; }
+.smd-doc-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: .85em; }
+.smd-doc-meta > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.smd-doc-meta-label { color: var(--smd-fg-muted); text-transform: uppercase; letter-spacing: .06em; font-size: .78em; margin-right: 2px; }
+.smd-doc-status {
+  text-transform: uppercase; letter-spacing: .06em; font-weight: 700; font-size: .85em;
+  padding: 2px 8px; border-radius: 999px; background: var(--smd-gray-soft); color: var(--smd-gray);
+}
+.smd-doc-status-draft { background: var(--smd-amber-soft); color: var(--smd-amber); }
+.smd-doc-status-review { background: var(--smd-blue-soft); color: var(--smd-blue); }
+.smd-doc-status-approved { background: var(--smd-green-soft); color: var(--smd-green); }
+.smd-doc-status-deprecated { background: var(--smd-red-soft); color: var(--smd-red); }
+.smd-tag { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--smd-border); font-size: .92em; }
+
+/* ---------- TOC ---------- */
+.smd-toc { margin: 0 0 32px; padding: 14px 20px; border-left: 3px solid var(--smd-accent); background: var(--smd-surface); border-radius: 0 10px 10px 0; }
+.smd-toc-title { font-weight: 650; font-size: .8em; text-transform: uppercase; letter-spacing: .08em; color: var(--smd-fg-muted); margin-bottom: 4px; }
+.smd-toc ul { list-style: none; padding: 0; margin: 0; columns: 2 220px; }
+.smd-toc li { margin: 2px 0; break-inside: avoid; }
+.smd-toc-l3 { padding-left: 1em; font-size: .92em; }
+
+/* ---------- Inline directives ---------- */
+.smd-badge {
+  --smd-badge: var(--smd-accent);
+  display: inline-block; font-size: .78em; font-weight: 650; line-height: 1.5; padding: 0 .6em;
+  border-radius: 999px; vertical-align: .08em; white-space: nowrap;
+  color: var(--smd-badge); background: color-mix(in srgb, var(--smd-badge) var(--smd-soft), transparent);
+  border: 1px solid color-mix(in srgb, var(--smd-badge) 35%, transparent);
+}
+.smd-status { display: inline-flex; align-items: center; gap: .4em; font-weight: 550; }
+.smd-status-dot { width: .6em; height: .6em; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 8%, transparent); }
+.smd-mention { color: var(--smd-accent); background: var(--smd-accent-soft); padding: 0 .35em; border-radius: 4px; font-weight: 550; }
+.smd-progress { display: inline-flex; align-items: center; gap: .5em; vertical-align: middle; }
+.smd-progress-track { display: inline-block; width: 120px; height: 8px; border-radius: 999px; background: var(--smd-gray-soft); overflow: hidden; }
+.smd-progress-bar { display: block; height: 100%; border-radius: 999px; background: var(--smd-accent); }
+.smd-progress-label { font-size: .82em; color: var(--smd-fg-muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- Callouts ---------- */
+.smd-callout {
+  --c: var(--smd-gray);
+  margin: 0 0 1.2em; padding: 12px 16px; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--c) 30%, transparent);
+  border-left: 4px solid var(--c);
+  background: color-mix(in srgb, var(--c) 7%, transparent);
+}
+.smd-callout-note { --c: var(--smd-gray); }
+.smd-callout-info { --c: var(--smd-blue); }
+.smd-callout-tip { --c: var(--smd-teal); }
+.smd-callout-success { --c: var(--smd-green); }
+.smd-callout-warning { --c: var(--smd-amber); }
+.smd-callout-danger { --c: var(--smd-red); }
+.smd-callout-question { --c: var(--smd-purple); }
+.smd-callout-title { display: flex; gap: .5em; align-items: center; font-weight: 650; color: var(--c); }
+.smd-callout-title + .smd-callout-body { margin-top: 4px; }
+.smd-callout-body > :last-child { margin-bottom: 0; }
+details.smd-callout > summary { cursor: pointer; list-style: none; }
+details.smd-callout > summary::after { content: "▸"; margin-left: auto; transition: transform .15s; }
+details.smd-callout[open] > summary::after { transform: rotate(90deg); }
+details.smd-callout > summary::-webkit-details-marker { display: none; }
+.smd-callout-icon { width: 1.2em; text-align: center; }
+
+/* ---------- Details ---------- */
+.smd-details { margin: 0 0 1em; border: 1px solid var(--smd-border); border-radius: 10px; background: var(--smd-surface); }
+.smd-details > summary { cursor: pointer; padding: 10px 16px; font-weight: 600; }
+.smd-details-body { padding: 0 16px 4px; }
+
+/* ---------- Card, box ---------- */
+.smd-card {
+  --smd-card-accent: var(--smd-accent);
+  margin: 0 0 1.2em; border: 1px solid var(--smd-border); border-top: 3px solid var(--smd-card-accent);
+  border-radius: 10px; padding: 14px 18px; background: var(--smd-surface);
+}
+.smd-card-title { font-weight: 650; font-size: 1.05em; margin-bottom: 6px; color: var(--smd-card-accent); }
+.smd-card-body > :last-child, .smd-box > :last-child, .smd-column > :last-child { margin-bottom: 0; }
+.smd-box { margin: 0 0 1.2em; padding: 14px 18px; border-radius: 10px; }
+
+/* ---------- Columns ---------- */
+.smd-columns { display: flex; gap: 20px; margin: 0 0 1.2em; flex-wrap: wrap; }
+.smd-column { flex: 1 1 0; min-width: 220px; }
+
+/* ---------- Tabs ---------- */
+.smd-tabs { margin: 0 0 1.2em; border: 1px solid var(--smd-border); border-radius: 10px; overflow: hidden; }
+.smd-tabbar { display: flex; gap: 2px; padding: 0 8px; background: var(--smd-surface); border-bottom: 1px solid var(--smd-border); overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.smd-tabbar button {
+  font: inherit; font-size: .9em; background: none; border: 0; color: var(--smd-fg-muted); cursor: pointer;
+  padding: 8px 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
+}
+.smd-tabbar button[aria-selected="true"] { color: var(--smd-fg); border-bottom-color: var(--smd-accent); font-weight: 600; }
+.smd-tab { padding: 14px 16px 2px; }
+.smd-tabs.smd-js .smd-tab-label { display: none; }
+.smd-tabs.smd-js .smd-tab:not(.smd-active) { display: none; }
+.smd-tab-label { font-weight: 650; margin-bottom: 6px; }
+.smd-tab .smd-code { margin-bottom: 12px; }
+
+/* ---------- Steps ---------- */
+.smd-steps > ol { list-style: none; counter-reset: smd-step; padding-left: 0; }
+.smd-steps > ol > li { counter-increment: smd-step; position: relative; padding: 0 0 18px 44px; }
+.smd-steps > ol > li::before {
+  content: counter(smd-step); position: absolute; left: 0; top: -.05em; width: 28px; height: 28px;
+  border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: .85em;
+  color: var(--smd-bg); background: var(--smd-accent);
+}
+.smd-steps > ol > li:not(:last-child)::after {
+  content: ""; position: absolute; left: 13px; top: 30px; bottom: 2px; width: 2px; background: var(--smd-border);
+}
+
+/* ---------- Audience blocks ---------- */
+.smd-agent { margin: 0 0 1.2em; border: 1px dashed color-mix(in srgb, var(--smd-cyan) 55%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--smd-cyan) 5%, transparent); }
+.smd-agent-title { cursor: pointer; padding: 8px 14px; font-size: .9em; font-weight: 600; color: var(--smd-cyan); display: flex; gap: .5em; }
+.smd-agent-body { padding: 0 16px 4px; font-size: .95em; }
+.smd-human { margin: 0 0 1.2em; padding: 10px 16px; border-radius: 10px; background: var(--smd-surface); border: 1px solid var(--smd-border); }
+.smd-human-title { font-size: .9em; font-weight: 600; color: var(--smd-fg-muted); display: flex; gap: .5em; margin-bottom: 4px; }
+.smd-human-body > :last-child, .smd-agent-body > :last-child, .smd-details-body > :last-child { margin-bottom: 0.6em; }
+
+/* ---------- Diagrams & math ---------- */
+.smd-diagram { margin: 0 0 1.2em; padding: 16px; border: 1px solid var(--smd-border); border-radius: 10px; background: var(--smd-surface); overflow-x: auto; text-align: center; }
+.smd-diagram pre.smd-mermaid { margin: 0; text-align: left; font-family: var(--smd-font-mono); font-size: .85em; color: var(--smd-fg-muted); white-space: pre-wrap; }
+.smd-diagram svg { max-width: 100%; height: auto; }
+.smd-math-block { overflow-x: auto; margin: 0 0 1em; }
+.smd-error { color: var(--smd-red); font-family: var(--smd-font-mono); font-size: .85em; white-space: pre-wrap; display: block; text-align: left; }
+
+/* ---------- Utility classes from {.class} ---------- */
+.smd-u-center { text-align: center; }
+.smd-u-muted { color: var(--smd-fg-muted); }
+.smd-u-lead { font-size: 1.15em; }
+
+@media (max-width: 600px) {
+  .smd-doc { padding-top: 16px; }
+  .smd-doc-header { padding: 18px; }
+  .smd-columns { flex-direction: column; }
+}
+
+/* ---------- Code: line highlights ---------- */
+pre.smd-has-hl { position: relative; }
+pre.smd-has-hl code { position: relative; }
+.smd-hl-line {
+  position: absolute; left: 0; right: 0; height: 1.55em; pointer-events: none;
+  background: color-mix(in srgb, var(--smd-accent) 14%, transparent);
+  border-left: 3px solid var(--smd-accent);
+}
+
+/* ---------- Headings hidden from agents ---------- */
+.smd-doc [data-agent="skip"]::after {
+  content: "humans only"; margin-left: .6em; vertical-align: middle;
+  font: 600 .5em/1.6 var(--smd-font-sans); letter-spacing: .06em; text-transform: uppercase;
+  padding: .1em .6em; border-radius: 999px; color: var(--smd-fg-muted); border: 1px solid var(--smd-border);
+}
+.smd-doc h2[data-agent="skip"]::after { font-size: .45em; }
+
+/* ---------- Priority & due ---------- */
+.smd-priority {
+  --smd-badge: var(--smd-gray);
+  display: inline-block; font-size: .75em; font-weight: 750; line-height: 1.5; padding: 0 .5em; border-radius: 4px;
+  color: var(--smd-bg); background: var(--smd-badge); vertical-align: .08em; letter-spacing: .02em;
+}
+.smd-due {
+  display: inline-block; font-size: .8em; line-height: 1.5; padding: 0 .5em; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--smd-border); color: var(--smd-fg-muted); vertical-align: .05em;
+}
+.smd-due-soon { color: var(--smd-amber); border-color: color-mix(in srgb, var(--smd-amber) 45%, transparent); background: var(--smd-amber-soft); }
+.smd-due-overdue { color: var(--smd-red); border-color: color-mix(in srgb, var(--smd-red) 45%, transparent); background: var(--smd-red-soft); font-weight: 650; }
+.smd-task-done .smd-due { color: var(--smd-fg-muted); background: none; border-color: var(--smd-border); font-weight: 400; }
+
+/* ---------- Metric tiles ---------- */
+.smd-metric {
+  display: inline-flex; flex-direction: column; gap: 2px; vertical-align: top; min-width: 130px;
+  margin: 4px 8px 4px 0; padding: 10px 14px; border-radius: 10px;
+  background: var(--smd-surface); border: 1px solid var(--smd-border);
+}
+.smd-metric-value { font-size: 1.6em; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.smd-metric-label { font-size: .78em; color: var(--smd-fg-muted); text-transform: uppercase; letter-spacing: .05em; }
+.smd-metric-delta { font-size: .8em; font-weight: 650; }
+.smd-metric-good { color: var(--smd-green); }
+.smd-metric-bad { color: var(--smd-red); }
+.smd-metric-flat { color: var(--smd-fg-muted); }
+
+/* ---------- Decision ---------- */
+.smd-decision {
+  --c: var(--smd-blue);
+  margin: 0 0 1.2em; border: 1px solid var(--smd-border); border-radius: 10px; padding: 12px 16px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 8%, transparent), transparent 60%);
+  border-left: 4px solid var(--c);
+}
+.smd-decision-accepted { --c: var(--smd-green); }
+.smd-decision-rejected { --c: var(--smd-red); }
+.smd-decision-superseded, .smd-decision-deprecated { --c: var(--smd-gray); }
+.smd-decision-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .8em; }
+.smd-decision-label { font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--smd-fg-muted); }
+.smd-decision-status { font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 0 .6em; border-radius: 999px; color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); }
+.smd-decision-facts { color: var(--smd-fg-muted); display: inline-flex; gap: 6px; }
+.smd-decision-title { font-weight: 650; font-size: 1.05em; margin: 6px 0 4px; }
+.smd-decision-superseded .smd-decision-title, .smd-decision-rejected .smd-decision-title { text-decoration: line-through; opacity: .75; }
+.smd-decision-body > :last-child, .smd-risk-body > :last-child, .smd-api-body > :last-child { margin-bottom: 0; }
+
+/* ---------- Risk ---------- */
+.smd-risk { --c: var(--smd-amber); margin: 0 0 1.2em; border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); border-radius: 10px; padding: 12px 16px; background: color-mix(in srgb, var(--c) 6%, transparent); }
+.smd-risk-low { --c: var(--smd-green); }
+.smd-risk-high { --c: var(--smd-orange); }
+.smd-risk-critical { --c: var(--smd-red); }
+.smd-risk-head { display: flex; gap: .5em; align-items: center; font-weight: 650; color: var(--c); }
+.smd-risk-facts { display: flex; flex-wrap: wrap; gap: 6px; font-size: .82em; color: var(--smd-fg-muted); margin: 2px 0 6px; }
+.smd-risk-facts b { color: var(--c); text-transform: uppercase; font-size: .9em; letter-spacing: .04em; }
+.smd-risk-status { text-transform: uppercase; font-weight: 650; letter-spacing: .04em; }
+
+/* ---------- API endpoint ---------- */
+.smd-api { margin: 0 0 1.2em; border: 1px solid var(--smd-border); border-radius: 10px; overflow: hidden; }
+.smd-api-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 14px; background: var(--smd-surface); border-bottom: 1px solid var(--smd-border); }
+.smd-api-method { --c: var(--smd-gray); font: 700 .75em/1.7 var(--smd-font-mono); padding: 0 .6em; border-radius: 5px; color: var(--smd-bg); background: var(--c); letter-spacing: .04em; }
+.smd-api-get { --c: var(--smd-blue); } .smd-api-post { --c: var(--smd-green); } .smd-api-put, .smd-api-patch { --c: var(--smd-amber); }
+.smd-api-delete { --c: var(--smd-red); } .smd-api-ws, .smd-api-event, .smd-api-rpc { --c: var(--smd-purple); }
+.smd-doc code.smd-api-path { background: none; padding: 0; font-size: .92em; font-weight: 600; }
+.smd-api-title { color: var(--smd-fg-muted); font-size: .92em; }
+.smd-api-auth { margin-left: auto; font-size: .78em; color: var(--smd-fg-muted); }
+.smd-api-body { padding: 12px 14px; }
+
+/* ---------- Timeline ---------- */
+.smd-timeline > ul, .smd-timeline > ol { list-style: none; padding-left: 0; margin-left: 6px; border-left: 2px solid var(--smd-border); }
+.smd-timeline > ul > li, .smd-timeline > ol > li { position: relative; padding: 0 0 14px 22px; }
+.smd-timeline > ul > li::before, .smd-timeline > ol > li::before {
+  content: ""; position: absolute; left: -7px; top: .45em; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--smd-bg); border: 2px solid var(--smd-accent);
+}
+.smd-timeline li.smd-task-done::before { background: var(--smd-green); border-color: var(--smd-green); }
+.smd-timeline li.smd-task .smd-task-box { margin-left: 0; }
+
+</style>
+</head>
+<body class="smd-body">
+<main id="smd-root"><article class="smd-doc" style="--smd-accent:var(--smd-indigo)"><header class="smd-doc-header" data-line="0">
+<div class="smd-doc-top"><span class="smd-doc-status smd-doc-status-review">review</span><span class="smd-dot">·</span><span>v1</span><span class="smd-dot">·</span><span>Updated 2026-09-26</span><span class="smd-dot">·</span><span>For both</span></div>
+<h1 class="smd-doc-title">Styled Markdown Showcase</h1>
+<p class="smd-doc-summary">A tour of every <strong>.smd</strong> feature — open the preview (Ctrl+K V) side by side with this file.</p>
+<div class="smd-doc-meta"><div><span class="smd-doc-meta-label">Owners</span><span class="smd-mention">@docs-team</span> <span class="smd-mention">@platform</span></div><div><span class="smd-doc-meta-label">Tags</span><span class="smd-tag">example</span> <span class="smd-tag">reference</span></div></div>
+</header><nav class="smd-toc"><div class="smd-toc-title">Contents</div><ul><li class="smd-toc-l2"><a href="#everything-from-markdown-still-works">Everything from Markdown still works</a></li><li class="smd-toc-l2"><a href="#inline-styling">Inline styling</a></li><li class="smd-toc-l2"><a href="#callouts">Callouts</a></li><li class="smd-toc-l2"><a href="#diagrams">Diagrams</a></li><li class="smd-toc-l2"><a href="#layout">Layout</a></li><li class="smd-toc-l2"><a href="#code-with-titles">Code with titles</a></li><li class="smd-toc-l2"><a href="#math">Math</a></li><li class="smd-toc-l2"><a href="#for-product-project-managers">For product &amp; project managers</a></li><li class="smd-toc-l2"><a href="#for-developers">For developers</a></li><li class="smd-toc-l2"><a href="#background-and-history">Background and history</a></li><li class="smd-toc-l2"><a href="#audience-specific-content">Audience-specific content</a></li></ul></nav><h2 id="everything-from-markdown-still-works" data-line="14">Everything from Markdown still works</h2>
+<p data-line="16">Plain <strong>bold</strong>, <em>italic</em>, <s>strike</s>, <code>inline code</code>, <a href="#callouts">links</a>, autolinks like <a href="https://code.visualstudio.com">https://code.visualstudio.com</a>, tables, lists and images.</p>
+<div class="smd-table-wrap"><table data-line="18">
+<thead data-line="18">
+<tr data-line="18">
+<th>Feature</th>
+<th style="text-align:center"><code>.md</code></th>
+<th style="text-align:center"><code>.smd</code></th>
+</tr>
+</thead>
+<tbody data-line="20">
+<tr data-line="20">
+<td>Text &amp; tables</td>
+<td style="text-align:center">✅</td>
+<td style="text-align:center">✅</td>
+</tr>
+<tr data-line="21">
+<td>Colors</td>
+<td style="text-align:center">❌</td>
+<td style="text-align:center">✅</td>
+</tr>
+<tr data-line="22">
+<td>Diagrams</td>
+<td style="text-align:center">⚠️</td>
+<td style="text-align:center">✅</td>
+</tr>
+<tr data-line="23">
+<td>Validation</td>
+<td style="text-align:center">❌</td>
+<td style="text-align:center">✅</td>
+</tr>
+</tbody>
+</table>
+</div><ul class="smd-task-list smd-task-list smd-task-list" data-line="25">
+<li class="smd-task smd-task-done" data-line="25"><input type="checkbox" class="smd-task-box" data-task-line="25" checked>Every <code>.md</code> file is already a valid <code>.smd</code> file</li>
+<li class="smd-task smd-task-done" data-line="26"><input type="checkbox" class="smd-task-box" data-task-line="26" checked>Click a checkbox in the preview to toggle it in the source</li>
+<li class="smd-task" data-line="27"><input type="checkbox" class="smd-task-box" data-task-line="27">Try it now</li>
+</ul>
+<h2 id="inline-styling" data-line="29">Inline styling</h2>
+<p data-line="31">Use <strong>named colors</strong> that adapt to light and dark themes: <span class="smd-span" style="color:var(--smd-red)">red</span>, <span class="smd-span" style="color:var(--smd-orange)">orange</span>, <span class="smd-span" style="color:var(--smd-green)">green</span>, <span class="smd-span" style="color:var(--smd-blue)">blue</span>, <span class="smd-span" style="color:var(--smd-purple)">purple</span> — or any hex like <span class="smd-span" style="color:#0ea5e9">#0ea5e9</span>.</p>
+<p data-line="33">Combine attributes: <span class="smd-span" style="color:var(--smd-red);font-weight:700">critical path</span>, <span class="smd-span" style="background:var(--smd-amber-soft);padding:0 .25em;border-radius:3px">soft background</span>, <span class="smd-span" style="border:1px solid var(--smd-blue);padding:0 .25em;border-radius:3px">outlined</span>, <span class="smd-span" style="font-size:1.25em">big text</span>, <span class="smd-span" style="font-family:var(--smd-font-mono)">monospace</span>, <span class="smd-span" style="text-decoration:line-through">struck</span>. Highlight with <mark>double equals</mark>.</p>
+<p data-line="35">Inline directives: <span class="smd-badge" style="--smd-badge:var(--smd-green)">Shipped</span> <span class="smd-badge" style="--smd-badge:var(--smd-amber)">Beta</span> <span class="smd-badge" style="--smd-badge:var(--smd-red)">Deprecated</span> · <span class="smd-status"><span class="smd-status-dot" style="background:var(--smd-green)"></span>On track</span> · <span class="smd-status"><span class="smd-status-dot" style="background:var(--smd-red)"></span>At risk</span> · press <kbd>Ctrl</kbd><span class="smd-kbd-plus">+</span><kbd>Shift</kbd><span class="smd-kbd-plus">+</span><kbd>P</kbd> · ping <span class="smd-mention">@platform</span> · progress <span class="smd-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="65"><span class="smd-progress-track"><span class="smd-progress-bar" style="width:65%"></span></span><span class="smd-progress-label">65%</span></span></p>
+<h2 id="callouts" data-line="37">Callouts</h2>
+<div class="smd-callout smd-callout-note" data-line="39"><div class="smd-callout-title"><span class="smd-callout-icon" aria-hidden="true">✎</span><span>Note</span></div><div class="smd-callout-body">
+<p data-line="40">A neutral note. Callouts can contain <strong>any</strong> Markdown, including lists and code.</p>
+</div></div>
+<div class="smd-callout smd-callout-tip" data-line="43"><div class="smd-callout-title"><span class="smd-callout-icon" aria-hidden="true">💡</span><span>Pro tip</span></div><div class="smd-callout-body">
+<p data-line="44">Custom titles go right after the name.</p>
+</div></div>
+<details class="smd-callout smd-callout-warning" data-line="47"><summary class="smd-callout-title"><span class="smd-callout-icon" aria-hidden="true">⚠</span><span>Breaking change in v2 (click to expand)</span></summary><div class="smd-callout-body">
+<p data-line="48">The <code>render()</code> signature changed. Collapsible callouts start closed; use <code>{collapsible=open}</code> to start open.</p>
+</div></details>
+<div class="smd-callout smd-callout-danger" data-line="51"><div class="smd-callout-title"><span class="smd-callout-icon" aria-hidden="true">⛔</span><span>Danger</span></div><div class="smd-callout-body">
+<p data-line="52">Never commit secrets to the repository.</p>
+</div></div>
+<div class="smd-callout smd-callout-success" data-line="55"><div class="smd-callout-title"><span class="smd-callout-icon" aria-hidden="true">✔</span><span>Deployed</span></div><div class="smd-callout-body">
+<p data-line="56">Release 2.3.0 is live in all regions.</p>
+</div></div>
+<div class="smd-callout smd-callout-question" data-line="59"><div class="smd-callout-title"><span class="smd-callout-icon" aria-hidden="true">?</span><span>Open question</span></div><div class="smd-callout-body">
+<p data-line="60">Should we support Windows ARM in the first release?</p>
+</div></div>
+<h2 id="diagrams" data-line="63">Diagrams</h2>
+<div class="smd-diagram" data-line="65"><pre class="smd-mermaid">flowchart LR
+    A[Write .smd] --&gt; B{Validate}
+    B -- errors --&gt; A
+    B -- ok --&gt; C[Preview]
+    C --&gt; D[Export HTML]
+    C --&gt; E[Export .md for GitHub]
+</pre></div>
+<div class="smd-diagram" data-line="74"><pre class="smd-mermaid">sequenceDiagram
+    participant PM as Product
+    participant Dev as Developer
+    participant Bot as Agent
+    PM-&gt;&gt;Dev: Spec (.smd)
+    Dev-&gt;&gt;Bot: smd meta spec.smd --json
+    Bot--&gt;&gt;Dev: Outline, open tasks, agent notes
+</pre></div>
+<div class="smd-diagram" data-line="84"><pre class="smd-mermaid">pie title Effort split
+    &quot;Design&quot; : 20
+    &quot;Build&quot; : 55
+    &quot;Test&quot; : 25
+</pre></div>
+<h2 id="layout" data-line="91">Layout</h2>
+<div class="smd-columns" data-line="93">
+<div class="smd-column" style="flex:0 0 50%" data-line="94">
+<div class="smd-card" style="--smd-card-accent:var(--smd-green)" data-line="95"><div class="smd-card-title">Frontend</div><div class="smd-card-body">
+<ul data-line="96">
+<li data-line="96">React 19</li>
+<li data-line="97"><span class="smd-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="80"><span class="smd-progress-track"><span class="smd-progress-bar" style="width:80%;background:var(--smd-green)"></span></span><span class="smd-progress-label">80%</span></span></li>
+</ul>
+</div></div>
+</div>
+<div class="smd-column" data-line="100">
+<div class="smd-card" style="--smd-card-accent:var(--smd-blue)" data-line="101"><div class="smd-card-title">Backend</div><div class="smd-card-body">
+<ul data-line="102">
+<li data-line="102">Go services</li>
+<li data-line="103"><span class="smd-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="45"><span class="smd-progress-track"><span class="smd-progress-bar" style="width:45%;background:var(--smd-blue)"></span></span><span class="smd-progress-label">45%</span></span></li>
+</ul>
+</div></div>
+</div>
+</div>
+<div class="smd-tabs" data-line="108">
+<section class="smd-tab" data-line="109" data-title="npm"><div class="smd-tab-label">npm</div>
+<div class="smd-code" data-line="110"><div class="smd-code-lang">bash</div><pre><code class="language-bash">npm install
+npm run build
+</code></pre>
+</div>
+</section>
+<section class="smd-tab" data-line="115" data-title="pnpm"><div class="smd-tab-label">pnpm</div>
+<div class="smd-code" data-line="116"><div class="smd-code-lang">bash</div><pre><code class="language-bash">pnpm install
+pnpm build
+</code></pre>
+</div>
+</section>
+</div>
+<div class="smd-steps" data-line="123">
+<ol data-line="124">
+<li data-line="124"><strong>Install</strong> the extension from the <code>.vsix</code>.</li>
+<li data-line="125"><strong>Create</strong> a file ending in <code>.smd</code>.</li>
+<li data-line="126"><strong>Preview</strong> with <kbd>Ctrl</kbd><span class="smd-kbd-plus">+</span><kbd>K V</kbd>.</li>
+</ol>
+</div>
+<div class="smd-box smd-box-box" style="background:var(--smd-indigo-soft);text-align:center" data-line="129">
+<p data-line="130">A generic styled box — <span class="smd-span" style="font-weight:700">any</span> style attribute works here.</p>
+</div>
+<details class="smd-details" data-line="133"><summary>Implementation notes</summary><div class="smd-details-body">
+<p data-line="134">Hidden until expanded. Great for long logs or rationale.</p>
+</div></details>
+<h2 id="code-with-titles" data-line="137">Code with titles</h2>
+<div class="smd-code" data-line="139"><div class="smd-code-title">src/greet.ts</div><pre><code class="language-ts"><span class="hljs-keyword">export</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">greet</span>(<span class="hljs-params"><span class="hljs-attr">name</span>: <span class="hljs-built_in">string</span></span>): <span class="hljs-built_in">string</span> {
+  <span class="hljs-keyword">return</span> <span class="hljs-string">`Hello, <span class="hljs-subst">${name}</span>!`</span>;
+}
+</code></pre>
+</div>
+<h2 id="math" data-line="145">Math</h2>
+<p data-line="147">Inline math like <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">E = mc^2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.0576em;">E</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord mathnormal">m</span><span class="mord"><span class="mord mathnormal">c</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span></span></span></span> and display math:</p>
+<div class="smd-math-block" data-line="149"><span class="katex-display"><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msubsup><mo>∫</mo><mn>0</mn><mn>1</mn></msubsup><msup><mi>x</mi><mn>2</mn></msup><mtext> </mtext><mi>d</mi><mi>x</mi><mo>=</mo><mfrac><mn>1</mn><mn>3</mn></mfrac></mrow><annotation encoding="application/x-tex">\int_0^1 x^2\,dx = \frac{1}{3}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.476em;vertical-align:-0.9119em;"></span><span class="mop"><span class="mop op-symbol large-op" style="margin-right:0.4445em;position:relative;top:-0.0011em;">∫</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.564em;"><span style="top:-1.7881em;margin-left:-0.4445em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">0</span></span></span><span style="top:-3.8129em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.9119em;"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8641em;"><span style="top:-3.113em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">2</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em;"></span><span class="mord mathnormal">d</span><span class="mord mathnormal">x</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em;"></span></span><span class="base"><span class="strut" style="height:2.0074em;vertical-align:-0.686em;"></span><span class="mord"><span class="mopen nulldelimiter"></span><span class="mfrac"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:1.3214em;"><span style="top:-2.314em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">3</span></span></span><span style="top:-3.23em;"><span class="pstrut" style="height:3em;"></span><span class="frac-line" style="border-bottom-width:0.04em;"></span></span><span style="top:-3.677em;"><span class="pstrut" style="height:3em;"></span><span class="mord"><span class="mord">1</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.686em;"><span></span></span></span></span></span><span class="mclose nulldelimiter"></span></span></span></span></span></span></div>
+<h2 id="for-product-project-managers" data-line="153">For product &amp; project managers</h2>
+<p data-line="155">KPIs at a glance: <span class="smd-metric"><span class="smd-metric-value">42%</span><span class="smd-metric-label">Activation</span><span class="smd-metric-delta smd-metric-good">▲ +3.1%</span></span> <span class="smd-metric"><span class="smd-metric-value">1.8s</span><span class="smd-metric-label">p95 load</span><span class="smd-metric-delta smd-metric-good">▼ -0.4s</span></span> <span class="smd-metric"><span class="smd-metric-value">312</span><span class="smd-metric-label">Open bugs</span><span class="smd-metric-delta smd-metric-bad">▲ +12</span></span></p>
+<ul class="smd-task-list smd-task-list smd-task-list" data-line="157">
+<li class="smd-task" data-line="157"><input type="checkbox" class="smd-task-box" data-task-line="157">Finalize pricing page copy <span class="smd-priority" style="--smd-badge:var(--smd-orange)">P1</span> @maya <span class="smd-due smd-due-soon" title="Due 2026-10-02">📅 2026-10-02</span></li>
+<li class="smd-task" data-line="158"><input type="checkbox" class="smd-task-box" data-task-line="158">Legal review of new terms <span class="smd-priority" style="--smd-badge:var(--smd-red)">P0</span> @legal <span class="smd-due smd-due-overdue" title="Due 2026-09-20 (overdue)">📅 2026-09-20</span></li>
+<li class="smd-task smd-task-done" data-line="159"><input type="checkbox" class="smd-task-box" data-task-line="159" checked>Kickoff with design <span class="smd-priority" style="--smd-badge:var(--smd-amber)">P2</span> @sam <span class="smd-due smd-due-overdue" title="Due 2026-09-10 (overdue)">📅 2026-09-10</span></li>
+</ul>
+<div class="smd-decision smd-decision-accepted" data-line="161"><div class="smd-decision-head"><span class="smd-decision-label">Decision</span><span class="smd-decision-status">accepted</span><span class="smd-decision-facts"><span>2026-09-12</span><span class="smd-dot">·</span><span>@maya</span></span></div><div class="smd-decision-title">Launch in the EU before the US</div><div class="smd-decision-body">
+<p data-line="162">EU customers make up 60% of the waitlist, and the GDPR work is already done.</p>
+</div></div>
+<div class="smd-decision smd-decision-superseded" data-line="165"><div class="smd-decision-head"><span class="smd-decision-label">Decision</span><span class="smd-decision-status">superseded</span><span class="smd-decision-facts"><span>2026-08-01</span><span class="smd-dot">·</span><span>@maya</span></span></div><div class="smd-decision-title">Launch everywhere at once</div><div class="smd-decision-body">
+<p data-line="166">Replaced by the EU-first decision above.</p>
+</div></div>
+<div class="smd-risk smd-risk-high" data-line="169"><div class="smd-risk-head"><span class="smd-risk-icon" aria-hidden="true">⚑</span><span class="smd-risk-title">Payment provider rate limits during launch</span></div><div class="smd-risk-facts">Impact <b>high</b><span class="smd-dot">·</span>Likelihood <b>medium</b><span class="smd-dot">·</span>Owner @ops<span class="smd-dot">·</span><span class="smd-risk-status">open</span></div><div class="smd-risk-body">
+<p data-line="170">Pre-warm the connection pool and ask the provider for a temporary quota increase.</p>
+</div></div>
+<div class="smd-timeline" data-line="173">
+<ul class="smd-task-list smd-task-list smd-task-list smd-task-list" data-line="174">
+<li class="smd-task smd-task-done" data-line="174"><input type="checkbox" class="smd-task-box" data-task-line="174" checked><strong>2026-09-01</strong> — Discovery complete</li>
+<li class="smd-task smd-task-done" data-line="175"><input type="checkbox" class="smd-task-box" data-task-line="175" checked><strong>2026-09-15</strong> — Design sign-off</li>
+<li class="smd-task" data-line="176"><input type="checkbox" class="smd-task-box" data-task-line="176"><strong>2026-10-01</strong> — Private beta</li>
+<li class="smd-task" data-line="177"><input type="checkbox" class="smd-task-box" data-task-line="177"><strong>2026-11-01</strong> — General availability</li>
+</ul>
+</div>
+<h2 id="for-developers" data-line="180">For developers</h2>
+<div class="smd-api" data-line="182"><div class="smd-api-head"><span class="smd-api-method smd-api-post">POST</span><code class="smd-api-path">/v1/orders</code><span class="smd-api-title">Create an order</span><span class="smd-api-auth">🔒 bearer token</span></div><div class="smd-api-body">
+<div class="smd-table-wrap"><table data-line="183">
+<thead data-line="183">
+<tr data-line="183">
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody data-line="185">
+<tr data-line="185">
+<td><code>items</code></td>
+<td>array</td>
+<td>yes</td>
+<td>At least one line item</td>
+</tr>
+<tr data-line="186">
+<td><code>coupon</code></td>
+<td>string</td>
+<td>no</td>
+<td>Validated server-side</td>
+</tr>
+</tbody>
+</table>
+</div><p data-line="188"><strong>Responses:</strong> <code>201</code> created · <code>409</code> duplicate idempotency key · <code>422</code> validation error</p>
+</div></div>
+<p data-line="191">Highlight lines with <code>{…}</code> after the language:</p>
+<div class="smd-code" data-line="193"><div class="smd-code-title">src/retry.ts</div><pre class="smd-has-hl"><span class="smd-hl-line" style="top:calc(14px + 1 * 1.55em)"></span><span class="smd-hl-line" style="top:calc(14px + 3 * 1.55em)"></span><span class="smd-hl-line" style="top:calc(14px + 4 * 1.55em)"></span><code class="language-ts"><span class="hljs-keyword">export</span> <span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> retry&lt;T&gt;(<span class="hljs-attr">fn</span>: <span class="hljs-function">() =&gt;</span> <span class="hljs-title class_">Promise</span>&lt;T&gt;, attempts = <span class="hljs-number">3</span>): <span class="hljs-title class_">Promise</span>&lt;T&gt; {
+  <span class="hljs-keyword">for</span> (<span class="hljs-keyword">let</span> i = <span class="hljs-number">1</span>; ; i++) {
+    <span class="hljs-keyword">try</span> { <span class="hljs-keyword">return</span> <span class="hljs-keyword">await</span> <span class="hljs-title function_">fn</span>(); }
+    <span class="hljs-keyword">catch</span> (e) {
+      <span class="hljs-keyword">if</span> (i &gt;= attempts) <span class="hljs-keyword">throw</span> e;
+    }
+  }
+}
+</code></pre>
+</div>
+<p data-line="204">Embed real source so docs never drift from the code (lines 1–12 of a file in this repo):</p>
+<div class="smd-code" data-line="206"><div class="smd-code-title">src/pricing.ts:1-12</div><pre class="smd-has-hl"><span class="smd-hl-line" style="top:calc(14px + 4 * 1.55em)"></span><code class="language-ts"><span class="hljs-keyword">export</span> <span class="hljs-keyword">interface</span> <span class="hljs-title class_">LineItem</span> {
+  <span class="hljs-attr">sku</span>: <span class="hljs-built_in">string</span>;
+  <span class="hljs-attr">quantity</span>: <span class="hljs-built_in">number</span>;
+  <span class="hljs-attr">unitPriceCents</span>: <span class="hljs-built_in">number</span>;
+}
+
+<span class="hljs-keyword">export</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">subtotalCents</span>(<span class="hljs-params"><span class="hljs-attr">items</span>: <span class="hljs-title class_">LineItem</span>[]</span>): <span class="hljs-built_in">number</span> {
+  <span class="hljs-keyword">return</span> items.<span class="hljs-title function_">reduce</span>(<span class="hljs-function">(<span class="hljs-params">sum, item</span>) =&gt;</span> sum + item.<span class="hljs-property">quantity</span> * item.<span class="hljs-property">unitPriceCents</span>, <span class="hljs-number">0</span>);
+}
+
+<span class="hljs-keyword">export</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">applyCoupon</span>(<span class="hljs-params"><span class="hljs-attr">subtotal</span>: <span class="hljs-built_in">number</span>, <span class="hljs-attr">percentOff</span>: <span class="hljs-built_in">number</span></span>): <span class="hljs-built_in">number</span> {
+  <span class="hljs-keyword">return</span> <span class="hljs-title class_">Math</span>.<span class="hljs-title function_">round</span>(subtotal * (<span class="hljs-number">1</span> - <span class="hljs-title class_">Math</span>.<span class="hljs-title function_">min</span>(<span class="hljs-title class_">Math</span>.<span class="hljs-title function_">max</span>(percentOff, <span class="hljs-number">0</span>), <span class="hljs-number">100</span>) / <span class="hljs-number">100</span>));
+</code></pre>
+</div>
+<h2 data-agent="skip" id="background-and-history" data-line="209">Background and history</h2>
+<p data-line="211">This section is marked <code>{agent=skip}</code>: it shows a “humans only” tag here, and <code>smd agent</code> leaves it out so agents don’t pay for history they don’t need.</p>
+<h2 id="audience-specific-content" data-line="213">Audience-specific content</h2>
+<details class="smd-agent" data-line="215"><summary class="smd-agent-title"><span class="smd-agent-icon" aria-hidden="true">🤖</span><span>For agents: Implementation constraints</span></summary><div class="smd-agent-body">
+<ul data-line="216">
+<li data-line="216">Do not change the public API in <code>src/core/index.ts</code>.</li>
+<li data-line="217">Run <code>npm test</code> and <code>smd validate</code> before proposing changes.</li>
+<li data-line="218">Prefer named colors over hex values.</li>
+</ul>
+</div></details>
+<div class="smd-human" data-line="221"><div class="smd-human-title"><span aria-hidden="true">👤</span><span>For humans: Why this matters</span></div><div class="smd-human-body">
+<p data-line="222">Agents get precise constraints; humans see a short rationale and can expand the agent notes when curious.</p>
+</div></div>
+</article></main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+/* Styled Markdown runtime — used by the VS Code preview and by exported HTML. */
+(function () {
+  'use strict';
+
+  const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+  const html = document.documentElement;
+  const svgCache = new Map();
+  const tabState = new Map();
+  let diagramSeq = 0;
+
+  function currentTheme() {
+    const pref = html.getAttribute('data-smd-theme-pref') || 'auto';
+    if (pref === 'light' || pref === 'dark') return pref;
+    const b = document.body.classList;
+    if (b.contains('vscode-high-contrast-light') || b.contains('vscode-light')) return 'light';
+    if (b.contains('vscode-dark') || b.contains('vscode-high-contrast')) return 'dark';
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
+  function applyTheme() {
+    const theme = currentTheme();
+    const changed = html.getAttribute('data-smd-theme') !== theme;
+    html.setAttribute('data-smd-theme', theme);
+    return changed;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  // ---- Tabs ---------------------------------------------------------------
+  function initTabs(scope) {
+    scope.querySelectorAll('.smd-tabs').forEach((tabs, groupIndex) => {
+      if (tabs.classList.contains('smd-js')) return;
+      const panes = Array.from(tabs.children).filter((el) => el.classList.contains('smd-tab'));
+      if (!panes.length) return;
+      const bar = document.createElement('div');
+      bar.className = 'smd-tabbar';
+      bar.setAttribute('role', 'tablist');
+      const select = (i) => {
+        tabState.set(groupIndex, i);
+        panes.forEach((p, j) => p.classList.toggle('smd-active', i === j));
+        bar.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-selected', String(i === j)));
+      };
+      panes.forEach((pane, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('role', 'tab');
+        btn.textContent = pane.getAttribute('data-title') || 'Tab ' + (i + 1);
+        btn.addEventListener('click', () => select(i));
+        bar.appendChild(btn);
+      });
+      tabs.insertBefore(bar, tabs.firstChild);
+      tabs.classList.add('smd-js');
+      select(Math.min(tabState.get(groupIndex) || 0, panes.length - 1));
+    });
+  }
+
+  // ---- Copy buttons -------------------------------------------------------
+  function addCopyButtons(scope) {
+    scope.querySelectorAll('.smd-code').forEach((block) => {
+      if (block.querySelector('.smd-copy')) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'smd-copy';
+      btn.textContent = 'Copy';
+      btn.addEventListener('click', () => {
+        const code = block.querySelector('code');
+        if (!code || !navigator.clipboard) return;
+        navigator.clipboard.writeText(code.textContent || '').then(() => {
+          btn.textContent = 'Copied';
+          setTimeout(() => (btn.textContent = 'Copy'), 1200);
+        });
+      });
+      block.appendChild(btn);
+    });
+  }
+
+  // ---- Mermaid diagrams ---------------------------------------------------
+  function cssVar(name) {
+    return getComputedStyle(html).getPropertyValue(name).trim();
+  }
+
+  /** Blend two #rrggbb colors; t = weight of `a`. */
+  function mix(a, b, t) {
+    const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    if (!/^#[0-9a-f]{6}$/i.test(a) || !/^#[0-9a-f]{6}$/i.test(b)) return a;
+    const [x, y] = [p(a), p(b)];
+    return '#' + x.map((v, i) => Math.round(v * t + y[i] * (1 - t)).toString(16).padStart(2, '0')).join('');
+  }
+
+  /** Derive Mermaid colors from the document palette so diagrams match the page and theme. */
+  function mermaidTheme(dark) {
+    const bg = cssVar('--smd-bg');
+    const fg = cssVar('--smd-fg');
+    const muted = cssVar('--smd-fg-muted');
+    const border = cssVar('--smd-border');
+    const surface = cssVar('--smd-surface');
+    const c = (n) => cssVar('--smd-' + n);
+    const soft = (n) => mix(c(n), surface, dark ? 0.28 : 0.16);
+    const pies = ['indigo', 'teal', 'amber', 'pink', 'blue', 'green', 'orange', 'purple', 'cyan', 'red', 'yellow', 'gray'];
+    const vars = {
+      darkMode: dark,
+      background: surface,
+      fontFamily: getComputedStyle(document.body).fontFamily,
+      fontSize: '14px',
+      primaryColor: soft('indigo'),
+      primaryBorderColor: c('indigo'),
+      primaryTextColor: fg,
+      secondaryColor: soft('teal'),
+      secondaryBorderColor: c('teal'),
+      secondaryTextColor: fg,
+      tertiaryColor: soft('amber'),
+      tertiaryBorderColor: c('amber'),
+      tertiaryTextColor: fg,
+      lineColor: muted,
+      textColor: fg,
+      mainBkg: soft('indigo'),
+      nodeBorder: c('indigo'),
+      clusterBkg: bg,
+      clusterBorder: border,
+      edgeLabelBackground: surface,
+      titleColor: fg,
+      actorBkg: soft('indigo'),
+      actorBorder: c('indigo'),
+      actorTextColor: fg,
+      actorLineColor: muted,
+      signalColor: fg,
+      signalTextColor: fg,
+      labelBoxBkgColor: soft('teal'),
+      labelBoxBorderColor: c('teal'),
+      labelTextColor: fg,
+      noteBkgColor: soft('amber'),
+      noteBorderColor: c('amber'),
+      noteTextColor: fg,
+      pieStrokeColor: surface,
+      pieStrokeWidth: '2px',
+      pieOuterStrokeColor: border,
+      pieOuterStrokeWidth: '1px',
+      pieTitleTextColor: fg,
+      pieSectionTextColor: dark ? bg : '#ffffff',
+      pieLegendTextColor: fg,
+      pieOpacity: '0.9',
+    };
+    pies.forEach((n, i) => { vars['pie' + (i + 1)] = c(n); });
+    pies.forEach((n, i) => { vars['cScale' + i] = soft(n); });
+    return vars;
+  }
+
+  async function renderDiagrams(scope) {
+    const hosts = Array.from(scope.querySelectorAll('.smd-diagram'));
+    if (!hosts.length) return;
+    if (typeof mermaid === 'undefined') {
+      hosts.forEach((h) => h.setAttribute('title', 'Mermaid is not loaded — showing diagram source.'));
+      return;
+    }
+    const theme = currentTheme();
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'base',
+      themeVariables: mermaidTheme(theme === 'dark'),
+    });
+    for (const host of hosts) {
+      const pre = host.querySelector('pre.smd-mermaid');
+      const src = pre ? pre.textContent : host.getAttribute('data-src');
+      if (!src) continue;
+      host.setAttribute('data-src', src);
+      const key = theme + '\u0000' + src;
+      if (svgCache.has(key)) {
+        host.innerHTML = svgCache.get(key);
+        continue;
+      }
+      const id = 'smd-mermaid-' + ++diagramSeq;
+      try {
+        const { svg } = await mermaid.render(id, src);
+        svgCache.set(key, svg);
+        if (svgCache.size > 100) svgCache.delete(svgCache.keys().next().value);
+        host.innerHTML = svg;
+      } catch (err) {
+        const stray = document.getElementById('d' + id);
+        if (stray) stray.remove();
+        host.innerHTML =
+          '<pre class="smd-mermaid">' + escapeHtml(src) + '</pre>' +
+          '<span class="smd-error">Diagram error: ' + escapeHtml((err && err.message) || err) + '</span>';
+      }
+    }
+  }
+
+  function rerenderDiagrams() {
+    document.querySelectorAll('.smd-diagram[data-src]').forEach((host) => {
+      host.innerHTML = '<pre class="smd-mermaid">' + escapeHtml(host.getAttribute('data-src')) + '</pre>';
+    });
+    renderDiagrams(document);
+  }
+
+  async function hydrate(scope) {
+    applyTheme();
+    initTabs(scope);
+    addCopyButtons(scope);
+    await renderDiagrams(scope);
+    if (vscode) {
+      // Lets the extension (and its tests) know what actually rendered.
+      vscode.postMessage({
+        type: 'rendered',
+        diagrams: document.querySelectorAll('.smd-diagram svg').length,
+        errors: document.querySelectorAll('.smd-error').length,
+        math: document.querySelectorAll('.katex').length,
+        tabs: document.querySelectorAll('.smd-tabs.smd-js').length,
+        theme: html.getAttribute('data-smd-theme'),
+      });
+    }
+  }
+
+  // ---- Editor integration (VS Code only) -----------------------------------
+  function lineOf(el) {
+    const node = el && el.closest ? el.closest('[data-line]') : null;
+    return node ? Number(node.getAttribute('data-line')) : null;
+  }
+
+  function scrollToLine(line) {
+    let best = null;
+    document.querySelectorAll('#smd-root [data-line]').forEach((el) => {
+      const l = Number(el.getAttribute('data-line'));
+      if (l <= line && (!best || l >= Number(best.getAttribute('data-line')))) best = el;
+    });
+    if (best) window.scrollTo({ top: best.getBoundingClientRect().top + window.scrollY - 12 });
+    else if (line <= 0) window.scrollTo({ top: 0 });
+  }
+
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target.classList && target.classList.contains('smd-task-box')) {
+      if (vscode) {
+        vscode.postMessage({ type: 'toggleTask', line: Number(target.getAttribute('data-task-line')) });
+      }
+      return;
+    }
+    const a = target.closest && target.closest('a[href]');
+    if (!a) return;
+    const href = a.getAttribute('href');
+    if (href.startsWith('#')) {
+      e.preventDefault();
+      const el = document.getElementById(decodeURIComponent(href.slice(1)));
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    if (vscode) {
+      e.preventDefault();
+      vscode.postMessage({ type: 'openLink', href });
+    }
+  });
+
+  document.addEventListener('dblclick', (e) => {
+    const line = lineOf(e.target);
+    if (vscode && line !== null) vscode.postMessage({ type: 'revealLine', line });
+  });
+
+  window.addEventListener('message', (event) => {
+    const msg = event.data || {};
+    if (msg.type === 'update') {
+      html.setAttribute('data-smd-theme-pref', msg.themePref || 'auto');
+      const root = document.getElementById('smd-root');
+      const y = window.scrollY;
+      root.innerHTML = msg.html;
+      hydrate(root);
+      window.scrollTo({ top: y });
+    } else if (msg.type === 'scrollToLine') {
+      scrollToLine(msg.line);
+    }
+  });
+
+  // Follow VS Code / OS theme changes.
+  new MutationObserver(() => { if (applyTheme()) rerenderDiagrams(); })
+    .observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (applyTheme()) rerenderDiagrams(); });
+  }
+
+  hydrate(document);
+})();
+
+</script>
+</body>
+</html>

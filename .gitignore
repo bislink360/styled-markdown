@@ -1,0 +1,9 @@
+node_modules/
+extension/dist/
+extension/media/vendor/
+*.vsix
+.claude/
+docs/gallery/html/
+.DS_Store
+Thumbs.db
+.vscode-test/

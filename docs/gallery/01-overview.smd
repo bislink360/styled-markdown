@@ -1,0 +1,26 @@
+---
+smd: 1
+title: Saved Searches
+summary: Let users save a search with its filters and get notified when new results match. Targets the Q4 release.
+status: review
+version: 0.3
+updated: 2026-09-26
+owners: ["@product-search", "@api-team"]
+tags: [search, notifications, q4]
+accent: indigo
+---
+
+Use **named colors** that adapt to light and dark: [red]{color=red}, [green]{color=green}, [blue]{color=blue}, [soft background]{bg=amber}, [outlined]{border=purple} and ==highlights==.
+:badge[Shipped]{color=green} :badge[Beta]{color=amber} · :status[On track]{color=green} · press :kbd[Ctrl+K V] · :progress{value=65}
+
+:::tip Pro tip
+Callouts can hold **any** Markdown: lists, code, tables.
+:::
+
+:::warning Breaking change
+`GET /v1/search` will require the `filters` object from 2026-11-01.
+:::
+
+:::danger
+Never commit secrets to the repository.
+:::

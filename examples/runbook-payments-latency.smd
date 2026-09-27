@@ -1,0 +1,67 @@
+---
+smd: 1
+title: "Runbook: Payment authorization latency"
+summary: Fixes slow payment authorizations (PaymentsLatencyHigh alert). Most incidents are PSP-side or connection-pool exhaustion; expected time to mitigate is 15 minutes.
+status: approved
+owners: ["@payments-oncall"]
+tags: [runbook, payments, oncall]
+updated: 2026-09-20
+---
+
+:::danger Before you start
+Never restart all `payments-api` pods at once. In-flight authorizations will be charged but not recorded. Restart at most one pod at a time.
+:::
+
+## Symptoms
+
+- Alert **PaymentsLatencyHigh**: p95 authorization latency above 2 s for 5 minutes.
+- Checkout shows "Payment is taking longer than usual".
+- :metric[2s]{label="p95 alert threshold"} :metric[600ms]{label="Normal p95"}
+
+## Triage
+
+:::steps
+1. **Check the PSP status page** and the `psp_errors_total` panel. If the PSP reports an incident, go to *PSP degraded*.
+2. **Check connection-pool usage** on the *Payments / Pools* dashboard. Above 90%? Go to *Pool exhausted*.
+3. **Check recent deploys** with the command below. A deploy in the last hour? Go to *Bad deploy*.
+:::
+
+```bash title="recent deploys"
+kubectl rollout history deployment/payments-api -n payments | tail -5
+```
+
+## Mitigations
+
+::::tabs
+:::tab PSP degraded
+1. Enable the secondary PSP route: `featurectl set payments.secondary_route=on`.
+2. Post in #status with the template from the comms guide.
+3. Verify p95 drops below 1 s within 5 minutes.
+:::
+:::tab Pool exhausted
+1. Scale up: `kubectl scale deployment/payments-api -n payments --replicas=12`.
+2. If it recurs within 30 minutes, raise the pool size to 80 (`PAYMENTS_POOL_MAX`) and redeploy.
+:::
+:::tab Bad deploy
+1. Roll back: `kubectl rollout undo deployment/payments-api -n payments`.
+2. Open a P1 bug for the owning team with the deploy SHA.
+:::
+::::
+
+## Escalation
+
+| When | Who |
+| --- | --- |
+| No recovery after 15 minutes | :mention[@payments-lead] |
+| Suspected double charges | :mention[@finance-ops] and :mention[@security] |
+
+## History {agent=skip}
+
+- 2026-08-02: PSP incident, 42 minutes, secondary route worked as designed.
+- 2026-06-14: pool exhaustion after the Black Friday load test; pool size raised from 40 to 60.
+
+:::agent Rules for automated responders
+- Only run read-only commands (`get`, `describe`, `logs`, `rollout history`) without human approval.
+- Scaling and feature-flag changes need an on-call human to confirm in chat.
+- Never run `delete`, `drain` or anything that restarts more than one pod.
+:::

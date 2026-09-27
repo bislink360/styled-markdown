@@ -1,0 +1,86 @@
+---
+smd: 1
+title: "{{title}}"
+summary: One or two sentences — what we are building, for whom, and the measurable outcome.
+status: draft
+owners: ["@owner"]
+audience: both
+tags: [prd]
+version: 0.1
+updated: {{today}}
+toc: true
+---
+
+## Snapshot
+
+:metric[—]{label="Primary metric today"} :metric[—]{label="Target"}
+
+**Health:** :status[Not started]{color=gray} · **Release:** :badge[TBD]{color=indigo}
+
+## Background {agent=skip}
+
+Why this matters now: customer evidence, history, previous attempts. People read this; agents skip it.
+
+## Goals and non-goals
+
+**Goals**
+
+1. A measurable outcome (metric, target, date).
+
+**Non-goals**
+
+- What we are explicitly not doing.
+
+## Requirements
+
+::::tabs
+:::tab Must have
+- [ ] Requirement :priority[P0] @owner :due[{{today}}]
+:::
+:::tab Should have
+- [ ] Requirement :priority[P2] @owner
+:::
+:::tab Won't have (this release)
+- Out of scope item
+:::
+::::
+
+## Design and architecture
+
+```mermaid
+flowchart LR
+    U[User] --> A[Feature] --> S[(Storage)]
+```
+
+## Decisions
+
+:::decision{status=proposed date={{today}} owner=@owner} What we are deciding
+Why, and the alternatives considered.
+:::
+
+## Risks
+
+:::risk{impact=medium likelihood=medium owner=@owner status=open} What could go wrong
+How we reduce or detect it.
+:::
+
+## Rollout
+
+:::timeline
+- [ ] **{{today}}** — Kickoff
+- [ ] **YYYY-MM-DD** — Beta
+- [ ] **YYYY-MM-DD** — General availability
+:::
+
+## Open questions
+
+:::question Question that still needs an answer
+Who decides, and by when.
+:::
+
+## Implementation notes
+
+:::agent Constraints for implementers
+- Hard constraints an engineer or coding agent must follow.
+- The fallback to use while open questions are unresolved.
+:::

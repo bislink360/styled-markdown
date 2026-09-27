@@ -1,0 +1,48 @@
+---
+smd: 1
+theme: dark
+accent: teal
+---
+
+::::columns
+:::column
+:::card{accent=teal} Frontend
+- React 19
+- :progress{value=80 color=teal}
+:::
+:::
+:::column
+:::card{accent=purple} Backend
+- Go services
+- :progress{value=45 color=purple}
+:::
+:::
+::::
+
+::::tabs
+:::tab npm
+```bash
+npm install && npm run build
+```
+:::
+:::tab pnpm
+```bash
+pnpm install && pnpm build
+```
+:::
+::::
+
+```mermaid
+flowchart LR
+    A[Write .smd] --> B{Validate}
+    B -- errors --> A
+    B -- ok --> C[Preview]
+    C --> D[Export HTML]
+    C --> E[Agent view]
+```
+
+:::agent Implementation constraints
+- All prices are integer cents.
+:::
+
+Inline math $E = mc^2$ and a highlighted ==key term==.

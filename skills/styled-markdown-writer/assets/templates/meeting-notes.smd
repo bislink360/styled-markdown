@@ -1,0 +1,25 @@
+---
+smd: 1
+title: "{{title}} — {{today}}"
+summary: The outcome of the meeting in one sentence.
+status: approved
+owners: ["@facilitator"]
+tags: [meeting]
+updated: {{today}}
+---
+
+**Attendees:** :mention[@person] :mention[@person]
+
+## Decisions
+
+:::decision{status=accepted date={{today}} owner=@owner} Decision made
+Short rationale.
+:::
+
+## Action items
+
+- [ ] Action :priority[P1] @owner :due[{{today}}]
+
+## Notes {agent=skip}
+
+Discussion notes for people who missed the meeting.

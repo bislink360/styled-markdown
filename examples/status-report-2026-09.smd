@@ -1,0 +1,40 @@
+---
+smd: 1
+title: Checkout squad — status 2026-09-26
+summary: On track for the 2026-10-20 A/B test; the one risk is Apple Pay domain verification, and we need a decision on guest wallet buttons by 2026-10-01.
+status: approved
+owners: ["@maya"]
+tags: [status, checkout]
+updated: 2026-09-26
+related: [checkout-redesign.smd]
+---
+
+## Summary
+
+**Overall:** :status[On track]{color=green} · **Build progress:** :progress{value=45}
+
+:metric[45%]{label="Scope done" delta="+15pp" trend=up} :metric[3]{label="Open P0s" delta="-2" trend=down good=down} :metric[0]{label="Incidents"}
+
+## Done this week
+
+- [x] Single-page layout behind the `checkout_v2` flag @dev-checkout
+- [x] Quote endpoint in staging @api-team
+- [x] Accessibility review of the accordion @design-commerce
+
+## Next week
+
+- [ ] Idempotent order creation :priority[P0] @api-team :due[2026-10-03]
+- [ ] Apple Pay and Google Pay buttons :priority[P0] @payments :due[2026-10-17]
+- [ ] Internal dogfood :priority[P1] @maya :due[2026-10-06]
+
+## Risks and blockers
+
+:::risk{impact=high likelihood=medium owner=@payments status=open} Apple Pay domain verification
+Waiting on the PSP certificate (requested 2026-09-22). If it's not here by 2026-10-06, we launch with Google Pay only.
+:::
+
+## Decisions needed
+
+:::question Show wallet buttons to guests before they enter an email?
+Marketing wants the email first for abandoned-cart emails; product prefers the faster path. Needed from @maya and @marketing by **2026-10-01**.
+:::

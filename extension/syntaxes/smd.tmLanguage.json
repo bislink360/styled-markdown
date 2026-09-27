@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Styled Markdown",
+  "scopeName": "text.html.smd",
+  "patterns": [
+    { "include": "#frontmatter" },
+    { "include": "text.html.markdown" }
+  ],
+  "repository": {
+    "frontmatter": {
+      "begin": "\\A(---)\\s*$",
+      "end": "^(---|\\.\\.\\.)\\s*$",
+      "beginCaptures": { "1": { "name": "punctuation.definition.tag.begin.smd" } },
+      "endCaptures": { "1": { "name": "punctuation.definition.tag.end.smd" } },
+      "contentName": "meta.embedded.block.frontmatter",
+      "patterns": [{ "include": "source.yaml" }]
+    }
+  }
+}

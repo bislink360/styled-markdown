@@ -1,0 +1,27 @@
+---
+smd: 1
+accent: indigo
+---
+
+:::api{method=POST path="/v1/orders" auth="bearer token"} Create an order
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `items` | LineItem[] | yes | At least one item |
+| `coupon` | string | no | Validated server-side |
+
+**Responses:** `201` created · `409` idempotency key reused · `422` validation errors
+:::
+
+```ts file="../../examples/src/pricing.ts" lines="7-13" title="src/pricing.ts — embedded from the repo" {7-9}
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Checkout
+    participant API as Orders API
+    participant PSP as Payment provider
+    C->>API: POST /v1/orders (Idempotency-Key)
+    API->>PSP: authorize(amount)
+    PSP-->>API: authorized
+    API-->>C: 201 order
+```
