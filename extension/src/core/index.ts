@@ -12,5 +12,6 @@ export { markdownToSmd, fillTemplate } from './fromMarkdown';
 export { agentView, outline, estimateTokens, inlineText } from './agentView';
 export type { AgentViewOptions, AgentViewResult } from './agentView';
 export { parseFenceInfo } from './fence';
+export { formatSmd } from './format';
 export { dueState } from './render';
 export { SMD_CSS, SMD_RUNTIME_JS, renderPage } from './assets';

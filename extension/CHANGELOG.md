@@ -5,6 +5,14 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- `smd fmt <files|dirs…>` formats `.smd` files in place, with `--check` for CI (exit code 1 when a file isn't formatted) and `--stdout` for one file. It only changes layout, never meaning:
+  - container fences: `:::name` with no space, one colon count per nesting level (the innermost uses `:::`, each enclosing level one more, e.g. `::::tabs` around `:::tab`), closing fences matching their opener; unbalanced documents keep their colons
+  - attribute lists on containers, headings, `[text]{…}` spans and inline directives: `#id`, `.classes`, then keys in the spec's order; values quoted only when needed (`title` and `label` always); duplicate keys collapsed to the value that wins
+  - pipe tables: aligned columns and delimiter rows (wide characters and emoji count as two columns)
+  - blank lines around containers, code, math, headings and tables where they touch paragraph text, runs of blank lines collapsed, one final newline
+  - code, math, raw HTML, front matter and indented blocks are left untouched
+- **Format Document** and format on save in VS Code, using the same rules as `smd fmt`.
+- `formatSmd()` in the `styled-markdown` library.
 - Refactorings in VS Code (`Ctrl+.`):
   - wrap the selected lines in `:::note`, `:::tip`, `:::warning`, `:::danger`, `:::card`, `:::details`, `:::agent` or `:::human`; the new fence gets one more colon than any container inside it, and selections that split a code block or container aren't offered
   - convert a callout to another type, from its opening line
