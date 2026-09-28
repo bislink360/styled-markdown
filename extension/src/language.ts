@@ -7,6 +7,7 @@ import {
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
   parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
 } from './core';
+import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
 
@@ -327,6 +328,44 @@ class FoldingProvider implements vscode.FoldingRangeProvider {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Go to definition: links to headings, anchors in other documents, files and reference definitions
+// ---------------------------------------------------------------------------
+
+class DefinitionProvider implements vscode.DefinitionProvider {
+  provideDefinition(document: vscode.TextDocument, position: vscode.Position): vscode.LocationLink[] | undefined {
+    const text = document.getText();
+    const hit = linkAt(text, position.line, position.character);
+    if (!hit) return undefined;
+    const origin = new vscode.Range(position.line, hit.start, position.line, hit.end);
+    const at = (uri: vscode.Uri, line: number): vscode.LocationLink[] => {
+      const range = new vscode.Range(line, 0, line, 0);
+      return [{ originSelectionRange: origin, targetUri: uri, targetRange: range, targetSelectionRange: range }];
+    };
+
+    // A reference `[text][label]` jumps to its `[label]: …` definition.
+    if (hit.reference) return at(document.uri, hit.link.line);
+
+    const parts = splitTarget(hit.link.target);
+    if (!parts) return undefined;
+    if (!parts.path) {
+      const line = parts.anchor ? anchorLine(text, parts.anchor) : undefined;
+      return line === undefined ? undefined : at(document.uri, line);
+    }
+    if (document.uri.scheme !== 'file') return undefined;
+    const target = vscode.Uri.file(path.resolve(path.dirname(document.uri.fsPath), parts.path));
+    if (!fs.existsSync(target.fsPath)) return undefined;
+    if (!parts.anchor || !isDocumentPath(parts.path)) return at(target, 0);
+    // Prefer the open (possibly unsaved) version of the target document.
+    const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === target.toString());
+    let other: string | undefined = open?.getText();
+    if (other === undefined) {
+      try { other = fs.readFileSync(target.fsPath, 'utf8'); } catch { return undefined; }
+    }
+    return at(target, anchorLine(other, parts.anchor) ?? 0);
+  }
+}
+
 export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdDiagnostics {
   const diagnostics = new SmdDiagnostics();
   context.subscriptions.push(
@@ -337,6 +376,7 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdD
     vscode.languages.registerColorProvider(SELECTOR, new ColorProvider()),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, new SymbolProvider()),
     vscode.languages.registerFoldingRangeProvider(SELECTOR, new FoldingProvider()),
+    vscode.languages.registerDefinitionProvider(SELECTOR, new DefinitionProvider()),
   );
   return diagnostics;
 }
