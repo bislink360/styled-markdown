@@ -139,6 +139,29 @@ const checks = {
     const got = [await at(5), await at(20), await at(44), await at(1)];
     assert.deepEqual(got, [['main.smd', 0], ['other.smd', 5], ['main.smd', 4], undefined], JSON.stringify(got));
   },
+
+  async 'completion suggests paths and anchors in links, related and embeds'() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'smd-lc-'));
+    fs.mkdirSync(path.join(dir, 'specs'));
+    fs.writeFileSync(path.join(dir, 'specs', 'pricing.smd'), '# Pricing\n\n## Refund rules\n');
+    fs.writeFileSync(path.join(dir, 'logo.png'), '');
+    fs.writeFileSync(path.join(dir, 'util.ts'), '');
+    const main = path.join(dir, 'main.smd');
+    fs.writeFileSync(main, [
+      '---', 'related: [specs/]', '---', '## Intro', '',
+      '[a](', '[b](specs/pricing.smd#', '[c](#', '```ts file="', '```', '',
+    ].join('\n'));
+    const doc = await vscode.workspace.openTextDocument(main);
+    const labels = async (line, character) => {
+      const list = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', doc.uri, new vscode.Position(line, character));
+      return list.items.map((i) => (typeof i.label === 'string' ? i.label : i.label.label)).sort();
+    };
+    assert.deepEqual(await labels(5, 4), ['#intro', 'logo.png', 'specs/', 'util.ts']);
+    assert.deepEqual(await labels(6, 22), ['pricing', 'refund-rules']);
+    assert.deepEqual(await labels(7, 5), ['intro']);
+    assert.deepEqual(await labels(1, 16), ['pricing.smd'], 'related: offers documents only');
+    assert.deepEqual(await labels(8, 12), ['logo.png', 'specs/', 'util.ts']);
+  },
 };
 
 async function run() {

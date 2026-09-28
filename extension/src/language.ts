@@ -7,7 +7,9 @@ import {
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
   parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
 } from './core';
-import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
+import {
+  anchorLine, anchorTargets, isDocumentPath, linkAt, linkCompletionContext, splitTarget, type LinkCompletionContext,
+} from './core/links';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
 
@@ -112,9 +114,77 @@ const ATTR_VALUES: Record<string, string[]> = {
   collapsible: ['open'],
 };
 
+/**
+ * Paths and `#anchors` for links, `related:` entries and `file="…"` embeds. Paths are relative to the
+ * document; after `#` the headings and ids of the current or linked document are offered.
+ */
+function linkCompletions(document: vscode.TextDocument, position: vscode.Position, ctx: LinkCompletionContext): vscode.CompletionItem[] {
+  const hash = ctx.kind === 'embed' ? -1 : ctx.target.indexOf('#');
+  const dir = document.uri.scheme === 'file' ? path.dirname(document.uri.fsPath) : undefined;
+
+  if (hash >= 0) {
+    const rel = ctx.target.slice(0, hash);
+    let text: string | undefined;
+    if (!rel) text = document.getText();
+    else if (dir && isDocumentPath(rel)) text = readDocument(path.resolve(dir, decodePath(rel)));
+    if (text === undefined) return [];
+    const range = new vscode.Range(position.line, ctx.column + hash + 1, position.line, position.character);
+    return anchorItems(text, range, '');
+  }
+
+  const items: vscode.CompletionItem[] = [];
+  const slash = ctx.target.lastIndexOf('/');
+  const range = new vscode.Range(position.line, ctx.column + slash + 1, position.line, position.character);
+  if (dir) {
+    const folder = path.resolve(dir, decodePath(ctx.target.slice(0, slash + 1)));
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(folder, { withFileTypes: true }); } catch { /* no such folder */ }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      if (path.join(folder, entry.name) === document.uri.fsPath) continue;
+      const isDir = entry.isDirectory();
+      const isDoc = !isDir && isDocumentPath(entry.name);
+      if (ctx.kind === 'related' && !isDir && !isDoc) continue;
+      const name = ctx.kind === 'link' ? entry.name.replace(/ /g, '%20') : entry.name;
+      const item = new vscode.CompletionItem(isDir ? `${entry.name}/` : entry.name, isDir ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File);
+      item.range = range;
+      item.insertText = isDir ? `${name}/` : name;
+      item.sortText = `${isDoc ? 0 : isDir ? 1 : 2}${entry.name.toLowerCase()}`;
+      if (isDir) item.command = { command: 'editor.action.triggerSuggest', title: 'Suggest files' };
+      items.push(item);
+    }
+  }
+  // An empty link target can also point into this document.
+  if (ctx.kind === 'link' && ctx.target === '') items.push(...anchorItems(document.getText(), range, '#'));
+  return items;
+}
+
+function anchorItems(text: string, range: vscode.Range, prefix: string): vscode.CompletionItem[] {
+  return anchorTargets(text).map((t, i) => {
+    const item = new vscode.CompletionItem(`${prefix}${t.id}`, vscode.CompletionItemKind.Reference);
+    item.range = range;
+    item.detail = t.text !== undefined ? `${'#'.repeat(t.level ?? 1)} ${t.text}` : t.line !== undefined ? `id on line ${t.line + 1}` : 'id';
+    item.sortText = `3${String(i).padStart(5, '0')}`;
+    return item;
+  });
+}
+
+/** The open (possibly unsaved) version of a file, or its contents on disk. */
+function readDocument(file: string): string | undefined {
+  const open = vscode.workspace.textDocuments.find((d) => d.uri.scheme === 'file' && d.uri.fsPath === file);
+  if (open) return open.getText();
+  try { return fs.readFileSync(file, 'utf8'); } catch { return undefined; }
+}
+
+function decodePath(p: string): string {
+  try { return decodeURIComponent(p); } catch { return p; }
+}
+
 class CompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
+    const link = linkCompletionContext(document.getText(), position.line, position.character);
+    if (link) return linkCompletions(document, position, link);
     const fm = parseFrontMatter(document.getText());
 
     // Front matter keys and values
@@ -371,7 +441,7 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdD
   context.subscriptions.push(
     diagnostics,
     vscode.languages.registerCodeActionsProvider(SELECTOR, new QuickFixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
-    vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`'),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`', '(', '/', '#', '"'),
     vscode.languages.registerHoverProvider(SELECTOR, new HoverProvider()),
     vscode.languages.registerColorProvider(SELECTOR, new ColorProvider()),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, new SymbolProvider()),

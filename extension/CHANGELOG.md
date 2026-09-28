@@ -5,6 +5,11 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- Path and anchor completion in VS Code:
+  - inside links and images `](…`, reference definitions `[label]: …`, front matter `related:` entries and code fence `file="…"` embeds, relative files and folders are suggested (`.smd`/`.md` first; `related:` offers documents only)
+  - after `#`, the headings, `{#id}` blocks and HTML ids of the current document or of the linked `other.smd#…` are suggested, using its unsaved text when it is open
+  - an empty link target also offers this document's `#anchors`
+  - nothing is suggested inside code
 
 ### Changed
 
