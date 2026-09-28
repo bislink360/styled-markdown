@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0 — 2026-09-28
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## Unreleased
 
 ### Added
