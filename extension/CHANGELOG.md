@@ -5,12 +5,17 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- The preview keeps your place when it updates: the source line at the top of the preview stays there, even when lines are added or removed above it.
+- The selected tab in `:::tabs` and opened or closed collapsibles (`:::details`, `collapsible` callouts, agent blocks) stay as you left them across updates. They're matched by their titles, not their position.
+- The preview restores its scroll position, tabs and collapsibles after its tab was hidden and shown again.
 
 ### Changed
+- Unchanged Mermaid diagrams are restored from the cache right away on each update, instead of waiting behind a diagram that changed and briefly showing their source. A diagram you're editing keeps its previous height until the new version renders, so the page below it doesn't jump.
 
 ### Deprecated
 
 ### Fixed
+- A preview hidden behind another tab showed the document as it was when the preview was opened until the next edit.
 
 ## Unreleased
 

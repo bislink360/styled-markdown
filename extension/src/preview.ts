@@ -10,7 +10,7 @@ export class PreviewManager implements vscode.Disposable {
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.disposables.push(
-      vscode.workspace.onDidChangeTextDocument((e) => this.previews.get(e.document.uri.toString())?.scheduleUpdate()),
+      vscode.workspace.onDidChangeTextDocument((e) => this.previews.get(e.document.uri.toString())?.scheduleUpdate(e.contentChanges)),
       vscode.window.onDidChangeTextEditorVisibleRanges((e) => {
         const preview = this.previews.get(e.textEditor.document.uri.toString());
         const top = e.visibleRanges[0]?.start.line;
@@ -70,13 +70,30 @@ export interface RenderStatus {
   math: number;
   tabs: number;
   theme: string;
+  /** Diagrams reused from the SVG cache in this render. */
+  reused: number;
+  /** Source line anchored at the top of the viewport. */
+  top: number;
+  /** Number of renders reported so far by this panel. */
+  renders: number;
 }
+
+/** A line-structure edit, as the page runtime's mapLine() expects: [startLine, endLine, insertedLineBreaks]. */
+type LineEdit = [number, number, number];
+const MAX_EDITS = 500;
 
 class Preview {
   readonly panel: vscode.WebviewPanel;
   lastStatus: RenderStatus | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private lastScrollLine = -1;
+  private deferredScrollLine: number | undefined;
+  /** Line edits not yet delivered to the page, so it can keep its scroll anchor on the same content. */
+  private edits: LineEdit[] = [];
+  /** How many of `edits` are already embedded in `webview.html` (set while the panel is hidden). */
+  private embeddedEdits = 0;
+  /** Document version the current `webview.html` was rendered from. */
+  private htmlVersion: number;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -93,26 +110,71 @@ class Preview {
       { enableScripts: true, localResourceRoots: roots, enableFindWidget: true },
     );
     this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'smd-icon.svg');
+    this.htmlVersion = document.version;
     this.panel.webview.html = this.shell();
     this.panel.webview.onDidReceiveMessage((msg) => this.onMessage(msg));
+    // Hidden webviews are torn down (no retainContextWhenHidden, to save memory) and reload from
+    // webview.html when shown again; the page keeps its scroll and UI state with setState().
+    this.panel.onDidChangeViewState(() => {
+      if (!this.panel.visible) {
+        this.update();
+      } else if (this.embeddedEdits) {
+        this.edits.splice(0, this.embeddedEdits);
+        this.embeddedEdits = 0;
+      }
+    });
     this.panel.onDidDispose(() => {
       clearTimeout(this.timer);
       onDispose();
     });
   }
 
-  scheduleUpdate(): void {
+  scheduleUpdate(changes: readonly vscode.TextDocumentContentChangeEvent[] = []): void {
+    for (const c of changes) {
+      const breaks = c.text.split('\n').length - 1;
+      // Edits within one line don't move any line below them.
+      if (c.range.start.line === c.range.end.line && breaks === 0) continue;
+      this.edits.push([c.range.start.line, c.range.end.line, breaks]);
+    }
+    if (this.edits.length > MAX_EDITS) {
+      this.edits = [];
+      this.embeddedEdits = 0;
+    }
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.update(), 200);
   }
 
   update(): void {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    if (!this.panel.visible) {
+      // Nothing is listening; refresh the page the webview will reload from.
+      this.deferredScrollLine = undefined;
+      this.htmlVersion = this.document.version;
+      this.embeddedEdits = this.edits.length;
+      this.panel.webview.html = this.shell();
+      return;
+    }
     const result = renderSmd(this.document.getText(), renderOptions(this.document));
-    this.panel.webview.postMessage({ type: 'update', html: result.html, themePref: themePreference(result.frontMatter) });
+    const edits = this.edits;
+    this.edits = [];
+    this.embeddedEdits = 0;
+    this.panel.webview.postMessage({ type: 'update', html: result.html, themePref: themePreference(result.frontMatter), edits });
+    if (this.deferredScrollLine !== undefined) {
+      const line = this.deferredScrollLine;
+      this.deferredScrollLine = undefined;
+      this.lastScrollLine = -1;
+      this.scrollToLine(line);
+    }
   }
 
   scrollToLine(line: number): void {
     if (line === this.lastScrollLine) return;
+    if (this.timer) {
+      // The line is in the edited document's numbering; the page still shows the previous render.
+      this.deferredScrollLine = line;
+      return;
+    }
     this.lastScrollLine = line;
     this.panel.webview.postMessage({ type: 'scrollToLine', line });
   }
@@ -141,7 +203,7 @@ class Preview {
 <link rel="stylesheet" href="${media('smd.css')}">
 </head>
 <body class="smd-body">
-<main id="smd-root">${result.html}</main>
+<main id="smd-root" data-smd-edits="${JSON.stringify(this.edits)}">${result.html}</main>
 <script nonce="${nonce}" src="${media('vendor', 'mermaid.min.js')}"></script>
 <script nonce="${nonce}" src="${media('runtime.js')}"></script>
 </body>
@@ -150,8 +212,15 @@ class Preview {
 
   private async onMessage(msg: { type: string; line?: number; href?: string } & Partial<RenderStatus>): Promise<void> {
     switch (msg.type) {
+      case 'ready':
+        // The webview reloaded (e.g. moved to another group) from a page older than the document.
+        if (this.htmlVersion !== this.document.version) this.update();
+        break;
       case 'rendered':
-        this.lastStatus = { diagrams: msg.diagrams ?? 0, errors: msg.errors ?? 0, math: msg.math ?? 0, tabs: msg.tabs ?? 0, theme: msg.theme ?? '' };
+        this.lastStatus = {
+          diagrams: msg.diagrams ?? 0, errors: msg.errors ?? 0, math: msg.math ?? 0, tabs: msg.tabs ?? 0, theme: msg.theme ?? '',
+          reused: msg.reused ?? 0, top: msg.top ?? 0, renders: (this.lastStatus?.renders ?? 0) + 1,
+        };
         break;
       case 'toggleTask':
         if (typeof msg.line === 'number') await toggleTask(this.document, msg.line);

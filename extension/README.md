@@ -8,7 +8,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 
 ## Highlights
 
-- **Live preview** (`Ctrl+K V`): themed to match VS Code, scroll sync, double-click to jump to source, clickable tasks, Mermaid diagrams, KaTeX math, tabs and columns.
+- **Live preview** (`Ctrl+K V`): themed to match VS Code, scroll sync, double-click to jump to source, clickable tasks, Mermaid diagrams, KaTeX math, tabs and columns. Edits keep your scroll position, diagrams, selected tabs and open collapsibles.
 - **Project blocks:** `:::decision`, `:::risk`, `:::timeline`, KPI tiles (`:metric`), priorities, and due dates that turn red when overdue. Tasks carry owners.
 - **Developer blocks:** `:::api` endpoint cards, code line highlights `{2,5-7}`, and live source embeds `file="…" lines="…"` so docs never drift from code.
 - **Validation with quick fixes** as you type (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`).

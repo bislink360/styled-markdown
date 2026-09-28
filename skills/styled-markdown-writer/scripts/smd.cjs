@@ -685,6 +685,7 @@ details.smd-callout > summary::-webkit-details-marker { display: none; }
 .smd-diagram { margin: 0 0 1.2em; padding: 16px; border: 1px solid var(--smd-border); border-radius: 10px; background: var(--smd-surface); overflow-x: auto; text-align: center; }
 .smd-diagram pre.smd-mermaid { margin: 0; text-align: left; font-family: var(--smd-font-mono); font-size: .85em; color: var(--smd-fg-muted); white-space: pre-wrap; }
 .smd-diagram svg { max-width: 100%; height: auto; }
+.smd-diagram-pending { box-sizing: border-box; overflow: hidden; }
 .smd-math-block { overflow-x: auto; margin: 0 0 1em; }
 .smd-error { color: var(--smd-red); font-family: var(--smd-font-mono); font-size: .85em; white-space: pre-wrap; display: block; text-align: left; }
 
@@ -795,11 +796,99 @@ pre.smd-has-hl code { position: relative; }
 (function () {
   'use strict';
 
+  // ---- Pure helpers (unit-tested in Node via module.exports) ---------------
+
+  /**
+   * Map a 0-based source line through edits made since it was measured.
+   * Each edit is [startLine, endLine, insertedLineBreaks], in the order they were applied.
+   */
+  function mapLine(line, edits) {
+    for (const [start, end, breaks] of edits || []) {
+      if (line > end) line += breaks - (end - start);
+      else if (line > start) line = Math.min(line, start + breaks);
+    }
+    return line;
+  }
+
+  /**
+   * Which element anchors the viewport: the last one (document order) starting at or above
+   * \`viewTop\`. \`items\` are [{ line, top }]; returns { line, offset } or null at the very top.
+   */
+  function pickAnchor(items, viewTop) {
+    let best = null;
+    for (const it of items) if (it.top <= viewTop + 1) best = it;
+    if (!best) return null;
+    const first = items.find((it) => it.line === best.line);
+    return { line: best.line, offset: Math.max(0, viewTop - first.top) };
+  }
+
+  /** Index of the element to restore \`line\` to: first exact match, else the closest line above. */
+  function findLine(items, line) {
+    const exact = items.findIndex((it) => it.line === line);
+    if (exact >= 0) return { index: exact, exact: true };
+    let index = -1;
+    items.forEach((it, i) => { if (it.line <= line && (index < 0 || it.line >= items[index].line)) index = i; });
+    return { index, exact: false };
+  }
+
+  /** Stable keys from content signatures: the n-th element with the same signature gets \`sig#n\`. */
+  function stableKeys(signatures) {
+    const seen = new Map();
+    return signatures.map((sig) => {
+      const n = seen.get(sig) || 0;
+      seen.set(sig, n + 1);
+      return sig + '#' + n;
+    });
+  }
+
+  /** Small LRU map for rendered diagrams, keyed by theme + source. */
+  function lruCache(max) {
+    const map = new Map();
+    return {
+      get(key) {
+        if (!map.has(key)) return undefined;
+        const v = map.get(key);
+        map.delete(key);
+        map.set(key, v);
+        return v;
+      },
+      set(key, value) {
+        map.delete(key);
+        map.set(key, value);
+        if (map.size > max) map.delete(map.keys().next().value);
+      },
+      get size() { return map.size; },
+    };
+  }
+
+  const diagramKey = (theme, src) => theme + '\\u0000' + src;
+
+  if (typeof document === 'undefined') {
+    if (typeof module === 'object' && module.exports) {
+      module.exports = { mapLine, pickAnchor, findLine, stableKeys, lruCache, diagramKey };
+    }
+    return;
+  }
+
+  // ---- Page state ----------------------------------------------------------
+
   const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
   const html = document.documentElement;
-  const svgCache = new Map();
-  const tabState = new Map();
+  const svgCache = lruCache(100);
   let diagramSeq = 0;
+  let reusedDiagrams = 0;
+  // UI state kept across re-renders (and, in VS Code, across the panel being hidden):
+  // active tab per tab group and user-toggled <details>, keyed by content, not position.
+  const saved = (vscode && vscode.getState()) || {};
+  const ui = { tabs: saved.tabs || {}, open: saved.open || {} };
+  let anchor = saved.anchor || null;
+  let saveTimer;
+
+  function saveState() {
+    if (!vscode) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => vscode.setState({ anchor, tabs: ui.tabs, open: ui.open }), 100);
+  }
 
   function currentTheme() {
     const pref = html.getAttribute('data-smd-theme-pref') || 'auto';
@@ -822,16 +911,22 @@ pre.smd-has-hl code { position: relative; }
   }
 
   // ---- Tabs ---------------------------------------------------------------
+  const panesOf = (tabs) => Array.from(tabs.children).filter((el) => el.classList.contains('smd-tab'));
+
   function initTabs(scope) {
-    scope.querySelectorAll('.smd-tabs').forEach((tabs, groupIndex) => {
+    const groups = Array.from(scope.querySelectorAll('.smd-tabs'));
+    const keys = stableKeys(groups.map((g) => 'tabs:' + panesOf(g).map((p) => p.getAttribute('data-title') || '').join('\\u0001')));
+    ui.tabs = Object.fromEntries(keys.filter((k) => k in ui.tabs).map((k) => [k, ui.tabs[k]]));
+    groups.forEach((tabs, groupIndex) => {
       if (tabs.classList.contains('smd-js')) return;
-      const panes = Array.from(tabs.children).filter((el) => el.classList.contains('smd-tab'));
+      const panes = panesOf(tabs);
       if (!panes.length) return;
+      const key = keys[groupIndex];
       const bar = document.createElement('div');
       bar.className = 'smd-tabbar';
       bar.setAttribute('role', 'tablist');
-      const select = (i) => {
-        tabState.set(groupIndex, i);
+      const select = (i, user) => {
+        if (user) { ui.tabs[key] = i; saveState(); }
         panes.forEach((p, j) => p.classList.toggle('smd-active', i === j));
         bar.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-selected', String(i === j)));
       };
@@ -840,14 +935,46 @@ pre.smd-has-hl code { position: relative; }
         btn.type = 'button';
         btn.setAttribute('role', 'tab');
         btn.textContent = pane.getAttribute('data-title') || 'Tab ' + (i + 1);
-        btn.addEventListener('click', () => select(i));
+        btn.addEventListener('click', () => select(i, true));
         bar.appendChild(btn);
       });
       tabs.insertBefore(bar, tabs.firstChild);
       tabs.classList.add('smd-js');
-      select(Math.min(tabState.get(groupIndex) || 0, panes.length - 1));
+      select(Math.min(ui.tabs[key] || 0, panes.length - 1));
     });
   }
+
+  // ---- Open/closed <details> (collapsible callouts, details, agent blocks) --
+  function initDetails(scope) {
+    const all = Array.from(scope.querySelectorAll('details'));
+    const keys = stableKeys(all.map((d) => {
+      const summary = d.querySelector(':scope > summary');
+      return 'details:' + (summary ? summary.textContent.trim() : '');
+    }));
+    const live = {};
+    all.forEach((d, i) => {
+      const key = keys[i];
+      d.setAttribute('data-smd-key', key);
+      d.setAttribute('data-smd-default', d.open ? 'open' : 'closed');
+      // A user toggle wins only while the source default it overrode is unchanged.
+      const state = ui.open[key];
+      if (state && state[0] === d.open) {
+        d.open = state[1];
+        live[key] = state;
+      }
+    });
+    ui.open = live;
+  }
+
+  document.addEventListener('toggle', (e) => {
+    const d = e.target;
+    const key = d && d.getAttribute && d.getAttribute('data-smd-key');
+    if (!key) return;
+    const dflt = d.getAttribute('data-smd-default') === 'open';
+    if (d.open === dflt) delete ui.open[key];
+    else ui.open[key] = [dflt, d.open];
+    saveState();
+  }, true);
 
   // ---- Copy buttons -------------------------------------------------------
   function addCopyButtons(scope) {
@@ -940,7 +1067,8 @@ pre.smd-has-hl code { position: relative; }
     return vars;
   }
 
-  async function renderDiagrams(scope) {
+  /** \`heights\`: previous height of the diagram at each position, held while a changed one renders. */
+  async function renderDiagrams(scope, heights) {
     const hosts = Array.from(scope.querySelectorAll('.smd-diagram'));
     if (!hosts.length) return;
     if (typeof mermaid === 'undefined') {
@@ -954,21 +1082,33 @@ pre.smd-has-hl code { position: relative; }
       theme: 'base',
       themeVariables: mermaidTheme(theme === 'dark'),
     });
-    for (const host of hosts) {
+    // Unchanged diagrams reuse their SVG synchronously, so they never flash back to source.
+    const pending = [];
+    reusedDiagrams = 0;
+    hosts.forEach((host, i) => {
       const pre = host.querySelector('pre.smd-mermaid');
       const src = pre ? pre.textContent : host.getAttribute('data-src');
-      if (!src) continue;
+      if (!src) return;
       host.setAttribute('data-src', src);
-      const key = theme + '\\u0000' + src;
-      if (svgCache.has(key)) {
-        host.innerHTML = svgCache.get(key);
-        continue;
+      const key = diagramKey(theme, src);
+      const svg = svgCache.get(key);
+      if (svg !== undefined) {
+        host.innerHTML = svg;
+        reusedDiagrams++;
+        return;
       }
+      if (heights && heights[i]) {
+        // Hold the space the diagram at this position took, so the page doesn't jump while it renders.
+        host.classList.add('smd-diagram-pending');
+        host.style.height = heights[i] + 'px';
+      }
+      pending.push({ host, src, key });
+    });
+    for (const { host, src, key } of pending) {
       const id = 'smd-mermaid-' + ++diagramSeq;
       try {
         const { svg } = await mermaid.render(id, src);
         svgCache.set(key, svg);
-        if (svgCache.size > 100) svgCache.delete(svgCache.keys().next().value);
         host.innerHTML = svg;
       } catch (err) {
         const stray = document.getElementById('d' + id);
@@ -977,21 +1117,29 @@ pre.smd-has-hl code { position: relative; }
           '<pre class="smd-mermaid">' + escapeHtml(src) + '</pre>' +
           '<span class="smd-error">Diagram error: ' + escapeHtml((err && err.message) || err) + '</span>';
       }
+      host.classList.remove('smd-diagram-pending');
+      host.style.height = '';
     }
   }
 
+  const diagramHeights = () => Array.from(document.querySelectorAll('.smd-diagram')).map((h) => h.getBoundingClientRect().height);
+
   function rerenderDiagrams() {
+    const a = captureAnchor();
+    const heights = diagramHeights();
     document.querySelectorAll('.smd-diagram[data-src]').forEach((host) => {
       host.innerHTML = '<pre class="smd-mermaid">' + escapeHtml(host.getAttribute('data-src')) + '</pre>';
     });
-    renderDiagrams(document);
+    keepAnchor(a, renderDiagrams(document, heights));
   }
 
-  async function hydrate(scope) {
+  /** Synchronous work (tabs, details, cached diagrams) is done when this returns; the promise settles after new diagrams render. */
+  async function hydrate(scope, heights) {
     applyTheme();
     initTabs(scope);
+    initDetails(scope);
     addCopyButtons(scope);
-    await renderDiagrams(scope);
+    await renderDiagrams(scope, heights);
     if (vscode) {
       // Lets the extension (and its tests) know what actually rendered.
       vscode.postMessage({
@@ -1001,6 +1149,8 @@ pre.smd-has-hl code { position: relative; }
         math: document.querySelectorAll('.katex').length,
         tabs: document.querySelectorAll('.smd-tabs.smd-js').length,
         theme: html.getAttribute('data-smd-theme'),
+        reused: reusedDiagrams,
+        top: (captureAnchor() || { line: 0 }).line,
       });
     }
   }
@@ -1009,6 +1159,41 @@ pre.smd-has-hl code { position: relative; }
   function lineOf(el) {
     const node = el && el.closest ? el.closest('[data-line]') : null;
     return node ? Number(node.getAttribute('data-line')) : null;
+  }
+
+  // ---- Scroll anchoring ---------------------------------------------------
+  // The preview remembers which source line is at the top of the viewport (plus the offset into
+  // that element) rather than a pixel position, so re-renders and edits above don't move it.
+  let generation = 0;
+
+  function lineItems() {
+    const items = [];
+    document.querySelectorAll('#smd-root [data-line]').forEach((el) => {
+      if (!el.getClientRects().length) return; // hidden tab pane or closed details
+      items.push({ line: Number(el.getAttribute('data-line')), top: el.getBoundingClientRect().top + window.scrollY });
+    });
+    return items;
+  }
+
+  function captureAnchor() {
+    return window.scrollY > 0 ? pickAnchor(lineItems(), window.scrollY) : null;
+  }
+
+  function restoreAnchor(a) {
+    if (!a) return;
+    const items = lineItems();
+    const { index, exact } = findLine(items, a.line);
+    if (index >= 0) window.scrollTo({ top: items[index].top + (exact ? a.offset : 0) });
+  }
+
+  /** Restore now, and again once diagrams have rendered unless the user scrolled meanwhile. */
+  function keepAnchor(a, rendering) {
+    const gen = ++generation;
+    restoreAnchor(a);
+    const y = window.scrollY;
+    rendering.then(() => {
+      if (a && gen === generation && window.scrollY === y) restoreAnchor(a);
+    });
   }
 
   function scrollToLine(line) {
@@ -1055,9 +1240,15 @@ pre.smd-has-hl code { position: relative; }
       html.setAttribute('data-smd-theme-pref', msg.themePref || 'auto');
       const root = document.getElementById('smd-root');
       const y = window.scrollY;
+      const before = captureAnchor();
+      const a = before && { line: mapLine(before.line, msg.edits), offset: before.offset };
+      const heights = diagramHeights();
       root.innerHTML = msg.html;
-      hydrate(root);
-      window.scrollTo({ top: y });
+      const rendering = hydrate(root, heights);
+      if (a) keepAnchor(a, rendering);
+      else window.scrollTo({ top: y });
+      anchor = captureAnchor();
+      saveState();
     } else if (msg.type === 'scrollToLine') {
       scrollToLine(msg.line);
     }
@@ -1070,7 +1261,21 @@ pre.smd-has-hl code { position: relative; }
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (applyTheme()) rerenderDiagrams(); });
   }
 
-  hydrate(document);
+  const rendering = hydrate(document);
+  if (vscode) {
+    // Coming back after the panel was hidden: restore the saved position, adjusted for edits
+    // made while it was away (the extension embeds those in the page).
+    const root = document.getElementById('smd-root');
+    let edits = [];
+    try { edits = JSON.parse((root && root.getAttribute('data-smd-edits')) || '[]'); } catch { /* ignore */ }
+    if (anchor) keepAnchor({ line: mapLine(anchor.line, edits), offset: anchor.offset }, rendering);
+    let scrollTimer;
+    window.addEventListener('scroll', () => {
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => { anchor = captureAnchor(); saveState(); }, 150);
+    }, { passive: true });
+    vscode.postMessage({ type: 'ready' });
+  }
 })();
 `;function lo(e,t={}){return eo(e,lf,cf,t)}var df='---\nname: styled-markdown-reader\ndescription: Read and query Styled Markdown (.smd) files token-efficiently, focusing only on meaningful content. Use this skill whenever you need information from a .smd file \u2014 answering questions about a spec/PRD/ADR/runbook/design doc, implementing what it describes, summarizing it, reviewing it, or checking its tasks, decisions, risks, APIs or open questions \u2014 even if the user just says "the spec", "the doc" or "the plan" and the file ends in .smd. Use it instead of reading .smd files with Read/cat, which wastes tokens on styling, layout and human-only content.\n---\n\n# Reading Styled Markdown (.smd) efficiently\n\n`.smd` documents mix three kinds of content:\n\n1. **Presentation:** colors, badges, layout.\n2. **Human context:** background, research, history.\n3. **What you need:** requirements, constraints, decisions, APIs, tasks.\n\nThe bundled CLI strips the first two and lets you pull only the sections you need.\n\n```bash\nnode <this-skill-dir>/scripts/smd.cjs <command> \u2026    # or `smd` if on PATH; Node 18+, no install\n```\n\n## Workflow\n\n1. **`smd outline FILE`** (\u2248100\u2013300 tokens) shows the title, status, summary, and every section with its line range and token cost. It also flags open tasks, decisions, risks, APIs and `AGENT INSTRUCTIONS`. The summary alone often answers the question.\n2. **Read only what the task needs:**\n   - Full agent view is small (\u2272 2,000 tokens, shown on the outline\'s first line): run `smd agent FILE` once.\n   - Specific question: run `smd agent FILE --section "Heading" [--section \u2026]`. This matches heading text or id, includes subsections, and always appends `:::agent` instructions from elsewhere in the file.\n   - Overview of a large doc: add `--brief`. It condenses diagrams, long code, `:::details` and completed tasks into pointers with line numbers.\n3. **Open raw lines only to edit.** Headings in the agent view carry `[L42]` line references. Read just that range with offset/limit, never the whole file. For writing or restructuring, use the `styled-markdown-writer` skill.\n\nAcross many documents:\n- `smd tasks DIR` lists open tasks with priority, owner and due date, overdue first (`--mine @name` filters by owner).\n- `smd meta FILE --no-diagnostics` gives JSON (outline, tasks, decisions, risks, agent blocks).\n\n## What the agent view means\n\n| You see | Meaning |\n|---|---|\n| `<agent-instructions>` | Constraints written for you. Follow them for any work the document covers. |\n| `<danger>` / `<warning>` | Hard constraint / important caveat |\n| `<question>` | Unresolved. Don\'t pick an answer yourself; use the fallback in the agent instructions, or ask. |\n| `<decision status="accepted">` | Binding. `proposed` isn\'t decided yet; `rejected`/`superseded` means don\'t do it. |\n| `<risk impact=\u2026 likelihood=\u2026>` | Design around it or test for it |\n| `API POST /v1/x \u2014 \u2026` | Endpoint definition; the following lines describe it |\n| front matter `status:` | `approved` is authoritative, `draft`/`review` is tentative, `deprecated`/`archived` is history |\n| `[P1]`, `@name`, `(due \u2026, OVERDUE)` | Task priority, owner, due date |\n| `[code: path lines a-b \u2026]` | Real source embedded by the doc. Read that file range if you need it (or rerun with `--embed`). |\n| `[diagram: \u2026]`, `[details: \u2026 omitted]` | Condensed by `--brief`. Read the given lines if you need them. |\n\n**No Node.js available?** Read the front matter and headings first (for example the first 20 lines, then search for `^## `), then read only the relevant line ranges. Skip `:::human` blocks and sections whose heading ends in `{agent=skip}`, and always read the `:::agent` block.\n\n`:::human` blocks and `## \u2026 {agent=skip}` sections are left out on purpose. Use `--include-human` only when the task is specifically about that content (e.g. proofreading the background section).\n';var ff='---\nname: styled-markdown-writer\ndescription: Create and edit Styled Markdown (.smd) documents that follow the .smd rules \u2014 PRDs, ADRs, RFCs/design docs, runbooks, API references, status reports, meeting notes, specs and plans. Use this skill whenever the user asks to write, draft, create, convert, restructure or update a .smd file, asks for a spec/PRD/ADR/runbook/status report "in smd" or "styled markdown", wants a Markdown doc converted to .smd, or wants a document that both people and AI agents will read. It provides templates, the full syntax, authoring rules and a validator that fixes mistakes.\n---\n\n# Writing Styled Markdown (.smd)\n\n`.smd` is Markdown plus a small, validated vocabulary: callouts, decisions, risks, API blocks, tasks with owners and due dates, KPIs, diagrams, and audience blocks. Documents are read by **people** in a styled preview and by **AI agents** through a compact "agent view". Write for both.\n\nTool (Node 18+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (or `smd` if it\'s on PATH).\n\n## Workflow\n\n1. **Pick a template** that matches the request, and start from it rather than a blank page:\n\n   | Request | Template |\n   |---|---|\n   | Product requirements, feature spec | `prd` |\n   | Architecture/technical decision | `adr` |\n   | Design proposal, RFC, tech spec | `rfc` |\n   | On-call / operational procedure | `runbook` |\n   | Endpoint reference | `api` |\n   | Weekly/monthly update | `status-report` |\n   | Meeting summary with actions | `meeting-notes` |\n\n   `smd init docs/name.smd --template prd --title "Saved searches"` creates the file with today\'s date filled in. The raw templates are in `assets/templates/`. For anything else, start from front matter + headings.\n\n2. **Fill it with real content.** Delete template sections that don\'t apply, and never leave placeholder text such as `\u2014`, `@owner` or `YYYY-MM-DD` in a finished document. If you don\'t know a value (an owner, a date), ask, or leave a `:::question` that says what\'s missing.\n\n3. **Validate and fix:**\n\n   ```bash\n   node <skill>/scripts/smd.cjs validate docs/name.smd --fix\n   ```\n\n   `--fix` repairs typos automatically. Fix any remaining errors yourself: each has a line:column, a message and a rule code. **A document is done only when validation reports 0 errors.**\n\n4. **Check what agents will see:** `smd agent docs/name.smd --brief`. If it\'s still long, move narrative into `{agent=skip}` sections or `:::human` blocks.\n\n## Rules you must follow\n\nThese are the rules the validator and renderers depend on. `references/syntax.md` has the complete reference with every attribute and allowed value; read it before using a construct you\'re not sure about.\n\n1. **Front matter first:** `smd: 1`, `title`, a precise one- or two-sentence `summary`, `status` (`draft` \xB7 `review` \xB7 `approved` \xB7 `deprecated` \xB7 `archived`), `owners`, and `updated` (`YYYY-MM-DD`). Don\'t repeat the title as a `# H1`; start the body at `##`.\n2. **Blocks** are `:::name{attrs} Title` \u2026 `:::`. Attributes go directly after the name with no space. A bare `:::` closes the innermost block. Write outer containers with more colons (`::::tabs`) for readability.\n3. **Only known names:**\n   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `decision` `risk` `api` `agent` `human`.\n   - Inline: `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention`.\n4. **Enumerated values exactly as specified:**\n   - decision `status`: proposed, accepted, rejected, superseded, deprecated\n   - risk `impact`/`likelihood`: low, medium, high, critical\n   - api `method`: GET, POST, PUT, PATCH, DELETE\u2026; `path` is required\n   - priority: P0\u2013P4\n   - dates: `YYYY-MM-DD`\n5. **Named colors only** (red orange amber yellow green teal cyan blue indigo purple pink gray muted accent) unless a brand hex is required.\n6. **Tasks:** `- [ ] Verb-first task :priority[P1] @owner :due[2026-10-15]`. One owner per task where possible.\n7. **Code:** always give fences a language. Use `title="path"` for file names, `{2,5-7}` to highlight lines, and `file="../src/x.ts" lines="10-24"` (empty body) to embed real source instead of pasting it.\n8. **Diagrams:** ```` ```mermaid ```` with a valid first line (`flowchart LR`, `sequenceDiagram`, `gantt`, \u2026).\n\n## Writing for both audiences\n\n`references/style-guide.md` covers this in depth. In short:\n\n- **Meaning over decoration.** Use `:::warning`, `:::danger` or `:::decision` for things that matter. Color is decoration and must never be the only signal.\n- **Hard constraints for implementers go in one `:::agent` block** near the end. Agents always receive it, even when they read a single section.\n- **Narrative, history and research go under `## Background {agent=skip}` or in `:::human`.** People still see it; agents skip it, which keeps reads cheap.\n- **Unresolved decisions go in `:::question`**, with who decides and by when. Put the interim fallback in the `:::agent` block.\n- **Headings name the content** ("Requirements", "API", "Rollout") because agents select sections by heading.\n';var mf='# Styled Markdown syntax reference (spec v1)\n\nEverything in CommonMark + GitHub-Flavored Markdown is valid. This file lists every `.smd` addition with all attributes and allowed values.\n\n## Contents\n\n1. Front matter\n2. Block containers (general rules)\n3. Callouts and collapsibles\n4. Layout: tabs, columns, cards, boxes, steps, timeline\n5. Project blocks: decision, risk\n6. Developer blocks: api, code fences\n7. Audience blocks: agent, human\n8. Inline: styled text, directives, math\n9. Tasks\n10. Headings\n11. Diagrams\n12. Attribute lists and colors\n\n---\n\n## 1. Front matter\n\n```yaml\n---\nsmd: 1                       # required in practice (validator suggests it)\ntitle: Saved Searches        # rendered as the page title; don\'t repeat as "# H1"\nsummary: One or two sentences. Agents read this first.\nstatus: draft                # draft | review | approved | deprecated | archived\nowners: ["@alice", "@team"]  # list\naudience: both               # humans | agents | both\ntags: [search, q4]           # list\nversion: 0.3\ncreated: 2026-09-01          # YYYY-MM-DD\nupdated: 2026-09-26          # YYYY-MM-DD\ntheme: auto                  # auto | light | dark (preview hint)\naccent: indigo               # named color or #hex for headings/links\ntoc: true                    # table of contents after the header\nrelated: [docs/other.smd]    # list of paths/URLs\n---\n```\n\nUnknown keys are allowed (reported as hints).\n\n## 2. Block containers \u2014 general rules\n\n```text\n:::name{attributes} Optional title\ncontent (any Markdown, including other blocks)\n:::\n```\n\n- Open with 3+ colons, the name, optional `{attrs}` **immediately** after the name, then an optional title (inline Markdown allowed).\n- Close with a line of 3+ colons and nothing else. It closes the **innermost** open block.\n- Nesting works at any depth. Writing outer blocks with more colons (`::::tabs`) is a readability convention.\n- A `:::` inside a code fence never closes a block.\n- Every block also accepts the style attributes from \xA712.\n\n## 3. Callouts and collapsibles\n\n| Name | Use for |\n|---|---|\n| `note` | Neutral remark |\n| `info` | Background information |\n| `tip` | Helpful advice |\n| `success` | Done / good outcome |\n| `warning` | Important caveat |\n| `danger` | Hard constraint, breaking change, data loss |\n| `question` | Unresolved decision (say who decides and by when) |\n\nAttributes: `title`, `collapsible` (`{collapsible}` starts closed, `{collapsible=open}` starts open).\n\n```markdown\n:::warning{collapsible} Breaking change in v2\nDetails\u2026\n:::\n\n:::details Full log\nCollapsed until opened. Attributes: title, open.\n:::\n```\n\n## 4. Layout\n\n```markdown\n::::tabs\n:::tab npm\n\u2026\n:::\n:::tab pnpm\n\u2026\n:::\n::::\n\n::::columns\n:::column{width=60%}\n\u2026\n:::\n:::column\n\u2026\n:::\n::::\n\n:::card{accent=green} Title\n\u2026\n:::\n\n:::box{bg=indigo align=center}\n\u2026\n:::\n\n:::steps\n1. First\n2. Second\n:::\n\n:::timeline\n- [x] **2026-09-15** \u2014 Kickoff\n- [ ] **2026-10-20** \u2014 Beta\n:::\n```\n\n- `tab` must be directly inside `tabs`, and `column` directly inside `columns`.\n- `column` `width`: a percentage (`30%`) or a ratio (`2`).\n- `card` `accent`: a color.\n- `steps` and `timeline` style the list they wrap. In a timeline, `[x]` items show as done.\n\n## 5. Project blocks\n\n```markdown\n:::decision{status=accepted date=2026-09-08 owner=@maya} Use Postgres for saved searches\nWhy, and the alternatives considered.\n:::\n\n:::risk{impact=high likelihood=medium owner=@payments status=open} Apple Pay verification delays launch\nMitigation.\n:::\n```\n\n| Block | Attribute | Values |\n|---|---|---|\n| decision | `status` | proposed \xB7 accepted \xB7 rejected \xB7 superseded \xB7 deprecated |\n| decision | `date` | YYYY-MM-DD |\n| decision | `owner` | @name |\n| risk | `impact`, `likelihood` | low \xB7 medium \xB7 high \xB7 critical |\n| risk | `status` | open \xB7 mitigated \xB7 accepted \xB7 closed |\n| risk | `owner` | @name |\n\n## 6. Developer blocks\n\n```markdown\n:::api{method=POST path="/v1/orders" auth="bearer token"} Create an order\n| Field | Type | Required | Notes |\n| --- | --- | --- | --- |\n| `items` | array | yes | |\n\n**Responses:** `201` created \xB7 `422` validation errors\n:::\n```\n\n- `method` (required): GET \xB7 POST \xB7 PUT \xB7 PATCH \xB7 DELETE \xB7 HEAD \xB7 OPTIONS \xB7 WS \xB7 RPC \xB7 EVENT\n- `path` (required), `auth` (optional).\n\nCode fence info string:\n\n| Info | Effect |\n|---|---|\n| ```` ```ts ```` | Syntax highlighting |\n| ```` ```ts title="src/app.ts" ```` | File-name header |\n| ```` ```ts {2,5-7} ```` | Highlight lines 2 and 5\u20137 |\n| ```` ```ts file="../src/app.ts" lines="10-24" ```` | Embed real source (the body must be empty). Paths are relative to the document and must stay inside the workspace. With `lines`, highlight numbers refer to file lines. |\n| ```` ```mermaid ```` | Diagram |\n| ```` ```math ```` | Display math |\n\n## 7. Audience blocks\n\n```markdown\n:::agent Implementation constraints\n- Imperative, checkable rules for implementers and coding agents.\n:::\n\n:::human Why this matters\nContext for people only. Agents skip it.\n:::\n```\n\n`:::agent` is collapsed for humans in the preview and **always** included in agent views, even when only one section is requested.\n\n## 8. Inline\n\n| Syntax | Result |\n|---|---|\n| `[text]{color=red}` | Colored text. Style keys are listed in \xA712. |\n| `==text==` | Highlight |\n| `:badge[Beta]{color=amber}` | Pill label (`color`) |\n| `:status[On track]{color=green}` | Status dot + label (`color`) |\n| `:priority[P1]` | Priority pill: P0\u2013P4 or critical/high/medium/low |\n| `:due[2026-10-15]` | Due date: amber within 7 days, red when overdue |\n| `:metric[42%]{label="Activation" delta="+3%" trend=up good=up}` | KPI tile. `trend`: up/down/flat; `good`: up/down (default up). `label` is expected. |\n| `:progress{value=60 color=green label="6/10"}` | Progress bar (value 0\u2013100) |\n| `:kbd[Ctrl+Shift+P]` | Keyboard keys |\n| `:mention[@team]` | Mention |\n| `$E=mc^2$` / `$$ \u2026 $$` | Math (KaTeX). No space just inside the `$`; `$5 and $10` is not math. |\n\nA directive\'s `:` must follow whitespace or opening punctuation, so `10:30` is safe.\n\n## 9. Tasks\n\n```markdown\n- [ ] Add idempotency keys :priority[P0] @api-team :due[2026-10-03]\n- [x] Kickoff with design @sam\n```\n\nThe owner (`@name` or `:mention[@name]`), priority and due date are extracted by `smd tasks` and `smd meta`. Overdue open tasks produce an info diagnostic.\n\n## 10. Headings\n\n```markdown\n## Background {agent=skip}\n## Installation {#install}\n## Summary {.lead}\n```\n\n`agent=skip` omits the section, up to the next heading of the same or higher level, from agent views. It\'s the only allowed `agent` value.\n\n## 11. Diagrams\n\nThe first non-comment line must be a Mermaid type: `flowchart` (or `graph`), `sequenceDiagram`, `classDiagram`, `stateDiagram-v2`, `erDiagram`, `journey`, `gantt`, `pie`, `quadrantChart`, `requirementDiagram`, `gitGraph`, `mindmap`, `timeline`, `sankey-beta`, `xychart-beta`, `block-beta`, `packet-beta`, `kanban`, `architecture-beta`, `C4Context`\u2026\n\n## 12. Attribute lists and colors\n\n`{key=value key2="quoted value" .class #id flag}`\n\n| Style key | Values |\n|---|---|\n| `color`, `bg`, `border` | Named color, `#hex`, `rgb()`, `hsl()` |\n| `size` | xs \xB7 sm \xB7 md \xB7 lg \xB7 xl \xB7 2xl |\n| `weight` | normal \xB7 medium \xB7 bold |\n| `font` | sans \xB7 serif \xB7 mono |\n| `style` | italic \xB7 underline \xB7 strike |\n| `align` (blocks) | left \xB7 center \xB7 right |\n\nNamed colors: `red` `orange` `amber` `yellow` `green` `teal` `cyan` `blue` `indigo` `purple` `pink` `gray` `muted` `accent`. They adapt to light and dark themes.\n\nAny other key or value is a validation error and is dropped by renderers.\n';var pf='# Styled Markdown style guide\n\nHow to write `.smd` that people enjoy reading and agents can use cheaply.\n\n## Contents\n\n1. Structure\n2. Choosing the right construct\n3. Writing for agents\n4. Tasks, dates and owners\n5. Color and emphasis\n6. Diagrams and code\n7. Checklist before you finish\n\n## 1. Structure\n\n- Front matter \u2192 `## Snapshot`/`## Summary` (optional) \u2192 content sections \u2192 `## Open questions` \u2192 `## Implementation notes` (the `:::agent` block).\n- Use `##` for sections and `###` for subsections. Avoid going deeper than `####`.\n- One topic per section. Agents select sections by heading, so a heading like "API" or "Rollout" is better than "Other stuff".\n- Keep the `summary` to one or two sentences that stand alone: what, for whom, and the outcome. It\'s the first thing every agent reads.\n\n## 2. Choosing the right construct\n\n| You want to say\u2026 | Use | Not |\n|---|---|---|\n| "Don\'t do X, it breaks Y" | `:::danger` | red bold text |\n| "Be careful about X" | `:::warning` | \u26A0\uFE0F emoji paragraph |\n| "Useful to know" | `:::tip` / `:::info` / `:::note` | blockquote |\n| "We decided X because Y" | `:::decision{status=accepted \u2026}` | a bullet in meeting notes |\n| "X might go wrong" | `:::risk{impact likelihood owner}` | a paragraph |\n| "Not decided yet" | `:::question` with owner + date | "TBD" |\n| An endpoint | `:::api{method path}` + a params table | a heading and a code block |\n| Milestones | `:::timeline` | a table of dates |\n| A KPI | `:metric[42%]{label delta trend}` | bold number |\n| A status label | `:status[At risk]{color=red}` or `:badge[Beta]` | colored text |\n| Long optional detail (logs, full lists) | `:::details` | pasting it inline |\n| Alternatives for different setups | `::::tabs` | several near-identical sections |\n| Two things side by side | `::::columns` | a table used for layout |\n| Numbered procedure | `:::steps` around `1.`/`2.`/`3.` | plain list when order matters a lot |\n\n## 3. Writing for agents\n\n- Put **every hard rule an implementer must follow** in a single `:::agent` block. Keep it short and imperative, and make each bullet checkable ("All prices are integer cents", not "be careful with money").\n- Give the **fallback for open questions** in that block ("If X is unresolved, do Y").\n- Put **narrative, history, research, thanks and meeting chatter** under a heading with `{agent=skip}` or in `:::human`. People still see it; agents don\'t pay for it.\n- Use `:::details` for long logs or lists. `--brief` agent views collapse them to one line.\n- Prefer **embedding code** (`file="\u2026" lines="\u2026"`) over pasting it. Agents get a pointer and can read the real file if they need it.\n- Don\'t hide requirements inside tabs labelled "Nice to have" if they are actually required. Agents read tab labels literally.\n\n## 4. Tasks, dates and owners\n\n- Start task text with a verb: "Add idempotency keys to POST /v1/orders".\n- Add `:priority[P0\u2013P4]` for anything that needs triage, `@owner` for accountability, and `:due[YYYY-MM-DD]` for anything time-bound.\n- Always write dates as ISO `YYYY-MM-DD`.\n- Mark done tasks `[x]` rather than deleting them while the document is active.\n\n## 5. Color and emphasis\n\n- Color is decoration. The meaning must survive without it (renderers for plain Markdown and agents drop color).\n- Use named colors consistently: green means good or done, amber means attention or soon, red means bad, blocked or overdue, and blue/indigo is neutral or informational.\n- `==highlight==` at most once or twice per section.\n- Don\'t color whole paragraphs; use a callout instead.\n\n## 6. Diagrams and code\n\n- Give every code fence a language. Add `title="path/to/file.ts"` when the code belongs to a file.\n- Keep diagrams small (at most ~15 nodes). Split big systems into several diagrams.\n- `flowchart LR` suits pipelines, `sequenceDiagram` request flows, `gantt` schedules, `erDiagram` data models, and `stateDiagram-v2` lifecycles.\n- Mermaid labels with special characters need quotes: `A["Save (draft)"]`.\n\n## 7. Checklist before you finish\n\n- [ ] Front matter has `smd: 1`, title, summary, status, owners and updated.\n- [ ] No template placeholders left (`\u2014`, `@owner`, `YYYY-MM-DD`, `{{\u2026}}`).\n- [ ] Every unresolved item is a `:::question` with an owner and a date.\n- [ ] Hard constraints are in one `:::agent` block.\n- [ ] Narrative sections are `{agent=skip}` or `:::human`.\n- [ ] `smd validate <file> --fix` reports 0 errors.\n- [ ] `smd agent <file> --brief` reads well on its own.\n';var hf=`---
 smd: 1
@@ -1442,7 +1647,7 @@ Short rationale.
 ## Notes {agent=skip}
 
 Discussion notes for people who missed the meeting.
-`;var pn={prd:{description:"Product requirements / feature spec",text:hf},adr:{description:"Architecture decision record",text:gf},rfc:{description:"Design proposal / technical spec",text:bf},runbook:{description:"On-call / operational procedure",text:vf},api:{description:"API reference",text:yf},"status-report":{description:"Weekly or monthly status update",text:xf},"meeting-notes":{description:"Meeting summary with decisions and actions",text:wf}},_f=[{name:"styled-markdown-reader",summary:"read .smd token-efficiently (outline \u2192 sections \u2192 edit)",files:{"SKILL.md":df}},{name:"styled-markdown-writer",summary:"create and edit .smd following the rules (templates + validator)",files:{"SKILL.md":ff,"references/syntax.md":mf,"references/style-guide.md":pf,...Object.fromEntries(Object.entries(pn).map(([e,t])=>[`assets/templates/${e}.smd`,t.text]))}}];var zg={version:"1.1.0"},kf=`smd \u2014 Styled Markdown tool (spec v${1})
+`;var pn={prd:{description:"Product requirements / feature spec",text:hf},adr:{description:"Architecture decision record",text:gf},rfc:{description:"Design proposal / technical spec",text:bf},runbook:{description:"On-call / operational procedure",text:vf},api:{description:"API reference",text:yf},"status-report":{description:"Weekly or monthly status update",text:xf},"meeting-notes":{description:"Meeting summary with decisions and actions",text:wf}},_f=[{name:"styled-markdown-reader",summary:"read .smd token-efficiently (outline \u2192 sections \u2192 edit)",files:{"SKILL.md":df}},{name:"styled-markdown-writer",summary:"create and edit .smd following the rules (templates + validator)",files:{"SKILL.md":ff,"references/syntax.md":mf,"references/style-guide.md":pf,...Object.fromEntries(Object.entries(pn).map(([e,t])=>[`assets/templates/${e}.smd`,t.text]))}}];var zg={version:"1.2.0"},kf=`smd \u2014 Styled Markdown tool (spec v${1})
 
 Reading (token-efficient, for agents):
   smd outline <file.smd>

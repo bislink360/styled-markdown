@@ -282,7 +282,7 @@ People-only content anywhere in the document.
 | Feature | How |
 |---|---|
 | Open preview | `Ctrl+K V` (side) · `Ctrl+Shift+V` (current tab) · preview icon in the title bar |
-| Live update | Updates as you type; embedded source files refresh on save |
+| Live update | Updates as you type; embedded source files refresh on save. Updates keep your place: the same content stays at the top even when you add lines above it, unchanged Mermaid diagrams aren't redrawn, and the selected tab and opened/closed collapsibles stay as you left them, also after the preview tab was hidden. |
 | Scroll sync | The preview follows the editor. **Double-click** in the preview to jump to that line. |
 | Task toggling | Click a checkbox in the preview to update the source |
 | Theme | Follows VS Code light/dark/high contrast. Override with `smd.preview.theme` or front matter `theme:`. |
