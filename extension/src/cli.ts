@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, checkMermaid, extractTasks, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
+  agentView, applyFixes, checkMermaid, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
   validateSmd, SMD_VERSION, type Diagnostic, type TaskInfo,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
@@ -31,6 +31,10 @@ Checking and converting:
   smd validate <files|dirs...> [--json] [--fix] [--strict] [--no-mermaid]
       Check .smd files. Exit code 1 on errors (or warnings with --strict). --fix applies safe fixes.
       Mermaid diagrams are parsed for syntax errors (--no-mermaid skips it).
+  smd fmt <files|dirs...> [--check] [--stdout]
+      Format .smd files in place: container fences, attribute lists, tables and blank lines.
+      --check   change nothing; list unformatted files and exit 1 if there are any
+      --stdout  print the formatted file instead of writing it (one file)
   smd render <file.smd> [-o out.html]      Standalone HTML page
   smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
@@ -111,6 +115,8 @@ function main(argv: string[]): number | Promise<number> {
     }
     case 'validate':
       return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, !flags.has('--no-mermaid'));
+    case 'fmt':
+      return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
     case 'render': {
       const file = requireFile(positional[0]);
       return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
@@ -200,6 +206,28 @@ async function validate(targets: string[], json: boolean, fix: boolean, strict: 
     console.log(`\n${files.length} file(s) checked: ${errors} error(s), ${warnings} warning(s).`);
   }
   return errors > 0 || (strict && warnings > 0) ? 1 : 0;
+}
+
+function fmt(targets: string[], check: boolean, stdout: boolean): number {
+  if (stdout) {
+    if (targets.length !== 1 || !fs.existsSync(targets[0]) || !fs.statSync(targets[0]).isFile()) return fail('--stdout needs exactly one file.');
+    process.stdout.write(formatSmd(read(targets[0])));
+    return 0;
+  }
+  const files = targets.flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const changed: string[] = [];
+  for (const file of files) {
+    const text = read(file);
+    const formatted = formatSmd(text);
+    if (formatted === text) continue;
+    changed.push(file);
+    if (!check) fs.writeFileSync(file, formatted);
+    console.log(check ? `${file}: not formatted` : `${file}: formatted`);
+  }
+  console.log(`
+${files.length} file(s) checked: ${changed.length} ${check ? 'need formatting' : 'formatted'}.`);
+  return check && changed.length ? 1 : 0;
 }
 
 function tasks(targets: string[], all: boolean, mine: string | undefined, json: boolean, today?: string): number {

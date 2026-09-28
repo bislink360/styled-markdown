@@ -5,6 +5,14 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- `smd fmt <files|dirs…>` formats `.smd` files in place, with `--check` for CI (exit code 1 when a file isn't formatted) and `--stdout` for one file. It only changes layout, never meaning:
+  - container fences: `:::name` with no space, one colon count per nesting level (the innermost uses `:::`, each enclosing level one more, e.g. `::::tabs` around `:::tab`), closing fences matching their opener; unbalanced documents keep their colons
+  - attribute lists on containers, headings, `[text]{…}` spans and inline directives: `#id`, `.classes`, then keys in the spec's order; values quoted only when needed (`title` and `label` always); duplicate keys collapsed to the value that wins
+  - pipe tables: aligned columns and delimiter rows (wide characters and emoji count as two columns)
+  - blank lines around containers, code, math, headings and tables where they touch paragraph text, runs of blank lines collapsed, one final newline
+  - code, math, raw HTML, front matter and indented blocks are left untouched
+- **Format Document** and format on save in VS Code, using the same rules as `smd fmt`.
+- `formatSmd()` in the `styled-markdown` library.
 - Mermaid syntax errors as diagnostics (`mermaid/syntax`), on the line and columns the parser points at, e.g. "expected TXT, got end of line". Diagrams are parsed with Mermaid's own parser, which ships as a separate `dist/mermaid-parse.js` and is loaded only when a document has diagrams.
   - VS Code: errors appear as you type, and `smd.validation.mermaid` turns the check off.
   - `smd validate`: `--no-mermaid` skips the check. The single-file CLI bundled in the agent skills doesn't include the parser and skips it.

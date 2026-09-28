@@ -14,5 +14,6 @@ export type { AgentViewOptions, AgentViewResult } from './agentView';
 export { parseFenceInfo } from './fence';
 export { checkMermaid, mermaidBlocks } from './mermaid';
 export type { MermaidParse, MermaidBlock } from './mermaid';
+export { formatSmd } from './format';
 export { dueState } from './render';
 export { SMD_CSS, SMD_RUNTIME_JS, renderPage } from './assets';
