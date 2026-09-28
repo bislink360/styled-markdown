@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Link validation checks anchors in other documents: `[x](plan.smd#rollout)` warns with `link/missing-anchor` when `plan.smd` has no such heading.
+- `link/missing-anchor` offers a quick fix to the closest heading id, and also accepts `{#id}` block attributes and HTML `id`/`name` as targets.
+- Reference-style links: `[text][label]` without a `[label]: …` definition reports the new `link/undefined-reference` rule, and definition targets are checked like inline links.
+- HTML `href`/`src` targets and front matter `related:` entries are checked for missing files and anchors.
+
+### Fixed
+- Link targets with spaces in angle brackets (`[x](<my file.md>)`), `'single'`/`(paren)` titles or balanced parentheses were not checked.
+- A link with malformed percent-encoding (`[x](#100%)`) made validation throw.
+- Links inside `~~~` code fences that contain ```` ``` ```` lines were checked as if they were prose.
+
 ## 1.1.0 — 2026-09-27
 
 No breaking changes. Documents, CLI commands and flags, diagnostic codes, extension commands and settings are unchanged from 1.0.0.

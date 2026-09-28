@@ -263,7 +263,7 @@
         "smd.validation.checkLinks": {
           "type": "boolean",
           "default": true,
-          "description": "Warn about relative links and images that point to missing files."
+          "description": "Warn about relative links, images and related: entries that point to missing files or headings."
         }
       }
     }

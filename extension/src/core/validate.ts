@@ -2,7 +2,8 @@ import katex from 'katex';
 import { attrsToStyle, isStyleKey, parseAttrs, resolveColor } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
-import { dueState, HEADING_ATTRS, renderSmd } from './render';
+import { dueState, HEADING_ATTRS } from './render';
+import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
 import { parseFenceInfo, sliceLines } from './fence';
 import { suggest } from './util';
 import {
@@ -142,7 +143,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       push(i, due.index, due.index + due[0].length, 'info', 'task/overdue', `Open task is overdue (due ${due[1]}).`);
     }
 
-    checkInline(raw, i, push, options);
+    checkInline(raw, i, push);
   }
 
   if (fence) wholeLine(fence.line, 'error', 'fence/unclosed', `Code block opened here is never closed with ${fence.char.repeat(fence.len)}.`);
@@ -156,13 +157,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       'The front matter title is already rendered as the document heading; this "# heading" duplicates it.');
   }
 
-  // Anchor links (#section) must point at a real heading.
-  const slugs = new Set(renderSmd(text).headings.map((h) => h.slug));
-  forEachLink(lines, fm.bodyStartLine, (target, line, col) => {
-    if (target.startsWith('#') && target.length > 1 && !slugs.has(decodeURIComponent(target.slice(1)))) {
-      push(line, col, col + target.length, 'warning', 'link/missing-anchor', `No heading with id "${target.slice(1)}" in this document.`);
-    }
-  });
+  checkLinks(text, push, options);
 
   return diagnostics.sort((a, b) => a.line - b.line || a.column - b.column);
 }
@@ -268,7 +263,7 @@ function checkContainer(
   }
 }
 
-function checkInline(raw: string, line: number, push: Push, options: ValidateOptions): void {
+function checkInline(raw: string, line: number, push: Push): void {
   // Blank out inline code so its contents are never treated as syntax.
   const text = raw.replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
 
@@ -329,19 +324,69 @@ function checkInline(raw: string, line: number, push: Push, options: ValidateOpt
     }
     for (const p of attrsToStyle(attrs).problems) push(line, col, end, p.severity, 'attrs/value', p.message);
   }
+}
 
-  // Relative links and images must exist.
-  if (options.fileExists) {
-    for (const m of text.matchAll(/!?\[[^\]\n]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)) {
-      const target = m[1];
-      if (/^(?:[a-z][a-z0-9+.-]*:|#|\/\/)/i.test(target)) continue;
-      const pathOnly = decodeURIComponent(target.split('#')[0].split('?')[0]);
-      if (pathOnly && !options.fileExists(pathOnly)) {
-        const col = m.index! + m[0].indexOf(target);
-        push(line, col, col + target.length, 'warning', 'link/missing-file', `"${pathOnly}" does not exist.`);
+/**
+ * Links, images, reference definitions, HTML href/src and `related:` entries must resolve: `#anchor` to an
+ * id in this document, relative paths to existing files and `file.smd#anchor` to an id in that file.
+ * File checks run only when `fileExists` is given; anchors in other files also need `readFile`.
+ */
+function checkLinks(text: string, push: Push, options: ValidateOptions): void {
+  const { links, references, definitions } = findLinks(text);
+  let ownIds: Set<string> | undefined;
+  const otherIds = new Map<string, Set<string> | undefined>();
+  const idsIn = (path: string): Set<string> | undefined => {
+    if (!otherIds.has(path)) {
+      const other = options.readFile?.(path);
+      otherIds.set(path, other === undefined ? undefined : anchorIds(other));
+    }
+    return otherIds.get(path);
+  };
+
+  for (const link of links) {
+    const parts = splitTarget(link.target);
+    if (!parts) continue;
+    const { line, column } = link;
+    const end = column + link.target.length;
+    if (!parts.path) {
+      if (!parts.anchor) continue;
+      ownIds ??= anchorIds(text);
+      if (!ownIds.has(parts.anchor)) {
+        missingAnchor(parts.anchor, ownIds, 'in this document', link.target, line, column, end, push);
+      }
+      continue;
+    }
+    if (!options.fileExists) continue;
+    if (!options.fileExists(parts.path)) {
+      const where = link.kind === 'related' ? ' (listed in "related")' : '';
+      push(line, column, end, 'warning', 'link/missing-file', `"${parts.path}" does not exist${where}.`);
+      continue;
+    }
+    if (parts.anchor && isDocumentPath(parts.path)) {
+      const ids = idsIn(parts.path);
+      if (ids && !ids.has(parts.anchor)) {
+        missingAnchor(parts.anchor, ids, `in "${parts.path}"`, link.target, line, column, end, push);
       }
     }
   }
+
+  for (const ref of references) {
+    if (!definitions.has(ref.label)) {
+      push(ref.line, ref.column, ref.endColumn, 'warning', 'link/undefined-reference',
+        `No definition for the reference "[${ref.label}]". Add a line like "[${ref.label}]: https://…" or use an inline link.`);
+    }
+  }
+}
+
+function missingAnchor(
+  anchor: string, ids: Set<string>, where: string, target: string,
+  line: number, column: number, end: number, push: Push,
+): void {
+  const hint = suggest(anchor, [...ids]);
+  const fixed = hint ? target.slice(0, target.indexOf('#') + 1) + hint : undefined;
+  push(line, column, end, 'warning', 'link/missing-anchor',
+    `No heading or element with id "${anchor}" ${where}${hint ? ` — did you mean "#${hint}"?` : '.'}`,
+    fixed ? { line, column, endColumn: end, replacement: fixed, title: `Change to "${fixed}"` } : undefined);
 }
 
 function checkFence(lang: string, content: string[], line: number, push: Push, wholeLine: WholeLine): void {
@@ -373,16 +418,6 @@ function checkMath(tex: string, line: number, wholeLine: WholeLine): void {
   } catch (e) {
     const msg = (e as Error).message.replace(/^KaTeX parse error:\s*/, '');
     wholeLine(line, 'error', 'math/syntax', `Math error: ${msg}`);
-  }
-}
-
-function forEachLink(lines: string[], from: number, fn: (target: string, line: number, col: number) => void): void {
-  let inFence = false;
-  for (let i = from; i < lines.length; i++) {
-    if (/^\s{0,3}(`{3,}|~{3,})/.test(lines[i])) { inFence = !inFence; continue; }
-    if (inFence) continue;
-    const text = lines[i].replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
-    for (const m of text.matchAll(/\]\(\s*(#[^)\s]*)\s*\)/g)) fn(m[1], i, m.index! + m[0].indexOf(m[1]));
   }
 }
 
