@@ -26,11 +26,11 @@ flowchart LR
 
 ## Options considered
 
-| Option | Pros | Cons |
-| --- | --- | --- |
-| **EventBridge — chosen** | Managed, schema registry, per-rule retries and DLQ | AWS lock-in, 256 KB event limit |
-| Kafka (MSK) | High throughput, replay | Cluster operations; overkill for ~40 events/s |
-| Keep HTTP callbacks + queue per consumer | Small change | Still couples the order service to every consumer |
+| Option                                   | Pros                                               | Cons                                              |
+| ---------------------------------------- | -------------------------------------------------- | ------------------------------------------------- |
+| **EventBridge — chosen**                 | Managed, schema registry, per-rule retries and DLQ | AWS lock-in, 256 KB event limit                   |
+| Kafka (MSK)                              | High throughput, replay                            | Cluster operations; overkill for ~40 events/s     |
+| Keep HTTP callbacks + queue per consumer | Small change                                       | Still couples the order service to every consumer |
 
 ## Consequences
 

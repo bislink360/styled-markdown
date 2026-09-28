@@ -12,10 +12,10 @@ toc: true
 
 ## Overview
 
-| | |
-| --- | --- |
-| **Base URL** | `https://api.example.com` |
-| **Auth** | `Authorization: Bearer <token>` |
+|                |                                 |
+| -------------- | ------------------------------- |
+| **Base URL**   | `https://api.example.com`       |
+| **Auth**       | `Authorization: Bearer <token>` |
 | **Rate limit** | 100 requests / second per token |
 
 :::tip Idempotency
@@ -25,11 +25,11 @@ Send an `Idempotency-Key` (UUID) with every `POST`. Retrying with the same key a
 ## Endpoints
 
 :::api{method=POST path="/v1/orders" auth="bearer token"} Create an order
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `items` | LineItem[] | yes | At least one item |
-| `country` | string | yes | ISO 3166-1 alpha-2 |
-| `coupon` | string | no | Invalid coupons return `422` with `fields.coupon` |
+| Field     | Type       | Required | Notes                                             |
+| --------- | ---------- | -------- | ------------------------------------------------- |
+| `items`   | LineItem[] | yes      | At least one item                                 |
+| `country` | string     | yes      | ISO 3166-1 alpha-2                                |
+| `coupon`  | string     | no       | Invalid coupons return `422` with `fields.coupon` |
 
 **Responses:** `201` order · `402` payment declined · `409` idempotency key reused with a different body · `422` validation errors (all fields at once)
 :::
@@ -53,12 +53,12 @@ Prices are integer cents. The API uses the shared pricing module (lines 7–13 h
 
 ## Errors
 
-| Status | Meaning | Retry? |
-| --- | --- | --- |
-| `401` | Missing or invalid token | No |
-| `409` | Conflict (see endpoint) | No |
-| `429` | Rate limited | Yes, after `Retry-After` |
-| `5xx` | Server error | Yes, with exponential backoff and the same idempotency key |
+| Status | Meaning                  | Retry?                                                     |
+| ------ | ------------------------ | ---------------------------------------------------------- |
+| `401`  | Missing or invalid token | No                                                         |
+| `409`  | Conflict (see endpoint)  | No                                                         |
+| `429`  | Rate limited             | Yes, after `Retry-After`                                   |
+| `5xx`  | Server error             | Yes, with exponential backoff and the same idempotency key |
 
 ## Changelog
 

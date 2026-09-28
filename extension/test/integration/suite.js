@@ -140,6 +140,22 @@ const checks = {
     assert.deepEqual(got, [['main.smd', 0], ['other.smd', 5], ['main.smd', 4], undefined], JSON.stringify(got));
   },
 
+  async 'Format Document applies smd fmt'() {
+    const cases = [
+      ['# Title\nText\n::::note\nHi\n::::\n\nEnd\n', '# Title\n\nText\n\n:::note\nHi\n:::\n\nEnd\n'],
+      ['Intro\n\n|a|b|\n|-|-|\n|1|2|', 'Intro\n\n| a   | b   |\n| --- | --- |\n| 1   | 2   |\n'],
+      ['Already fine.\n', 'Already fine.\n'],
+    ];
+    for (const [input, expected] of cases) {
+      const doc = await vscode.workspace.openTextDocument({ language: 'smd', content: input });
+      const edits = (await vscode.commands.executeCommand('vscode.executeFormatDocumentProvider', doc.uri, { tabSize: 2, insertSpaces: true })) ?? [];
+      const edit = new vscode.WorkspaceEdit();
+      edit.set(doc.uri, edits);
+      await vscode.workspace.applyEdit(edit);
+      assert.equal(doc.getText(), expected);
+    }
+  },
+
   async 'find references and rename follow heading anchors across the workspace'() {
     // Workspace-wide search only covers the open folder (examples/), so the fixture lives there briefly.
     const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
