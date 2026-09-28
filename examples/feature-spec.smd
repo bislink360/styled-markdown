@@ -14,12 +14,12 @@ toc: true
 
 ## Overview
 
-| | |
-|---|---|
-| **Release** | :badge[Q4 2026]{color=teal} |
-| **Health** | :status[On track]{color=green} |
-| **Build progress** | :progress{value=35} |
-| **Design** | [Figma — Saved searches](https://example.com/figma) |
+|                    |                                                     |
+| ------------------ | --------------------------------------------------- |
+| **Release**        | :badge[Q4 2026]{color=teal}                         |
+| **Health**         | :status[On track]{color=green}                      |
+| **Build progress** | :progress{value=35}                                 |
+| **Design**         | [Figma — Saved searches](https://example.com/figma) |
 
 Power users re-run the same 3–5 searches every day. Saving them removes [~40 seconds]{weight=bold} per search and lets us notify people when something new appears.
 
@@ -58,23 +58,23 @@ flowchart LR
 
 ## API
 
-::::columns
-:::column{width=55%}
+:::::columns
+::::column{width=55%}
 ```http title="Create"
 POST /v1/saved-searches
 Content-Type: application/json
 
 { "name": "Open P1 bugs", "query": "priority:p1 state:open" }
 ```
-:::
-:::column
-:::::card{accent=teal} Limits
+::::
+::::column
+:::card{accent=teal} Limits
 - 50 saved searches per user
 - Name ≤ 80 characters
 - Digest at 08:00 in the user's time zone
-:::::
 :::
 ::::
+:::::
 
 :::warning Breaking change
 `GET /v1/search` will require the `filters` object instead of query-string filters. Clients must migrate before **2026-11-01**.
