@@ -7,6 +7,7 @@
 ### Added
 
 ### Changed
+- CI runs a seeded fuzz test of the core (render, validate, quick fixes, agent view, outline, document info, tasks, Markdown conversion) and a benchmark suite (`npm run bench`) that fails on order-of-magnitude slowdowns.
 
 ### Deprecated
 
