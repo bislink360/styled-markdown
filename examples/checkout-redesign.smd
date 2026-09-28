@@ -14,7 +14,7 @@ toc: true
 
 ## Snapshot
 
-:metric[38%]{label="Checkout abandonment" delta="+2.1pp" trend=up good=down} :metric[4]{label="Checkout steps" } :metric[€61]{label="Avg. order value" delta="+€3" trend=up} :metric[71s]{label="Median time to pay" delta="+6s" trend=up good=down}
+:metric[38%]{label="Checkout abandonment" delta="+2.1pp" trend=up good=down} :metric[4]{label="Checkout steps"} :metric[€61]{label="Avg. order value" delta="+€3" trend=up} :metric[71s]{label="Median time to pay" delta="+6s" trend=up good=down}
 
 **Health:** :status[On track]{color=green} · **Release:** :badge[Q4 2026]{color=indigo} · **Build progress:** :progress{value=45}
 
@@ -110,17 +110,17 @@ Pricing logic lives in one module and is shared by the quote and order endpoints
 ```ts file="src/pricing.ts" lines="7-13"
 ```
 
-:::api{method=POST path="/v1/checkout/quote" auth="session"} Price the cart before an address is complete
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `items` | LineItem[] | yes | sku, quantity |
-| `country` | string | yes | ISO 3166-1 alpha-2, used for the shipping estimate |
-| `coupon` | string | no | Returns `couponError` instead of failing the request |
+:::api{method=POST path="/v1/checkout/quote" auth=session} Price the cart before an address is complete
+| Field     | Type       | Required | Notes                                                |
+| --------- | ---------- | -------- | ---------------------------------------------------- |
+| `items`   | LineItem[] | yes      | sku, quantity                                        |
+| `country` | string     | yes      | ISO 3166-1 alpha-2, used for the shipping estimate   |
+| `coupon`  | string     | no       | Returns `couponError` instead of failing the request |
 
 **Responses:** `200` quote · `422` invalid items
 :::
 
-:::api{method=POST path="/v1/orders" auth="session"} Create the order and authorize payment
+:::api{method=POST path="/v1/orders" auth=session} Create the order and authorize payment
 Requires an `Idempotency-Key` header (UUID). Replays with the same key return the original response.
 
 **Responses:** `201` order created · `402` payment declined · `409` key reused with a different body · `422` validation errors (all fields at once)
