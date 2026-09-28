@@ -139,6 +139,36 @@ const checks = {
     const got = [await at(5), await at(20), await at(44), await at(1)];
     assert.deepEqual(got, [['main.smd', 0], ['other.smd', 5], ['main.smd', 4], undefined], JSON.stringify(got));
   },
+
+  async 'Enter continues task lists, ends empty items, and leaves code alone'() {
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content: '- [x] Ship it :priority[P1] @maya\n\n```md\n- [ ] in code\n```\n' });
+    const editor = await vscode.window.showTextDocument(doc);
+    const enterAt = async (line, character) => {
+      await vscode.window.showTextDocument(doc); // `type`, the plain-Enter fallback, needs editor focus
+      editor.selection = new vscode.Selection(line, character, line, character);
+      await vscode.commands.executeCommand('smd.onEnterKey');
+    };
+    await enterAt(0, doc.lineAt(0).text.length);
+    assert.equal(doc.lineAt(1).text, '- [ ]  @maya');
+    assert.deepEqual([editor.selection.active.line, editor.selection.active.character], [1, 6], 'cursor before the owner');
+    await vscode.commands.executeCommand('deleteRight');
+    await vscode.commands.executeCommand('deleteRight');
+    await vscode.commands.executeCommand('deleteRight');
+    await vscode.commands.executeCommand('deleteRight');
+    await vscode.commands.executeCommand('deleteRight');
+    await vscode.commands.executeCommand('deleteRight');
+    assert.equal(doc.lineAt(1).text, '- [ ] ');
+    await enterAt(1, 6);
+    assert.equal(doc.lineAt(1).text, '', 'Enter on an empty task ends the list');
+    const codeLine = doc.getText().split('\n').indexOf('- [ ] in code');
+    await enterAt(codeLine, doc.lineAt(codeLine).text.length);
+    // Inside code the command hands Enter back to VS Code (`type`), which the test host may not apply
+    // to an unfocused window; either way no list marker may appear.
+    assert.ok(!doc.getText().includes('- [ ] in code\n- [ ]'), 'no list continuation inside code');
+    // Without Code Spell Checker installed, setup explains instead of writing settings.
+    assert.equal(await vscode.commands.executeCommand('smd.setupSpellCheck'), false);
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+  },
 };
 
 async function run() {

@@ -29,6 +29,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | Styled Markdown: Export to HTML / Export to Plain Markdown (.md) | — |
 | Styled Markdown: Convert Markdown File to .smd | Explorer context menu |
 | Styled Markdown: Validate All .smd Files in Workspace | — |
+| Styled Markdown: Set Up Spell Checking (cSpell) | — |
 
 ## Settings
 
@@ -39,6 +40,8 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | `smd.preview.allowHtml` | `true` | Render raw HTML (scripts never run) |
 | `smd.validation.enabled` | `true` | Report problems |
 | `smd.validation.checkLinks` | `true` | Warn about relative links, images and `related:` entries that point to missing files or headings |
+| `smd.editor.continueLists` | `true` | Enter continues task lists (unchecked, keeping `@owner`), bullets and numbered lists; Enter on an empty item ends the list |
+| `smd.images.folder` | `docs/images` | Where pasted and dropped images are saved, relative to the workspace folder |
 
 ## Syntax at a glance
 
