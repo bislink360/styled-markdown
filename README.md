@@ -11,8 +11,6 @@
 
 <p align="center">
   <a href="https://github.com/bislink360/styled-markdown/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/bislink360/styled-markdown?label=release&color=4f46e5"></a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown"><img alt="VS Code Marketplace" src="https://img.shields.io/visual-studio-marketplace/v/bislink360.styled-markdown?label=VS%20Code%20Marketplace&color=007ACC"></a>
-  <a href="https://www.npmjs.com/package/styled-markdown"><img alt="npm" src="https://img.shields.io/npm/v/styled-markdown?color=cb3837"></a>
   <img alt="Spec" src="https://img.shields.io/badge/spec-smd%20v1-7c3aed">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
 </p>
@@ -157,19 +155,25 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-Install **[Styled Markdown](https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown)** from the Visual Studio Marketplace: search for **Styled Markdown** in the Extensions view (`Ctrl+Shift+X`), or run:
+1. Download **`styled-markdown-1.1.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+2. Install it:
 
-```bash
-code --install-extension bislink360.styled-markdown
-```
+   ```bash
+   code --install-extension styled-markdown-1.1.0.vsix
+   ```
 
-Then open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS). An offline `.vsix` is also attached to every [release](https://github.com/bislink360/styled-markdown/releases/latest).
+   Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
+3. Open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS).
+
+> The VS Code Marketplace and npm listings are coming soon. Until then, every release on GitHub has the `.vsix`, the npm package and the skills.
 
 ### npm library and `smd` CLI
 
+Install the package straight from the release:
+
 ```bash
-npm install -g styled-markdown     # the smd command
-npm install styled-markdown        # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.1.0/styled-markdown-1.1.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v1.1.0/styled-markdown-1.1.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -183,10 +187,11 @@ Full instructions, building from source and troubleshooting: **[docs/INSTALL.md]
 ### Agent skills
 
 ```bash
-npx styled-markdown skills install --global
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.1.0/skills/styled-markdown-reader/scripts/smd.cjs
+node smd.cjs skills install --global
 ```
 
-This installs both skills into `~/.claude/skills/` for Claude Code. For Claude.ai, the Claude API / Agent SDK, Copilot, Cursor and other agents, see **[docs/SKILLS.md](docs/SKILLS.md)**.
+Or download `styled-markdown-reader.zip` and `styled-markdown-writer.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest). This installs both skills into `~/.claude/skills/` for Claude Code. For Claude.ai, the Claude API / Agent SDK, Copilot, Cursor and other agents, see **[docs/SKILLS.md](docs/SKILLS.md)**.
 
 ## Token-efficient reading for agents
 

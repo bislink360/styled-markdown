@@ -24,20 +24,9 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 
 ## Install the VS Code extension
 
-### Option A — from the Visual Studio Marketplace (recommended)
+> **Visual Studio Marketplace:** coming soon. Until the listing is live, install the `.vsix` from the GitHub release (Option A).
 
-1. Open the **Extensions** view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
-2. Search for **Styled Markdown** and click **Install** on *Styled Markdown (.smd)* by **bislink360**.
-
-Or from a terminal:
-
-```bash
-code --install-extension bislink360.styled-markdown
-```
-
-The listing: https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown. Updates install automatically.
-
-### Option B — from the release file (offline)
+### Option A — from the release file (recommended)
 
 1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-1.1.0.vsix`**.
 2. Install it with **one** of these methods.
@@ -58,7 +47,7 @@ The listing: https://marketplace.visualstudio.com/items?itemName=bislink360.styl
 
 > Cursor, VSCodium and Windsurf use the same steps (`cursor --install-extension …`, `codium --install-extension …`).
 
-### Option C — build and install from source
+### Option B — build and install from source
 
 ```bash
 git clone https://github.com/bislink360/styled-markdown.git
@@ -103,14 +92,14 @@ All commands are in the Command Palette under **Styled Markdown:**. They cover o
 
 The CLI is a **single self-contained file** with no dependencies. Pick one method.
 
-**From npm (recommended):**
+**From the release's npm package (recommended):** npm installs straight from the tarball attached to the release. The npm registry listing is coming soon.
 
 ```bash
-npm install -g styled-markdown
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.1.0/styled-markdown-1.1.0.tgz
 smd --version       # smd 1.1.0 (Styled Markdown spec v1)
 ```
 
-Or run it without installing: `npx styled-markdown <command>`. The same package is also a library; see [npm/README.md](../npm/README.md).
+The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v1.1.0/styled-markdown-1.1.0.tgz`); see [npm/README.md](../npm/README.md).
 
 **Use the copy bundled with the skills (no build needed):**
 
@@ -144,7 +133,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
-      - run: npx --yes styled-markdown validate docs/ --strict
+      - run: curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.1.0/skills/styled-markdown-reader/scripts/smd.cjs
+      - run: node smd.cjs validate docs/ --strict
 ```
 
 `validate` exits with code **1** on errors (and on warnings with `--strict`). Use `--json` for machine-readable output.
