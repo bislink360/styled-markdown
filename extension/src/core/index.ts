@@ -4,6 +4,8 @@ export { renderSmd, renderStandaloneHtml, slugify } from './render';
 export type { RenderOptions, RenderResult, Heading } from './render';
 export { validateSmd, applyFixes } from './validate';
 export { suggest } from './util';
+export { RULE_CODES, applyRuleSettings, readRuleConfig } from './rules';
+export type { RuleSetting, RuleSettings } from './rules';
 export type { Diagnostic, Fix, Severity, ValidateOptions } from './validate';
 export { smdToMarkdown } from './toMarkdown';
 export { getDocumentInfo, extractTasks } from './meta';

@@ -5,6 +5,7 @@ import {
   agentView, applyFixes, extractTasks, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
   validateSmd, SMD_VERSION, type Diagnostic, type TaskInfo,
 } from './core';
+import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
@@ -27,8 +28,11 @@ Reading (token-efficient, for agents):
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
 
 Checking and converting:
-  smd validate <files|dirs...> [--json] [--fix] [--strict]
+  smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>]
       Check .smd files. Exit code 1 on errors (or warnings with --strict). --fix applies safe fixes.
+      Rules are configured by the nearest smd.config.json or .smdrc (or --config):
+        { "rules": { "link/missing-file": "off", "frontmatter/*": "hint", "task/overdue": "error" } }
+      and silenced inline with <!-- smd-disable-next-line rule/code -->.
   smd render <file.smd> [-o out.html]      Standalone HTML page
   smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
@@ -46,7 +50,7 @@ Agent skills:
 
 interface Args { command?: string; positional: string[]; flags: Set<string>; values: Map<string, string[]> }
 
-const VALUE_OPTIONS = new Set(['-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
+const VALUE_OPTIONS = new Set(['--config', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
 
 function parseArgs(argv: string[]): Args {
   const [command, ...rest] = argv;
@@ -102,13 +106,14 @@ function main(argv: string[]): number {
       return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
     case 'meta': {
       const file = requireFile(positional[0]);
-      const info = getDocumentInfo(read(file), { fileExists: existsFrom(file), readFile: readerFor(file), today });
+      const rules = configFor(file, value('--config')).rules;
+      const info = getDocumentInfo(read(file), { fileExists: existsFrom(file), readFile: readerFor(file), today, rules });
       if (flags.has('--no-diagnostics')) delete (info as Partial<typeof info>).diagnostics;
       process.stdout.write(JSON.stringify(info, null, 2) + '\n');
       return 0;
     }
     case 'validate':
-      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today);
+      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'));
     case 'render': {
       const file = requireFile(positional[0]);
       return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
@@ -152,12 +157,21 @@ function main(argv: string[]): number {
   }
 }
 
-function validate(targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string): number {
+function validate(targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, configFile?: string): number {
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
   const report: Array<{ file: string; diagnostics: Diagnostic[]; fixed?: number }> = [];
+  const configs = new Map<string, LoadedConfig>();
+  const reported = new Set<string>();
+  let configProblems = 0;
   for (const file of files) {
-    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today };
+    const config = configFor(file, configFile, configs);
+    if (config.problems.length && !reported.has(config.file!)) {
+      reported.add(config.file!);
+      configProblems += config.problems.length;
+      for (const p of config.problems) console.error(`${config.file}: warning  ${p}`);
+    }
+    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today, rules: config.rules };
     let text = read(file);
     let diagnostics = validateSmd(text, opts);
     let fixed: number | undefined;
@@ -175,7 +189,7 @@ function validate(targets: string[], json: boolean, fix: boolean, strict: boolea
 
   const all = report.flatMap((r) => r.diagnostics);
   const errors = all.filter((d) => d.severity === 'error').length;
-  const warnings = all.filter((d) => d.severity === 'warning').length;
+  const warnings = all.filter((d) => d.severity === 'warning').length + configProblems;
 
   if (json) {
     process.stdout.write(JSON.stringify({ files: report, errors, warnings }, null, 2) + '\n');
@@ -192,6 +206,17 @@ function validate(targets: string[], json: boolean, fix: boolean, strict: boolea
     console.log(`\n${files.length} file(s) checked: ${errors} error(s), ${warnings} warning(s).`);
   }
   return errors > 0 || (strict && warnings > 0) ? 1 : 0;
+}
+
+/** Rule settings for a file: from `--config`, else the nearest config file. */
+function configFor(file: string, configFile?: string, cache?: Map<string, LoadedConfig>): LoadedConfig {
+  if (!configFile) return loadRuleConfig(file, cache);
+  const key = `explicit:${configFile}`;
+  const cached = cache?.get(key);
+  if (cached) return cached;
+  const config = fs.existsSync(configFile) ? readConfigFile(configFile) : { file: configFile, rules: {}, problems: ['Config file not found.'] };
+  cache?.set(key, config);
+  return config;
 }
 
 function tasks(targets: string[], all: boolean, mine: string | undefined, json: boolean, today?: string): number {

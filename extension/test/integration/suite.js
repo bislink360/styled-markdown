@@ -139,6 +139,30 @@ const checks = {
     const got = [await at(5), await at(20), await at(44), await at(1)];
     assert.deepEqual(got, [['main.smd', 0], ['other.smd', 5], ['main.smd', 4], undefined], JSON.stringify(got));
   },
+
+  async 'smd.config.json and suppression comments shape diagnostics, and config edits apply live'() {
+    // The config watcher covers the open folder (examples/), so the fixture lives there briefly.
+    const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const dir = fs.mkdtempSync(path.join(root, 'zz-rules-'));
+    try {
+      const config = path.join(dir, 'smd.config.json');
+      fs.writeFileSync(config, '{ "rules": { "container/unknown": "off", "attrs/value": "hint" } }');
+      const file = path.join(dir, 'a.smd');
+      fs.writeFileSync(file, ':::warnign\nA [word]{color=blu}\n:::\n\n<!-- smd-disable-next-line -->\n:::tpi\nx\n:::\n');
+      const doc = await vscode.workspace.openTextDocument(file);
+      const state = () => vscode.languages.getDiagnostics(doc.uri)
+        .map((d) => `${d.range.start.line}:${d.code}:${d.severity}`).sort().join(' ');
+      await waitFor(() => state() === `1:attrs/value:${vscode.DiagnosticSeverity.Hint}`, `configured diagnostics, got "${state()}"`);
+
+      fs.writeFileSync(config, '{ "rules": { "attrs/*": "off", "contaner/unknown": "off" } }');
+      await waitFor(() => state() === `0:container/unknown:${vscode.DiagnosticSeverity.Warning}`, `reloaded config, got "${state()}"`);
+      const problems = await waitFor(() => vscode.languages.getDiagnostics(vscode.Uri.file(config)).map((d) => d.message).join(), 'config file problems');
+      assert.match(problems, /Unknown rule "contaner\/unknown" — did you mean "container\/unknown"\?/);
+    } finally {
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
 };
 
 async function run() {

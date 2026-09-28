@@ -135,7 +135,7 @@ History and research. People see it; agents skip it.
 | `smd outline <file>` | Sections with line ranges and token costs |
 | `smd agent <file> [--section …] [--brief]` | Compact agent view |
 | `smd tasks <dir> [--mine @me]` | Open tasks across docs, overdue first |
-| `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes) |
+| `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->` |
 | `smd init <file> --template prd` | New doc from 7 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect |
 | `smd skills install [--global]` | Install the agent skills |
