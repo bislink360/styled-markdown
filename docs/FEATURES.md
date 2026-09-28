@@ -52,6 +52,8 @@ theme: auto               # auto | light | dark
 - **Preview:** a header card with a status pill, version, date, owners and tags, plus an optional table of contents.
 - **Agent view:** `# Saved Searches`, one `status: review · owners: … · tags: …` line, and `summary: …`.
 - **Tip:** the `summary` is the first thing every agent reads. Make it self-contained.
+- **Schema:** keys and values are completed and checked from one JSON Schema, published as [`smd-frontmatter.schema.json`](../extension/schemas/smd-frontmatter.schema.json) and as `styled-markdown/frontmatter.schema.json` on npm for YAML tooling and pipelines. Typing `updated: ` suggests today's date.
+- **Staleness:** a live document whose `updated` date is more than 180 days old gets a `frontmatter/stale` hint. Bump `updated` after a review, or set `status: archived`. The threshold is set with `smd.validation.staleAfterDays` or `smd validate --stale-after <days>`, where `0` turns it off.
 
 ## 2. Callouts and collapsibles
 
@@ -329,6 +331,8 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[x](gone.md)`, `related: [gone.smd]` | `link/missing-file` | — |
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
+| `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
+| `updated` more than 180 days ago | `frontmatter/stale` | — |
 | overdue open task | `task/overdue` | — |
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
@@ -348,7 +352,7 @@ smd outline <file>                                   sections, line ranges, toke
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
-smd validate <files|dirs> [--json] [--fix] [--strict]
+smd validate <files|dirs> [--json] [--fix] [--strict] [--stale-after <days>]
 smd render <file> [-o out.html]
 smd to-md <file> [-o out.md]
 smd from-md <file.md> [-o out.smd]

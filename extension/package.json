@@ -264,6 +264,12 @@
           "type": "boolean",
           "default": true,
           "description": "Warn about relative links, images and related: entries that point to missing files or headings."
+        },
+        "smd.validation.staleAfterDays": {
+          "type": "number",
+          "default": 180,
+          "minimum": 0,
+          "description": "Report a document as stale when its front matter \"updated\" date is more than this many days ago and its status is not archived or deprecated. 0 turns the check off."
         }
       }
     }

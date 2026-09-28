@@ -139,6 +139,22 @@ const checks = {
     const got = [await at(5), await at(20), await at(44), await at(1)];
     assert.deepEqual(got, [['main.smd', 0], ['other.smd', 5], ['main.smd', 4], undefined], JSON.stringify(got));
   },
+
+  async 'front matter completion follows the schema, and stale documents are flagged'() {
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content: '---\nsmd: 1\ntheme: \nupdated: 2020-01-01\n\n---\n\nBody\n' });
+    const labels = async (line, character) => {
+      const list = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', doc.uri, new vscode.Position(line, character));
+      // Snippets are always mixed in; keep this provider's keys and values.
+      const ours = [vscode.CompletionItemKind.Property, vscode.CompletionItemKind.EnumMember];
+      return list.items.filter((i) => ours.includes(i.kind)).map((i) => (typeof i.label === 'string' ? i.label : i.label.label));
+    };
+    const themes = (await labels(2, 7)).sort();
+    assert.deepEqual(themes, ['auto', 'dark', 'light'], JSON.stringify(themes));
+    const keys = await labels(4, 0);
+    assert.ok(keys.includes('status') && keys.includes('owners'), JSON.stringify(keys));
+    assert.ok(!keys.includes('smd') && !keys.includes('updated'), 'keys already present are not offered');
+    await waitFor(() => vscode.languages.getDiagnostics(doc.uri).some((d) => d.code === 'frontmatter/stale' && d.range.start.line === 3), 'a frontmatter/stale diagnostic');
+  },
 };
 
 async function run() {

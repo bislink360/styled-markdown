@@ -39,6 +39,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | `smd.preview.allowHtml` | `true` | Render raw HTML (scripts never run) |
 | `smd.validation.enabled` | `true` | Report problems |
 | `smd.validation.checkLinks` | `true` | Warn about relative links, images and `related:` entries that point to missing files or headings |
+| `smd.validation.staleAfterDays` | `180` | Flag a document as stale when `updated` is older than this and its status isn't archived or deprecated (`0`: off) |
 
 ## Syntax at a glance
 

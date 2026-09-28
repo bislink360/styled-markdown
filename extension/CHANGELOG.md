@@ -5,6 +5,12 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- Front matter JSON Schema: one schema (`FRONTMATTER_SCHEMA`) drives front matter validation and editor completion.
+  - It is published as `extension/schemas/smd-frontmatter.schema.json` and as `styled-markdown/frontmatter.schema.json` on npm, for YAML tooling and pipelines.
+  - Completion now offers every enumerated value, including `theme`, `toc` and `smd`. It skips keys already in the front matter, and suggests today's date for `updated` and `created`.
+  - New `frontmatter/value` warning for values the schema doesn't allow on keys without their own rule, such as `theme: neon`.
+  - `title`, `summary` and `version` given as a list or mapping are reported as `frontmatter/type`.
+- Stale document check `frontmatter/stale` (info): `updated` is more than 180 days old and the status isn't `archived` or `deprecated`. Configure it with `smd.validation.staleAfterDays`, `smd validate --stale-after <days>` or `validateSmd(text, { staleAfterDays })`; `0` turns it off.
 
 ### Changed
 

@@ -27,8 +27,9 @@ Reading (token-efficient, for agents):
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
 
 Checking and converting:
-  smd validate <files|dirs...> [--json] [--fix] [--strict]
+  smd validate <files|dirs...> [--json] [--fix] [--strict] [--stale-after <days>]
       Check .smd files. Exit code 1 on errors (or warnings with --strict). --fix applies safe fixes.
+      Documents whose "updated" date is over 180 days old are reported as stale (--stale-after 0: off).
   smd render <file.smd> [-o out.html]      Standalone HTML page
   smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
@@ -46,7 +47,7 @@ Agent skills:
 
 interface Args { command?: string; positional: string[]; flags: Set<string>; values: Map<string, string[]> }
 
-const VALUE_OPTIONS = new Set(['-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
+const VALUE_OPTIONS = new Set(['--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
 
 function parseArgs(argv: string[]): Args {
   const [command, ...rest] = argv;
@@ -71,6 +72,9 @@ function main(argv: string[]): number {
   const { command, positional, flags } = args;
   const value = (name: string) => args.values.get(name)?.[0];
   const today = value('--today');
+  const staleAfter = value('--stale-after');
+  const staleAfterDays = staleAfter === undefined ? undefined : Number(staleAfter);
+  if (staleAfterDays !== undefined && !(staleAfterDays >= 0)) return fail('--stale-after needs a number of days (0 turns the check off).');
 
   switch (command) {
     case 'outline': {
@@ -102,13 +106,13 @@ function main(argv: string[]): number {
       return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
     case 'meta': {
       const file = requireFile(positional[0]);
-      const info = getDocumentInfo(read(file), { fileExists: existsFrom(file), readFile: readerFor(file), today });
+      const info = getDocumentInfo(read(file), { fileExists: existsFrom(file), readFile: readerFor(file), today, staleAfterDays });
       if (flags.has('--no-diagnostics')) delete (info as Partial<typeof info>).diagnostics;
       process.stdout.write(JSON.stringify(info, null, 2) + '\n');
       return 0;
     }
     case 'validate':
-      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today);
+      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, staleAfterDays);
     case 'render': {
       const file = requireFile(positional[0]);
       return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
@@ -152,12 +156,12 @@ function main(argv: string[]): number {
   }
 }
 
-function validate(targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string): number {
+function validate(targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, staleAfterDays?: number): number {
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
   const report: Array<{ file: string; diagnostics: Diagnostic[]; fixed?: number }> = [];
   for (const file of files) {
-    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today };
+    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today, staleAfterDays };
     let text = read(file);
     let diagnostics = validateSmd(text, opts);
     let fixed: number | undefined;

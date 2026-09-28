@@ -3,11 +3,12 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { readerFor } from './files';
 import {
-  CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
+  CONTAINERS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES,
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
-  parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
+  FRONTMATTER_SCHEMA, frontMatterValues, parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
 } from './core';
 import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
+import { frontMatterProperty } from './core/frontmatterSchema';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
 
@@ -59,7 +60,7 @@ export class SmdDiagnostics implements vscode.Disposable {
     const fileExists = dir && config.get<boolean>('checkLinks', true)
       ? (rel: string) => fs.existsSync(path.resolve(dir, rel))
       : undefined;
-    const items = validateSmd(document.getText(), { fileExists, readFile: readerFor(document) }).map((d) => {
+    const items = validateSmd(document.getText(), { fileExists, readFile: readerFor(document), staleAfterDays: config.get<number>('staleAfterDays', 180) }).map((d) => {
       const range = new vscode.Range(d.line, d.column, d.line, d.endColumn);
       const diag = new vscode.Diagnostic(range, d.message, SEVERITY[d.severity]);
       diag.source = 'smd';
@@ -117,19 +118,28 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
     const fm = parseFrontMatter(document.getText());
 
-    // Front matter keys and values
+    // Front matter keys and values, from FRONTMATTER_SCHEMA
     if (fm.present && position.line > 0 && position.line < fm.bodyStartLine - 1) {
-      const value = /^(status|audience|theme|accent):\s*(\w*)$/.exec(prefix);
+      const value = /^([\w-]+):\s*(\S*)$/.exec(prefix);
       if (value) {
-        const options = value[1] === 'status' ? STATUS_VALUES : value[1] === 'audience' ? AUDIENCE_VALUES
-          : value[1] === 'theme' ? ['auto', 'light', 'dark'] : [...NAMED_COLORS];
-        return options.map((o) => new vscode.CompletionItem(o, vscode.CompletionItemKind.EnumMember));
+        const prop = frontMatterProperty(value[1]);
+        if (prop?.format === 'date') {
+          const item = new vscode.CompletionItem(new Date().toISOString().slice(0, 10), vscode.CompletionItemKind.Value);
+          item.detail = 'Today';
+          return [item];
+        }
+        return frontMatterValues(value[1]).map((o) => new vscode.CompletionItem(o,
+          value[1] === 'accent' ? vscode.CompletionItemKind.Color : vscode.CompletionItemKind.EnumMember));
       }
       if (/^\w*$/.test(prefix)) {
-        return Object.entries(FRONTMATTER_KEYS).map(([key, doc]) => {
+        const present = new Set(Object.keys(fm.data));
+        return Object.entries(FRONTMATTER_SCHEMA.properties).filter(([key]) => !present.has(key)).map(([key, prop], i) => {
           const item = new vscode.CompletionItem(key, vscode.CompletionItemKind.Property);
           item.insertText = `${key}: `;
-          item.documentation = doc;
+          item.documentation = prop.description;
+          item.sortText = String(i).padStart(2, '0');
+          // Offer the allowed values right away.
+          if (frontMatterValues(key).length || prop.format === 'date') item.command = { command: 'editor.action.triggerSuggest', title: 'Suggest values' };
           return item;
         });
       }
