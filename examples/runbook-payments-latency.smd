@@ -50,10 +50,10 @@ kubectl rollout history deployment/payments-api -n payments | tail -5
 
 ## Escalation
 
-| When | Who |
-| --- | --- |
-| No recovery after 15 minutes | :mention[@payments-lead] |
-| Suspected double charges | :mention[@finance-ops] and :mention[@security] |
+| When                         | Who                                            |
+| ---------------------------- | ---------------------------------------------- |
+| No recovery after 15 minutes | :mention[@payments-lead]                       |
+| Suspected double charges     | :mention[@finance-ops] and :mention[@security] |
 
 ## History {agent=skip}
 
