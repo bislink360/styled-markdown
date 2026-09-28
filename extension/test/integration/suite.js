@@ -139,6 +139,29 @@ const checks = {
     const got = [await at(5), await at(20), await at(44), await at(1)];
     assert.deepEqual(got, [['main.smd', 0], ['other.smd', 5], ['main.smd', 4], undefined], JSON.stringify(got));
   },
+
+  async 'refactorings wrap selections, change callout types and convert blockquotes'() {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'smd',
+      content: 'First line.\nSecond line.\n\n:::note\nKeep it short.\n:::\n\n> **Warning:** Rotate keys.\n',
+    });
+    const actions = async (range) =>
+      ((await vscode.commands.executeCommand('vscode.executeCodeActionProvider', doc.uri, range, 'refactor.rewrite.smd')) ?? []).filter((a) => a.kind?.value === 'refactor.rewrite.smd');
+    const run = async (range, title) => {
+      const action = (await actions(range)).find((a) => a.title === title);
+      assert.ok(action, `no "${title}" in ${JSON.stringify((await actions(range)).map((a) => a.title))}`);
+      assert.ok(await vscode.workspace.applyEdit(action.edit));
+    };
+
+    const wraps = (await actions(new vscode.Range(0, 0, 2, 0))).map((a) => a.title);
+    assert.ok(wraps.includes('Wrap in :::agent (agent instructions)') && wraps.includes('Wrap in :::human (humans only)'), JSON.stringify(wraps));
+    await run(new vscode.Range(0, 0, 2, 0), 'Wrap in :::tip (tip)');
+    await run(new vscode.Range(5, 2, 5, 2), 'Convert :::note to :::info');
+    await run(new vscode.Range(9, 3, 9, 3), 'Convert blockquote to :::warning');
+    assert.equal(doc.getText(), ':::tip\nFirst line.\nSecond line.\n:::\n\n:::info\nKeep it short.\n:::\n\n:::warning\nRotate keys.\n:::\n');
+    const blank = (await actions(new vscode.Range(4, 0, 4, 0))).map((a) => a.title);
+    assert.deepEqual(blank, [], `no actions on a blank line: ${JSON.stringify(blank)}`);
+  },
 };
 
 async function run() {

@@ -3,11 +3,12 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { readerFor } from './files';
 import {
-  CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
+  CALLOUT_TYPES, CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
   parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
 } from './core';
 import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
+import { blockquoteToCallout, containerAt, isCallout, wrapLines, type LineEdit } from './core/refactors';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
 
@@ -90,6 +91,56 @@ class QuickFixProvider implements vscode.CodeActionProvider {
       action.diagnostics = [diag];
       action.isPreferred = true;
       actions.push(action);
+    }
+    return actions;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Refactorings: wrap in a block, change a callout's type, blockquote → callout
+// ---------------------------------------------------------------------------
+
+const WRAP_TARGETS: Array<[string, string]> = [
+  ['note', 'note'], ['tip', 'tip'], ['warning', 'warning'], ['danger', 'danger'],
+  ['card', 'card'], ['details', 'collapsible details'], ['agent', 'agent instructions'], ['human', 'humans only'],
+];
+
+class RefactorProvider implements vscode.CodeActionProvider {
+  static readonly kind = vscode.CodeActionKind.RefactorRewrite.append('smd');
+
+  provideCodeActions(document: vscode.TextDocument, range: vscode.Range): vscode.CodeAction[] {
+    const text = document.getText();
+    const actions: vscode.CodeAction[] = [];
+    const action = (title: string, apply: (edit: vscode.WorkspaceEdit) => void, preferred = false) => {
+      const a = new vscode.CodeAction(title, RefactorProvider.kind);
+      a.edit = new vscode.WorkspaceEdit();
+      apply(a.edit);
+      a.isPreferred = preferred;
+      actions.push(a);
+    };
+    const replaceLines = (edit: vscode.WorkspaceEdit, e: LineEdit) => edit.replace(document.uri,
+      new vscode.Range(e.startLine, 0, e.endLine, document.lineAt(e.endLine).text.length),
+      e.lines.join(document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n'));
+
+    const quote = blockquoteToCallout(text, range.start.line);
+    if (quote) action(`Convert blockquote to :::${quote.type}`, (edit) => replaceLines(edit, quote.edit), true);
+
+    if (!range.isEmpty) {
+      // A selection ending at the start of a line doesn't include that line.
+      const end = range.end.character === 0 && range.end.line > range.start.line ? range.end.line - 1 : range.end.line;
+      for (const [name, label] of WRAP_TARGETS) {
+        const wrap = wrapLines(text, range.start.line, end, name);
+        if (wrap) action(`Wrap in :::${name} (${label})`, (edit) => replaceLines(edit, wrap));
+      }
+    }
+
+    // Offered on the opening line only, so the lightbulb stays quiet inside the callout's content.
+    const container = containerAt(text, range.start.line);
+    if (container && container.openLine === range.start.line && isCallout(container.name)) {
+      const name = new vscode.Range(container.openLine, container.nameColumn, container.openLine, container.nameColumn + container.name.length);
+      for (const type of CALLOUT_TYPES) {
+        if (type !== container.name) action(`Convert :::${container.name} to :::${type}`, (edit) => edit.replace(document.uri, name, type));
+      }
     }
     return actions;
   }
@@ -371,6 +422,7 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdD
   context.subscriptions.push(
     diagnostics,
     vscode.languages.registerCodeActionsProvider(SELECTOR, new QuickFixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
+    vscode.languages.registerCodeActionsProvider(SELECTOR, new RefactorProvider(), { providedCodeActionKinds: [RefactorProvider.kind] }),
     vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`'),
     vscode.languages.registerHoverProvider(SELECTOR, new HoverProvider()),
     vscode.languages.registerColorProvider(SELECTOR, new ColorProvider()),

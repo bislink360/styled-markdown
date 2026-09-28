@@ -5,6 +5,10 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- Refactorings in VS Code (`Ctrl+.`):
+  - wrap the selected lines in `:::note`, `:::tip`, `:::warning`, `:::danger`, `:::card`, `:::details`, `:::agent` or `:::human`; the new fence gets one more colon than any container inside it, and selections that split a code block or container aren't offered
+  - convert a callout to another type, from its opening line
+  - convert a blockquote callout into a `:::callout`, from GitHub alerts (`> [!WARNING]`, mapped like `smd from-md`) or bold labels (`> **Warning:**`, `> **Tip**:`); nested quotes keep their extra `>`
 
 ### Changed
 
