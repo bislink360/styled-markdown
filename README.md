@@ -118,7 +118,7 @@ History and research. People see it; agents skip it.
 <summary><b>VS Code extension</b></summary>
 
 - **Live preview** (`Ctrl+K V`) with scroll sync, double-click to jump to source, clickable task checkboxes, and light/dark themes
-- **Validation** as you type, with **quick fixes** (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`)
+- **Validation** as you type, with **quick fixes** (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`), and Mermaid syntax errors on the exact line
 - **IntelliSense:** completions for blocks, directives, attributes, allowed values and front matter; hover docs; color picker
 - **Go to definition** for `#anchor` and `other.smd#anchor` links, files and reference links
 - **Outline, folding** and **34 snippets** (`prd`-style blocks, `decision`, `risk`, `api`, `mermaid`, `gantt`, `task`, `embed`…)

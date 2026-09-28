@@ -264,6 +264,11 @@
           "type": "boolean",
           "default": true,
           "description": "Warn about relative links, images and related: entries that point to missing files or headings."
+        },
+        "smd.validation.mermaid": {
+          "type": "boolean",
+          "default": true,
+          "description": "Parse Mermaid diagrams and report syntax errors before they render."
         }
       }
     }

@@ -11,7 +11,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 - **Live preview** (`Ctrl+K V`): themed to match VS Code, scroll sync, double-click to jump to source, clickable tasks, Mermaid diagrams, KaTeX math, tabs and columns.
 - **Project blocks:** `:::decision`, `:::risk`, `:::timeline`, KPI tiles (`:metric`), priorities, and due dates that turn red when overdue. Tasks carry owners.
 - **Developer blocks:** `:::api` endpoint cards, code line highlights `{2,5-7}`, and live source embeds `file="…" lines="…"` so docs never drift from code.
-- **Validation with quick fixes** as you type (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`).
+- **Validation with quick fixes** as you type (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`), including Mermaid syntax errors on the exact line before the diagram renders.
 - **IntelliSense:** completion for blocks, directives, attributes and allowed values; hover docs; color picker; go to definition for anchors, linked files and reference links; outline; folding; 34 snippets.
 - **Agent view:** 🤖 shows exactly what an AI agent reads, with styling, layout and human-only sections stripped and meaning kept (typically 37–85% fewer tokens). Copy the whole view or selected sections to any chat tool. A status-bar token counter shows the size.
 - **Export** to standalone HTML or GitHub Markdown, and convert `.md` → `.smd`.
@@ -39,6 +39,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | `smd.preview.allowHtml` | `true` | Render raw HTML (scripts never run) |
 | `smd.validation.enabled` | `true` | Report problems |
 | `smd.validation.checkLinks` | `true` | Warn about relative links, images and `related:` entries that point to missing files or headings |
+| `smd.validation.mermaid` | `true` | Parse Mermaid diagrams and report syntax errors before they render |
 
 ## Syntax at a glance
 

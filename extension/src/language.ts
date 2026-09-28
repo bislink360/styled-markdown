@@ -2,10 +2,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { readerFor } from './files';
+import { loadMermaidParser } from './mermaidLoader';
 import {
   CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
-  parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
+  checkMermaid, parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
 } from './core';
 import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
 
@@ -25,6 +26,14 @@ const SEVERITY: Record<Diagnostic['severity'], vscode.DiagnosticSeverity> = {
 /** Keeps the core diagnostic (with its fix) next to the VS Code one. */
 const fixes = new WeakMap<vscode.Diagnostic, NonNullable<Diagnostic['fix']>>();
 
+function toVscodeDiagnostic(d: Diagnostic): vscode.Diagnostic {
+  const diag = new vscode.Diagnostic(new vscode.Range(d.line, d.column, d.line, d.endColumn), d.message, SEVERITY[d.severity]);
+  diag.source = 'smd';
+  diag.code = d.code;
+  if (d.fix) fixes.set(diag, d.fix);
+  return diag;
+}
+
 export class SmdDiagnostics implements vscode.Disposable {
   readonly collection = vscode.languages.createDiagnosticCollection('smd');
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -32,23 +41,27 @@ export class SmdDiagnostics implements vscode.Disposable {
 
   constructor() {
     this.disposables.push(
-      vscode.workspace.onDidOpenTextDocument((d) => this.update(d)),
+      vscode.workspace.onDidOpenTextDocument((d) => void this.update(d)),
       vscode.workspace.onDidChangeTextDocument((e) => this.schedule(e.document)),
       vscode.workspace.onDidCloseTextDocument((d) => this.collection.delete(d.uri)),
       vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('smd.validation')) vscode.workspace.textDocuments.forEach((d) => this.update(d));
+        if (e.affectsConfiguration('smd.validation')) vscode.workspace.textDocuments.forEach((d) => void this.update(d));
       }),
     );
-    vscode.workspace.textDocuments.forEach((d) => this.update(d));
+    vscode.workspace.textDocuments.forEach((d) => void this.update(d));
   }
 
   schedule(document: vscode.TextDocument): void {
     const key = document.uri.toString();
     clearTimeout(this.timers.get(key));
-    this.timers.set(key, setTimeout(() => this.update(document), 300));
+    this.timers.set(key, setTimeout(() => void this.update(document), 300));
   }
 
-  update(document: vscode.TextDocument): number {
+  /**
+   * Validate a document. Problems appear at once; Mermaid syntax errors are added when parsing
+   * finishes, unless the document changed in the meantime. Resolves to the number of errors.
+   */
+  async update(document: vscode.TextDocument): Promise<number> {
     if (document.languageId !== 'smd') return 0;
     const config = vscode.workspace.getConfiguration('smd.validation', document.uri);
     if (!config.get<boolean>('enabled', true)) {
@@ -59,15 +72,20 @@ export class SmdDiagnostics implements vscode.Disposable {
     const fileExists = dir && config.get<boolean>('checkLinks', true)
       ? (rel: string) => fs.existsSync(path.resolve(dir, rel))
       : undefined;
-    const items = validateSmd(document.getText(), { fileExists, readFile: readerFor(document) }).map((d) => {
-      const range = new vscode.Range(d.line, d.column, d.line, d.endColumn);
-      const diag = new vscode.Diagnostic(range, d.message, SEVERITY[d.severity]);
-      diag.source = 'smd';
-      diag.code = d.code;
-      if (d.fix) fixes.set(diag, d.fix);
-      return diag;
-    });
+    const text = document.getText();
+    const version = document.version;
+    const items = validateSmd(text, { fileExists, readFile: readerFor(document) }).map(toVscodeDiagnostic);
     this.collection.set(document.uri, items);
+
+    const parse = config.get<boolean>('mermaid', true) && /^\s{0,3}(```|~~~)\s*mermaid/im.test(text) ? loadMermaidParser() : undefined;
+    if (parse) {
+      const mermaid = (await checkMermaid(text, parse)).map(toVscodeDiagnostic);
+      if (document.isClosed || document.version !== version) return 0;
+      if (mermaid.length) {
+        items.push(...mermaid);
+        this.collection.set(document.uri, items);
+      }
+    }
     return items.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).length;
   }
 

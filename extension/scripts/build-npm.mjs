@@ -34,3 +34,5 @@ copyFileSync(join(root, 'media', 'smd.css'), join(out, 'smd.css'));
 
 // The CLI is built by scripts/build.mjs; ship the identical file.
 copyFileSync(join(root, 'dist', 'cli.js'), join(out, 'cli.js'));
+// Mermaid's parser, loaded by the CLI on demand for mermaid/syntax diagnostics.
+copyFileSync(join(root, 'dist', 'mermaid-parse.js'), join(out, 'mermaid-parse.js'));

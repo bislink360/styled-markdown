@@ -5,8 +5,13 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- Mermaid syntax errors as diagnostics (`mermaid/syntax`), on the line and columns the parser points at, e.g. "expected TXT, got end of line". Diagrams are parsed with Mermaid's own parser, which ships as a separate `dist/mermaid-parse.js` and is loaded only when a document has diagrams.
+  - VS Code: errors appear as you type, and `smd.validation.mermaid` turns the check off.
+  - `smd validate`: `--no-mermaid` skips the check. The single-file CLI bundled in the agent skills doesn't include the parser and skips it.
+  - Library: `checkMermaid(text, parse)` and `mermaidBlocks(text)`; pass `mermaid.parse` or any compatible parser.
 
 ### Changed
+- The npm package ships Mermaid's parser for `smd validate` (`dist/mermaid-parse.js`, 3.4 MB unpacked). The library entry points don't load it.
 
 ### Deprecated
 

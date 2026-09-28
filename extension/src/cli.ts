@@ -2,9 +2,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, extractTasks, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
+  agentView, applyFixes, checkMermaid, extractTasks, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
   validateSmd, SMD_VERSION, type Diagnostic, type TaskInfo,
 } from './core';
+import { loadMermaidParser } from './mermaidLoader';
 import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
@@ -27,8 +28,9 @@ Reading (token-efficient, for agents):
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
 
 Checking and converting:
-  smd validate <files|dirs...> [--json] [--fix] [--strict]
+  smd validate <files|dirs...> [--json] [--fix] [--strict] [--no-mermaid]
       Check .smd files. Exit code 1 on errors (or warnings with --strict). --fix applies safe fixes.
+      Mermaid diagrams are parsed for syntax errors (--no-mermaid skips it).
   smd render <file.smd> [-o out.html]      Standalone HTML page
   smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
@@ -66,7 +68,7 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-function main(argv: string[]): number {
+function main(argv: string[]): number | Promise<number> {
   const args = parseArgs(argv);
   const { command, positional, flags } = args;
   const value = (name: string) => args.values.get(name)?.[0];
@@ -108,7 +110,7 @@ function main(argv: string[]): number {
       return 0;
     }
     case 'validate':
-      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today);
+      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, !flags.has('--no-mermaid'));
     case 'render': {
       const file = requireFile(positional[0]);
       return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
@@ -152,14 +154,20 @@ function main(argv: string[]): number {
   }
 }
 
-function validate(targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string): number {
+async function validate(targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, mermaid = true): Promise<number> {
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
   const report: Array<{ file: string; diagnostics: Diagnostic[]; fixed?: number }> = [];
+  const parse = mermaid ? loadMermaidParser() : undefined;
   for (const file of files) {
     const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today };
+    const check = async (text: string) => {
+      const found = validateSmd(text, opts);
+      if (parse) found.push(...await checkMermaid(text, parse));
+      return found.sort((a, b) => a.line - b.line || a.column - b.column);
+    };
     let text = read(file);
-    let diagnostics = validateSmd(text, opts);
+    let diagnostics = await check(text);
     let fixed: number | undefined;
     if (fix && diagnostics.some((d) => d.fix)) {
       const result = applyFixes(text, diagnostics);
@@ -167,7 +175,7 @@ function validate(targets: string[], json: boolean, fix: boolean, strict: boolea
         text = result.text;
         fs.writeFileSync(file, text);
         fixed = result.applied;
-        diagnostics = validateSmd(text, opts);
+        diagnostics = await check(text);
       }
     }
     report.push({ file, diagnostics, ...(fixed ? { fixed } : {}) });
@@ -313,4 +321,4 @@ function fail(message: string): number {
   return 2;
 }
 
-process.exitCode = main(process.argv.slice(2));
+void Promise.resolve(main(process.argv.slice(2))).then((code) => { process.exitCode = code; });
