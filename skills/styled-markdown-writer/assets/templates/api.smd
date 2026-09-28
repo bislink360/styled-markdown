@@ -11,38 +11,38 @@ toc: true
 
 ## Overview
 
-| | |
-| --- | --- |
+|              |                           |
+| ------------ | ------------------------- |
 | **Base URL** | `https://api.example.com` |
-| **Auth** | Bearer token |
-| **Format** | JSON, UTF-8 |
+| **Auth**     | Bearer token              |
+| **Format**   | JSON, UTF-8               |
 
 ## Endpoints
 
 :::api{method=GET path="/v1/items" auth="bearer token"} List items
-| Query | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `limit` | integer | no | 1–100, default 20 |
-| `cursor` | string | no | From the previous page |
+| Query    | Type    | Required | Notes                  |
+| -------- | ------- | -------- | ---------------------- |
+| `limit`  | integer | no       | 1–100, default 20      |
+| `cursor` | string  | no       | From the previous page |
 
 **Responses:** `200` page of items
 :::
 
 :::api{method=POST path="/v1/items" auth="bearer token"} Create an item
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `name` | string | yes | 1–80 characters |
+| Field  | Type   | Required | Notes           |
+| ------ | ------ | -------- | --------------- |
+| `name` | string | yes      | 1–80 characters |
 
 **Responses:** `201` created · `422` validation errors (all fields at once)
 :::
 
 ## Errors
 
-| Status | Meaning | Retry? |
-| --- | --- | --- |
-| `401` | Missing or invalid token | No |
-| `429` | Rate limited | Yes, after `Retry-After` |
-| `5xx` | Server error | Yes, with backoff |
+| Status | Meaning                  | Retry?                   |
+| ------ | ------------------------ | ------------------------ |
+| `401`  | Missing or invalid token | No                       |
+| `429`  | Rate limited             | Yes, after `Retry-After` |
+| `5xx`  | Server error             | Yes, with backoff        |
 
 ## Changelog
 
