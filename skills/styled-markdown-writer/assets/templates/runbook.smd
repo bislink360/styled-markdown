@@ -44,10 +44,10 @@ kubectl get pods -n <namespace>
 
 ## Escalation
 
-| When | Who |
-| --- | --- |
+| When                         | Who                      |
+| ---------------------------- | ------------------------ |
 | No recovery after 15 minutes | :mention[@service-owner] |
-| Customer data at risk | :mention[@security] |
+| Customer data at risk        | :mention[@security]      |
 
 ## History {agent=skip}
 

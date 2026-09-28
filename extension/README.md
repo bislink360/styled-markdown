@@ -12,6 +12,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 - **Project blocks:** `:::decision`, `:::risk`, `:::timeline`, KPI tiles (`:metric`), priorities, and due dates that turn red when overdue. Tasks carry owners.
 - **Developer blocks:** `:::api` endpoint cards, code line highlights `{2,5-7}`, and live source embeds `file="…" lines="…"` so docs never drift from code.
 - **Validation with quick fixes** as you type (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`). Turn rules off or change their severity in `smd.config.json` / `.smdrc`, which get completion from a schema, or silence one line with `<!-- smd-disable-next-line rule/code -->`.
+- **Formatter:** Format Document (`Shift+Alt+F`) and `"editor.formatOnSave"` tidy container fences, attribute lists, table columns and blank lines, with the same rules as `smd fmt` in CI.
 - **IntelliSense:** completion for blocks, directives, attributes and allowed values; hover docs; color picker; go to definition for anchors, linked files and reference links; outline; folding; 34 snippets.
 - **Agent view:** 🤖 shows exactly what an AI agent reads, with styling, layout and human-only sections stripped and meaning kept (typically 37–85% fewer tokens). Copy the whole view or selected sections to any chat tool. A status-bar token counter shows the size.
 - **Export** to standalone HTML or GitHub Markdown, and convert `.md` → `.smd`.
