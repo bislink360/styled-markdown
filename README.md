@@ -121,6 +121,7 @@ History and research. People see it; agents skip it.
 - **Validation** as you type, with **quick fixes** (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`)
 - **IntelliSense:** completions for blocks, directives, attributes, allowed values and front matter; hover docs; color picker
 - **Go to definition** for `#anchor` and `other.smd#anchor` links, files and reference links
+- **Find references** (`Shift+F12`) and **rename** (`F2`) for headings: renaming a heading updates every link to its anchor across the workspace
 - **Outline, folding** and **34 snippets** (`prd`-style blocks, `decision`, `risk`, `api`, `mermaid`, `gantt`, `task`, `embed`…)
 - **Agent view** (🤖 button), **brief agent view**, **copy for an agent** (whole doc or picked sections), and a **status-bar token counter**
 - **Export** to standalone HTML or plain GitHub Markdown · **Convert** `.md` → `.smd` · **Validate workspace**

@@ -139,6 +139,35 @@ const checks = {
     const got = [await at(5), await at(20), await at(44), await at(1)];
     assert.deepEqual(got, [['main.smd', 0], ['other.smd', 5], ['main.smd', 4], undefined], JSON.stringify(got));
   },
+
+  async 'find references and rename follow heading anchors across the workspace'() {
+    // Workspace-wide search only covers the open folder (examples/), so the fixture lives there briefly.
+    const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const dir = fs.mkdtempSync(path.join(root, 'zz-refs-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'sub'));
+      const a = path.join(dir, 'a.smd');
+      fs.writeFileSync(a, '# Guide\n\n## Pricing rules\n\nSee [p](#pricing-rules).\n');
+      fs.writeFileSync(path.join(dir, 'b.smd'), '[x](a.smd#pricing-rules) [y](a.smd#guide)\n');
+      fs.writeFileSync(path.join(dir, 'sub', 'c.md'), '[z](../a.smd#pricing-rules)\n');
+      const doc = await vscode.workspace.openTextDocument(a);
+      const heading = new vscode.Position(2, 6);
+
+      const refs = await vscode.commands.executeCommand('vscode.executeReferenceProvider', doc.uri, heading);
+      const where = refs.map((r) => `${path.relative(dir, r.uri.fsPath).replace(/\\/g, '/')}:${r.range.start.line}:${r.range.start.character}`).sort();
+      assert.deepEqual(where, ['a.smd:2:3', 'a.smd:4:9', 'b.smd:0:10', 'sub/c.md:0:13'], JSON.stringify(where));
+
+      const edit = await vscode.commands.executeCommand('vscode.executeDocumentRenameProvider', doc.uri, heading, 'Pricing');
+      assert.ok(await vscode.workspace.applyEdit(edit));
+      const text = async (rel) => (await vscode.workspace.openTextDocument(path.join(dir, rel))).getText();
+      assert.equal(await text('a.smd'), '# Guide\n\n## Pricing\n\nSee [p](#pricing).\n');
+      assert.equal(await text('b.smd'), '[x](a.smd#pricing) [y](a.smd#guide)\n');
+      assert.equal(await text('sub/c.md'), '[z](../a.smd#pricing)\n');
+    } finally {
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
 };
 
 async function run() {
