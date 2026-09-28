@@ -141,3 +141,10 @@ test('document info summarises the file for agents', () => {
   assert.equal(info.diagrams.length, 3);
   assert.equal(info.diagnostics.errors, 0);
 });
+
+test('a lone carriage return does not shift heading lines (found by fuzzing)', () => {
+  // Every other tool splits lines on \r?\n, so a lone \r is not a line break for the preview either.
+  const { headings, html } = renderSmd('para\r# Not a heading\n\n## Next');
+  assert.deepEqual(headings.map((h) => [h.text, h.line]), [['Next', 2]]);
+  assert.match(html, /data-line="2"/);
+});

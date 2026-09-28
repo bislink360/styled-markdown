@@ -144,7 +144,9 @@ export function renderSmd(text: string, options: RenderOptions = {}): RenderResu
   };
   const md = createMarkdownIt(opts);
   const env: Env = { lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts };
-  const tokens = md.parse(fm.body, env);
+  // markdown-it treats a lone \r as a line break, but every other tool here splits lines on \r?\n.
+  // A space keeps heading lines and data-line (preview scroll sync) in step with the editor.
+  const tokens = md.parse(fm.body.replace(/\r(?!\n)/g, ' '), env);
   const body = md.renderer.render(tokens, md.options, env);
 
   const data = fm.data;

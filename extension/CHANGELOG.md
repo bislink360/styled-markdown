@@ -11,6 +11,7 @@
 ### Deprecated
 
 ### Fixed
+- A lone carriage return (`\r` without `\n`) made the preview treat it as a line break, so heading lines and scroll sync drifted from the editor.
 
 ## Unreleased
 
