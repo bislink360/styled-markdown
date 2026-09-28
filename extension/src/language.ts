@@ -5,7 +5,7 @@ import { readerFor } from './files';
 import {
   CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
-  parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
+  formatSmd, parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
 } from './core';
 import {
   anchorLine, anchorTargets, isDocumentPath, linkAt, linkCompletionContext, splitTarget, type LinkCompletionContext,
@@ -436,6 +436,31 @@ class DefinitionProvider implements vscode.DefinitionProvider {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Formatting (Format Document, format on save): the same rules as `smd fmt`
+// ---------------------------------------------------------------------------
+
+class FormattingProvider implements vscode.DocumentFormattingEditProvider {
+  provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
+    const text = document.getText();
+    const formatted = formatSmd(text);
+    if (formatted === text) return [];
+    // Replace only the changed lines, so the cursor and folds elsewhere stay put.
+    const before = text.split(/\r?\n/);
+    const after = formatted.split(/\r?\n/);
+    let start = 0;
+    while (start < before.length && start < after.length && before[start] === after[start]) start++;
+    let end = 0;
+    while (end < before.length - start && end < after.length - start && before[before.length - 1 - end] === after[after.length - 1 - end]) end++;
+    const eol = document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
+    const changed = after.slice(start, after.length - end).join(eol);
+    // Up to the first unchanged line, or through the end of the document when the change reaches it.
+    if (end > 0) return [vscode.TextEdit.replace(new vscode.Range(start, 0, before.length - end, 0), changed + (after.length - end > start ? eol : ''))];
+    const from = Math.min(start, document.lineCount - 1);
+    return [vscode.TextEdit.replace(new vscode.Range(new vscode.Position(from, 0), document.lineAt(document.lineCount - 1).range.end), after.slice(from).join(eol))];
+  }
+}
+
 export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdDiagnostics {
   const diagnostics = new SmdDiagnostics();
   context.subscriptions.push(
@@ -447,6 +472,7 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdD
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, new SymbolProvider()),
     vscode.languages.registerFoldingRangeProvider(SELECTOR, new FoldingProvider()),
     vscode.languages.registerDefinitionProvider(SELECTOR, new DefinitionProvider()),
+    vscode.languages.registerDocumentFormattingEditProvider(SELECTOR, new FormattingProvider()),
   );
   return diagnostics;
 }

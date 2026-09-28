@@ -27,11 +27,14 @@ Tool (Node 18+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (
 
 2. **Fill it with real content.** Delete template sections that don't apply, and never leave placeholder text such as `—`, `@owner` or `YYYY-MM-DD` in a finished document. If you don't know a value (an owner, a date), ask, or leave a `:::question` that says what's missing.
 
-3. **Validate and fix:**
+3. **Format, validate and fix:**
 
    ```bash
+   node <skill>/scripts/smd.cjs fmt docs/name.smd
    node <skill>/scripts/smd.cjs validate docs/name.smd --fix
    ```
+
+   `fmt` only changes layout (fence colons, attribute order and quoting, table columns, blank lines), never meaning.
 
    `--fix` repairs typos automatically. Fix any remaining errors yourself: each has a line:column, a message and a rule code. **A document is done only when validation reports 0 errors.**
 
