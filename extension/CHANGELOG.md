@@ -12,6 +12,8 @@
 
 ### Fixed
 - A lone carriage return (`\r` without `\n`) made the preview treat it as a line break, so heading lines and scroll sync drifted from the editor.
+- A front matter key containing regex characters, such as `"a(b": 1`, made validation throw.
+- The `frontmatter/unknown-key` quick fix no longer rewrites the opening `---` when the key is written differently in YAML (e.g. quoted); it is then offered as a hint only.
 
 ## Unreleased
 
