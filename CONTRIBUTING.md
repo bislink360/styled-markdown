@@ -23,9 +23,13 @@ Press **F5** in `extension/` to run the extension in a development host.
 | Agent skills | `skills/*/SKILL.md`, references and templates. `npm run build` refreshes the bundled `scripts/smd.cjs`. |
 | Preview behaviour | `media/runtime.js`, `src/preview.ts` |
 
+## Branching: release trains
+
+Work reaches `main` through release branches. For a release, `release/vX.Y.Z` is created from `main`, each major feature or fix gets its own branch from it, feature PRs target the release branch, and after the release is tagged and published the release branch is merged into `main`. See the `version-control` skill (`.claude/skills/version-control/SKILL.md`); `plan-release.mjs` sets up the branches.
+
 ## Continuous integration
 
-Every pull request to `main` runs [.github/workflows/ci.yml](.github/workflows/ci.yml):
+Every pull request to `main` or a `release/**` branch, and every push to them, runs [.github/workflows/ci.yml](.github/workflows/ci.yml):
 
 | Job | Checks |
 |---|---|

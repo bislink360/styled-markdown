@@ -18,17 +18,16 @@ Existing documents, CI pipelines (`smd validate`), library users and agents all 
 
 ## Workflow
 
-### 1. Work on a branch, never on `main`
+### 1. Branching: follow the release train (version-control skill)
 
-Create one branch per capability or fix from an up-to-date `main`:
+Branches follow the **version-control** skill's release train:
 
-| Branch | For |
-|---|---|
-| `feat/<area>-<short-name>` | new capability (e.g. `feat/tables-captions`) |
-| `fix/<area>-<short-name>` | bug fix |
-| `docs/<topic>` | documentation only |
-| `chore/<topic>` | tooling, CI, dependencies |
-| `release/vX.Y.Z` | version bump + changelog for a release |
+- `release/vX.Y.Z` is created from `main` and opened at its version by `plan-release.mjs`.
+- Every feature or fix gets its own branch from the release branch: `feat/<slug>`, `fix/<slug>`, `docs/<slug>`, `chore/<slug>`.
+- Feature PRs target the **release branch** and are squash-merged.
+- After the release is tagged and published, the release branch is merged into `main` with a merge commit.
+
+Never commit to `main` directly, and never open feature PRs against `main`.
 
 Use Conventional Commit messages (`feat(tables): add captions`, `fix(cli): …`, `docs: …`), because they feed the changelog. Mark breaking commits with `!` and a `BREAKING CHANGE:` footer. **Do not add AI co-author trailers or "Generated with" lines to commits or PRs in this repository.** Read `references/branching.md` for the PR checklist and merge rules.
 
@@ -46,8 +45,8 @@ Before designing a change, read `references/compatibility.md`. It lists what cou
 From the repository root:
 
 ```bash
-node .claude/skills/smd-release/scripts/release-check.mjs --pr       # on feature/fix/docs/chore PRs (no version bump expected)
-node .claude/skills/smd-release/scripts/release-check.mjs            # on release/vX.Y.Z branches (versions and changelog enforced)
+node .claude/skills/smd-release/scripts/release-check.mjs --pr       # on feature PRs into a release branch
+node .claude/skills/smd-release/scripts/release-check.mjs            # on the release branch before tagging (versions and changelog enforced)
 node .claude/skills/smd-release/scripts/release-check.mjs --skip-vscode --skip-tests   # quick iteration
 ```
 
@@ -63,23 +62,22 @@ It also runs the typecheck, unit tests and VS Code integration tests, checks ver
 
 Every new syntax feature must also add a document exercising it to `extension/test/compat/corpus/`, so future releases are compared against it. Create the folder if it doesn't exist yet.
 
-### 4. Prepare the release on `release/vX.Y.Z`
+### 4. Finish the release on `release/vX.Y.Z`
 
-1. Branch from `main` after the feature PRs are merged.
-2. Bump every artifact in one step:
+1. The release branch was opened at its version when the train was planned: `plan-release.mjs` runs `bump-version.mjs`, which updates `extension/package.json`, `extension/package-lock.json` and `npm/package.json` and adds the CHANGELOG heading. Each feature PR added its own changelog bullets under that heading. If the version must change (e.g. a breaking change turned up and it must become a major), run:
 
    ```bash
    node .claude/skills/smd-release/scripts/bump-version.mjs <patch|minor|major|X.Y.Z>
    ```
 
-   This updates `extension/package.json`, `extension/package-lock.json` and `npm/package.json`, and opens a CHANGELOG entry.
-3. Fill in `extension/CHANGELOG.md`. List every item from the checker's **Breaking** section under `### ⚠️ Breaking changes`, each with a migration note. Delete empty headings.
-4. Update docs for any new syntax: `docs/SPEC.md`, `docs/FEATURES.md`, `skills/styled-markdown-writer/references/syntax.md`, and the README feature list.
-5. Rebuild (`cd extension && npm run build && npm run build:npm`) and run the **full** check with no skip flags.
+   on the release branch, and rename the release branch and tracking PR to match.
+2. Once every planned feature PR is merged into the release branch (or dropped from the train), complete the changelog entry. List every item from the checker's **Breaking** section under `### ⚠️ Breaking changes`, each with a migration note. Delete empty headings.
+3. Update docs for any new syntax: `docs/SPEC.md`, `docs/FEATURES.md`, `skills/styled-markdown-writer/references/syntax.md`, and the README feature list.
+4. Rebuild (`cd extension && npm run build && npm run build:npm`) and run the **full** check with no skip flags.
 
 ### 5. Stop and get human approval (mandatory)
 
-Before merging the release PR, show the human the checker report and a short summary:
+Before tagging, show the human the checker report and a short summary:
 
 - **Version:** `vPREV → vNEXT` (required bump / actual bump)
 - **Breaking changes:** each one with who is affected and the migration path. If there are none, say so explicitly.
@@ -89,16 +87,15 @@ Before merging the release PR, show the human the checker report and a short sum
 
 Don't proceed until the human approves in chat. For a major release, get approval for each breaking change individually.
 
-### 6. Merge, tag, build artifacts
+### 6. Tag the release branch, build artifacts
 
-1. Merge the release PR into `main` (squash).
-2. On the merge commit, tag and push:
+1. Tag the head of the release branch (the exact commit that ships) and push the tag:
 
    ```bash
-   git tag vX.Y.Z && git push origin vX.Y.Z
+   git tag -a vX.Y.Z origin/release/vX.Y.Z -m "Styled Markdown X.Y.Z" && git push origin vX.Y.Z
    ```
 
-3. Build the artifacts from that exact commit: `npm run package` (→ `.vsix`), `npm run build:npm`, and skill zips created with `tar -a -c -f <name>.zip <folder>` from `skills/` (forward-slash paths; don't use PowerShell `Compress-Archive`).
+2. Build the artifacts from that exact commit, in a separate worktree: `npm run package` (→ `.vsix`), `npm run build:npm`, and skill zips created with `tar -a -c -f <name>.zip <folder>` from `skills/` (forward-slash paths; don't use PowerShell `Compress-Archive`).
 
 ### 7. Publish (the human holds the credentials)
 
@@ -116,8 +113,9 @@ Check authentication first: `npx vsce ls-publishers` must list `bislink360`, and
 
 ### 8. After publishing
 
+- **Merge the release branch into `main`:** merge the tracking PR `release/vX.Y.Z → main` with a **merge commit** (never squash), so the tagged commit is in `main`'s history. Then delete the release and feature branches, and merge `main` into any other open release branch (version-control skill §5).
 - Confirm the README badges and install instructions resolve. Push doc changes that point at the new version only after all registries show it.
-- If a release is bad, don't unpublish. Ship a patch (`fix/…` → `release/vX.Y.Z+1`). For npm, `npm deprecate styled-markdown@X.Y.Z "<reason>"` warns installers.
+- If a release is bad, don't unpublish. Ship a patch train from the tag (`plan-release.mjs X.Y.Z+1 fix/<slug> --base vX.Y.Z`). For npm, `npm deprecate styled-markdown@X.Y.Z "<reason>"` warns installers.
 
 ## References
 
