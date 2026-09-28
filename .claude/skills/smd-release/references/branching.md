@@ -2,16 +2,18 @@
 
 ## Branches
 
-- `main` is always releasable. Never commit to it directly; change it only by merging pull requests.
-- Use one branch per capability or fix, created from the latest `main`: `feat/…`, `fix/…`, `docs/…`, `chore/…`.
-- `release/vX.Y.Z` holds only the version bump, changelog and final docs for a release.
-- Keep branches short-lived. Rebase or merge `main` in before opening the PR if `main` moved.
+The full workflow is the **version-control** skill's release train. In short:
 
-Suggested settings on GitHub (repository → Settings → Branches → `main`), which only the repository owner can change:
+- `main` contains only released code. It changes only by merging a `release/vX.Y.Z` tracking PR after that version is tagged and published.
+- `release/vX.Y.Z` is created from `main` (or from a tag, for hotfixes) and opened at its version by `plan-release.mjs`.
+- Use one branch per major feature or fix, created from the release branch: `feat/…`, `fix/…`, `docs/…`, `chore/…`, `perf/…`, `refactor/…`. Its PR targets the release branch.
+- Keep branches short-lived. When the release branch moves, merge it into the feature branch; don't rebase shared branches.
 
-- require a pull request before merging
-- require the release-check or test workflow to pass
-- allow squash merging only, and delete branches after merge
+Suggested settings on GitHub (repository → Settings → Branches), which only the repository owner can change:
+
+- protect `main` and `release/**`: require a pull request and the CI checks to pass
+- allow squash merges (feature PRs) and merge commits (release → `main`)
+- turn on automatically deleting head branches
 
 ## Commits
 
@@ -54,6 +56,7 @@ Copy this into the PR description:
 
 ## Merging and tagging
 
-- Squash-merge feature PRs. The squash commit message is the PR's Conventional Commit title.
-- Release: merge `release/vX.Y.Z` into `main`, then tag the merge commit with `vX.Y.Z` and push the tag. Build and publish artifacts from that tag only.
-- Never move or delete a published tag. If a release is wrong, publish a new patch version.
+- Squash-merge feature PRs into the release branch. The squash commit message is the PR's Conventional Commit title.
+- Release: tag the **release branch head** `vX.Y.Z`, push the tag, and build and publish artifacts from that tag only.
+- Then merge the tracking PR `release/vX.Y.Z → main` with a **merge commit**, so the tagged commit is in `main`'s history. Delete the release branch afterwards.
+- Never move or delete a published tag. If a release is wrong, publish a new patch version from a hotfix train (`--base vX.Y.Z`).
