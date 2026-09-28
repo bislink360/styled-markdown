@@ -139,6 +139,28 @@ const checks = {
     const got = [await at(5), await at(20), await at(44), await at(1)];
     assert.deepEqual(got, [['main.smd', 0], ['other.smd', 5], ['main.smd', 4], undefined], JSON.stringify(got));
   },
+
+  async 'workspace symbols find headings, decisions and APIs; hovers preview sections and embeds'() {
+    const symbols = await vscode.commands.executeCommand('vscode.executeWorkspaceSymbolProvider', 'post orders');
+    const api = symbols.find((s) => s.name === 'POST /v1/orders — Create an order' && s.kind === vscode.SymbolKind.Method);
+    assert.ok(api, JSON.stringify(symbols.map((s) => s.name)));
+    const decisions = await vscode.commands.executeCommand('vscode.executeWorkspaceSymbolProvider', 'launch in the eu');
+    assert.ok(decisions.some((s) => s.kind === vscode.SymbolKind.Event), JSON.stringify(decisions.map((s) => s.name)));
+
+    const hoverText = async (doc, line, character) => {
+      const hovers = await vscode.commands.executeCommand('vscode.executeHoverProvider', doc.uri, new vscode.Position(line, character));
+      return hovers.flatMap((h) => h.contents.map((c) => (typeof c === 'string' ? c : c.value))).join('\n');
+    };
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content: '## Setup\n\nInstall it.\n\nSee [setup](#setup).\n' });
+    assert.match(await hoverText(doc, 4, 7), /Install it\./);
+
+    const showcase = await vscode.workspace.openTextDocument(path.join(examples, 'showcase.smd'));
+    const embedLine = showcase.getText().split('\n').findIndex((l) => l.includes('file="src/pricing.ts"'));
+    assert.ok(embedLine > 0);
+    const embed = await hoverText(showcase, embedLine, 3);
+    assert.match(embed, /src\/pricing\\\.ts\*\* · lines 1–12/, 'the file name is escaped Markdown');
+    assert.match(embed, /```ts/);
+  },
 };
 
 async function run() {

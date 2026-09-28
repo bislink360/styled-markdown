@@ -7,7 +7,8 @@ import {
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
   parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
 } from './core';
-import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
+import { anchorLine, findLinks, isDocumentPath, linkAt, splitTarget } from './core/links';
+import { documentPreview, documentSymbols, embedPreview, fuzzyMatch, sectionExcerpt, type SmdSymbol } from './core/symbols';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
 
@@ -239,7 +240,130 @@ class HoverProvider implements vscode.HoverProvider {
       const spec = INLINE_DIRECTIVES[name];
       if (spec) return new vscode.Hover(new vscode.MarkdownString(`**:${name}** — ${spec.description}\n\n\`${spec.example}\``), range);
     }
-    return undefined;
+    return linkHover(document, position) ?? embedHover(document, position);
+  }
+}
+
+/** Preview what a link points at: the start of a section, or a linked document's title and outline. */
+function linkHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+  const text = document.getText();
+  const hit = linkAt(text, position.line, position.character) ?? linkTextAt(text, position);
+  const parts = hit && splitTarget(hit.link.target);
+  if (!hit || !parts) return undefined;
+  const range = new vscode.Range(position.line, hit.start, position.line, hit.end);
+  let target = text;
+  let where = '';
+  if (parts.path) {
+    if (document.uri.scheme !== 'file' || !isDocumentPath(parts.path)) return undefined;
+    const file = path.resolve(path.dirname(document.uri.fsPath), parts.path);
+    const other = readDocument(file);
+    if (other === undefined) return undefined;
+    target = other;
+    where = path.basename(file);
+  }
+  const md = new vscode.MarkdownString();
+  if (!parts.anchor) {
+    const doc = documentPreview(target);
+    md.appendMarkdown(`**${escapeMarkdown(doc.title ?? where)}**${doc.status ? ` · ${escapeMarkdown(doc.status)}` : ''}\n\n`);
+    if (doc.summary) md.appendMarkdown(`${doc.summary}\n\n`);
+    if (doc.sections.length) md.appendMarkdown(`Sections: ${doc.sections.map(escapeMarkdown).join(' · ')}`);
+    return new vscode.Hover(md, range);
+  }
+  const section = sectionExcerpt(target, parts.anchor);
+  if (!section) return undefined;
+  if (section.title !== undefined) md.appendMarkdown(`**${escapeMarkdown(section.title)}**${where ? ` — ${escapeMarkdown(where)}` : ''}\n\n---\n\n`);
+  md.appendMarkdown(section.lines.join('\n'));
+  if (section.truncated) md.appendMarkdown('\n\n…');
+  return new vscode.Hover(md, range);
+}
+
+/** An inline link whose `[text]` is under the cursor, so hovering the visible text previews it too. */
+function linkTextAt(text: string, position: vscode.Position): ReturnType<typeof linkAt> {
+  const line = text.split(/\r?\n/)[position.line] ?? '';
+  for (const link of findLinks(text).links) {
+    if (link.kind !== 'inline' || link.line !== position.line) continue;
+    // The target follows `](`; walk back to the `[` that opens the text, allowing nested brackets.
+    let depth = 0;
+    let open = -1;
+    for (let i = link.column - 3; i >= 0; i--) {
+      if (line[i] === ']') depth++;
+      else if (line[i] === '[') { if (depth === 0) { open = i; break; } depth--; }
+    }
+    if (open >= 0 && position.character >= open && position.character < link.column - 1) {
+      return { link, start: open, end: link.column + link.target.length + 1, reference: false };
+    }
+  }
+  return undefined;
+}
+
+/** Preview the code a ```lang file="…" lines="…"``` fence embeds. */
+function embedHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+  const embed = embedPreview(document.lineAt(position.line).text, readerFor(document));
+  if (!embed) return undefined;
+  const md = new vscode.MarkdownString(`**${escapeMarkdown(embed.file)}**${embed.lines ? ` · lines ${embed.lines[0]}–${embed.lines[1]}` : ''}\n\n`);
+  if (embed.problem) {
+    md.appendMarkdown(escapeMarkdown(embed.problem));
+  } else {
+    md.appendCodeblock(embed.code ?? '', embed.lang);
+    if (embed.truncated) md.appendMarkdown('…');
+  }
+  return new vscode.Hover(md);
+}
+
+const escapeMarkdown = (s: string) => s.replace(/[\\`*_{}[\]()#+\-.!|<>]/g, '\\$&');
+
+/** The open (possibly unsaved) version of a file, or its contents on disk. */
+function readDocument(file: string): string | undefined {
+  const open = vscode.workspace.textDocuments.find((d) => d.uri.scheme === 'file' && d.uri.fsPath === file);
+  if (open) return open.getText();
+  try { return fs.readFileSync(file, 'utf8'); } catch { return undefined; }
+}
+
+// ---------------------------------------------------------------------------
+// Workspace symbols (Ctrl+T): headings, decisions, risks and API endpoints in every .smd file
+// ---------------------------------------------------------------------------
+
+const SYMBOL_KINDS: Record<SmdSymbol['kind'], vscode.SymbolKind> = {
+  heading: vscode.SymbolKind.String,
+  decision: vscode.SymbolKind.Event,
+  risk: vscode.SymbolKind.Constant,
+  api: vscode.SymbolKind.Method,
+};
+
+class WorkspaceSymbolProvider implements vscode.WorkspaceSymbolProvider {
+  /** Symbols per file, keyed by the open document's version or the file's modification time. */
+  private readonly index = new Map<string, { stamp: string; symbols: SmdSymbol[] }>();
+
+  async provideWorkspaceSymbols(query: string, token: vscode.CancellationToken): Promise<vscode.SymbolInformation[]> {
+    const files = await vscode.workspace.findFiles('**/*.smd', '**/node_modules/**');
+    const found: vscode.SymbolInformation[] = [];
+    for (const uri of files) {
+      if (token.isCancellationRequested) break;
+      const file = vscode.workspace.asRelativePath(uri);
+      for (const s of await this.symbolsOf(uri)) {
+        if (query && !fuzzyMatch(query, s.name)) continue;
+        const container = [s.kind === 'heading' ? '' : s.kind, s.detail, file].filter(Boolean).join(' · ');
+        found.push(new vscode.SymbolInformation(s.name, SYMBOL_KINDS[s.kind], container, new vscode.Location(uri, new vscode.Position(s.line, 0))));
+      }
+    }
+    return found;
+  }
+
+  private async symbolsOf(uri: vscode.Uri): Promise<SmdSymbol[]> {
+    const key = uri.toString();
+    const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
+    let stamp: string;
+    try {
+      stamp = open ? `v${open.version}` : `t${(await vscode.workspace.fs.stat(uri)).mtime}`;
+    } catch {
+      return [];
+    }
+    const cached = this.index.get(key);
+    if (cached?.stamp === stamp) return cached.symbols;
+    const text = open ? open.getText() : Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+    const symbols = documentSymbols(text);
+    this.index.set(key, { stamp, symbols });
+    return symbols;
   }
 }
 
@@ -375,6 +499,7 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdD
     vscode.languages.registerHoverProvider(SELECTOR, new HoverProvider()),
     vscode.languages.registerColorProvider(SELECTOR, new ColorProvider()),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, new SymbolProvider()),
+    vscode.languages.registerWorkspaceSymbolProvider(new WorkspaceSymbolProvider()),
     vscode.languages.registerFoldingRangeProvider(SELECTOR, new FoldingProvider()),
     vscode.languages.registerDefinitionProvider(SELECTOR, new DefinitionProvider()),
   );

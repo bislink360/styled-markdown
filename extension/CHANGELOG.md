@@ -5,6 +5,10 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- Workspace symbol search (`Ctrl+T`) across every `.smd` file: headings, `:::decision` and `:::risk` titles, and `:::api` endpoints, which are searchable by method and path. Each file's symbols are cached until it changes.
+- Hover previews:
+  - over a link's text or target, `#anchor` / `other.smd#anchor` shows the start of that section (up to 20 lines), and `other.smd` shows the document's title, status, summary and top-level sections
+  - over a ```` ```lang file="…" lines="…" ```` line, the embedded code (up to 30 lines), or why it can't be read
 
 ### Changed
 
