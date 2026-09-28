@@ -412,13 +412,22 @@ function checkFence(lang: string, content: string[], line: number, push: Push, w
   }
 }
 
+/** KaTeX results by formula, so re-validating after an edit only checks formulas that changed. */
+const mathResults = new Map<string, string | null>();
+
 function checkMath(tex: string, line: number, wholeLine: WholeLine): void {
-  try {
-    katex.renderToString(tex, { displayMode: true, throwOnError: true });
-  } catch (e) {
-    const msg = (e as Error).message.replace(/^KaTeX parse error:\s*/, '');
-    wholeLine(line, 'error', 'math/syntax', `Math error: ${msg}`);
+  let error = mathResults.get(tex);
+  if (error === undefined) {
+    try {
+      katex.renderToString(tex, { displayMode: true, throwOnError: true });
+      error = null;
+    } catch (e) {
+      error = (e as Error).message.replace(/^KaTeX parse error:\s*/, '');
+    }
+    if (mathResults.size >= 1000) mathResults.clear();
+    mathResults.set(tex, error);
   }
+  if (error !== null) wholeLine(line, 'error', 'math/syntax', `Math error: ${error}`);
 }
 
 function checkHeadingAttrs(raw: string, line: number, push: Push): void {

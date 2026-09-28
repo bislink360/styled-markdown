@@ -5,7 +5,7 @@ import { readerFor } from './files';
 import {
   CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
-  parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
+  parseFrontMatter, parseSmd, renderSmd, validateSmd, type Diagnostic,
 } from './core';
 import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
 
@@ -291,7 +291,7 @@ class ColorProvider implements vscode.DocumentColorProvider {
 
 class SymbolProvider implements vscode.DocumentSymbolProvider {
   provideDocumentSymbols(document: vscode.TextDocument): vscode.DocumentSymbol[] {
-    const headings = renderSmd(document.getText()).headings;
+    const headings = parseSmd(document.getText()).headings;
     const roots: vscode.DocumentSymbol[] = [];
     const stack: Array<{ level: number; symbol: vscode.DocumentSymbol }> = [];
     headings.forEach((h, i) => {

@@ -2,6 +2,8 @@ export * from './spec';
 export { parseFrontMatter } from './frontmatter';
 export { renderSmd, renderStandaloneHtml, slugify } from './render';
 export type { RenderOptions, RenderResult, Heading } from './render';
+export { parseSmd } from './parse';
+export type { ParseResult } from './parse';
 export { validateSmd, applyFixes } from './validate';
 export { suggest } from './util';
 export type { Diagnostic, Fix, Severity, ValidateOptions } from './validate';
