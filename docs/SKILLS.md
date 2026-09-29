@@ -158,6 +158,7 @@ Try these prompts in a new session in a repository that contains `.smd` files (t
 | *"What's overdue across docs/?"* | It runs `smd tasks docs/`. |
 | *"Which high-impact risks are still open, and what did we decide about payments?"* | It runs `smd query "risk[impact>=high][status!=closed], decision[title*=pay]" docs/` and reads only those blocks. |
 | *"Which of our docs covers refunds, and what does it say about retries?"* | It runs `smd index docs/`, picks the document by title, summary and tags, then reads only the matching section with `smd agent … --section …`. |
+| *"The spec changed since last week. What's different?"* | It runs `smd diff docs/spec.smd --since "HEAD@{1.week.ago}"` (or a commit) and reads only the changed sections. |
 
 ## How token reduction works
 

@@ -28,3 +28,5 @@ export type { MermaidParse, MermaidBlock } from './mermaid';
 export { formatSmd } from './format';
 export { dueState } from './render';
 export { SMD_CSS, SMD_RUNTIME_JS, renderPage } from './assets';
+export { diffSmd } from './diff';
+export type { DiffOptions, DiffResult, FrontMatterChange, SectionChange } from './diff';

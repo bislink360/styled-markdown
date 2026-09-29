@@ -386,6 +386,12 @@ export function sectionCosts(text: string, options: AgentViewOptions = {}): Sect
     .map((s) => ({ ...s, tokens: estimateTokens(sectionView(s.start, s.end)) }));
 }
 
+/** The agent view of any line range of a document (zero-based, inclusive), with the context of the whole document. */
+export function agentViewRanges(text: string, options: AgentViewOptions = {}): (start: number, end: number) => string {
+  const view = sectionViews(text.split(/\r?\n/), parseFrontMatter(text).bodyStartLine, options);
+  return (start, end) => view(start, end).replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function outline(text: string, options: AgentViewOptions = {}): string {
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);

@@ -35,6 +35,9 @@ Across many documents:
 
 **MCP tools available?** If the `smd` MCP server is registered (tools `outline`, `section`, `agent`, `tasks`, `query`, `validate`), follow the same workflow with the tools instead of the shell: `outline` first, then `section` with the headings you need. Paths are relative to the server's root folder.
 
+Catching up on a changed document:
+- `smd diff FILE --since REF` (a commit, branch or tag such as `HEAD~3` or `main`) prints only what changed since then: front-matter changes, then each changed, renamed or added section in the agent view with `[L42]` refs into the current file, then removed headings. Use it instead of rereading a document you've already read. `smd diff DIR --since REF` covers every `.smd` file below, including new and deleted ones; `smd diff OLD.smd NEW.smd` compares two files.
+
 ## What the agent view means
 
 | You see | Meaning |
