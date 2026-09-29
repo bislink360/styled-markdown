@@ -2,9 +2,14 @@
 
 ## 1.2.0 — 2026-09-28
 
-### ⚠️ Breaking changes
+No breaking changes. Documents, CLI commands and flags, diagnostic codes, library exports, extension commands and settings from 1.1.0 all keep working, and every document that passed `smd validate` still passes. New checks are warnings or info: `link/undefined-reference`, `frontmatter/value` and `mermaid/syntax` are warnings, `frontmatter/type` now also covers a `title`, `summary` or `version` given as a list or mapping, and `frontmatter/stale` is info. So `smd validate --strict` can report warnings on documents that passed before; turn any rule off in `smd.config.json`.
 
 ### Added
+- Go to definition (`F12`, `Ctrl+Click`) on links: `#anchor` jumps to the heading, `{#id}` block or HTML element; `other.smd#anchor` opens the other document at that heading; relative files open; `[text][label]` jumps to its `[label]: …` definition.
+- Link validation checks anchors in other documents: `[x](plan.smd#rollout)` warns with `link/missing-anchor` when `plan.smd` has no such heading.
+- `link/missing-anchor` offers a quick fix to the closest heading id, and also accepts `{#id}` block attributes and HTML `id`/`name` as targets.
+- Reference-style links: `[text][label]` without a `[label]: …` definition reports the new `link/undefined-reference` rule, and definition targets are checked like inline links.
+- HTML `href`/`src` targets and front matter `related:` entries are checked for missing files and anchors.
 - `smd fmt <files|dirs…>` formats `.smd` files in place, with `--check` for CI (exit code 1 when a file isn't formatted) and `--stdout` for one file. It only changes layout, never meaning:
   - container fences: `:::name` with no space, one colon count per nesting level (the innermost uses `:::`, each enclosing level one more, e.g. `::::tabs` around `:::tab`), closing fences matching their opener; unbalanced documents keep their colons
   - attribute lists on containers, headings, `[text]{…}` spans and inline directives: `#id`, `.classes`, then keys in the spec's order; values quoted only when needed (`title` and `label` always); duplicate keys collapsed to the value that wins
@@ -29,7 +34,7 @@
   - wrap the selected lines in `:::note`, `:::tip`, `:::warning`, `:::danger`, `:::card`, `:::details`, `:::agent` or `:::human`; the new fence gets one more colon than any container inside it, and selections that split a code block or container aren't offered
   - convert a callout to another type, from its opening line
   - convert a blockquote callout into a `:::callout`, from GitHub alerts (`> [!WARNING]`, mapped like `smd from-md`) or bold labels (`> **Warning:**`, `> **Tip**:`); nested quotes keep their extra `>`
-- Mermaid syntax errors as diagnostics (`mermaid/syntax`), on the line and columns the parser points at, e.g. "expected TXT, got end of line". Diagrams are parsed with Mermaid's own parser, which ships as a separate `dist/mermaid-parse.js` and is loaded only when a document has diagrams.
+- Mermaid syntax errors as warnings (`mermaid/syntax`), on the line and columns the parser points at, e.g. "expected TXT, got end of line". Diagrams are parsed with Mermaid's own parser, which ships as a separate `dist/mermaid-parse.js` and is loaded only when a document has diagrams.
   - VS Code: errors appear as you type, and `smd.validation.mermaid` turns the check off.
   - `smd validate`: `--no-mermaid` skips the check. The single-file CLI bundled in the agent skills doesn't include the parser and skips it.
   - Library: `checkMermaid(text, parse, rules?)` and `mermaidBlocks(text)`; pass `mermaid.parse` or any compatible parser.
@@ -55,9 +60,6 @@
   - name clashes get `-1`, `-2`…
   - pasting needs VS Code 1.97 or later; dropping works on every supported version
 - **Styled Markdown: Set Up Spell Checking (cSpell)** adds an `smd` entry to cSpell's `languageSettings`, so container and directive names, attribute lists, mentions, link targets, front matter and code aren't reported as misspellings. It runs only when you ask, because cSpell settings can't be scoped to a language by another extension.
-
-### Changed
-- The npm package ships Mermaid's parser for `smd validate` (`dist/mermaid-parse.js`, 3.4 MB unpacked). The library entry points don't load it.
 - `parseSmd(text)` in the library: headings and anchor ids without rendering HTML, parsed incrementally.
 
 ### Changed
@@ -68,15 +70,11 @@
   - the agent view and its token counter: 90 ms → 26 ms
   - Outline view and go to definition: no render at all
   Headings and anchors now come from an incremental parse that reuses every top-level block the edit didn't touch, instead of a full HTML render, and results are identical. Math checks are cached per formula, and the status-bar token counter waits longer before updating on long documents.
-- CI runs a seeded fuzz test of the core (render, validate, quick fixes, agent view, outline, document info, tasks, Markdown conversion) and a benchmark suite (`npm run bench`) that fails on order-of-magnitude slowdowns.
+- The npm package ships Mermaid's parser for `smd validate` (`dist/mermaid-parse.js`, 3.4 MB unpacked). The library entry points don't load it.
 - The preview keeps your place when it updates: the source line at the top of the preview stays there, even when lines are added or removed above it.
 - The selected tab in `:::tabs` and opened or closed collapsibles (`:::details`, `collapsible` callouts, agent blocks) stay as you left them across updates. They're matched by their titles, not their position.
 - The preview restores its scroll position, tabs and collapsibles after its tab was hidden and shown again.
-
-### Changed
 - Unchanged Mermaid diagrams are restored from the cache right away on each update, instead of waiting behind a diagram that changed and briefly showing their source. A diagram you're editing keeps its previous height until the new version renders, so the page below it doesn't jump.
-
-### Deprecated
 
 ### Fixed
 - The preview's Content-Security-Policy nonce is now generated with a cryptographically secure random source instead of `Math.random()`.
@@ -84,20 +82,14 @@
 - A front matter key containing regex characters, such as `"a(b": 1`, made validation throw.
 - The `frontmatter/unknown-key` quick fix no longer rewrites the opening `---` when the key is written differently in YAML (e.g. quoted); it is then offered as a hint only.
 - A preview hidden behind another tab showed the document as it was when the preview was opened until the next edit.
-
-## Unreleased
-
-### Added
-- Go to definition (`F12`, `Ctrl+Click`) on links: `#anchor` jumps to the heading, `{#id}` block or HTML element; `other.smd#anchor` opens the other document at that heading; relative files open; `[text][label]` jumps to its `[label]: …` definition.
-- Link validation checks anchors in other documents: `[x](plan.smd#rollout)` warns with `link/missing-anchor` when `plan.smd` has no such heading.
-- `link/missing-anchor` offers a quick fix to the closest heading id, and also accepts `{#id}` block attributes and HTML `id`/`name` as targets.
-- Reference-style links: `[text][label]` without a `[label]: …` definition reports the new `link/undefined-reference` rule, and definition targets are checked like inline links.
-- HTML `href`/`src` targets and front matter `related:` entries are checked for missing files and anchors.
-
-### Fixed
 - Link targets with spaces in angle brackets (`[x](<my file.md>)`), `'single'`/`(paren)` titles or balanced parentheses were not checked.
 - A link with malformed percent-encoding (`[x](#100%)`) made validation throw.
 - Links inside `~~~` code fences that contain ```` ``` ```` lines were checked as if they were prose.
+
+### Internal
+- CI runs a seeded fuzz test of the core (render, validate, quick fixes, agent view, outline, document info, tasks, Markdown conversion) and a benchmark suite (`npm run bench`) that fails on order-of-magnitude slowdowns.
+- CI checks that `examples/` and `docs/gallery/` are formatted (`smd fmt --check`).
+- The release check compares a corpus of documents (`extension/test/compat/corpus/`) across releases; it starts with the rule and suppression-comment additions.
 
 ## 1.1.0 — 2026-09-27
 
