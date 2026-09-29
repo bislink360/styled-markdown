@@ -41,5 +41,6 @@ Every pull request to `main` or a `release/**` branch, and every push to them, r
 
 - `npm run typecheck` and `npm test` pass. `npm run test:vscode` passes for editor-facing changes.
 - `node dist/cli.js validate ../examples ../docs/gallery` reports 0 errors, and `node dist/cli.js fmt --check ../examples ../docs/gallery` reports 0 files to format (run it without `--check` to fix them).
+- The static analysis gate passes: `node .claude/skills/sonarqube-scan/scripts/sonar-scan.mjs` from the repository root (needs Docker). It runs SonarQube locally, since CI has no static analysis. It is mandatory before every release; see the `sonarqube-scan` skill.
 - New syntax is documented in `docs/SPEC.md`, `docs/FEATURES.md` and the writer skill's `references/syntax.md`.
 - The CHANGELOG has an entry.
