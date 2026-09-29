@@ -367,6 +367,31 @@ function sectionViews(lines: string[], from: number, options: TransformOptions):
   };
 }
 
+/** A section (its heading up to the next heading of the same or a higher level) and the cost of reading it. */
+export interface SectionCost {
+  heading: Heading;
+  /** Zero-based first and last line. */
+  start: number;
+  end: number;
+  /** Approximate tokens of the section, subsections included, in the agent view (without line references). */
+  tokens: number;
+}
+
+/** Every section of a document with its agent-view token cost, as `outline` lists them. */
+export function sectionCosts(text: string, options: AgentViewOptions = {}): SectionCost[] {
+  const fm = parseFrontMatter(text);
+  const lines = text.split(/\r?\n/);
+  const sectionView = sectionViews(lines, fm.bodyStartLine, { ...options, lineRefs: false });
+  return sectionsOf(parseSmd(text).headings, lines.length)
+    .map((s) => ({ ...s, tokens: estimateTokens(sectionView(s.start, s.end)) }));
+}
+
+/** The agent view of any line range of a document (zero-based, inclusive), with the context of the whole document. */
+export function agentViewRanges(text: string, options: AgentViewOptions = {}): (start: number, end: number) => string {
+  const view = sectionViews(text.split(/\r?\n/), parseFrontMatter(text).bodyStartLine, options);
+  return (start, end) => view(start, end).replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function outline(text: string, options: AgentViewOptions = {}): string {
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);
@@ -380,12 +405,8 @@ export function outline(text: string, options: AgentViewOptions = {}): string {
   if (typeof fm.data.summary === 'string') out.push(`summary: ${fm.data.summary}`);
   out.push('');
 
-  const sections = sectionsOf(headings, lines.length);
-  const sectionView = sectionViews(lines, fm.bodyStartLine, { ...options, lineRefs: false });
-  const rows = sections.map((s) => {
+  const rows = sectionCosts(text, options).map((s) => {
     const sectionText = lines.slice(s.start, s.end + 1);
-    // Cost of reading this section (including its subsections) through the agent view.
-    const view = sectionView(s.start, s.end);
     const openTasks = sectionText.filter((l) => /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(l)).length;
     const notes = [
       openTasks ? `${openTasks} open task${openTasks > 1 ? 's' : ''}` : '',
@@ -399,7 +420,7 @@ export function outline(text: string, options: AgentViewOptions = {}): string {
     ].filter(Boolean).join(', ');
     const range = `L${s.start + 1}-${s.end + 1}`;
     const indent = '  '.repeat(Math.max(0, s.heading.level - 2));
-    return { range, head: `${indent}${'#'.repeat(s.heading.level)} ${s.heading.text}`, tokens: `≈${estimateTokens(view)}`, notes };
+    return { range, head: `${indent}${'#'.repeat(s.heading.level)} ${s.heading.text}`, tokens: `≈${s.tokens}`, notes };
   });
   const w1 = Math.max(...rows.map((r) => r.range.length), 5);
   const w2 = Math.max(...rows.map((r) => r.head.length), 10);
