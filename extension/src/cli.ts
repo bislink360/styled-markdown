@@ -1,9 +1,10 @@
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, checkMermaid, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, querySmd, renderPage,
-  smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type Diagnostic, type QueryMatch, type Selector, type TaskInfo,
+  agentView, applyFixes, checkMermaid, diffSmd, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, querySmd, renderPage,
+  smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type Diagnostic, type DiffResult, type QueryMatch, type Selector, type TaskInfo,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
@@ -33,6 +34,12 @@ Reading (token-efficient, for agents):
       Tests: [key] [key=a|b] [key!=v] [key*=v] [key^=v] [key$=v] [key<v] (also <= > >=: numbers, dates,
       priorities, risk levels); every block also has title, section and type.
       --titles  one line per match instead of its content
+  smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]
+  smd diff <files|dirs...> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]
+      Only the sections that changed, in the agent view of the new version: front-matter changes,
+      then changed, renamed and added sections, then removed ones (heading and old lines only).
+      --since      compare each .smd file with its version at a Git commit, branch or tag
+      --exit-code  exit 1 when something changed (like git diff); the default is 0
   smd meta <file.smd> [--no-diagnostics]
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
 
@@ -65,7 +72,7 @@ Agent skills:
 
 interface Args { command?: string; positional: string[]; flags: Set<string>; values: Map<string, string[]> }
 
-const VALUE_OPTIONS = new Set(['--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
+const VALUE_OPTIONS = new Set(['--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--since']);
 
 function parseArgs(argv: string[]): Args {
   const [command, ...rest] = argv;
@@ -124,6 +131,8 @@ function main(argv: string[]): number | Promise<number> {
       return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
     case 'query':
       return query(positional[0], positional.slice(1), { json: flags.has('--json'), titles: flags.has('--titles'), brief: flags.has('--brief'), lineRefs: !flags.has('--no-lines'), today });
+    case 'diff':
+      return diff(positional, value('--since'), { json: flags.has('--json'), brief: flags.has('--brief'), lineRefs: !flags.has('--no-lines'), exitCode: flags.has('--exit-code'), today });
     case 'meta': {
       const file = requireFile(positional[0]);
       const rules = configFor(file, value('--config')).rules;
@@ -344,6 +353,86 @@ function titleLine(r: QueryRow): string {
   const attrs = Object.entries(r.attrs).map(([k, v]) => `${k}=${[v].flat().join(',')}`).join(' ');
   const parts = [`${r.file}:${r.line + 1}${end}`, r.type, r.title, attrs && `{${attrs}}`, r.section && `— ${r.section}`];
   return parts.filter(Boolean).join('  ');
+}
+
+interface DiffFlags { json: boolean; brief: boolean; lineRefs: boolean; exitCode: boolean; today?: string }
+interface FileDiff { file: string; status: 'changed' | 'added' | 'deleted'; result: DiffResult }
+
+function diff(positional: string[], since: string | undefined, flags: DiffFlags): number {
+  if (since !== undefined) return diffSince(positional.length ? positional : ['.'], since, flags);
+  if (positional.length !== 2) return fail('Usage: smd diff <old.smd> <new.smd>, or smd diff <files|dirs...> --since <git-ref>');
+  const [oldFile, newFile] = positional.map((f) => requireFile(f));
+  const result = diffSmd(read(oldFile), read(newFile), flags);
+  const diffs: FileDiff[] = result.text ? [{ file: newFile, status: 'changed', result }] : [];
+  return reportDiffs(diffs, 1, { oldFile }, flags);
+}
+
+/** Each .smd file under the targets against its version at a Git revision, including files deleted since. */
+function diffSince(targets: string[], ref: string, flags: DiffFlags): number {
+  if (!ref || ref.startsWith('-')) return fail('--since needs a Git commit, branch or tag, e.g. --since HEAD~1');
+  const top = git(['rev-parse', '--show-toplevel'])?.trim();
+  if (!top) return fail('--since needs a Git repository: run smd diff inside one.');
+  if (git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]) === undefined) return fail(`Unknown Git revision "${ref}".`);
+  const files = targets.filter((t) => fs.existsSync(t)).flatMap((t) => collect(t));
+  const deleted = deletedSince(ref, targets, top);
+  if (!files.length && !deleted.length) return fail('No .smd files found.');
+  const diffs = [
+    ...files.map((file) => fileSince(file, ref, top, flags)),
+    ...deleted.map((p) => deletedFile(p, ref, top, flags)),
+  ];
+  return reportDiffs(diffs.filter((d) => d.status !== 'changed' || d.result.text), files.length + deleted.length, { since: ref }, flags);
+}
+
+function fileSince(file: string, ref: string, top: string, flags: DiffFlags): FileDiff {
+  const old = git(['show', `${ref}:${gitPath(top, file)}`]);
+  const text = read(file);
+  const result = diffSmd(old ?? '', text, flags);
+  if (old !== undefined) return { file, status: 'changed', result };
+  // A new file: its whole agent view reads better than every section labelled "added".
+  const view = agentView(text, { brief: flags.brief, lineRefs: flags.lineRefs, readFile: readerFor(file), today: flags.today });
+  return { file, status: 'added', result: { ...result, text: view.text, tokens: view.tokens } };
+}
+
+function deletedFile(topPath: string, ref: string, top: string, flags: DiffFlags): FileDiff {
+  const file = path.relative(process.cwd(), path.join(top, topPath));
+  return { file, status: 'deleted', result: diffSmd(git(['show', `${ref}:${topPath}`]) ?? '', '', flags) };
+}
+
+/** .smd files under the targets that exist at the revision but not in the working tree (paths from the top level). */
+function deletedSince(ref: string, targets: string[], top: string): string[] {
+  const pathspecs = targets.map((t) => gitPath(top, t) || '.');
+  const out = git(['-C', top, 'diff', '--name-only', '--diff-filter=D', '-z', ref, '--', ...pathspecs]) ?? '';
+  const hidden = (p: string) => p.split('/').some((seg) => seg === 'node_modules' || seg.startsWith('.'));
+  return out.split('\0').filter((p) => p.endsWith('.smd') && !hidden(p));
+}
+
+/** A path relative to the Git top level, with forward slashes. */
+function gitPath(top: string, file: string): string {
+  return path.relative(top, path.resolve(file)).split(path.sep).join('/');
+}
+
+/** Run git without a shell; undefined when it fails. */
+function git(args: string[]): string | undefined {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 });
+  } catch {
+    return undefined;
+  }
+}
+
+function reportDiffs(diffs: FileDiff[], checked: number, base: { since?: string; oldFile?: string }, flags: DiffFlags): number {
+  const context = base.since ? `since ${base.since}` : `compared with ${base.oldFile}`;
+  if (flags.json) {
+    const rows = diffs.map((d) => ({ file: d.file, status: d.status, ...base, frontMatter: d.result.frontMatter, sections: d.result.sections, tokens: d.result.tokens }));
+    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
+  } else if (diffs.length) {
+    process.stdout.write(diffs.map((d) => `${d.file}: ${d.status} ${context}\n\n${d.result.text}`).join('\n'));
+  }
+  const tokens = diffs.reduce((n, d) => n + d.result.tokens, 0);
+  const full = diffs.filter((d) => d.status !== 'deleted').reduce((n, d) => n + d.result.fullTokens, 0);
+  const saved = tokens < full ? `, ${Math.round((1 - tokens / full) * 100)}% smaller` : '';
+  console.error(`[smd] ${diffs.length} of ${checked} file(s) changed ${context}: ≈${tokens} tokens (full agent view ≈${full}${saved})`);
+  return flags.exitCode && diffs.length ? 1 : 0;
 }
 
 function installSkills(dir: string, only?: string): number {

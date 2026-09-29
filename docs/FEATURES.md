@@ -416,6 +416,8 @@ smd outline <file>                                   sections, line ranges, toke
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
+smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]          sections that changed
+smd diff <files|dirs> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
@@ -427,6 +429,38 @@ smd templates
 smd skills install [--dir <path>] [--global] [--only reader|writer]
 smd --version
 ```
+
+### What changed: `smd diff`
+
+`smd diff` shows an agent only what changed in a document, so it can catch up without rereading it. Compare two files, or each `.smd` file with its version at a Git commit, branch or tag:
+
+```bash
+smd diff docs/plan-v1.smd docs/plan.smd
+smd diff docs/ --since HEAD~5          # also lists files added and deleted since
+smd diff docs/plan.smd --since main --json
+```
+
+```text
+docs/plan.smd: changed since HEAD~5
+
+Front matter:
+  status: draft → accepted
+
+[changed L41-47]
+### Rollout  [L41]
+Ship to 10% of EU traffic first, then 50%.
+
+[renamed from "Objectives" L12-20]
+## Goals  [L12]
+
+[removed: ## Open questions, was L60-66]
+```
+
+- Sections are matched by heading id, then by content, so a renamed heading is a rename, not a removal and an addition.
+- A change is shown in the smallest section that contains it (a heading up to the next heading), so unchanged subsections stay out. Content before the first heading counts as a section.
+- Only changes an agent can see count: styling, comments and `:::human` content don't. Sections marked `{agent=skip}` are listed without their content.
+- Line refs point into the new version. stderr shows the token cost against the full agent view.
+- `--json` gives front-matter changes and sections (`change`, `heading`, `level`, `id`, `line`, `endLine`, `oldLine`, `oldEndLine`, `oldHeading`, `text`). The exit code is 0; with `--exit-code` it is 1 when something changed.
 
 ## 18. Templates
 

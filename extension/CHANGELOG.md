@@ -11,6 +11,13 @@
   - `--titles` prints one line per block, `--json` gives type, lines, title, attributes, section and agent-view text; `--brief` and `--no-lines` work as in `smd agent`
   - a misspelled type or attribute is an error with a suggestion (exit code 2), and the exit code is 1 when nothing matches
 - Library: `querySmd(source, selector, options)`, `parseSelector` and `SelectorError`.
+- `smd diff <old.smd> <new.smd>` and `smd diff <files|dirs…> --since <git-ref>` show only what changed, for an agent catching up on a document:
+  - front-matter changes (`status: draft → accepted`), then changed, renamed and added sections in the agent view of the new version (line refs point into the new file), then removed sections (heading and old lines only)
+  - sections are matched by heading id, then by content, so a renamed heading is reported as a rename; a change is shown in the smallest section that contains it, without unchanged subsections; content before the first heading counts as a section
+  - only changes visible in the agent view count: styling, comments and `:::human` content are ignored, and sections marked `{agent=skip}` are listed without their content
+  - `--since` compares each file with its version at a commit, branch or tag (via `git show`), and also reports files added and deleted since; stderr shows the token cost against the full agent view
+  - `--json`, `--brief` and `--no-lines` work as in `smd query`; the exit code is 0, or 1 with `--exit-code` when something changed (like `git diff --exit-code`)
+- Library: `diffSmd(oldSource, newSource, options)`.
 
 ### Changed
 
