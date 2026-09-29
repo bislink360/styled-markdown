@@ -16,6 +16,7 @@ export type { SmdDocumentInfo, TaskInfo, DecisionInfo, RiskInfo } from './meta';
 export { markdownToSmd, fillTemplate } from './fromMarkdown';
 export { agentView, outline, estimateTokens, inlineText } from './agentView';
 export type { AgentViewOptions, AgentViewResult } from './agentView';
+export type { BudgetResult, OmittedSection, Tokenizer } from './budget';
 export { querySmd, parseSelector, SelectorError } from './query';
 export type { QueryMatch, QueryOptions, Selector, AttributeTest, QueryOperator } from './query';
 export { relatedDocs, relatedEntries, summarizeSmd, formatRelated } from './related';

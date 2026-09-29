@@ -412,8 +412,9 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 ## 17. CLI reference
 
 ```text
-smd outline <file> [--related]                       sections, line ranges, token costs, markers; --related adds related docs
+smd outline <file> [--related] [--tokenizer <name>]  sections, line ranges, token costs, markers; --related adds related docs
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
+                 [--max-tokens <n>] [--tokenizer <name>]   fit the view into n tokens; exact counts
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
@@ -427,6 +428,31 @@ smd templates
 smd skills install [--dir <path>] [--global] [--only reader|writer]
 smd --version
 ```
+
+### Token budgets and exact counts
+
+Token counts are estimates (characters / 4) unless you pass `--tokenizer`.
+
+**`smd agent <file> --max-tokens <n>`** fits the agent view into a budget, for prompts with a fixed context size. When the view is too big it:
+
+1. condenses it as `--brief` does (diagrams, long code, `:::details`, completed tasks), then
+2. leaves out whole sections, least important first, until it fits. Each one is replaced by a pointer that says how to read it:
+
+```text
+[section omitted: ## Architecture, L90-L128, ≈231 tokens — smd agent examples/checkout-redesign.smd --section "Architecture"]
+```
+
+| Rule | Sections |
+|---|---|
+| Never left out | the header (title, front matter, summary), text before the first `##` section, sections with `:::agent` instructions, sections requested with `--section` (and their subsections) |
+| Kept longer | sections with a `:::danger` or `:::warning` callout, an accepted decision, a `:::question` or an open task |
+| Left out first | everything else; the deepest headings first, then the largest, then the latest. A section is left out after its subsections, and its pointer then replaces theirs |
+
+A section is only left out when its content costs more than its pointer. stderr reports the result, e.g. `[smd] budget 700 tokens: condensed as --brief; omitted 6 section(s): ## Snapshot (≈55), …; now ≈656 tokens.` When even the smallest view is over the budget, smd prints it anyway, warns on stderr and exits 0. Without `--max-tokens` the output is unchanged.
+
+**`--tokenizer <name>`** on `smd agent` and `smd outline` adds exact counts next to the estimate (`≈1531 est · 1402 o200k_base tokens`), and `--max-tokens` then counts with it. Names: `o200k_base` (GPT-4o and later), `cl100k_base`, `p50k_base`, `r50k_base`. smd has no runtime dependencies, so it uses the [`js-tiktoken`](https://www.npmjs.com/package/js-tiktoken) package only if you have installed it, in your project (`npm install --save-dev js-tiktoken`, run smd from the project folder) or globally (`npm install -g js-tiktoken`). When it is missing, smd says how to install it and exits 2.
+
+These are OpenAI encodings. There is no public tokenizer for current Claude models, so for Claude these counts are approximate too: leave some headroom in a budget.
 
 ## 18. Templates
 

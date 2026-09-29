@@ -98,7 +98,20 @@ view.originalTokens  // ≈ tokens of the raw file
 view.skippedSections // headings marked {agent=skip}
 
 console.log(outline(source)); // sections with line ranges and token costs
+
+// Fit a budget: condense as brief, then leave out the least important sections (each becomes a pointer).
+const fitted = agentView(source, { maxTokens: 800, file: 'docs/spec.smd' });
+fitted.budget        // { maxTokens, tokens, fits, condensed, omitted: [{ heading, level, line, endLine, tokens }] }
+
+// Exact counts with a tokenizer you bring, e.g. js-tiktoken (not a dependency of this package).
+import { getEncoding } from 'js-tiktoken';
+const o200k = getEncoding('o200k_base');
+const tokenizer = { name: 'o200k_base', count: (text: string) => o200k.encode(text).length };
+agentView(source, { tokenizer, maxTokens: 800 }).counted; // { tokenizer, tokens, originalTokens }
+outline(source, { tokenizer });                          // exact counts next to each estimate
 ```
+
+`maxTokens` never leaves out the header, text before the first `##` section, sections with `:::agent` instructions, or the requested `sections`. Sections with danger or warning callouts, accepted decisions, questions or open tasks are kept longest. OpenAI encodings are approximate for Claude models, which have no public tokenizer.
 
 The agent view drops styling, layout, `:::human` blocks and `{agent=skip}` sections. It keeps callouts (`<warning>`), decisions, risks, API definitions, tasks with owner, priority and due date, and **always** includes `:::agent` instructions, even when you select a single section.
 

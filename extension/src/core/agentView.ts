@@ -1,4 +1,7 @@
 import { parseAttrs } from './attrs';
+import {
+  omissionOrder, omissionPointer, omittableSections, withOmitted, type BudgetResult, type BudgetSection, type Tokenizer,
+} from './budget';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { parseFrontMatter, asStringList } from './frontmatter';
@@ -28,6 +31,15 @@ export interface AgentViewOptions {
   embed?: boolean;
   readFile?: (relativePath: string) => string | undefined;
   today?: string;
+  /**
+   * Shrink the view to at most this many tokens: condense it as `brief` does, then omit whole sections
+   * in priority order, each replaced by a one-line pointer (see budget.ts). Counted with `tokenizer` when given.
+   */
+  maxTokens?: number;
+  /** An exact tokenizer: adds `counted` to the result, counts `maxTokens`, and adds counts to outlines. */
+  tokenizer?: Tokenizer;
+  /** The document's path, used in pointers to omitted sections (default `<file>`). */
+  file?: string;
 }
 
 export interface AgentViewResult {
@@ -39,6 +51,10 @@ export interface AgentViewResult {
   missingSections: string[];
   /** Headings omitted because they are marked {agent=skip}. */
   skippedSections: string[];
+  /** Counts by `tokenizer`, when one is given. */
+  counted?: { tokenizer: string; tokens: number; originalTokens: number };
+  /** What was done to fit `maxTokens`, when it is given. */
+  budget?: BudgetResult;
 }
 
 export function estimateTokens(text: string): number {
@@ -62,49 +78,152 @@ function matches(h: Heading, query: string): boolean {
   return h.slug === slugify(q) || h.slug === q || h.text.toLowerCase().includes(q);
 }
 
-export function agentView(text: string, options: AgentViewOptions = {}): AgentViewResult {
+interface ViewScope {
+  data: Record<string, unknown>;
+  bodyStart: number;
+  lines: string[];
+  sections: Section[];
+  /** Requested sections, or null for the whole document. */
+  selected: Section[] | null;
+  skipped: Section[];
+  missingSections: string[];
+  inScope: (line: number) => boolean;
+}
+
+/** Which lines of the document are in the view. */
+function viewScope(text: string, options: AgentViewOptions): ViewScope {
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);
-  const headings = parseSmd(text).headings;
-  const sections = sectionsOf(headings, lines.length);
-
-  // Which lines are in scope?
+  const sections = sectionsOf(parseSmd(text).headings, lines.length);
   const skipped = sections.filter((s) => s.heading.agent === 'skip');
-  let selected: Section[] | null = null;
-  const missingSections: string[] = [];
-  if (options.sections?.length) {
-    selected = [];
-    for (const q of options.sections) {
-      const hit = sections.filter((s) => matches(s.heading, q));
-      if (hit.length) selected.push(...hit); else missingSections.push(q);
-    }
-  }
+  const { selected, missingSections } = selectSections(sections, options.sections);
   const inScope = (line: number) =>
     (!selected || selected.some((s) => line >= s.start && line <= s.end)) &&
     !skipped.some((s) => line >= s.start && line <= s.end && !(selected?.some((sel) => sel.heading === s.heading)));
+  return { data: fm.data, bodyStart: fm.bodyStartLine, lines, sections, selected, skipped, missingSections, inScope };
+}
 
-  const body = transform(lines, fm.bodyStartLine, inScope, options);
+function selectSections(sections: Section[], queries: string[] | undefined): { selected: Section[] | null; missingSections: string[] } {
+  const missingSections: string[] = [];
+  if (!queries?.length) return { selected: null, missingSections };
+  const selected: Section[] = [];
+  for (const q of queries) {
+    const hit = sections.filter((s) => matches(s.heading, q));
+    if (hit.length) selected.push(...hit); else missingSections.push(q);
+  }
+  return { selected, missingSections };
+}
 
-  // :::agent blocks outside the selected sections still apply — include them up front.
+interface ViewHead { header: string; external: string }
+
+/** The header, plus :::agent blocks outside the selected sections (they still apply). */
+function viewHead(scope: ViewScope, options: AgentViewOptions): ViewHead {
+  const { selected, lines, bodyStart, inScope } = scope;
   let external = '';
   if (selected) {
-    const outside = transform(lines, fm.bodyStartLine, (l) => !inScope(l), { ...options, onlyAgentBlocks: true });
+    const outside = transform(lines, bodyStart, (l) => !inScope(l), { ...options, onlyAgentBlocks: true });
     if (outside.trim()) external = `Document-wide agent instructions:\n${outside.trim()}\n\n`;
   }
+  return { header: header(scope.data, selected ? selected.map((s) => s.heading.text) : null), external };
+}
 
-  const out = [header(fm.data, selected ? selected.map((s) => s.heading.text) : null), external + body]
+function assemble(head: ViewHead, body: string): string {
+  return [head.header, head.external + body]
     .filter((s) => s.trim())
     .join('\n\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim() + '\n';
+}
 
-  return {
+export function agentView(text: string, options: AgentViewOptions = {}): AgentViewResult {
+  const scope = viewScope(text, options);
+  if (options.maxTokens !== undefined) return budgetedView(text, scope, options);
+  const body = transform(scope.lines, scope.bodyStart, scope.inScope, options);
+  return viewResult(text, scope, assemble(viewHead(scope, options), body), options);
+}
+
+function viewResult(text: string, scope: ViewScope, out: string, options: AgentViewOptions, budget?: BudgetResult): AgentViewResult {
+  const result: AgentViewResult = {
     text: out,
     originalTokens: estimateTokens(text),
     tokens: estimateTokens(out),
-    missingSections,
-    skippedSections: skipped.map((s) => s.heading.text),
+    missingSections: scope.missingSections,
+    skippedSections: scope.skipped.map((s) => s.heading.text),
   };
+  const tokenizer = options.tokenizer;
+  if (tokenizer) result.counted = { tokenizer: tokenizer.name, tokens: tokenizer.count(out), originalTokens: tokenizer.count(text) };
+  if (budget) result.budget = budget;
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Token budget (maxTokens): condense, then omit sections in priority order.
+// ---------------------------------------------------------------------------
+
+/** A view before assembly: its head and every emitted body line with the source line it came from. */
+interface Draft {
+  head: ViewHead;
+  lines: Array<[at: number, line: string]>;
+  file?: string;
+  count: (text: string) => number;
+}
+
+function draftOf(scope: ViewScope, options: AgentViewOptions): Draft {
+  const lines: Array<[number, string]> = [];
+  transform(scope.lines, scope.bodyStart, scope.inScope, { ...options, collect: lines });
+  return { head: viewHead(scope, options), lines, file: options.file, count: options.tokenizer?.count ?? estimateTokens };
+}
+
+const joinLines = (lines: string[]) => lines.join('\n').replace(/\n{3,}/g, '\n\n');
+const inSection = (at: number, s: BudgetSection) => at >= s.start && at <= s.end;
+
+/** The view text of the lines emitted for one section. */
+function draftSection(draft: Draft, s: BudgetSection): string {
+  return joinLines(draft.lines.filter(([at]) => inSection(at, s)).map(([, line]) => line));
+}
+
+function pointerOf(draft: Draft, s: BudgetSection): string {
+  return omissionPointer(s, draft.count(draftSection(draft, s)), draft.file);
+}
+
+/** The assembled view with the omitted sections (in document order) replaced by pointers. */
+function draftText(draft: Draft, omitted: BudgetSection[]): string {
+  const body: string[] = [];
+  let next = 0;
+  for (const [at, line] of draft.lines) {
+    while (next < omitted.length && at > omitted[next].end) body.push(pointerOf(draft, omitted[next++]), '');
+    if (!omitted.some((s) => inSection(at, s))) body.push(line);
+  }
+  for (const s of omitted.slice(next)) body.push('', pointerOf(draft, s));
+  return assemble(draft.head, joinLines(body));
+}
+
+function budgetedView(text: string, scope: ViewScope, options: AgentViewOptions): AgentViewResult {
+  const maxTokens = options.maxTokens ?? Infinity;
+  let draft = draftOf(scope, options);
+  const condensed = !options.brief && draft.count(draftText(draft, [])) > maxTokens;
+  if (condensed) draft = draftOf(scope, { ...options, brief: true });
+  const omitted = omitToFit(draft, scope, maxTokens);
+  const out = draftText(draft, omitted);
+  const tokens = draft.count(out);
+  const omittedSections = omitted.map((s) => ({
+    heading: s.heading.text, level: s.heading.level, line: s.start, endLine: s.end, tokens: draft.count(draftSection(draft, s)),
+  }));
+  return viewResult(text, scope, out, options, { maxTokens, tokens, fits: tokens <= maxTokens, condensed, omitted: omittedSections });
+}
+
+/** Omit sections, least important first, until the view fits or nothing more may be omitted. */
+function omitToFit(draft: Draft, scope: ViewScope, maxTokens: number): BudgetSection[] {
+  const cost = (s: BudgetSection) => draft.count(draftSection(draft, s));
+  // Omitting a section only helps when its content costs more than its pointer.
+  const candidates = omittableSections(scope.sections, scope.lines, scope.selected)
+    .filter((s) => cost(s) > draft.count(pointerOf(draft, s)));
+  let omitted: BudgetSection[] = [];
+  for (const s of omissionOrder(candidates, scope.lines, cost)) {
+    if (draft.count(draftText(draft, omitted)) <= maxTokens) break;
+    omitted = withOmitted(omitted, s);
+  }
+  return omitted;
 }
 
 function header(data: Record<string, unknown>, sections: string[] | null): string {
@@ -371,11 +490,11 @@ export function outline(text: string, options: AgentViewOptions = {}): string {
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);
   const headings = parseSmd(text).headings;
-  const full = agentView(text, { ...options, sections: undefined });
+  const full = agentView(text, { ...options, sections: undefined, maxTokens: undefined });
   const title = typeof fm.data.title === 'string' ? fm.data.title : headings.find((h) => h.level === 1)?.text ?? '(untitled)';
   const status = typeof fm.data.status === 'string' ? ` · ${fm.data.status}` : '';
   const out: string[] = [
-    `${title}${status} · file ≈${full.originalTokens} tokens · full agent view ≈${full.tokens} tokens`,
+    `${title}${status} · ${outlineCosts(full)}`,
   ];
   if (typeof fm.data.summary === 'string') out.push(`summary: ${fm.data.summary}`);
   out.push('');
@@ -399,13 +518,32 @@ export function outline(text: string, options: AgentViewOptions = {}): string {
     ].filter(Boolean).join(', ');
     const range = `L${s.start + 1}-${s.end + 1}`;
     const indent = '  '.repeat(Math.max(0, s.heading.level - 2));
-    return { range, head: `${indent}${'#'.repeat(s.heading.level)} ${s.heading.text}`, tokens: `≈${estimateTokens(view)}`, notes };
+    return { range, head: `${indent}${'#'.repeat(s.heading.level)} ${s.heading.text}`, tokens: sectionCost(view, options.tokenizer), notes };
   });
   const w1 = Math.max(...rows.map((r) => r.range.length), 5);
   const w2 = Math.max(...rows.map((r) => r.head.length), 10);
+  const w3 = costWidth(rows.map((r) => r.tokens), options.tokenizer);
   for (const r of rows) {
-    out.push(`${r.range.padEnd(w1)}  ${r.head.padEnd(w2)}  ${r.tokens.padStart(6)}${r.notes ? `  ${r.notes}` : ''}`);
+    out.push(`${r.range.padEnd(w1)}  ${r.head.padEnd(w2)}  ${r.tokens.padStart(w3)}${r.notes ? `  ${r.notes}` : ''}`);
   }
   out.push('', 'Read a section: smd agent <file> --section "<heading or id>"   (repeatable; add --brief to condense)');
   return out.join('\n') + '\n';
+}
+
+/** `file ≈2430 tokens · full agent view ≈1531 tokens`, with a tokenizer `file ≈2430 est · 2210 o200k_base tokens · …` */
+function outlineCosts(full: AgentViewResult): string {
+  const counted = full.counted;
+  if (!counted) return `file ≈${full.originalTokens} tokens · full agent view ≈${full.tokens} tokens`;
+  const pair = (estimate: number, exact: number) => `≈${estimate} est · ${exact} ${counted.tokenizer} tokens`;
+  return `file ${pair(full.originalTokens, counted.originalTokens)} · full agent view ${pair(full.tokens, counted.tokens)}`;
+}
+
+/** A section's cost column: `≈420`, with a tokenizer `≈420 · 402`. */
+function sectionCost(view: string, tokenizer?: Tokenizer): string {
+  const estimate = `≈${estimateTokens(view)}`;
+  return tokenizer ? `${estimate} · ${tokenizer.count(view)}` : estimate;
+}
+
+function costWidth(costs: string[], tokenizer?: Tokenizer): number {
+  return tokenizer ? Math.max(...costs.map((c) => c.length), 6) : 6;
 }

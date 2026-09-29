@@ -7,7 +7,7 @@
 Don't read `.smd` files whole with cat/Read. Use the CLI (`smd` on PATH, or `node skills/styled-markdown-reader/scripts/smd.cjs`):
 
 1. `smd outline <file>` shows the title, status, summary and every section with its line range and token cost.
-2. If the full agent view is small (≲ 2,000 tokens), read it once with `smd agent <file>`. Otherwise read only what you need with `smd agent <file> --section "<heading>"` (repeatable). `:::agent` instructions from other sections are always included. `--brief` condenses diagrams, long code, details and completed tasks.
+2. If the full agent view is small (≲ 2,000 tokens), read it once with `smd agent <file>`. Otherwise read only what you need with `smd agent <file> --section "<heading>"` (repeatable). `:::agent` instructions from other sections are always included. `--brief` condenses diagrams, long code, details and completed tasks. When you need an overview within a fixed budget, `smd agent <file> --max-tokens 2000` condenses the view and leaves out the least important sections; each one becomes a `[section omitted: …]` line with the `--section` command that reads it.
 3. If the front matter lists `related:` documents, `smd outline <file> --related` adds each one's title, status, summary and token cost. Open a related document only when the question needs it.
 4. Headings in the agent view carry `[L42]` line refs. Open raw lines only when you edit, and only that range.
 5. Across documents: `smd tasks docs/` lists open tasks (priority, owner, due date, overdue first). `smd query "<selector>" docs/` pulls just the blocks you need, e.g. `decision[status=accepted]`, `risk[impact>=high]`, `api[method=POST]` or `question` (`--titles` for a one-line list).
@@ -21,6 +21,7 @@ How to interpret what you read:
 - `<decision status="accepted">` is binding. `proposed` isn't decided yet; `rejected`/`superseded` means don't do it.
 - `<risk …>` is something to design around. `API POST /v1/x` is an endpoint definition.
 - Tasks: `- [ ]` is open, `[P1]` is priority, `@name` is the owner, `(due …, OVERDUE)`.
+- `[section omitted: …]` is a section left out by `--max-tokens`. Run the command it gives if the question needs that section.
 - Styling never changes meaning.
 
 ## Writing `.smd` files

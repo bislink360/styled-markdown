@@ -3,9 +3,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   agentView, applyFixes, checkMermaid, extractTasks, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, querySmd,
-  relatedDocs, renderPage, smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type Diagnostic, type QueryMatch, type Selector, type TaskInfo,
+  relatedDocs, renderPage, smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type AgentViewOptions, type AgentViewResult, type BudgetResult,
+  type Diagnostic, type QueryMatch, type Selector, type TaskInfo, type Tokenizer,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
+import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
@@ -16,14 +18,20 @@ const pkg = { version: typeof __SMD_PKG_VERSION__ === 'string' ? __SMD_PKG_VERSI
 const HELP = `smd — Styled Markdown tool (spec v${SMD_VERSION})
 
 Reading (token-efficient, for agents):
-  smd outline <file.smd> [--related]
+  smd outline <file.smd> [--related] [--tokenizer <name>]
       Sections with line ranges and token costs, open tasks, where agent instructions are.
       --related    also list the front matter "related:" documents: title, status, summary and cost
   smd agent <file.smd> [--section "<heading>"]... [--brief] [--include-human] [--embed] [--no-lines]
+                       [--max-tokens <n>] [--tokenizer <name>]
       Compact agent view: styling, layout and human-only content removed; meaning kept.
       --section    only these sections (repeatable; agent instructions elsewhere are still included)
       --brief      also condense diagrams, long code, :::details and completed tasks
       --embed      inline file="…" code embeds instead of referencing the file
+      --max-tokens fit the view into n tokens: condense as --brief, then replace the least important
+                   sections with one-line pointers (never the header, agent instructions or --section)
+      --tokenizer  exact counts next to the ≈ estimate (also on outline, and used by --max-tokens) for an
+                   OpenAI encoding: ${TOKENIZERS.join(', ')}. Approximate for Claude models.
+                   Needs the js-tiktoken package in your project or installed globally; smd doesn't bundle it.
   smd tasks <files|dirs...> [--all] [--mine @name] [--json]
       Open tasks across documents with owner, priority and due date (overdue first).
   smd query "<selector>" <files|dirs...> [--json] [--titles] [--brief] [--no-lines]
@@ -66,7 +74,9 @@ Agent skills:
 
 interface Args { command?: string; positional: string[]; flags: Set<string>; values: Map<string, string[]> }
 
-const VALUE_OPTIONS = new Set(['--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
+const VALUE_OPTIONS = new Set([
+  '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--max-tokens', '--tokenizer',
+]);
 
 function parseArgs(argv: string[]): Args {
   const [command, ...rest] = argv;
@@ -97,27 +107,9 @@ function main(argv: string[]): number | Promise<number> {
 
   switch (command) {
     case 'outline':
-      return outlineFile(requireFile(positional[0]), flags.has('--related'), today);
-    case 'agent': {
-      const file = requireFile(positional[0]);
-      const result = agentView(read(file), {
-        sections: args.values.get('--section'),
-        brief: flags.has('--brief'),
-        includeHuman: flags.has('--include-human'),
-        embed: flags.has('--embed'),
-        lineRefs: !flags.has('--no-lines'),
-        readFile: readerFor(file),
-        today,
-      });
-      if (result.missingSections.length) {
-        console.error(`No section matching: ${result.missingSections.join(', ')}. Run "smd outline ${file}" to list sections.`);
-        if (result.missingSections.length === (args.values.get('--section')?.length ?? 0)) return 1;
-      }
-      process.stdout.write(result.text);
-      const saved = result.originalTokens ? Math.round((1 - result.tokens / result.originalTokens) * 100) : 0;
-      console.error(`[smd] ≈${result.tokens} tokens (file ≈${result.originalTokens}, ${saved}% smaller)`);
-      return 0;
-    }
+      return outlineFile(requireFile(positional[0]), flags.has('--related'), today, value('--tokenizer'));
+    case 'agent':
+      return agentFile(requireFile(positional[0]), args, today);
     case 'tasks':
       return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
     case 'query':
@@ -344,11 +336,87 @@ function titleLine(r: QueryRow): string {
   return parts.filter(Boolean).join('  ');
 }
 
-function outlineFile(file: string, related: boolean, today?: string): number {
-  const text = read(file);
-  process.stdout.write(outline(text, { readFile: readerFor(file), today }));
-  if (related) process.stdout.write(relatedBlock(file, text, today));
+function outlineFile(file: string, related: boolean, today?: string, tokenizerName?: string): number {
+  return withTokenizer(tokenizerName, (tokenizer) => {
+    const text = read(file);
+    process.stdout.write(outline(text, { readFile: readerFor(file), today, tokenizer }));
+    if (related) process.stdout.write(relatedBlock(file, text, today));
+    return 0;
+  });
+}
+
+/** Run with the `--tokenizer` given (if any), or fail with its install hint. */
+function withTokenizer(name: string | undefined, run: (tokenizer?: Tokenizer) => number): number {
+  if (name === undefined) return run(undefined);
+  let tokenizer: Tokenizer;
+  try {
+    tokenizer = loadTokenizer(name);
+  } catch (e) {
+    if (e instanceof TokenizerError) return fail(e.message);
+    throw e;
+  }
+  return run(tokenizer);
+}
+
+function agentFile(file: string, args: Args, today?: string): number {
+  const raw = args.values.get('--max-tokens')?.[0];
+  const maxTokens = raw === undefined ? undefined : Number(raw);
+  if (maxTokens !== undefined && !(Number.isInteger(maxTokens) && maxTokens > 0)) {
+    return fail('--max-tokens needs a whole number of tokens, e.g. --max-tokens 2000.');
+  }
+  return withTokenizer(args.values.get('--tokenizer')?.[0], (tokenizer) => printAgentView(file, args, { maxTokens, tokenizer, today }));
+}
+
+function printAgentView(file: string, args: Args, extra: Pick<AgentViewOptions, 'maxTokens' | 'tokenizer' | 'today'>): number {
+  const sections = args.values.get('--section');
+  const result = agentView(read(file), {
+    sections,
+    brief: args.flags.has('--brief'),
+    includeHuman: args.flags.has('--include-human'),
+    embed: args.flags.has('--embed'),
+    lineRefs: !args.flags.has('--no-lines'),
+    readFile: readerFor(file),
+    file,
+    ...extra,
+  });
+  if (result.missingSections.length) {
+    console.error(`No section matching: ${result.missingSections.join(', ')}. Run "smd outline ${file}" to list sections.`);
+    if (result.missingSections.length === (sections?.length ?? 0)) return 1;
+  }
+  process.stdout.write(result.text);
+  console.error(sizeLine(result));
+  if (result.budget) for (const line of budgetLines(result.budget, result.counted?.tokenizer)) console.error(line);
   return 0;
+}
+
+/** `[smd] ≈1531 tokens (file ≈2430, 37% smaller)`, with a tokenizer `[smd] ≈1531 est · 1402 o200k_base tokens (…)` */
+function sizeLine(result: AgentViewResult): string {
+  const counted = result.counted;
+  const [tokens, original] = counted ? [counted.tokens, counted.originalTokens] : [result.tokens, result.originalTokens];
+  const saved = original ? Math.round((1 - tokens / original) * 100) : 0;
+  if (!counted) return `[smd] ≈${tokens} tokens (file ≈${original}, ${saved}% smaller)`;
+  const exact = counted.tokenizer;
+  return `[smd] ≈${result.tokens} est · ${tokens} ${exact} tokens (file ≈${result.originalTokens} est · ${original} ${exact}, ${saved}% smaller)`;
+}
+
+/** What `--max-tokens` did, and a warning when even the smallest view is over the budget. */
+function budgetLines(budget: BudgetResult, tokenizer?: string): string[] {
+  const unit = tokenizer ? `${tokenizer} tokens` : 'tokens';
+  const size = tokenizer ? `${budget.tokens} ${unit}` : `≈${budget.tokens} ${unit}`;
+  const steps = [
+    budget.condensed ? 'condensed as --brief' : '',
+    budget.omitted.length ? `omitted ${budget.omitted.length} section(s): ${budget.omitted.map(omittedLabel).join(', ')}` : '',
+  ].filter(Boolean);
+  const lines = [`[smd] budget ${budget.maxTokens} ${unit}: ${steps.join('; ') || 'fits as is'}; now ${size}.`];
+  if (!budget.fits) {
+    lines.push(`[smd] warning: still over the budget of ${budget.maxTokens} ${unit}. The header, agent instructions and `
+      + 'requested sections are never omitted; ask for fewer sections or a larger budget.');
+  }
+  return lines;
+}
+
+function omittedLabel(o: BudgetResult['omitted'][number]): string {
+  return `${'#'.repeat(o.level)} ${o.heading} (≈${o.tokens})`;
 }
 
 /** `smd outline --related`: the related documents, with paths relative to the working directory. */
