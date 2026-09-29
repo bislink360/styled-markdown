@@ -414,7 +414,7 @@ function gitPath(top: string, file: string): string {
 /** Run git without a shell; undefined when it fails. */
 function git(args: string[]): string | undefined {
   try {
-    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 });
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }); // NOSONAR(typescript:S4036): --since runs the user's own git, found on PATH like any git-aware CLI
   } catch {
     return undefined;
   }
