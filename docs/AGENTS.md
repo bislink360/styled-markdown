@@ -1,6 +1,6 @@
 # Styled Markdown — Guide for AI Agents
 
-> Paste this file (or link to it) in your agent's system prompt, `CLAUDE.md`, `AGENTS.md`, `.cursorrules` or Copilot instructions so agents read and write `.smd` correctly. Agents that support skills can use the [styled-markdown skills](SKILLS.md) instead.
+> Paste this file (or link to it) in your agent's system prompt, `CLAUDE.md`, `AGENTS.md`, Cursor rules or Copilot instructions so agents read and write `.smd` correctly. For Cursor, GitHub Copilot and `AGENTS.md`, `smd skills install --target cursor,copilot,agents` writes a short version of this guide and the CLI (`.smd/smd.cjs`) into your project ([details](SKILLS.md#github-copilot-cursor-codex-windsurf-and-other-agents)). Agents that support skills can use the [styled-markdown skills](SKILLS.md) instead.
 
 ## Reading `.smd` files (save tokens)
 
