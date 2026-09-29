@@ -15,3 +15,7 @@ npm/dist/
 
 # Local planning (not committed)
 ROADMAP.smd
+
+# Local SonarQube gate (.claude/skills/sonarqube-scan)
+.scannerwork/
+extension/coverage/
