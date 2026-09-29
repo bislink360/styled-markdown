@@ -325,6 +325,7 @@ const checks = {
     const mermaid = () => vscode.languages.getDiagnostics(doc.uri).filter((d) => d.code === 'mermaid/syntax');
     const [d] = await waitFor(() => mermaid().length && mermaid(), 'a mermaid/syntax diagnostic');
     assert.equal(d.range.start.line, 4);
+    assert.equal(d.severity, vscode.DiagnosticSeverity.Warning);
     assert.match(d.message, /^Mermaid syntax error: expected TXT/);
 
     const edit = new vscode.WorkspaceEdit();

@@ -25,7 +25,7 @@ test('parse errors map to the document line and columns', async () => {
     throw Object.assign(new Error('Parse error'), { hash: { loc: { first_line: 2, last_line: 2, first_column: 5, last_column: 9 }, token: 'NEWLINE', expected: ["'TXT'"] } });
   };
   assert.deepEqual(await checkMermaid(src, jison), [{
-    line: 4, column: 5, endColumn: 9, severity: 'error', code: 'mermaid/syntax',
+    line: 4, column: 5, endColumn: 9, severity: 'warning', code: 'mermaid/syntax',
     message: 'Mermaid syntax error: expected TXT, got end of line.',
   }]);
 
@@ -34,7 +34,7 @@ test('parse errors map to the document line and columns', async () => {
   };
   const pie = '```mermaid\npie title X\n  "a" 1\n```';
   assert.deepEqual(await checkMermaid(pie, langium), [{
-    line: 2, column: 6, endColumn: 7, severity: 'error', code: 'mermaid/syntax',
+    line: 2, column: 6, endColumn: 7, severity: 'warning', code: 'mermaid/syntax',
     message: "Mermaid syntax error: Expecting token of type ':' but found `1`.",
   }]);
 
@@ -57,12 +57,12 @@ test('mermaid/syntax follows suppression comments and rule settings', async () =
   const src = '```mermaid\nflowchart LR\n```\n';
   const codes = async (text: string, rules?: Record<string, 'off' | 'error' | 'warning' | 'info' | 'hint'>) =>
     (await checkMermaid(text, fail, rules)).map((d) => `${d.line}:${d.code}:${d.severity}`);
-  assert.deepEqual(await codes(src), ['1:mermaid/syntax:error']);
+  assert.deepEqual(await codes(src), ['1:mermaid/syntax:warning']);
   assert.deepEqual(await codes(src, { 'mermaid/syntax': 'off' }), []);
-  assert.deepEqual(await codes(src, { 'mermaid/*': 'warning' }), ['1:mermaid/syntax:warning']);
+  assert.deepEqual(await codes(src, { 'mermaid/*': 'error' }), ['1:mermaid/syntax:error']);
   assert.deepEqual(await codes('<!-- smd-disable mermaid/syntax -->\n' + src), []);
   // Unknown codes in comments are validateSmd's to report, so they aren't repeated here.
-  assert.deepEqual(await codes('<!-- smd-disable-next-line nope/x -->\n' + src), ['2:mermaid/syntax:error']);
+  assert.deepEqual(await codes('<!-- smd-disable-next-line nope/x -->\n' + src), ['2:mermaid/syntax:warning']);
 });
 
 test('the bundled Mermaid parser accepts every example and reports real errors', { skip: !fs.existsSync(bundle) && 'run npm run build first' }, async () => {
