@@ -23,6 +23,7 @@
 ### Deprecated
 
 ### Fixed
+- The preview's Content-Security-Policy nonce is now generated with a cryptographically secure random source instead of `Math.random()`.
 - A preview hidden behind another tab showed the document as it was when the preview was opened until the next edit.
 
 ## Unreleased
