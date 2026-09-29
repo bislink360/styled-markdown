@@ -417,6 +417,7 @@ smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
+smd index <files|dirs> [-o catalog.json] [--compact] JSON catalog of every document, for agent routing
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]
@@ -427,6 +428,49 @@ smd templates
 smd skills install [--dir <path>] [--global] [--only reader|writer]
 smd --version
 ```
+
+### Document catalog: `smd index`
+
+`smd index docs/ -o docs/catalog.json` writes one JSON entry per document, so an agent can choose what to read across many documents without opening any of them:
+
+```json
+{
+  "format": "smd-index",
+  "version": 1,
+  "smd": 1,
+  "generator": "smd 1.3.0",
+  "documents": [
+    {
+      "path": "docs/api-orders.smd",
+      "title": "Orders API",
+      "summary": "Create, fetch and cancel orders. …",
+      "status": "approved",
+      "owners": ["@api-team"],
+      "tags": ["api", "reference", "orders"],
+      "audience": null,
+      "updated": "2026-09-24",
+      "related": [],
+      "tokens": { "file": 748, "agent": 562 },
+      "counts": {
+        "openTasks": 0, "doneTasks": 3, "overdueTasks": 0, "decisions": {}, "risks": 0, "openRisks": 0,
+        "questions": 0, "apis": 3, "diagrams": 0, "agentInstructions": 1
+      },
+      "sections": [
+        { "level": 2, "text": "Endpoints", "id": "endpoints", "line": 24, "endLine": 45, "tokens": 188 }
+      ]
+    }
+  ]
+}
+```
+
+- `path` is relative to the working directory, with `/` separators. Documents are sorted by path.
+- `title` comes from front matter, else the first `#` heading, else the file name. Missing metadata is `null` or `[]`.
+- `tokens.file` is the raw file, `tokens.agent` the full `smd agent` view. Each section's `tokens` is what `smd outline` shows for it (subsections included). `line` and `endLine` are zero-based, as in `smd meta` and `smd query --json`. A section marked `{agent=skip}` has `"agent": "skip"`.
+- `counts.decisions` groups decisions by status. `openRisks` counts risks whose status is not `mitigated` or `closed`. `agentInstructions` counts `:::agent` blocks.
+- The output has no timestamps, so a committed catalog only changes when documents do. `overdueTasks` depends on the date: pass `--today YYYY-MM-DD` to pin it.
+- `--compact` prints one line instead of indented JSON.
+
+How an agent routes with it: read the catalog, pick documents by `summary`, `status`, `tags`, `owners` and counts (for example skip `deprecated` documents, or look for open risks), check the reading cost in `tokens.agent`, then run `smd outline <file>` or go straight to `smd agent <file> --section "<id>"`.
 
 ## 18. Templates
 
