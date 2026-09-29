@@ -69,6 +69,12 @@
   - Outline view and go to definition: no render at all
   Headings and anchors now come from an incremental parse that reuses every top-level block the edit didn't touch, instead of a full HTML render, and results are identical. Math checks are cached per formula, and the status-bar token counter waits longer before updating on long documents.
 - CI runs a seeded fuzz test of the core (render, validate, quick fixes, agent view, outline, document info, tasks, Markdown conversion) and a benchmark suite (`npm run bench`) that fails on order-of-magnitude slowdowns.
+- The preview keeps your place when it updates: the source line at the top of the preview stays there, even when lines are added or removed above it.
+- The selected tab in `:::tabs` and opened or closed collapsibles (`:::details`, `collapsible` callouts, agent blocks) stay as you left them across updates. They're matched by their titles, not their position.
+- The preview restores its scroll position, tabs and collapsibles after its tab was hidden and shown again.
+
+### Changed
+- Unchanged Mermaid diagrams are restored from the cache right away on each update, instead of waiting behind a diagram that changed and briefly showing their source. A diagram you're editing keeps its previous height until the new version renders, so the page below it doesn't jump.
 
 ### Deprecated
 
@@ -77,6 +83,7 @@
 - A lone carriage return (`\r` without `\n`) was treated as a line break, so heading lines in the preview, scroll sync, outlines and `smd meta` drifted from the editor.
 - A front matter key containing regex characters, such as `"a(b": 1`, made validation throw.
 - The `frontmatter/unknown-key` quick fix no longer rewrites the opening `---` when the key is written differently in YAML (e.g. quoted); it is then offered as a hint only.
+- A preview hidden behind another tab showed the document as it was when the preview was opened until the next edit.
 
 ## Unreleased
 

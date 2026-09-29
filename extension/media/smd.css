@@ -281,6 +281,7 @@ details.smd-callout > summary::-webkit-details-marker { display: none; }
 .smd-diagram { margin: 0 0 1.2em; padding: 16px; border: 1px solid var(--smd-border); border-radius: 10px; background: var(--smd-surface); overflow-x: auto; text-align: center; }
 .smd-diagram pre.smd-mermaid { margin: 0; text-align: left; font-family: var(--smd-font-mono); font-size: .85em; color: var(--smd-fg-muted); white-space: pre-wrap; }
 .smd-diagram svg { max-width: 100%; height: auto; }
+.smd-diagram-pending { box-sizing: border-box; overflow: hidden; }
 .smd-math-block { overflow-x: auto; margin: 0 0 1em; }
 .smd-error { color: var(--smd-red); font-family: var(--smd-font-mono); font-size: .85em; white-space: pre-wrap; display: block; text-align: left; }
 

@@ -98,6 +98,70 @@ const checks = {
     assert.ok(status.math >= 2, 'KaTeX math rendered');
     assert.equal(status.tabs, 1, 'tab group initialised');
   },
+  async 'preview keeps its scroll anchor and reuses diagrams when the document changes'() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'smd-preview-'));
+    const file = path.join(dir, 'long.smd');
+    const body = Array.from({ length: 80 }, (_, i) => `Paragraph ${i}.\n`).join('\n');
+    fs.writeFileSync(file, `# Title\n\n\`\`\`mermaid\ngraph TD\n  A --> B\n\`\`\`\n\n\`\`\`mermaid\ngraph LR\n  C --> D\n\`\`\`\n\n${body}`);
+    const doc = await vscode.workspace.openTextDocument(file);
+    const editor = await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('smd.openPreviewToSide');
+    const status = () => vscode.commands.executeCommand('smd._previewStatus', doc.uri.toString());
+    await waitFor(async () => (await status())?.diagrams === 2, 'first render', 20000);
+
+    // Scroll the editor (the preview follows), then make an edit that moves nothing.
+    editor.revealRange(new vscode.Range(100, 0, 100, 0), vscode.TextEditorRevealType.AtTop);
+    await wait(800);
+    let edit = new vscode.WorkspaceEdit();
+    edit.insert(doc.uri, doc.lineAt(doc.lineCount - 1).range.end, '\nEnd.\n');
+    await vscode.workspace.applyEdit(edit);
+    const before = await waitFor(async () => {
+      const s = await status();
+      return s && s.reused === 2 && s.top > 50 ? s : undefined;
+    }, 're-render with cached diagrams');
+
+    // Insert three lines at the top: the same content stays at the top of the preview.
+    edit = new vscode.WorkspaceEdit();
+    edit.insert(doc.uri, new vscode.Position(0, 0), 'Intro.\n\n\n');
+    await vscode.workspace.applyEdit(edit);
+    const after = await waitFor(async () => {
+      const s = await status();
+      return s && s.top !== before.top ? s : undefined;
+    }, 're-render after inserting lines above');
+    console.log(`      anchor line ${before.top} -> ${after.top}`);
+    assert.equal(after.top, before.top + 3);
+    assert.equal(after.reused, 2, 'unchanged diagrams reuse their SVG');
+
+    // Let the editor's scroll sync settle, then take the position the preview is at.
+    await wait(800);
+    edit = new vscode.WorkspaceEdit();
+    edit.insert(doc.uri, doc.lineAt(doc.lineCount - 1).range.end, '\nEnd.\n');
+    await vscode.workspace.applyEdit(edit);
+    const settled = await waitFor(async () => {
+      const s = await status();
+      return s && s.renders > after.renders ? s : undefined;
+    }, 're-render after scroll sync');
+    await wait(800);
+
+    // Hide the preview behind another editor, edit above while it's hidden, then bring it back.
+    const other = await vscode.workspace.openTextDocument({ language: 'smd', content: '# Other\n' });
+    await vscode.window.showTextDocument(other, vscode.ViewColumn.Two);
+    await wait(500);
+    edit = new vscode.WorkspaceEdit();
+    edit.insert(doc.uri, new vscode.Position(0, 0), 'More.\n\n');
+    await vscode.workspace.applyEdit(edit);
+    await wait(500);
+    await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    await vscode.commands.executeCommand('smd.openPreviewToSide');
+    const restored = await waitFor(async () => {
+      const s = await status();
+      return s && s.renders !== settled.renders ? s : undefined;
+    }, 'preview restored after being hidden', 20000);
+    console.log(`      after hide/restore ${settled.top} -> ${restored.top}`);
+    assert.equal(restored.top, settled.top + 2);
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  },
+
   async 'agent view opens and copy puts compact text on the clipboard'() {
     const doc = await vscode.workspace.openTextDocument(path.join(examples, 'checkout-redesign.smd'));
     await vscode.window.showTextDocument(doc);
