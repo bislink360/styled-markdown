@@ -2,8 +2,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, checkMermaid, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
-  validateSmd, SMD_VERSION, type Diagnostic, type TaskInfo,
+  agentView, applyFixes, checkMermaid, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, querySmd, renderPage,
+  smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type Diagnostic, type QueryMatch, type Selector, type TaskInfo,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
@@ -25,6 +25,14 @@ Reading (token-efficient, for agents):
       --embed      inline file="…" code embeds instead of referencing the file
   smd tasks <files|dirs...> [--all] [--mine @name] [--json]
       Open tasks across documents with owner, priority and due date (overdue first).
+  smd query "<selector>" <files|dirs...> [--json] [--titles] [--brief] [--no-lines]
+      Blocks selected by type and attributes, each in the agent view. Exit code 1 when nothing matches.
+        decision[status=accepted]      risk[impact>=high][status!=closed]      api[method=POST|PUT]
+        task[owner=@maya][done=false]  task[due<today]    question, risk       heading[level=2]
+      Types: any container (decision, risk, api, note, question, agent…), callout, task, heading, * (any).
+      Tests: [key] [key=a|b] [key!=v] [key*=v] [key^=v] [key$=v] [key<v] (also <= > >=: numbers, dates,
+      priorities, risk levels); every block also has title, section and type.
+      --titles  one line per match instead of its content
   smd meta <file.smd> [--no-diagnostics]
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
 
@@ -114,6 +122,8 @@ function main(argv: string[]): number | Promise<number> {
     }
     case 'tasks':
       return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
+    case 'query':
+      return query(positional[0], positional.slice(1), { json: flags.has('--json'), titles: flags.has('--titles'), brief: flags.has('--brief'), lineRefs: !flags.has('--no-lines'), today });
     case 'meta': {
       const file = requireFile(positional[0]);
       const rules = configFor(file, value('--config')).rules;
@@ -294,6 +304,46 @@ function tasks(targets: string[], all: boolean, mine: string | undefined, json: 
   }
   console.error(`[smd] ${rows.length} task(s)${all ? '' : ' open'}${rows.some((r) => r.overdue) ? `, ${rows.filter((r) => r.overdue).length} overdue` : ''}.`);
   return 0;
+}
+
+interface QueryFlags { json: boolean; titles: boolean; brief: boolean; lineRefs: boolean; today?: string }
+type QueryRow = QueryMatch & { file: string };
+
+function query(selector: string | undefined, targets: string[], flags: QueryFlags): number {
+  if (!selector) return fail('Usage: smd query "<selector>" <files|dirs...>, e.g. smd query "decision[status=accepted]" docs/');
+  let selectors: Selector[];
+  try {
+    selectors = parseSelector(selector);
+  } catch (e) {
+    if (e instanceof SelectorError) return fail(e.message);
+    throw e;
+  }
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const options = { brief: flags.brief, lineRefs: flags.lineRefs, today: flags.today };
+  const rows: QueryRow[] = files.flatMap((file) => querySmd(read(file), selectors, options).map((m) => ({ file, ...m })));
+  if (flags.json) {
+    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
+  } else if (rows.length) {
+    const blocks = rows.map((r) => (flags.titles ? titleLine(r) : `${location(r)}\n${r.text}\n`));
+    process.stdout.write(blocks.join('\n').trimEnd() + '\n');
+  }
+  console.error(`[smd] ${rows.length} match(es) in ${new Set(rows.map((r) => r.file)).size} of ${files.length} file(s).`);
+  return rows.length ? 0 : 1;
+}
+
+/** `docs/plan.smd:12-20  — Section` */
+function location(r: QueryRow): string {
+  const end = r.endLine > r.line ? `-${r.endLine + 1}` : '';
+  return `${r.file}:${r.line + 1}${end}${r.section ? `  — ${r.section}` : ''}`;
+}
+
+/** `docs/plan.smd:12  decision  Title  {status=accepted}` (then the section, as in `location`). */
+function titleLine(r: QueryRow): string {
+  const end = r.endLine > r.line ? `-${r.endLine + 1}` : '';
+  const attrs = Object.entries(r.attrs).map(([k, v]) => `${k}=${[v].flat().join(',')}`).join(' ');
+  const parts = [`${r.file}:${r.line + 1}${end}`, r.type, r.title, attrs && `{${attrs}}`, r.section && `— ${r.section}`];
+  return parts.filter(Boolean).join('  ');
 }
 
 function installSkills(dir: string, only?: string): number {

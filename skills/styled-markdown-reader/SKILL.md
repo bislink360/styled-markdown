@@ -28,6 +28,7 @@ node <this-skill-dir>/scripts/smd.cjs <command> …    # or `smd` if on PATH; No
 
 Across many documents:
 - `smd tasks DIR` lists open tasks with priority, owner and due date, overdue first (`--mine @name` filters by owner).
+- `smd query "SELECTOR" DIR` prints only the matching blocks in the agent view: `decision[status=accepted]`, `risk[impact>=high][status!=closed]`, `api[method=POST]`, `question`, `task[owner=@me][done=false]`, `heading[level=2]`. Commas combine selectors. Add `--titles` for one line per block, `--json` for structured output. Exit code 1 means no match.
 - `smd meta FILE --no-diagnostics` gives JSON (outline, tasks, decisions, risks, agent blocks).
 
 ## What the agent view means

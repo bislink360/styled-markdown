@@ -5,6 +5,12 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- `smd query "<selector>" <files|dirs…>` selects blocks by type and attributes and prints each in the agent view, e.g. `decision[status=accepted]`, `risk[impact>=high][status!=closed]`, `api[method=POST|PUT]`, `question`, `task[owner=@maya][due<today]` or `heading[level=2]`:
+  - types: any container, `callout` (any callout), `task`, `heading` (with its whole section) and `*`; commas list alternatives
+  - tests: `[key]`, `=`, `!=`, `*=`, `^=`, `$=` with `a|b` alternatives, and `<`, `<=`, `>`, `>=` over numbers, dates (`today`), priorities and risk levels; every block also has `title`, `section` and `type`
+  - `--titles` prints one line per block, `--json` gives type, lines, title, attributes, section and agent-view text; `--brief` and `--no-lines` work as in `smd agent`
+  - a misspelled type or attribute is an error with a suggestion (exit code 2), and the exit code is 1 when nothing matches
+- Library: `querySmd(source, selector, options)`, `parseSelector` and `SelectorError`.
 
 ### Changed
 

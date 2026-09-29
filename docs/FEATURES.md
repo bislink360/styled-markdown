@@ -163,6 +163,29 @@ Start in week 1; Google Pay can launch alone.
 
 Rejected and superseded decisions are struck through in the preview. `smd meta` lists all decisions and risks as JSON.
 
+**`smd query`** selects blocks across documents by type and attributes, and prints each one in the agent view (`--titles` for one line per block, `--json` for tools):
+
+```bash
+smd query "decision[status=accepted]" docs/
+smd query "risk[impact>=high][status!=closed]" docs/
+smd query "api[method=POST|PUT], question" docs/
+smd query "task[owner=@api-team][due<today][done=false]" docs/
+```
+
+```text
+docs/checkout.smd:145-147  risk  Apple Pay domain verification delays launch  {impact=high likelihood=medium owner=@payments status=open}  — Risks
+```
+
+| Selector part | Meaning |
+|---|---|
+| `decision`, `risk`, `api`, `warning`, … | Any container type. `callout` is any callout, `task` a task item, `heading` a heading with its section, `*` (or nothing) any block. `a, b` lists alternatives. |
+| `[key]` | The attribute is set (and not `false`) |
+| `[key=a\|b]` `[key!=v]` | Equals one of the values / none of them. Case-insensitive; a leading `@` is ignored. |
+| `[key*=v]` `[key^=v]` `[key$=v]` | Contains / starts with / ends with |
+| `[key<v]` `<=` `>` `>=` | Numbers, dates (`YYYY-MM-DD` or `today`), priorities (`P0` < `P1` …, `critical` = `P0`, `high` = `P1`) and risk levels (`low` < `medium` < `high` < `critical`) |
+
+Every block also has `title`, `section` (the heading it sits under) and `type`. Defaults count: a decision without `status` is `proposed` and a risk without `impact` is `medium`. Tasks have `done`, `overdue`, `owner`, `priority` and `due`; headings have `level` and `id`. A misspelled type or attribute is an error with a suggestion, and the exit code is 1 when nothing matches.
+
 ## 7. Developer blocks: APIs, code, embeds
 
 ![API endpoint, embedded source with highlighted lines, sequence diagram](images/03-developers.png)
@@ -392,6 +415,7 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 smd outline <file>                                   sections, line ranges, token costs, markers
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
+smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files

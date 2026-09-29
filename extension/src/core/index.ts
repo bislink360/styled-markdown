@@ -16,6 +16,8 @@ export type { SmdDocumentInfo, TaskInfo, DecisionInfo, RiskInfo } from './meta';
 export { markdownToSmd, fillTemplate } from './fromMarkdown';
 export { agentView, outline, estimateTokens, inlineText } from './agentView';
 export type { AgentViewOptions, AgentViewResult } from './agentView';
+export { querySmd, parseSelector, SelectorError } from './query';
+export type { QueryMatch, QueryOptions, Selector, AttributeTest, QueryOperator } from './query';
 export { parseFenceInfo } from './fence';
 export { checkMermaid, mermaidBlocks } from './mermaid';
 export type { MermaidParse, MermaidBlock } from './mermaid';

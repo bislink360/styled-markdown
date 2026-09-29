@@ -119,6 +119,7 @@ Try these prompts in a new session in a repository that contains `.smd` files (t
 | *"Which decisions in the checkout spec are final and what is still open?"* | It lists the accepted and rejected decisions, the open question with its owner and deadline, and the fallback from the agent instructions. |
 | *"Write an ADR for moving our cron jobs to a managed scheduler, as docs/adr-0012-scheduler.smd."* | The agent uses the `adr` template, fills every placeholder, runs `smd validate --fix`, and ends with 0 errors. |
 | *"What's overdue across docs/?"* | It runs `smd tasks docs/`. |
+| *"Which high-impact risks are still open, and what did we decide about payments?"* | It runs `smd query "risk[impact>=high][status!=closed], decision[title*=pay]" docs/` and reads only those blocks. |
 
 ## How token reduction works
 
@@ -156,7 +157,8 @@ Measured on the examples:
 | outline | 230 | 90% |
 | full agent view | 1,531 | 37% |
 | one section (+ agent instructions) | 365–542 | 78–85% |
-| `smd tasks examples/` vs. reading all 7 examples | 685 vs 6,867 | 90% |
+| `smd tasks examples/` vs. reading all 7 examples | 672 vs 7,258 | 91% |
+| `smd query "decision, risk" examples/` vs. reading all 7 examples | 821 vs 7,258 | 89% |
 
 **What to expect in practice:** in a head-to-head test on that PRD, agents with and without the reader skill both answered correctly, and total session tokens were within about 1%. On a single ~2k-token document, the skill's own cost (≈900 tokens for SKILL.md plus the outline) roughly cancels the saving. The benefit grows with **larger documents, many documents, and repeated reads**, which is why the skill tells agents to read small files in one call and select sections only when a file is big.
 

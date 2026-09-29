@@ -140,6 +140,7 @@ History and research. People see it; agents skip it.
 | `smd outline <file>` | Sections with line ranges and token costs |
 | `smd agent <file> [--section …] [--brief]` | Compact agent view |
 | `smd tasks <dir> [--mine @me]` | Open tasks across docs, overdue first |
+| `smd query "<selector>" <paths> [--json]` | Decisions, risks, APIs, callouts, tasks or headings by type and attributes, e.g. `risk[impact>=high]` |
 | `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->` |
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
 | `smd init <file> --template prd` | New doc from 7 templates (`smd templates` lists them) |
@@ -211,7 +212,8 @@ Measured on [`examples/checkout-redesign.smd`](examples/checkout-redesign.smd), 
 | `smd agent` (whole doc) | 1,531 | 37% |
 | `smd agent --section requirements` | 542 | 78% |
 | `smd agent --section "open questions"` | 365 | 85% |
-| `smd tasks examples/` vs. reading all 7 examples | 685 vs 6,867 | 90% |
+| `smd tasks examples/` vs. reading all 7 examples | 672 vs 7,258 | 91% |
+| `smd query "decision, risk" examples/` vs. reading all 7 examples | 821 vs 7,258 | 89% |
 
 The skill and CLI cost a few hundred tokens themselves, so the savings grow with document size, the number of documents, and repeated reads. [How it works →](docs/SKILLS.md#how-token-reduction-works)
 
