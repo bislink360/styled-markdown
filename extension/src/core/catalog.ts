@@ -138,7 +138,7 @@ function indexSection(s: SectionCost): SmdIndexSection {
 /** How often each value occurs, keys sorted so the output is stable. */
 function tally(values: string[]): Record<string, number> {
   const counts: Record<string, number> = {};
-  for (const v of [...values].sort()) counts[v] = (counts[v] ?? 0) + 1;
+  for (const v of [...values].sort(comparePaths)) counts[v] = (counts[v] ?? 0) + 1;
   return counts;
 }
 

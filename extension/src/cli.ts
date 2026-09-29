@@ -138,7 +138,7 @@ function main(argv: string[]): number | Promise<number> {
       return 0;
     }
     case 'index':
-      return index(positional.length ? positional : ['.'], value('-o'), flags.has('--compact'), today);
+      return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
       return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'), staleAfterDays);
     case 'fmt':
@@ -354,7 +354,7 @@ function titleLine(r: QueryRow): string {
 }
 
 function index(targets: string[], out: string | undefined, compact: boolean, today?: string): number {
-  const files = targets.flatMap((t) => collect(t));
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
   const documents = files.map((file) => ({ path: relativePath(file), text: read(file) }));
   const catalog = smdIndex(documents, { today, generator: `smd ${pkg.version}` });
