@@ -4,20 +4,20 @@ theme: dark
 accent: teal
 ---
 
-::::columns
-:::column
+:::::columns
+::::column
 :::card{accent=teal} Frontend
 - React 19
 - :progress{value=80 color=teal}
 :::
-:::
-:::column
+::::
+::::column
 :::card{accent=purple} Backend
 - Go services
 - :progress{value=45 color=purple}
 :::
-:::
 ::::
+:::::
 
 ::::tabs
 :::tab npm

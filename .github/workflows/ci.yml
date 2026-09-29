@@ -40,6 +40,8 @@ jobs:
       - run: npm test
       - name: Examples validate
         run: node dist/cli.js validate ../examples ../docs/gallery
+      - name: Examples are formatted
+        run: node dist/cli.js fmt --check ../examples ../docs/gallery
       - name: Bundled skill CLIs are up to date
         shell: bash
         run: |
@@ -73,6 +75,34 @@ jobs:
           name: vsix
           path: extension/styled-markdown-ci.vsix
           retention-days: 7
+
+  bench:
+    name: Benchmarks & extended fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      # Limits sit about 10x above normal timings, so this catches order-of-magnitude slowdowns
+      # (e.g. an accidentally quadratic pass) without flaking. The table goes to the job summary.
+      - name: Benchmarks
+        run: npm run bench -- --check
+      # `npm test` runs 300 fuzz cases; this runs 10x more with the same fixed seed.
+      - name: Extended fuzz
+        env:
+          SMD_FUZZ_RUNS: 3000
+        run: node --import tsx --test test/fuzz.test.ts
+      - name: Upload fuzz reproduction
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures
+          path: extension/test/fuzz-failures/
+          if-no-files-found: ignore
 
   compatibility:
     name: Backward compatibility vs last release

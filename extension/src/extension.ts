@@ -5,12 +5,14 @@ import { markdownToSmd, renderStandaloneHtml, smdToMarkdown } from './core';
 import { registerLanguageFeatures } from './language';
 import { readerFor } from './files';
 import { registerAgentView } from './agentViewUi';
+import { registerEditorFeatures } from './editorFeatures';
 import { PreviewManager, renderOptions } from './preview';
 
 export function activate(context: vscode.ExtensionContext): void {
   const previews = new PreviewManager(context);
   const diagnostics = registerLanguageFeatures(context);
   registerAgentView(context);
+  registerEditorFeatures(context);
 
   const activeSmd = (): vscode.TextDocument | undefined => {
     const doc = vscode.window.activeTextEditor?.document;
@@ -84,7 +86,7 @@ export function activate(context: vscode.ExtensionContext): void {
       let errors = 0;
       for (const file of files) {
         const doc = await vscode.workspace.openTextDocument(file);
-        errors += diagnostics.update(doc);
+        errors += await diagnostics.update(doc);
       }
       const msg = `Validated ${files.length} .smd file(s): ${errors} error(s).`;
       if (errors) {
