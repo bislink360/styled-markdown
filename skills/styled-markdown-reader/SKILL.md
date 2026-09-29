@@ -24,9 +24,11 @@ node <this-skill-dir>/scripts/smd.cjs <command> …    # or `smd` if on PATH; No
    - Full agent view is small (≲ 2,000 tokens, shown on the outline's first line): run `smd agent FILE` once.
    - Specific question: run `smd agent FILE --section "Heading" [--section …]`. This matches heading text or id, includes subsections, and always appends `:::agent` instructions from elsewhere in the file.
    - Overview of a large doc: add `--brief`. It condenses diagrams, long code, `:::details` and completed tasks into pointers with line numbers.
-3. **Open raw lines only to edit.** Headings in the agent view carry `[L42]` line references. Read just that range with offset/limit, never the whole file. For writing or restructuring, use the `styled-markdown-writer` skill.
+3. **Related documents:** if the front matter lists `related:`, run `smd outline FILE --related`. It adds each related doc's title, status, summary and agent-view cost. Open a related doc (outline, then sections) only when the question needs it.
+4. **Open raw lines only to edit.** Headings in the agent view carry `[L42]` line references. Read just that range with offset/limit, never the whole file. For writing or restructuring, use the `styled-markdown-writer` skill.
 
 Across many documents:
+- `smd index DIR` (or a committed catalog JSON) lists every document with title, summary, status, owners, tags, token costs (`tokens.agent`), sections (`id`, zero-based `line`/`endLine`, `tokens`) and counts of open tasks, decisions, risks, questions and APIs. Use it to pick which documents to read, then `smd outline` or `smd agent FILE --section "ID"` on those only.
 - `smd tasks DIR` lists open tasks with priority, owner and due date, overdue first (`--mine @name` filters by owner).
 - `smd query "SELECTOR" DIR` prints only the matching blocks in the agent view: `decision[status=accepted]`, `risk[impact>=high][status!=closed]`, `api[method=POST]`, `question`, `task[owner=@me][done=false]`, `heading[level=2]`. Commas combine selectors. Add `--titles` for one line per block, `--json` for structured output. Exit code 1 means no match.
 - `smd meta FILE --no-diagnostics` gives JSON (outline, tasks, decisions, risks, agent blocks).

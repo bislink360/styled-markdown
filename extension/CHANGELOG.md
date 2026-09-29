@@ -11,6 +11,22 @@
   - `--titles` prints one line per block, `--json` gives type, lines, title, attributes, section and agent-view text; `--brief` and `--no-lines` work as in `smd agent`
   - a misspelled type or attribute is an error with a suggestion (exit code 2), and the exit code is 1 when nothing matches
 - Library: `querySmd(source, selector, options)`, `parseSelector` and `SelectorError`.
+- `smd outline <file> --related` adds a block listing the documents in front matter `related:`: each `.smd` file's title, status, summary and full agent-view token cost, so agents can decide whether to open it. URLs and other files are listed but not read; missing files and files outside the project folders are marked. Without the flag the outline is unchanged.
+- The reader skill and `docs/AGENTS.md` tell agents to check related documents with `smd outline --related` and to open them only when the question needs it.
+- Library: `relatedDocs(source, { readFile })`, `relatedEntries`, `summarizeSmd` and `formatRelated`.
+- Six new templates for `smd init --template` and the writer skill, 13 in total:
+  - `postmortem`: blameless incident review with impact metrics, timeline, root cause, action items with owners and due dates, and rules for agents doing the follow-ups
+  - `release-notes`: highlights, breaking changes with migration steps, deprecations, Added/Changed/Fixed, upgrade and known issues
+  - `okrs`: objectives with key-result tables (owner, baseline, target, progress, confidence), initiatives and risks
+  - `onboarding`: day-one setup, first-week tasks, a 90-day timeline, key links and people to meet
+  - `test-plan`: scope, strategy, environments, test cases, entry and exit criteria, risks and schedule
+  - `pr-description`: summary, changes, testing, risk and rollback, checklist and review focus
+- `smd index <files|dirs…> [-o catalog.json] [--compact]` writes a JSON catalog of every document for agent routing:
+  - per document: path (relative to the working directory, `/` separators), title, summary, status, owners, tags, audience, updated, related, and token costs of the file and of its full agent view
+  - sections with level, text, id, zero-based line range and agent-view token cost (the numbers `smd outline` shows)
+  - counts: open, done and overdue tasks, decisions by status, risks and open risks, questions, API endpoints, diagrams and `:::agent` blocks
+  - deterministic output (no timestamps, sorted by path) so the catalog can be committed and diffed; `--today` pins the overdue count
+- Library: `indexEntry(source, path, options)` and `smdIndex(documents, options)`, with the `SmdIndex*` types.
 - `smd mcp [--root <dir>]` runs a Model Context Protocol server over stdio, so agents in Claude Code, Cursor, VS Code or Claude Desktop can read `.smd` documents without a shell:
   - tools: `outline` (file), `section` (file, sections), `agent` (file, brief, includeHuman), `tasks` (paths, all, mine), `validate` (paths; JSON as `smd validate --json`) and `query` (selector, paths, brief, titles)
   - paths resolve against the root folder (default: the current folder); paths outside it, including through symbolic links, are refused, only `.smd` files are read, and code embeds only come from inside the root

@@ -1,0 +1,67 @@
+---
+smd: 1
+title: "{{title}} release notes"
+summary: The headline change in one sentence, whether anything breaks, and who needs to act before upgrading.
+status: draft
+owners: ["@release-manager"]
+tags: [release-notes]
+version: 1.0.0
+updated: {{today}}
+---
+
+**Version:** :badge[vX.Y.Z]{color=indigo} · **Released:** {{today}}
+
+## Highlights
+
+:::card{accent=green} Headline feature
+What users can do now, and why it matters. Link to the docs.
+:::
+
+- Second highlight in one sentence.
+
+## Breaking changes
+
+:::danger What breaks
+Who is affected, and what fails if they upgrade without changes.
+:::
+
+:::steps
+1. **Update** the configuration or code: show the old and the new form.
+2. **Verify** with the command or check that proves the migration worked.
+:::
+
+## Deprecations
+
+:::warning Deprecated: old option
+Still works in this release and is removed in the next major. Use the new option instead.
+:::
+
+## Changes
+
+### Added
+
+- New capability. (#123)
+
+### Changed
+
+- Behaviour change, and who notices it. (#124)
+
+### Fixed
+
+- Bug fix, described by its symptom. (#125)
+
+## Upgrade
+
+```bash
+npm install package@X.Y.Z
+```
+
+## Known issues
+
+- Issue, workaround, and when a fix is expected.
+
+:::agent Rules for upgrading dependents
+- Apply every step under Breaking changes before bumping the version.
+- Replace deprecated options in the same change as the upgrade.
+- Run the full test suite after upgrading and report any failure that matches a known issue.
+:::

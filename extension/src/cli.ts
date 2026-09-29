@@ -2,8 +2,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, renderPage,
-  smdToMarkdown, SelectorError, SMD_VERSION, type Diagnostic, type Selector,
+  agentView, applyFixes, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderPage,
+  smdIndex, smdToMarkdown, SelectorError, SMD_VERSION, type Diagnostic, type Selector,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
@@ -18,8 +18,9 @@ const pkg = { version: typeof __SMD_PKG_VERSION__ === 'string' ? __SMD_PKG_VERSI
 const HELP = `smd — Styled Markdown tool (spec v${SMD_VERSION})
 
 Reading (token-efficient, for agents):
-  smd outline <file.smd>
+  smd outline <file.smd> [--related]
       Sections with line ranges and token costs, open tasks, where agent instructions are.
+      --related    also list the front matter "related:" documents: title, status, summary and cost
   smd agent <file.smd> [--section "<heading>"]... [--brief] [--include-human] [--embed] [--no-lines]
       Compact agent view: styling, layout and human-only content removed; meaning kept.
       --section    only these sections (repeatable; agent instructions elsewhere are still included)
@@ -37,6 +38,11 @@ Reading (token-efficient, for agents):
       --titles  one line per match instead of its content
   smd meta <file.smd> [--no-diagnostics]
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
+  smd index <files|dirs...> [-o catalog.json] [--compact]
+      JSON catalog of every document: title, summary, status, owners, tags, token costs, sections
+      and counts (open tasks, decisions, risks, questions, APIs). Agents read it to pick documents,
+      then run outline or agent --section on them. Paths are relative to the working directory.
+      --compact  one line of JSON instead of indented
 
 Checking and converting:
   smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
@@ -103,11 +109,8 @@ function main(argv: string[]): number | Promise<number> {
   if (staleAfterDays !== undefined && !(staleAfterDays >= 0)) return fail('--stale-after needs a number of days (0 turns the check off).');
 
   switch (command) {
-    case 'outline': {
-      const file = requireFile(positional[0]);
-      process.stdout.write(outline(read(file), { readFile: readerFor(file), today }));
-      return 0;
-    }
+    case 'outline':
+      return outlineFile(requireFile(positional[0]), flags.has('--related'), today);
     case 'agent': {
       const file = requireFile(positional[0]);
       const result = agentView(read(file), {
@@ -140,6 +143,8 @@ function main(argv: string[]): number | Promise<number> {
       process.stdout.write(JSON.stringify(info, null, 2) + '\n');
       return 0;
     }
+    case 'index':
+      return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
       return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'), staleAfterDays);
     case 'fmt':
@@ -313,6 +318,42 @@ async function mcp(root = '.'): Promise<number> {
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return fail(`--root must be a folder: ${root}`);
   await runMcpServer({ root, version: pkg.version });
   return 0;
+}
+
+function outlineFile(file: string, related: boolean, today?: string): number {
+  const text = read(file);
+  process.stdout.write(outline(text, { readFile: readerFor(file), today }));
+  if (related) process.stdout.write(relatedBlock(file, text, today));
+  return 0;
+}
+
+/** `smd outline --related`: the related documents, with paths relative to the working directory. */
+function relatedBlock(file: string, text: string, today?: string): string {
+  const dir = path.dirname(path.resolve(file));
+  const docs = relatedDocs(text, { readFile: readerFor(file), today })
+    .map((d) => (d.path === undefined ? d : { ...d, path: displayPath(dir, d.path) }));
+  const block = formatRelated(docs);
+  return block ? '\n' + block : '';
+}
+
+function displayPath(dir: string, rel: string): string {
+  return relativePath(path.resolve(dir, rel));
+}
+
+function index(targets: string[], out: string | undefined, compact: boolean, today?: string): number {
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const documents = files.map((file) => ({ path: relativePath(file), text: read(file) }));
+  const catalog = smdIndex(documents, { today, generator: `smd ${pkg.version}` });
+  const json = compact ? JSON.stringify(catalog) : JSON.stringify(catalog, null, 2);
+  const tokens = catalog.documents.reduce((sum, d) => sum + d.tokens.agent, 0);
+  console.error(`[smd] ${catalog.documents.length} document(s) indexed, ≈${tokens} tokens in full agent view.`);
+  return write(out, json + '\n');
+}
+
+/** `docs/plan.smd`: relative to the working directory, with forward slashes on every platform. */
+function relativePath(file: string): string {
+  return path.relative(process.cwd(), path.resolve(file)).split(path.sep).join('/');
 }
 
 function installSkills(dir: string, only?: string): number {
