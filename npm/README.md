@@ -26,6 +26,7 @@ npx styled-markdown --help         # run without installing
 
 ```bash
 smd validate docs/ --fix              # check files, auto-fix typos; exit code 1 on errors (CI-friendly)
+smd fmt docs/ --check                 # formatting check for CI; without --check it formats in place
 smd outline docs/spec.smd             # sections, line ranges and token cost per section
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
@@ -42,7 +43,7 @@ Run `smd --help` for every option.
 ```ts
 import {
   renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
-  smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks,
+  smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, formatSmd,
 } from 'styled-markdown';
 ```
 
@@ -74,6 +75,19 @@ const { text, applied } = applyFixes(source, diagnostics);
 
 Every diagnostic has a stable `code` (`container/unclosed`, `attrs/value`, `mermaid/type`, `task/overdue`, …). They're listed in the [specification](https://github.com/bislink360/styled-markdown/blob/main/docs/SPEC.md#7-validation-rules).
 
+```ts
+// Turn rules off or change their severity, by code, category or '*'; the most specific key wins.
+validateSmd(source, { rules: { 'link/missing-file': 'off', 'frontmatter/*': 'hint' } });
+
+// Or read them from a smd.config.json / .smdrc file you loaded yourself.
+const { rules, problems } = readRuleConfig(JSON.parse(configText));
+
+// Mermaid syntax errors need a parser, which the library doesn't bundle: pass mermaid.parse.
+const errors = await checkMermaid(source, (src) => mermaid.parse(src), rules);
+```
+
+Inside a document, `<!-- smd-disable-next-line link/missing-file -->` silences one rule on the next line.
+
 ### Token-efficient agent views
 
 ```ts
@@ -93,13 +107,14 @@ The agent view drops styling, layout, `:::human` blocks and `{agent=skip}` secti
 ```ts
 smdToMarkdown(source);                    // GitHub-flavored Markdown
 markdownToSmd(markdown, 'Fallback title'); // add front matter, GitHub alerts → callouts
+formatSmd(source);                        // the `smd fmt` layout: fence colons, attribute order, tables, blank lines
 
 const info = getDocumentInfo(source);     // front matter, outline, tasks, decisions, risks, agent blocks, diagnostics
 const open = extractTasks(source).filter((t) => !t.done);
 // [{ text: 'Idempotent order creation', priority: 'P0', assignees: ['@api-team'], due: '2026-10-03', overdue: false, line: 61, section: 'Requirements' }]
 ```
 
-Also exported: `parseFrontMatter`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
+Also exported: `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
 
 ## A taste of the format
 

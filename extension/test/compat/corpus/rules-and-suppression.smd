@@ -1,0 +1,39 @@
+---
+smd: 1
+title: Rules and suppression comments
+summary: Exercises the 1.2 validation additions so later releases are compared against them.
+status: draft
+theme: dark
+updated: 2026-09-28
+---
+
+## Silenced findings
+
+<!-- smd-disable-next-line link/missing-file -->
+See the [generated report](build/report.html).
+
+A [link to a missing file](missing.smd) that stays reported.
+
+<!-- smd-disable link/* -->
+- [Generated index](build/index.html)
+- [Generated changelog](build/changes.md#latest)
+<!-- smd-enable link/* -->
+
+Reported again: [after the range](also-missing.md).
+
+## Unknown codes
+
+<!-- smd-disable-next-line link/missng-file -->
+[Still reported](nowhere.md), and the comment names an unknown rule.
+
+## Diagrams
+
+<!-- smd-disable-next-line mermaid/syntax -->
+```mermaid
+flowchart LR
+    A --> B
+```
+
+## Tasks
+
+- [ ] Review the silenced links :priority[P2] @maya :due[2026-10-15]
