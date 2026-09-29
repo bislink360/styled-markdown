@@ -170,6 +170,16 @@
           ],
           "description": "Invalid audience value"
         },
+        "frontmatter/value": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Value outside the allowed values for its key (e.g. theme)"
+        },
         "frontmatter/accent": {
           "enum": [
             "off",
@@ -209,6 +219,16 @@
             "hint"
           ],
           "description": "The first # heading repeats the front matter title"
+        },
+        "frontmatter/stale": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "updated is older than the stale limit and the document is not archived or deprecated"
         },
         "container/unknown": {
           "enum": [

@@ -42,6 +42,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | `smd.validation.enabled` | `true` | Report problems |
 | `smd.validation.checkLinks` | `true` | Warn about relative links, images and `related:` entries that point to missing files or headings |
 | `smd.validation.mermaid` | `true` | Parse Mermaid diagrams and report syntax errors before they render |
+| `smd.validation.staleAfterDays` | `180` | Flag a document as stale when `updated` is older than this and its status isn't archived or deprecated (`0`: off) |
 
 ## Syntax at a glance
 

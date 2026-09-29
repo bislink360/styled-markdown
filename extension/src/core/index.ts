@@ -1,5 +1,6 @@
 export * from './spec';
 export { parseFrontMatter } from './frontmatter';
+export { FRONTMATTER_SCHEMA, frontMatterValues } from './frontmatterSchema';
 export { renderSmd, renderStandaloneHtml, slugify } from './render';
 export type { RenderOptions, RenderResult, Heading } from './render';
 export { validateSmd, applyFixes } from './validate';

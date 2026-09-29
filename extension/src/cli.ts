@@ -29,12 +29,13 @@ Reading (token-efficient, for agents):
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
 
 Checking and converting:
-  smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid]
+  smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
       Check .smd files. Exit code 1 on errors (or warnings with --strict). --fix applies safe fixes.
       Rules are configured by the nearest smd.config.json or .smdrc (or --config):
         { "rules": { "link/missing-file": "off", "frontmatter/*": "hint", "task/overdue": "error" } }
       and silenced inline with <!-- smd-disable-next-line rule/code -->.
       Mermaid diagrams are parsed for syntax errors (--no-mermaid skips it).
+      Documents whose "updated" date is over 180 days old are reported as stale (--stale-after 0: off).
   smd fmt <files|dirs...> [--check] [--stdout]
       Format .smd files in place: container fences, attribute lists, tables and blank lines.
       --check   change nothing; list unformatted files and exit 1 if there are any
@@ -56,7 +57,7 @@ Agent skills:
 
 interface Args { command?: string; positional: string[]; flags: Set<string>; values: Map<string, string[]> }
 
-const VALUE_OPTIONS = new Set(['--config', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
+const VALUE_OPTIONS = new Set(['--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
 
 function parseArgs(argv: string[]): Args {
   const [command, ...rest] = argv;
@@ -81,6 +82,9 @@ function main(argv: string[]): number | Promise<number> {
   const { command, positional, flags } = args;
   const value = (name: string) => args.values.get(name)?.[0];
   const today = value('--today');
+  const staleAfter = value('--stale-after');
+  const staleAfterDays = staleAfter === undefined ? undefined : Number(staleAfter);
+  if (staleAfterDays !== undefined && !(staleAfterDays >= 0)) return fail('--stale-after needs a number of days (0 turns the check off).');
 
   switch (command) {
     case 'outline': {
@@ -113,13 +117,13 @@ function main(argv: string[]): number | Promise<number> {
     case 'meta': {
       const file = requireFile(positional[0]);
       const rules = configFor(file, value('--config')).rules;
-      const info = getDocumentInfo(read(file), { fileExists: existsFrom(file), readFile: readerFor(file), today, rules });
+      const info = getDocumentInfo(read(file), { fileExists: existsFrom(file), readFile: readerFor(file), today, rules, staleAfterDays });
       if (flags.has('--no-diagnostics')) delete (info as Partial<typeof info>).diagnostics;
       process.stdout.write(JSON.stringify(info, null, 2) + '\n');
       return 0;
     }
     case 'validate':
-      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'));
+      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'), staleAfterDays);
     case 'fmt':
       return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
     case 'render': {
@@ -166,7 +170,7 @@ function main(argv: string[]): number | Promise<number> {
 }
 
 async function validate(
-  targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, configFile?: string, mermaid = true,
+  targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, configFile?: string, mermaid = true, staleAfterDays?: number,
 ): Promise<number> {
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
@@ -182,7 +186,7 @@ async function validate(
       configProblems += config.problems.length;
       for (const p of config.problems) console.error(`${config.file}: warning  ${p}`);
     }
-    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today, rules: config.rules };
+    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today, staleAfterDays, rules: config.rules };
     const check = async (text: string) => {
       const found = validateSmd(text, opts);
       if (parse) found.push(...await checkMermaid(text, parse, config.rules));

@@ -34,6 +34,12 @@
   - `smd validate`: `--no-mermaid` skips the check. The single-file CLI bundled in the agent skills doesn't include the parser and skips it.
   - Library: `checkMermaid(text, parse, rules?)` and `mermaidBlocks(text)`; pass `mermaid.parse` or any compatible parser.
   - Like other rules, `mermaid/syntax` can be turned off or given another severity in `smd.config.json` / `.smdrc`, and silenced with `<!-- smd-disable-next-line mermaid/syntax -->`.
+- Front matter JSON Schema: one schema (`FRONTMATTER_SCHEMA`) drives front matter validation and editor completion.
+  - It is published as `extension/schemas/smd-frontmatter.schema.json` and as `styled-markdown/frontmatter.schema.json` on npm, for YAML tooling and pipelines.
+  - Completion now offers every enumerated value, including `theme`, `toc` and `smd`. It skips keys already in the front matter, and suggests today's date for `updated` and `created`.
+  - New `frontmatter/value` warning for values the schema doesn't allow on keys without their own rule, such as `theme: neon`.
+  - `title`, `summary` and `version` given as a list or mapping are reported as `frontmatter/type`.
+- Stale document check `frontmatter/stale` (info): `updated` is more than 180 days old and the status isn't `archived` or `deprecated`. Configure it with `smd.validation.staleAfterDays`, `smd validate --stale-after <days>` or `validateSmd(text, { staleAfterDays })`; `0` turns it off. Like other rules, it can also be turned off or given another severity in `smd.config.json` / `.smdrc`.
 
 ### Changed
 - The npm package ships Mermaid's parser for `smd validate` (`dist/mermaid-parse.js`, 3.4 MB unpacked). The library entry points don't load it.

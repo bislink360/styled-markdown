@@ -63,6 +63,10 @@ A YAML mapping between `---` lines at the very start of the file. It is parsed w
 
 Unknown keys are allowed and preserved (reported as *hints* so typos are caught).
 
+The table is published as a JSON Schema: [`extension/schemas/smd-frontmatter.schema.json`](https://raw.githubusercontent.com/bislink360/styled-markdown/main/extension/schemas/smd-frontmatter.schema.json), also shipped on npm as `styled-markdown/frontmatter.schema.json`. The validator and editor completion read the same schema, and YAML tools or pipelines can use it to check document metadata.
+
+A document is **stale** when `updated` is more than 180 days before today (tools may make this configurable) and `status` is not `archived` or `deprecated`.
+
 ---
 
 ## 3. Block containers
@@ -228,6 +232,8 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `frontmatter/unknown-key` | hint | Non-standard key (fix when a close match exists) |
 | `frontmatter/status` · `/audience` · `/accent` · `/type` · `/date` | warning / error | Invalid values |
 | `frontmatter/duplicate-title` | hint | First `# H1` repeats the front matter title |
+| `frontmatter/value` | warning | A value outside the schema's allowed values for keys without their own rule (e.g. `theme`) |
+| `frontmatter/stale` | info | `updated` is older than the stale threshold and the document is not archived or deprecated |
 | `container/unknown` | warning | Unknown container name (fix: closest name) |
 | `container/unclosed` | error | Missing closing `:::` |
 | `container/stray-close` | warning | `:::` with nothing open |
