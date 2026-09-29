@@ -48,6 +48,7 @@ Copy this into the PR description:
 
 ## Checklist
 - [ ] Tests added/updated (`npm test`), VS Code checks pass (`npm run test:vscode`) for editor changes
+- [ ] SonarQube gate passes locally (`node .claude/skills/sonarqube-scan/scripts/sonar-scan.mjs`); suppressions/baseline changes: <none | list with reasons>
 - [ ] New syntax has a corpus document in `extension/test/compat/corpus/`
 - [ ] Docs updated: SPEC.md, FEATURES.md, writer skill `references/syntax.md`, README feature list
 - [ ] Plain-Markdown fallback (`toMarkdown.ts`) and agent view (`agentView.ts`) handle the new construct

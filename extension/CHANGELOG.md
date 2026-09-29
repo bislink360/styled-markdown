@@ -30,6 +30,7 @@
 ### Deprecated
 
 ### Fixed
+- The preview's Content-Security-Policy nonce is now generated with a cryptographically secure random source instead of `Math.random()`.
 
 ## Unreleased
 
