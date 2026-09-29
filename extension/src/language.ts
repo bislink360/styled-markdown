@@ -8,7 +8,10 @@ import {
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
   formatSmd, parseFrontMatter, renderSmd, validateSmd, type Diagnostic,
 } from './core';
-import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
+import {
+  anchorLine, anchorTargets, isDocumentPath, linkAt, linkCompletionContext, splitTarget, type LinkCompletionContext,
+} from './core/links';
+import { encodeAnchor, headingAt, linksToAnchor, renameHeading } from './core/anchors';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
 
@@ -138,9 +141,77 @@ const ATTR_VALUES: Record<string, string[]> = {
   collapsible: ['open'],
 };
 
+/**
+ * Paths and `#anchors` for links, `related:` entries and `file="…"` embeds. Paths are relative to the
+ * document; after `#` the headings and ids of the current or linked document are offered.
+ */
+function linkCompletions(document: vscode.TextDocument, position: vscode.Position, ctx: LinkCompletionContext): vscode.CompletionItem[] {
+  const hash = ctx.kind === 'embed' ? -1 : ctx.target.indexOf('#');
+  const dir = document.uri.scheme === 'file' ? path.dirname(document.uri.fsPath) : undefined;
+
+  if (hash >= 0) {
+    const rel = ctx.target.slice(0, hash);
+    let text: string | undefined;
+    if (!rel) text = document.getText();
+    else if (dir && isDocumentPath(rel)) text = readDocument(path.resolve(dir, decodePath(rel)));
+    if (text === undefined) return [];
+    const range = new vscode.Range(position.line, ctx.column + hash + 1, position.line, position.character);
+    return anchorItems(text, range, '');
+  }
+
+  const items: vscode.CompletionItem[] = [];
+  const slash = ctx.target.lastIndexOf('/');
+  const range = new vscode.Range(position.line, ctx.column + slash + 1, position.line, position.character);
+  if (dir) {
+    const folder = path.resolve(dir, decodePath(ctx.target.slice(0, slash + 1)));
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(folder, { withFileTypes: true }); } catch { /* no such folder */ }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      if (path.join(folder, entry.name) === document.uri.fsPath) continue;
+      const isDir = entry.isDirectory();
+      const isDoc = !isDir && isDocumentPath(entry.name);
+      if (ctx.kind === 'related' && !isDir && !isDoc) continue;
+      const name = ctx.kind === 'link' ? entry.name.replace(/ /g, '%20') : entry.name;
+      const item = new vscode.CompletionItem(isDir ? `${entry.name}/` : entry.name, isDir ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File);
+      item.range = range;
+      item.insertText = isDir ? `${name}/` : name;
+      item.sortText = `${isDoc ? 0 : isDir ? 1 : 2}${entry.name.toLowerCase()}`;
+      if (isDir) item.command = { command: 'editor.action.triggerSuggest', title: 'Suggest files' };
+      items.push(item);
+    }
+  }
+  // An empty link target can also point into this document.
+  if (ctx.kind === 'link' && ctx.target === '') items.push(...anchorItems(document.getText(), range, '#'));
+  return items;
+}
+
+function anchorItems(text: string, range: vscode.Range, prefix: string): vscode.CompletionItem[] {
+  return anchorTargets(text).map((t, i) => {
+    const item = new vscode.CompletionItem(`${prefix}${t.id}`, vscode.CompletionItemKind.Reference);
+    item.range = range;
+    item.detail = t.text !== undefined ? `${'#'.repeat(t.level ?? 1)} ${t.text}` : t.line !== undefined ? `id on line ${t.line + 1}` : 'id';
+    item.sortText = `3${String(i).padStart(5, '0')}`;
+    return item;
+  });
+}
+
+/** The open (possibly unsaved) version of a file, or its contents on disk. */
+function readDocument(file: string): string | undefined {
+  const open = vscode.workspace.textDocuments.find((d) => d.uri.scheme === 'file' && d.uri.fsPath === file);
+  if (open) return open.getText();
+  try { return fs.readFileSync(file, 'utf8'); } catch { return undefined; }
+}
+
+function decodePath(p: string): string {
+  try { return decodeURIComponent(p); } catch { return p; }
+}
+
 class CompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
+    const link = linkCompletionContext(document.getText(), position.line, position.character);
+    if (link) return linkCompletions(document, position, link);
     const fm = parseFrontMatter(document.getText());
 
     // Front matter keys and values
@@ -393,6 +464,102 @@ class DefinitionProvider implements vscode.DefinitionProvider {
 }
 
 // ---------------------------------------------------------------------------
+// Find references and rename for heading anchors, across the workspace
+// ---------------------------------------------------------------------------
+
+interface WorkspaceDoc { uri: vscode.Uri; text: string }
+
+/** Every .smd / .md document in the workspace (open ones with their unsaved text), plus `current`. */
+async function workspaceDocuments(current: vscode.TextDocument): Promise<WorkspaceDoc[]> {
+  const uris = await vscode.workspace.findFiles('**/*.{smd,md,markdown}', '**/node_modules/**');
+  const docs = new Map<string, WorkspaceDoc>();
+  for (const uri of [current.uri, ...uris]) {
+    const key = uri.toString();
+    if (docs.has(key)) continue;
+    const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
+    if (open) { docs.set(key, { uri, text: open.getText() }); continue; }
+    try { docs.set(key, { uri, text: Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8') }); } catch { /* unreadable */ }
+  }
+  return [...docs.values()];
+}
+
+const samePath = (a: string, b: string) =>
+  process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);
+
+/** Does a link path written in `from` point at `target`? An empty path is the document itself. */
+function pointsAt(from: vscode.Uri, linkPath: string, target: vscode.Uri): boolean {
+  if (!linkPath) return from.toString() === target.toString();
+  if (from.scheme !== 'file' || target.scheme !== 'file') return false;
+  return samePath(path.resolve(path.dirname(from.fsPath), linkPath), target.fsPath);
+}
+
+/** The anchor at a position: a heading, or the `#anchor` of a link to an existing document. */
+function anchorAt(document: vscode.TextDocument, position: vscode.Position): { uri: vscode.Uri; id: string } | undefined {
+  const text = document.getText();
+  const heading = headingAt(text, position.line);
+  if (heading) return { uri: document.uri, id: heading.slug };
+  const hit = linkAt(text, position.line, position.character);
+  const parts = hit && !hit.reference ? splitTarget(hit.link.target) : undefined;
+  if (!parts?.anchor) return undefined;
+  if (!parts.path) return { uri: document.uri, id: parts.anchor };
+  if (document.uri.scheme !== 'file' || !isDocumentPath(parts.path)) return undefined;
+  const target = path.resolve(path.dirname(document.uri.fsPath), parts.path);
+  return fs.existsSync(target) ? { uri: vscode.Uri.file(target), id: parts.anchor } : undefined;
+}
+
+class ReferenceProvider implements vscode.ReferenceProvider {
+  async provideReferences(document: vscode.TextDocument, position: vscode.Position, context: vscode.ReferenceContext): Promise<vscode.Location[]> {
+    const anchor = anchorAt(document, position);
+    if (!anchor) return [];
+    const docs = await workspaceDocuments(document);
+    const locations: vscode.Location[] = [];
+    if (context.includeDeclaration) {
+      const target = docs.find((d) => d.uri.toString() === anchor.uri.toString());
+      const line = target ? anchorLine(target.text, anchor.id) : undefined;
+      if (target && line !== undefined) {
+        const h = headingAt(target.text, line);
+        locations.push(new vscode.Location(anchor.uri, new vscode.Range(line, h?.start ?? 0, line, h?.end ?? 0)));
+      }
+    }
+    for (const doc of docs) {
+      for (const l of linksToAnchor(doc.text, anchor.id, (p) => pointsAt(doc.uri, p, anchor.uri))) {
+        locations.push(new vscode.Location(doc.uri, new vscode.Range(l.line, l.column, l.line, l.endColumn)));
+      }
+    }
+    return locations;
+  }
+}
+
+class RenameProvider implements vscode.RenameProvider {
+  prepareRename(document: vscode.TextDocument, position: vscode.Position): { range: vscode.Range; placeholder: string } {
+    const heading = headingAt(document.getText(), position.line);
+    if (!heading) throw new Error('Rename a heading to update every link to it.');
+    return { range: new vscode.Range(heading.line, heading.start, heading.line, heading.end), placeholder: heading.text };
+  }
+
+  async provideRenameEdits(document: vscode.TextDocument, position: vscode.Position, newName: string): Promise<vscode.WorkspaceEdit | undefined> {
+    const text = document.getText();
+    const heading = headingAt(text, position.line);
+    const renamed = heading && renameHeading(text, position.line, newName);
+    if (!heading || !renamed) return undefined;
+    const edit = new vscode.WorkspaceEdit();
+    const headingRange = new vscode.Range(heading.line, heading.start, heading.line, heading.end);
+    edit.replace(document.uri, headingRange, renamed.lineText.slice(heading.start, renamed.lineText.length - (text.split(/\r?\n/)[heading.line].length - heading.end)));
+    if (!renamed.changes.length) return edit;
+    for (const doc of await workspaceDocuments(document)) {
+      for (const { from, to } of renamed.changes) {
+        for (const l of linksToAnchor(doc.text, from, (p) => pointsAt(doc.uri, p, document.uri))) {
+          // A link inside the renamed heading text is replaced along with it.
+          if (doc.uri.toString() === document.uri.toString() && headingRange.contains(new vscode.Position(l.line, l.column))) continue;
+          edit.replace(doc.uri, new vscode.Range(l.line, l.column, l.line, l.endColumn), encodeAnchor(l.raw, to));
+        }
+      }
+    }
+    return edit;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Formatting (Format Document, format on save): the same rules as `smd fmt`
 // ---------------------------------------------------------------------------
 
@@ -422,12 +589,14 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdD
   context.subscriptions.push(
     diagnostics,
     vscode.languages.registerCodeActionsProvider(SELECTOR, new QuickFixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
-    vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`'),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`', '(', '/', '#', '"'),
     vscode.languages.registerHoverProvider(SELECTOR, new HoverProvider()),
     vscode.languages.registerColorProvider(SELECTOR, new ColorProvider()),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, new SymbolProvider()),
     vscode.languages.registerFoldingRangeProvider(SELECTOR, new FoldingProvider()),
     vscode.languages.registerDefinitionProvider(SELECTOR, new DefinitionProvider()),
+    vscode.languages.registerReferenceProvider(SELECTOR, new ReferenceProvider()),
+    vscode.languages.registerRenameProvider(SELECTOR, new RenameProvider()),
     vscode.languages.registerDocumentFormattingEditProvider(SELECTOR, new FormattingProvider()),
   );
   return diagnostics;

@@ -13,6 +13,13 @@
   - code, math, raw HTML, front matter and indented blocks are left untouched
 - **Format Document** and format on save in VS Code, using the same rules as `smd fmt`.
 - `formatSmd()` in the `styled-markdown` library.
+- Path and anchor completion in VS Code:
+  - inside links and images `](…`, reference definitions `[label]: …`, front matter `related:` entries and code fence `file="…"` embeds, relative files and folders are suggested (`.smd`/`.md` first; `related:` offers documents only)
+  - after `#`, the headings, `{#id}` blocks and HTML ids of the current document or of the linked `other.smd#…` are suggested, using its unsaved text when it is open
+  - an empty link target also offers this document's `#anchors`
+  - nothing is suggested inside code
+- Find references (`Shift+F12`) for heading anchors across the workspace, from a heading or from a link's `#anchor`. The results cover inline links, reference definitions and HTML `href`s in `.smd` and `.md` files.
+- Rename a heading (`F2`) and update every link to its anchor across the workspace. When a rename renumbers the anchors of later headings with the same text (`#setup-1` → `#setup`), links to those are updated too. Headings with an explicit `{#id}` keep their anchor, and percent-encoded anchors stay encoded.
 - Configurable rules. A `smd.config.json`, `.smdrc` or `.smdrc.json` file in a document's folder or a parent folder turns rules `off` or sets their severity (`error`, `warning`, `info`, `hint`) by code, by category (`link/*`) or for every rule (`*`). The nearest file applies, the search stops at the repository root, and the most specific key wins. It is used by:
   - VS Code, which reloads the file as it changes, reports its problems on the file itself, and completes and checks rule codes from a JSON schema
   - `smd validate` and `smd meta`, which also accept `--config <file>`
