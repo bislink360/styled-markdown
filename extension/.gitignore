@@ -2,3 +2,4 @@ node_modules/
 dist/
 media/vendor/
 *.vsix
+test/fuzz-failures/

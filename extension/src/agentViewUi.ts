@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { agentView, renderSmd, type AgentViewOptions } from './core';
+import { agentView, parseSmd, type AgentViewOptions } from './core';
 import { readerFor } from './files';
 
 const SCHEME = 'smd-agent';
@@ -83,7 +83,7 @@ export function registerAgentView(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('smd.copyAgentSections', async () => {
       const doc = activeSmd();
       if (!doc) return;
-      const headings = renderSmd(doc.getText()).headings;
+      const headings = parseSmd(doc.getText()).headings;
       const picks = await vscode.window.showQuickPick(
         headings.map((h) => ({ label: `${'  '.repeat(h.level - 1)}${h.text}`, description: h.agent === 'skip' ? 'skipped for agents' : `L${h.line + 1}`, slug: h.slug })),
         { canPickMany: true, placeHolder: 'Sections to copy for an agent (agent instructions are always included)' },
@@ -94,10 +94,12 @@ export function registerAgentView(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.languageId !== 'smd') return;
       clearTimeout(timer);
+      // Two agent views per update: wait longer on long documents so typing stays smooth.
+      const delay = Math.min(2000, Math.max(400, e.document.lineCount / 10));
       timer = setTimeout(() => {
         provider.refresh(e.document.uri);
         if (e.document === vscode.window.activeTextEditor?.document) updateStatus();
-      }, 400);
+      }, delay);
     }),
   );
   updateStatus();
