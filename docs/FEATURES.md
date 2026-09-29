@@ -336,6 +336,37 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
 
+### Configuring rules
+
+Put a `smd.config.json` (or `.smdrc`, `.smdrc.json`) next to your documents or in any parent folder. The nearest one applies, and the search stops at the repository root. Turn rules off, or change their severity, by code, by category (`link/*`) or for every rule (`*`). The most specific key wins:
+
+```json
+{
+  "rules": {
+    "frontmatter/unknown-key": "off",
+    "link/*": "error",
+    "task/overdue": "warning"
+  }
+}
+```
+
+Settings are `off`, `error`, `warning`, `info` and `hint`. VS Code completes and checks rule codes in these files, reloads them as you edit, and shows any problems on the config file. `smd validate` prints them and counts them as warnings; use `--config <file>` to point at a specific file.
+
+Silence a rule in one place with an HTML comment, which renders as nothing:
+
+```markdown
+<!-- smd-disable-next-line link/missing-file -->
+See the [draft](drafts/not-yet.smd).
+
+Legacy table [x]{color=brand} <!-- smd-disable-line attrs/value -->
+
+<!-- smd-disable link/* -->
+…a section of links that are checked elsewhere…
+<!-- smd-enable link/* -->
+```
+
+Without codes, a comment silences every rule. Codes can be separated by spaces or commas. An unknown code is reported as `rules/unknown`, with a fix when a close match exists. Comments inside code blocks are ignored.
+
 ## 16. Export and conversion
 
 | Command | Result |
@@ -351,7 +382,7 @@ smd outline <file>                                   sections, line ranges, toke
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
-smd validate <files|dirs> [--json] [--fix] [--strict]
+smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>]
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]
 smd to-md <file> [-o out.md]

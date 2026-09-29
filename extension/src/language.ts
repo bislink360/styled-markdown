@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { CONFIG_FILES, loadRuleConfig, type LoadedConfig } from './config';
 import { readerFor } from './files';
 import {
   CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
@@ -30,11 +31,21 @@ const fixes = new WeakMap<vscode.Diagnostic, NonNullable<Diagnostic['fix']>>();
 
 export class SmdDiagnostics implements vscode.Disposable {
   readonly collection = vscode.languages.createDiagnosticCollection('smd');
+  /** Problems in smd.config.json / .smdrc files, shown on those files. */
+  private readonly configProblems = vscode.languages.createDiagnosticCollection('smd-config');
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly disposables: vscode.Disposable[] = [];
+  private configs = new Map<string, LoadedConfig>();
 
   constructor() {
+    const watcher = vscode.workspace.createFileSystemWatcher(`**/{${CONFIG_FILES.join(',')}}`);
+    const reload = () => {
+      this.configs = new Map();
+      this.configProblems.clear();
+      vscode.workspace.textDocuments.forEach((d) => this.update(d));
+    };
     this.disposables.push(
+      watcher, watcher.onDidCreate(reload), watcher.onDidChange(reload), watcher.onDidDelete(reload),
       vscode.workspace.onDidOpenTextDocument((d) => this.update(d)),
       vscode.workspace.onDidChangeTextDocument((e) => this.schedule(e.document)),
       vscode.workspace.onDidCloseTextDocument((d) => this.collection.delete(d.uri)),
@@ -62,7 +73,8 @@ export class SmdDiagnostics implements vscode.Disposable {
     const fileExists = dir && config.get<boolean>('checkLinks', true)
       ? (rel: string) => fs.existsSync(path.resolve(dir, rel))
       : undefined;
-    const items = validateSmd(document.getText(), { fileExists, readFile: readerFor(document) }).map((d) => {
+    const rules = document.uri.scheme === 'file' ? this.rulesFor(document.uri.fsPath) : undefined;
+    const items = validateSmd(document.getText(), { fileExists, readFile: readerFor(document), rules }).map((d) => {
       const range = new vscode.Range(d.line, d.column, d.line, d.endColumn);
       const diag = new vscode.Diagnostic(range, d.message, SEVERITY[d.severity]);
       diag.source = 'smd';
@@ -74,9 +86,23 @@ export class SmdDiagnostics implements vscode.Disposable {
     return items.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).length;
   }
 
+  /** Rule settings from the nearest config file; its problems are shown on the config file. */
+  private rulesFor(file: string) {
+    const config = loadRuleConfig(file, this.configs);
+    if (config.file && config.problems.length) {
+      this.configProblems.set(vscode.Uri.file(config.file), config.problems.map((p) => {
+        const diag = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), p, vscode.DiagnosticSeverity.Warning);
+        diag.source = 'smd';
+        return diag;
+      }));
+    }
+    return config.rules;
+  }
+
   dispose(): void {
     this.timers.forEach((t) => clearTimeout(t));
     this.collection.dispose();
+    this.configProblems.dispose();
     this.disposables.forEach((d) => d.dispose());
   }
 }
