@@ -33,13 +33,13 @@ Every pull request to `main` or a `release/**` branch, and every push to them, r
 
 | Job | Checks |
 |---|---|
-| Build & unit tests (Ubuntu, Windows) | typecheck, build of extension/CLI/npm package, unit tests, examples validate, bundled skill CLIs are up to date, `npm pack` |
+| Build & unit tests (Ubuntu, Windows) | typecheck, build of extension/CLI/npm package, unit tests, examples validate and are formatted (`smd fmt --check`), bundled skill CLIs are up to date, `npm pack` |
 | VS Code integration tests | the extension in a real VS Code (preview, diagnostics, quick fixes, completion, agent view), plus a `.vsix` build uploaded as an artifact |
 | Backward compatibility | `release-check.mjs` against the last `vX.Y.Z` tag; the report appears in the job summary. It fails on blocking issues, e.g. breaking changes without a major version on `release/*` branches. |
 
 ## Before opening a pull request
 
 - `npm run typecheck` and `npm test` pass. `npm run test:vscode` passes for editor-facing changes.
-- `node dist/cli.js validate ../examples` reports 0 errors.
+- `node dist/cli.js validate ../examples ../docs/gallery` reports 0 errors, and `node dist/cli.js fmt --check ../examples ../docs/gallery` reports 0 files to format (run it without `--check` to fix them).
 - New syntax is documented in `docs/SPEC.md`, `docs/FEATURES.md` and the writer skill's `references/syntax.md`.
 - The CHANGELOG has an entry.

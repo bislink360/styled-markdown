@@ -40,6 +40,8 @@ jobs:
       - run: npm test
       - name: Examples validate
         run: node dist/cli.js validate ../examples ../docs/gallery
+      - name: Examples are formatted
+        run: node dist/cli.js fmt --check ../examples ../docs/gallery
       - name: Bundled skill CLIs are up to date
         shell: bash
         run: |
