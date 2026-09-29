@@ -29,9 +29,15 @@ node <this-skill-dir>/scripts/smd.cjs <command> …    # or `smd` if on PATH; No
 4. **Open raw lines only to edit.** Headings in the agent view carry `[L42]` line references. Read just that range with offset/limit, never the whole file. For writing or restructuring, use the `styled-markdown-writer` skill.
 
 Across many documents:
+- `smd index DIR` (or a committed catalog JSON) lists every document with title, summary, status, owners, tags, token costs (`tokens.agent`), sections (`id`, zero-based `line`/`endLine`, `tokens`) and counts of open tasks, decisions, risks, questions and APIs. Use it to pick which documents to read, then `smd outline` or `smd agent FILE --section "ID"` on those only.
 - `smd tasks DIR` lists open tasks with priority, owner and due date, overdue first (`--mine @name` filters by owner).
 - `smd query "SELECTOR" DIR` prints only the matching blocks in the agent view: `decision[status=accepted]`, `risk[impact>=high][status!=closed]`, `api[method=POST]`, `question`, `task[owner=@me][done=false]`, `heading[level=2]`. Commas combine selectors. Add `--titles` for one line per block, `--json` for structured output. Exit code 1 means no match.
 - `smd meta FILE --no-diagnostics` gives JSON (outline, tasks, decisions, risks, agent blocks).
+
+**MCP tools available?** If the `smd` MCP server is registered (tools `outline`, `section`, `agent`, `tasks`, `query`, `validate`), follow the same workflow with the tools instead of the shell: `outline` first, then `section` with the headings you need. Paths are relative to the server's root folder.
+
+Catching up on a changed document:
+- `smd diff FILE --since REF` (a commit, branch or tag such as `HEAD~3` or `main`) prints only what changed since then: front-matter changes, then each changed, renamed or added section in the agent view with `[L42]` refs into the current file, then removed headings. Use it instead of rereading a document you've already read. `smd diff DIR --since REF` covers every `.smd` file below, including new and deleted ones; `smd diff OLD.smd NEW.smd` compares two files.
 
 ## What the agent view means
 

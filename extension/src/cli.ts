@@ -1,15 +1,21 @@
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, checkMermaid, extractTasks, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, querySmd,
-  relatedDocs, renderPage, smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type AgentViewOptions, type AgentViewResult, type BudgetResult,
-  type Diagnostic, type QueryMatch, type Selector, type TaskInfo, type Tokenizer,
+  agentView, applyFixes, diffSmd, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderPage,
+  smdIndex, smdToMarkdown, SelectorError, SMD_VERSION, type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic,
+  type DiffResult, type Selector, type Tokenizer,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
-import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
+import { runMcpServer } from './mcp';
+import { AGENT_RULES, fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
+import {
+  parseTargets, rulesBody, SHARED_CLI_COMMAND, SHARED_CLI_PATH, TARGET_FILES, type AgentTarget, type RulesTarget, type TargetFile,
+} from './agentTargets';
+import { collect, diagnose, existsFrom, queryRows, querySummary, queryText, read, readerFor, taskLine, taskRows, taskSummary } from './workspace';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
 declare const __SMD_PKG_VERSION__: string;
@@ -42,8 +48,19 @@ Reading (token-efficient, for agents):
       Tests: [key] [key=a|b] [key!=v] [key*=v] [key^=v] [key$=v] [key<v] (also <= > >=: numbers, dates,
       priorities, risk levels); every block also has title, section and type.
       --titles  one line per match instead of its content
+  smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]
+  smd diff <files|dirs...> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]
+      Only the sections that changed, in the agent view of the new version: front-matter changes,
+      then changed, renamed and added sections, then removed ones (heading and old lines only).
+      --since      compare each .smd file with its version at a Git commit, branch or tag
+      --exit-code  exit 1 when something changed (like git diff); the default is 0
   smd meta <file.smd> [--no-diagnostics]
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
+  smd index <files|dirs...> [-o catalog.json] [--compact]
+      JSON catalog of every document: title, summary, status, owners, tags, token costs, sections
+      and counts (open tasks, decisions, risks, questions, APIs). Agents read it to pick documents,
+      then run outline or agent --section on them. Paths are relative to the working directory.
+      --compact  one line of JSON instead of indented
 
 Checking and converting:
   smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
@@ -64,18 +81,33 @@ Checking and converting:
       New document from a template: ${Object.keys(TEMPLATES).join(', ')} (default: prd)
   smd templates                            List templates
 
+Agent integration:
+  smd mcp [--root <dir>]
+      Model Context Protocol server over stdio with the tools outline, section, agent, tasks, validate
+      and query. Only .smd files inside --root (default: the current directory) can be read.
+      Register it, e.g.: claude mcp add smd -- npx -y -p styled-markdown smd mcp
+
 Agent skills:
   smd skills install [--dir <skills-dir>] [--global] [--only reader|writer]
       Install the agent skills (each with this CLI bundled) into .claude/skills (default),
       a custom directory, or ~/.claude/skills (--global):
         styled-markdown-reader   read .smd token-efficiently
         styled-markdown-writer   create/edit .smd following the rules
+  smd skills install --target <claude|cursor|copilot|agents>[,…] [--dir <project>]
+      Install for other agents too (repeatable or comma-separated; default: claude). Other targets write
+      reading/writing rules into the project (--dir, default: current folder) and this CLI to .smd/smd.cjs:
+        cursor    .cursor/rules/styled-markdown.mdc (applies to **/*.smd)
+        copilot   .github/instructions/styled-markdown.instructions.md (applies to **/*.smd)
+        agents    a styled-markdown section in AGENTS.md (created, or replaced between its markers)
 `;
+
+const SKILLS_USAGE = 'Usage: smd skills install [--dir <dir>] [--global] [--only reader|writer] [--target claude|cursor|copilot|agents]';
 
 interface Args { command?: string; positional: string[]; flags: Set<string>; values: Map<string, string[]> }
 
 const VALUE_OPTIONS = new Set([
-  '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--max-tokens', '--tokenizer',
+  '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
+  '--max-tokens', '--tokenizer',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -114,6 +146,8 @@ function main(argv: string[]): number | Promise<number> {
       return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
     case 'query':
       return query(positional[0], positional.slice(1), { json: flags.has('--json'), titles: flags.has('--titles'), brief: flags.has('--brief'), lineRefs: !flags.has('--no-lines'), today });
+    case 'diff':
+      return diff(positional, value('--since'), { json: flags.has('--json'), brief: flags.has('--brief'), lineRefs: !flags.has('--no-lines'), exitCode: flags.has('--exit-code'), today });
     case 'meta': {
       const file = requireFile(positional[0]);
       const rules = configFor(file, value('--config')).rules;
@@ -122,6 +156,8 @@ function main(argv: string[]): number | Promise<number> {
       process.stdout.write(JSON.stringify(info, null, 2) + '\n');
       return 0;
     }
+    case 'index':
+      return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
       return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'), staleAfterDays);
     case 'fmt':
@@ -151,9 +187,10 @@ function main(argv: string[]): number | Promise<number> {
     case 'templates':
       for (const [name, t] of Object.entries(TEMPLATES)) console.log(`${name.padEnd(15)} ${t.description}`);
       return 0;
+    case 'mcp':
+      return mcp(value('--root'));
     case 'skills':
-      if (positional[0] !== 'install') return fail('Usage: smd skills install [--dir <skills-dir>] [--global] [--only reader|writer]');
-      return installSkills(flags.has('--global') ? path.join(os.homedir(), '.claude', 'skills') : value('--dir') ?? path.join('.claude', 'skills'), value('--only'));
+      return skillsCommand(args);
     case undefined:
     case 'help':
     case '--help':
@@ -186,12 +223,7 @@ async function validate(
       configProblems += config.problems.length;
       for (const p of config.problems) console.error(`${config.file}: warning  ${p}`);
     }
-    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today, staleAfterDays, rules: config.rules };
-    const check = async (text: string) => {
-      const found = validateSmd(text, opts);
-      if (parse) found.push(...await checkMermaid(text, parse, config.rules));
-      return found.sort((a, b) => a.line - b.line || a.column - b.column);
-    };
+    const check = (text: string) => diagnose(text, file, { rules: config.rules, today, staleAfterDays, parse });
     let text = read(file);
     let diagnostics = await check(text);
     let fixed: number | undefined;
@@ -264,40 +296,17 @@ ${files.length} file(s) checked: ${changed.length} ${check ? 'need formatting' :
 function tasks(targets: string[], all: boolean, mine: string | undefined, json: boolean, today?: string): number {
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
-  const rows: Array<TaskInfo & { file: string }> = [];
-  for (const file of files) {
-    for (const t of extractTasks(read(file), today)) {
-      if (!all && t.done) continue;
-      if (mine && !t.assignees.some((a) => a.toLowerCase() === mine.toLowerCase())) continue;
-      rows.push({ ...t, file });
-    }
-  }
-  const rank = (p?: string) => {
-    const k = (p ?? '').toLowerCase();
-    return ({ p0: 0, critical: 0, p1: 1, high: 1, p2: 2, medium: 2, p3: 3, low: 3, p4: 4 } as Record<string, number>)[k] ?? 5;
-  };
-  rows.sort((a, b) => Number(b.overdue ?? false) - Number(a.overdue ?? false) || rank(a.priority) - rank(b.priority)
-    || (a.due ?? '9999').localeCompare(b.due ?? '9999') || a.file.localeCompare(b.file) || a.line - b.line);
+  const rows = taskRows(files, { all, mine, today });
   if (json) {
     process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
     return 0;
   }
-  for (const r of rows) {
-    const bits = [
-      r.done ? '[x]' : '[ ]',
-      r.priority ? `[${r.priority}]` : '',
-      r.text,
-      r.assignees.length ? r.assignees.join(' ') : '',
-      r.due ? `(due ${r.due}${r.overdue ? ', OVERDUE' : ''})` : '',
-    ].filter(Boolean);
-    console.log(`${r.file}:${r.line + 1}  ${bits.join(' ')}${r.section ? `  — ${r.section}` : ''}`);
-  }
-  console.error(`[smd] ${rows.length} task(s)${all ? '' : ' open'}${rows.some((r) => r.overdue) ? `, ${rows.filter((r) => r.overdue).length} overdue` : ''}.`);
+  for (const r of rows) console.log(taskLine(r));
+  console.error(`[smd] ${taskSummary(rows, all)}`);
   return 0;
 }
 
 interface QueryFlags { json: boolean; titles: boolean; brief: boolean; lineRefs: boolean; today?: string }
-type QueryRow = QueryMatch & { file: string };
 
 function query(selector: string | undefined, targets: string[], flags: QueryFlags): number {
   if (!selector) return fail('Usage: smd query "<selector>" <files|dirs...>, e.g. smd query "decision[status=accepted]" docs/');
@@ -311,29 +320,16 @@ function query(selector: string | undefined, targets: string[], flags: QueryFlag
   const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
   const options = { brief: flags.brief, lineRefs: flags.lineRefs, today: flags.today };
-  const rows: QueryRow[] = files.flatMap((file) => querySmd(read(file), selectors, options).map((m) => ({ file, ...m })));
-  if (flags.json) {
-    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
-  } else if (rows.length) {
-    const blocks = rows.map((r) => (flags.titles ? titleLine(r) : `${location(r)}\n${r.text}\n`));
-    process.stdout.write(blocks.join('\n').trimEnd() + '\n');
-  }
-  console.error(`[smd] ${rows.length} match(es) in ${new Set(rows.map((r) => r.file)).size} of ${files.length} file(s).`);
+  const rows = queryRows(files, selectors, options);
+  process.stdout.write(flags.json ? JSON.stringify(rows, null, 2) + '\n' : queryText(rows, flags.titles));
+  console.error(`[smd] ${querySummary(rows, files.length)}`);
   return rows.length ? 0 : 1;
 }
 
-/** `docs/plan.smd:12-20  — Section` */
-function location(r: QueryRow): string {
-  const end = r.endLine > r.line ? `-${r.endLine + 1}` : '';
-  return `${r.file}:${r.line + 1}${end}${r.section ? `  — ${r.section}` : ''}`;
-}
-
-/** `docs/plan.smd:12  decision  Title  {status=accepted}` (then the section, as in `location`). */
-function titleLine(r: QueryRow): string {
-  const end = r.endLine > r.line ? `-${r.endLine + 1}` : '';
-  const attrs = Object.entries(r.attrs).map(([k, v]) => `${k}=${[v].flat().join(',')}`).join(' ');
-  const parts = [`${r.file}:${r.line + 1}${end}`, r.type, r.title, attrs && `{${attrs}}`, r.section && `— ${r.section}`];
-  return parts.filter(Boolean).join('  ');
+async function mcp(root = '.'): Promise<number> {
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return fail(`--root must be a folder: ${root}`);
+  await runMcpServer({ root, version: pkg.version });
+  return 0;
 }
 
 function outlineFile(file: string, related: boolean, today?: string, tokenizerName?: string): number {
@@ -429,7 +425,169 @@ function relatedBlock(file: string, text: string, today?: string): string {
 }
 
 function displayPath(dir: string, rel: string): string {
-  return path.relative(process.cwd(), path.resolve(dir, rel)).split(path.sep).join('/');
+  return relativePath(path.resolve(dir, rel));
+}
+
+function index(targets: string[], out: string | undefined, compact: boolean, today?: string): number {
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const documents = files.map((file) => ({ path: relativePath(file), text: read(file) }));
+  const catalog = smdIndex(documents, { today, generator: `smd ${pkg.version}` });
+  const json = compact ? JSON.stringify(catalog) : JSON.stringify(catalog, null, 2);
+  const tokens = catalog.documents.reduce((sum, d) => sum + d.tokens.agent, 0);
+  console.error(`[smd] ${catalog.documents.length} document(s) indexed, ≈${tokens} tokens in full agent view.`);
+  return write(out, json + '\n');
+}
+
+/** `docs/plan.smd`: relative to the working directory, with forward slashes on every platform. */
+function relativePath(file: string): string {
+  return path.relative(process.cwd(), path.resolve(file)).split(path.sep).join('/');
+}
+
+/** `smd skills install [--target …]`: Claude skills (the default) and/or instruction files for other agents. */
+function skillsCommand(args: Args): number {
+  if (args.positional[0] !== 'install') return fail(SKILLS_USAGE);
+  let targets: AgentTarget[];
+  try {
+    targets = parseTargets(args.values.get('--target') ?? []);
+  } catch (e) {
+    return fail((e as Error).message);
+  }
+  const problem = targetOptionsProblem(targets, args);
+  if (problem) return fail(problem);
+  const others = targets.filter((t): t is RulesTarget => t !== 'claude');
+  const code = targets.includes('claude') ? installSkills(claudeSkillsDir(args), args.values.get('--only')?.[0]) : 0;
+  return code || !others.length ? code : installAgentRules(others, args.values.get('--dir')?.[0] ?? '.');
+}
+
+function claudeSkillsDir(args: Args): string {
+  if (args.flags.has('--global')) return path.join(os.homedir(), '.claude', 'skills');
+  return args.values.get('--dir')?.[0] ?? path.join('.claude', 'skills');
+}
+
+/** Options that only make sense for the Claude skills, or that would mean two different folders at once. */
+function targetOptionsProblem(targets: AgentTarget[], args: Args): string | undefined {
+  const claude = targets.includes('claude');
+  const others = targets.length > (claude ? 1 : 0);
+  if (!others) return undefined;
+  if (args.flags.has('--global')) return '--global only applies to --target claude. Install rules for other agents per project (--dir <project>).';
+  if (!claude && args.values.has('--only')) return '--only only applies to --target claude. The rules for other agents cover reading and writing.';
+  if (claude && args.values.has('--dir')) return '--dir is the skills folder for --target claude but the project root for other targets. Install them in separate runs.';
+  return undefined;
+}
+
+/** Writes the shared CLI to <root>/.smd/smd.cjs and each target's instruction file. */
+function installAgentRules(targets: RulesTarget[], root: string): number {
+  const cli = path.resolve(root, SHARED_CLI_PATH);
+  fs.mkdirSync(path.dirname(cli), { recursive: true });
+  fs.copyFileSync(__filename, cli);
+  console.log(`Installed smd CLI → ${cli}  (agents run it as: ${SHARED_CLI_COMMAND})`);
+  const body = rulesBody(AGENT_RULES);
+  try {
+    for (const target of targets) writeTargetFile(TARGET_FILES[target], root, body);
+  } catch (e) {
+    return fail((e as Error).message);
+  }
+  return 0;
+}
+
+function writeTargetFile(spec: TargetFile, root: string, body: string): void {
+  const file = path.resolve(root, spec.file);
+  const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
+  const content = spec.render(body, existing);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
+  const verb = existing === undefined ? 'Created' : 'Updated';
+  console.log(`${verb} ${file}  (${spec.label})`);
+}
+
+interface DiffFlags { json: boolean; brief: boolean; lineRefs: boolean; exitCode: boolean; today?: string }
+interface FileDiff { file: string; status: 'changed' | 'added' | 'deleted'; result: DiffResult }
+
+function diff(positional: string[], since: string | undefined, flags: DiffFlags): number {
+  if (since !== undefined) return diffSince(positional.length ? positional : ['.'], since, flags);
+  if (positional.length !== 2) return fail('Usage: smd diff <old.smd> <new.smd>, or smd diff <files|dirs...> --since <git-ref>');
+  const [oldFile, newFile] = positional.map((f) => requireFile(f));
+  const result = diffSmd(read(oldFile), read(newFile), flags);
+  const diffs: FileDiff[] = result.text ? [{ file: newFile, status: 'changed', result }] : [];
+  return reportDiffs(diffs, 1, { oldFile }, flags);
+}
+
+/** Each .smd file under the targets against its version at a Git revision, including files deleted since. */
+function diffSince(targets: string[], ref: string, flags: DiffFlags): number {
+  if (!ref || ref.startsWith('-')) return fail('--since needs a Git commit, branch or tag, e.g. --since HEAD~1');
+  const top = git(['rev-parse', '--show-toplevel'])?.trim();
+  if (!top) return fail('--since needs a Git repository: run smd diff inside one.');
+  if (git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]) === undefined) return fail(`Unknown Git revision "${ref}".`);
+  const files = targets.filter((t) => fs.existsSync(t)).flatMap((t) => collect(t));
+  const deleted = deletedSince(ref, targets, top);
+  if (!files.length && !deleted.length) return fail('No .smd files found.');
+  const diffs = [
+    ...files.map((file) => fileSince(file, ref, top, flags)),
+    ...deleted.map((p) => deletedFile(p, ref, top, flags)),
+  ];
+  return reportDiffs(diffs.filter((d) => d.status !== 'changed' || d.result.text), files.length + deleted.length, { since: ref }, flags);
+}
+
+function fileSince(file: string, ref: string, top: string, flags: DiffFlags): FileDiff {
+  const old = git(['show', `${ref}:${gitPath(top, file)}`]);
+  const text = read(file);
+  const result = diffSmd(old ?? '', text, flags);
+  if (old !== undefined) return { file, status: 'changed', result };
+  // A new file: its whole agent view reads better than every section labelled "added".
+  const view = agentView(text, { brief: flags.brief, lineRefs: flags.lineRefs, readFile: readerFor(file), today: flags.today });
+  return { file, status: 'added', result: { ...result, text: view.text, tokens: view.tokens } };
+}
+
+function deletedFile(topPath: string, ref: string, top: string, flags: DiffFlags): FileDiff {
+  const file = path.relative(realPath(process.cwd()), path.join(realPath(top), topPath));
+  return { file, status: 'deleted', result: diffSmd(git(['show', `${ref}:${topPath}`]) ?? '', '', flags) };
+}
+
+/** .smd files under the targets that exist at the revision but not in the working tree (paths from the top level). */
+function deletedSince(ref: string, targets: string[], top: string): string[] {
+  const pathspecs = targets.map((t) => gitPath(top, t) || '.');
+  const out = git(['-C', top, 'diff', '--name-only', '--diff-filter=D', '-z', ref, '--', ...pathspecs]) ?? '';
+  const hidden = (p: string) => p.split('/').some((seg) => seg === 'node_modules' || seg.startsWith('.'));
+  return out.split('\0').filter((p) => p.endsWith('.smd') && !hidden(p));
+}
+
+/** A path relative to the Git top level, with forward slashes. */
+function gitPath(top: string, file: string): string {
+  return path.relative(realPath(top), realPath(file)).split(path.sep).join('/');
+}
+
+/** The canonical path: links resolved and Windows short names (RUNNER~1) expanded, as Git reports them. */
+function realPath(p: string): string {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/** Run git without a shell; undefined when it fails. */
+function git(args: string[]): string | undefined {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }); // NOSONAR(typescript:S4036): --since runs the user's own git, found on PATH like any git-aware CLI
+  } catch {
+    return undefined;
+  }
+}
+
+function reportDiffs(diffs: FileDiff[], checked: number, base: { since?: string; oldFile?: string }, flags: DiffFlags): number {
+  const context = base.since ? `since ${base.since}` : `compared with ${base.oldFile}`;
+  if (flags.json) {
+    const rows = diffs.map((d) => ({ file: d.file, status: d.status, ...base, frontMatter: d.result.frontMatter, sections: d.result.sections, tokens: d.result.tokens }));
+    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
+  } else if (diffs.length) {
+    process.stdout.write(diffs.map((d) => `${d.file}: ${d.status} ${context}\n\n${d.result.text}`).join('\n'));
+  }
+  const tokens = diffs.reduce((n, d) => n + d.result.tokens, 0);
+  const full = diffs.filter((d) => d.status !== 'deleted').reduce((n, d) => n + d.result.fullTokens, 0);
+  const saved = tokens < full ? `, ${Math.round((1 - tokens / full) * 100)}% smaller` : '';
+  console.error(`[smd] ${diffs.length} of ${checked} file(s) changed ${context}: ≈${tokens} tokens (full agent view ≈${full}${saved})`);
+  return flags.exitCode && diffs.length ? 1 : 0;
 }
 
 function installSkills(dir: string, only?: string): number {
@@ -447,50 +605,6 @@ function installSkills(dir: string, only?: string): number {
     console.log(`Installed ${skill.name.padEnd(24)} → ${target}  (${skill.summary})`);
   }
   return 0;
-}
-
-function collect(target: string): string[] {
-  if (!fs.existsSync(target)) {
-    console.error(`Not found: ${target}`);
-    return [];
-  }
-  if (fs.statSync(target).isFile()) return [target];
-  const out: string[] = [];
-  for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
-    const full = path.join(target, entry.name);
-    if (entry.isDirectory()) out.push(...collect(full));
-    else if (entry.name.endsWith('.smd')) out.push(full);
-  }
-  return out;
-}
-
-function existsFrom(file: string) {
-  const dir = path.dirname(path.resolve(file));
-  return (rel: string) => fs.existsSync(path.resolve(dir, rel));
-}
-
-/**
- * File reader for code embeds. Only files inside the current working directory, the enclosing Git repository or the
- * document's own folder can be embedded, so a document cannot pull in e.g. ~/.ssh keys.
- */
-function readerFor(file: string) {
-  const dir = path.dirname(path.resolve(file));
-  const roots = [path.resolve(process.cwd()), dir];
-  // Also allow the enclosing Git repository (docs/ commonly embeds ../src/…).
-  for (let d = dir; ; d = path.dirname(d)) {
-    if (fs.existsSync(path.join(d, '.git'))) { roots.push(d); break; }
-    if (path.dirname(d) === d) break;
-  }
-  return (rel: string): string | undefined => {
-    const target = path.resolve(dir, rel);
-    if (!roots.some((r) => target === r || target.startsWith(r + path.sep))) return undefined;
-    try { return fs.readFileSync(target, 'utf8'); } catch { return undefined; }
-  };
-}
-
-function read(file: string): string {
-  return fs.readFileSync(file, 'utf8');
 }
 
 function requireFile(file: string | undefined): string {

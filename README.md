@@ -137,16 +137,19 @@ History and research. People see it; agents skip it.
 
 | Command | Purpose |
 |---|---|
+| `smd index <dir> [-o catalog.json]` | JSON catalog of every doc (title, summary, status, owners, tags, sections, token costs, open tasks, risks…) so agents pick which docs to read |
 | `smd outline <file> [--related]` | Sections with line ranges and token costs; `--related` adds each `related:` doc's title, status, summary and cost |
 | `smd agent <file> [--section …] [--brief] [--max-tokens N]` | Compact agent view; `--max-tokens` condenses it and leaves out the least important sections (with pointers) to fit |
 | `… --tokenizer o200k_base` | Exact token counts next to the estimate on `outline` and `agent`, if you have installed `js-tiktoken` (OpenAI encodings; approximate for Claude) |
 | `smd tasks <dir> [--mine @me]` | Open tasks across docs, overdue first |
 | `smd query "<selector>" <paths> [--json]` | Decisions, risks, APIs, callouts, tasks or headings by type and attributes, e.g. `risk[impact>=high]` |
+| `smd diff <paths> --since <git-ref>` / `smd diff <old> <new>` | Only the sections that changed, in the agent view: catch up on a doc without rereading it |
 | `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->` |
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
 | `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect |
-| `smd skills install [--global]` | Install the agent skills |
+| `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
+| `smd skills install [--global] [--target …]` | Install the agent skills, or rules for Cursor, Copilot and `AGENTS.md` |
 
 </details>
 
@@ -200,7 +203,25 @@ curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v
 node smd.cjs skills install --global
 ```
 
-Or download `styled-markdown-reader.zip` and `styled-markdown-writer.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest). This installs both skills into `~/.claude/skills/` for Claude Code. For Claude.ai, the Claude API / Agent SDK, Copilot, Cursor and other agents, see **[docs/SKILLS.md](docs/SKILLS.md)**.
+Or download `styled-markdown-reader.zip` and `styled-markdown-writer.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest). This installs both skills into `~/.claude/skills/` for Claude Code.
+
+For Cursor, GitHub Copilot and agents that read `AGENTS.md` (Codex and others), run this from your repository root and commit the result:
+
+```bash
+node smd.cjs skills install --target cursor,copilot,agents
+```
+
+It writes `.cursor/rules/styled-markdown.mdc`, `.github/instructions/styled-markdown.instructions.md`, a section in `AGENTS.md`, and the CLI to `.smd/smd.cjs`. For Claude.ai, the Claude API / Agent SDK and other agents, see **[docs/SKILLS.md](docs/SKILLS.md)**.
+
+### MCP server
+
+Give any MCP client (Claude Code, Cursor, VS Code, Claude Desktop) the reading tools without shell access:
+
+```bash
+claude mcp add smd -- npx -y -p styled-markdown smd mcp
+```
+
+Other clients and options: **[docs/AGENTS.md](docs/AGENTS.md#mcp-server)**.
 
 ## Token-efficient reading for agents
 

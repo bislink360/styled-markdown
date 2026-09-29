@@ -28,6 +28,30 @@
   - `onboarding`: day-one setup, first-week tasks, a 90-day timeline, key links and people to meet
   - `test-plan`: scope, strategy, environments, test cases, entry and exit criteria, risks and schedule
   - `pr-description`: summary, changes, testing, risk and rollback, checklist and review focus
+- `smd index <files|dirs…> [-o catalog.json] [--compact]` writes a JSON catalog of every document for agent routing:
+  - per document: path (relative to the working directory, `/` separators), title, summary, status, owners, tags, audience, updated, related, and token costs of the file and of its full agent view
+  - sections with level, text, id, zero-based line range and agent-view token cost (the numbers `smd outline` shows)
+  - counts: open, done and overdue tasks, decisions by status, risks and open risks, questions, API endpoints, diagrams and `:::agent` blocks
+  - deterministic output (no timestamps, sorted by path) so the catalog can be committed and diffed; `--today` pins the overdue count
+- Library: `indexEntry(source, path, options)` and `smdIndex(documents, options)`, with the `SmdIndex*` types.
+- `smd mcp [--root <dir>]` runs a Model Context Protocol server over stdio, so agents in Claude Code, Cursor, VS Code or Claude Desktop can read `.smd` documents without a shell:
+  - tools: `outline` (file), `section` (file, sections), `agent` (file, brief, includeHuman), `tasks` (paths, all, mine), `validate` (paths; JSON as `smd validate --json`) and `query` (selector, paths, brief, titles)
+  - paths resolve against the root folder (default: the current folder); paths outside it, including through symbolic links, are refused, only `.smd` files are read, and code embeds only come from inside the root
+  - no new dependencies; register it with `claude mcp add smd -- npx -y -p styled-markdown smd mcp` or the `mcp.json` snippets in docs/AGENTS.md
+- `smd skills install --target <claude|cursor|copilot|agents>` sets up agents without Claude-style skills (repeat the flag or separate targets with commas; the default is `claude`, which works as before):
+  - `cursor` writes the project rule `.cursor/rules/styled-markdown.mdc` (applies to `**/*.smd`)
+  - `copilot` writes `.github/instructions/styled-markdown.instructions.md` (`applyTo: "**/*.smd"`)
+  - `agents` adds a section to `AGENTS.md` between `<!-- styled-markdown:start -->` and `<!-- styled-markdown:end -->`; re-running replaces that section and keeps the rest of the file
+  - each also installs the CLI once to `.smd/smd.cjs`, and the rules tell agents to run `node .smd/smd.cjs`
+  - `--dir` sets the project root for these targets; `--global` and `--only` apply to `claude` only
+- All three targets share one set of reading and writing rules, `skills/agent-rules.md`.
+- `smd diff <old.smd> <new.smd>` and `smd diff <files|dirs…> --since <git-ref>` show only what changed, for an agent catching up on a document:
+  - front-matter changes (`status: draft → accepted`), then changed, renamed and added sections in the agent view of the new version (line refs point into the new file), then removed sections (heading and old lines only)
+  - sections are matched by heading id, then by content, so a renamed heading is reported as a rename; a change is shown in the smallest section that contains it, without unchanged subsections; content before the first heading counts as a section
+  - only changes visible in the agent view count: styling, comments and `:::human` content are ignored, and sections marked `{agent=skip}` are listed without their content
+  - `--since` compares each file with its version at a commit, branch or tag (via `git show`), and also reports files added and deleted since; stderr shows the token cost against the full agent view
+  - `--json`, `--brief` and `--no-lines` work as in `smd query`; the exit code is 0, or 1 with `--exit-code` when something changed (like `git diff --exit-code`)
+- Library: `diffSmd(oldSource, newSource, options)`.
 
 ### Changed
 
