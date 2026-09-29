@@ -147,6 +147,9 @@ test('a lone carriage return does not shift heading lines (found by fuzzing)', (
   const { headings, html } = renderSmd('para\r# Not a heading\n\n## Next');
   assert.deepEqual(headings.map((h) => [h.text, h.line]), [['Next', 2]]);
   assert.match(html, /data-line="2"/);
+  // The incremental parser behind outlines, validation and `smd meta` agrees.
+  const info = getDocumentInfo('```ts\n```\n  -\r nested  -\r nested\n## Section');
+  assert.deepEqual(info.outline.map((h) => [h.text, h.line]), [['Section', 3]]);
 });
 
 test('front matter keys are matched literally (found by fuzzing)', () => {
