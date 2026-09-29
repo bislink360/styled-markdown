@@ -57,9 +57,19 @@ export class Sandbox {
     return path.relative(this.root, file).split(path.sep).join('/') || '.';
   }
 
-  /** Reader for code embeds: only files inside the root. */
-  reader(file: string) {
-    return readerFor(file, [this.root, this.realRoot]);
+  /** Reader for code embeds: only files inside the root, also after following links. */
+  reader(file: string): (rel: string) => string | undefined {
+    const read = readerFor(file, [this.root, this.realRoot]);
+    const dir = path.dirname(path.resolve(file));
+    return (rel) => (this.linksInside(path.resolve(dir, rel)) ? read(rel) : undefined);
+  }
+
+  private linksInside(target: string): boolean {
+    try {
+      return isInside(this.realRoot, fs.realpathSync(target));
+    } catch {
+      return false;
+    }
   }
 
   private contains(file: string): boolean {
@@ -212,7 +222,7 @@ async function validateTool(box: Sandbox, args: Args): Promise<string> {
   for (const file of files) {
     const config = loadRuleConfig(file, configs);
     if (config.file && config.problems.length) configProblems.set(box.name(path.resolve(config.file)), config.problems);
-    const found = await diagnose(read(file), file, { rules: config.rules, parse, roots: [box.root] });
+    const found = await diagnose(read(file), file, { rules: config.rules, parse, readFile: box.reader(file) });
     report.push({ file: box.name(file), diagnostics: found });
   }
   const all = report.flatMap((r) => r.diagnostics);

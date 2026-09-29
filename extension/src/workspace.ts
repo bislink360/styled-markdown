@@ -67,14 +67,15 @@ export interface DiagnoseOptions {
   staleAfterDays?: number;
   /** Mermaid's parser, to report diagram syntax errors. */
   parse?: MermaidParse;
-  /** Folders code embeds may be read from (default: see readerFor). */
-  roots?: string[];
+  /** Reader for code embeds (default: readerFor(file)). */
+  readFile?: (relativePath: string) => string | undefined;
 }
 
 /** Every diagnostic for one document, in source order. */
 export async function diagnose(text: string, file: string, options: DiagnoseOptions): Promise<Diagnostic[]> {
-  const { rules, today, staleAfterDays, parse, roots } = options;
-  const found = validateSmd(text, { fileExists: existsFrom(file), readFile: readerFor(file, roots), today, staleAfterDays, rules });
+  const { rules, today, staleAfterDays, parse } = options;
+  const readFile = options.readFile ?? readerFor(file);
+  const found = validateSmd(text, { fileExists: existsFrom(file), readFile, today, staleAfterDays, rules });
   if (parse) found.push(...await checkMermaid(text, parse, rules));
   return found.sort((a, b) => a.line - b.line || a.column - b.column);
 }

@@ -121,6 +121,18 @@ test('Sandbox refuses paths outside the root, missing paths and non-.smd files',
   }
 });
 
+test('Code embeds through a link to outside the root are not read', { skip: !linked && 'no link rights' }, async () => {
+  const doc = join(root, 'docs', 'linked.smd');
+  writeFileSync(doc, '# Linked\n\n```txt file="../escape/secret.txt"\n```\n');
+  try {
+    assert.doesNotMatch(await run('agent', { file: 'docs/linked.smd' }), /TOP SECRET/);
+    assert.equal(box.reader(doc)('../escape/secret.txt'), undefined);
+    assert.doesNotMatch(await run('validate', { paths: ['docs/linked.smd'] }), /TOP SECRET/);
+  } finally {
+    rmSync(doc);
+  }
+});
+
 test('outline, section and agent return the agent view', async () => {
   assert.match(await run('outline', { file: 'docs/plan.smd' }), /Decisions/);
   const agent = await run('agent', { file: 'docs/plan.smd' });
