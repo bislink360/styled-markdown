@@ -97,7 +97,10 @@ export function parseSmd(text: string): ParseResult {
   if (hit) return hit.result;
 
   const fm = parseFrontMatter(text);
-  const lines = text.split(/\r?\n/).slice(fm.bodyStartLine);
+  // markdown-it treats a lone \r as a line break, but line numbers everywhere else split on \r?\n.
+  // A space keeps them in step, as in renderSmd.
+  let lines = text.split(/\r?\n/).slice(fm.bodyStartLine);
+  if (text.includes('\r')) lines = lines.map((l) => l.replace(/\r/g, ' '));
   const state = update(lines);
 
   const headings: Heading[] = [];

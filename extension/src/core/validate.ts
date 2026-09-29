@@ -186,8 +186,11 @@ const RETIRED_STATUS = ['archived', 'deprecated'];
 function checkFrontMatter(
   data: Record<string, unknown>, lines: string[], end: number, push: Push, options: ValidateOptions,
 ): void {
+  // The line that starts with `key:`, or 0 (the opening `---`) when YAML wrote it differently,
+  // e.g. `"quoted":` or `[a]:`. Keys are escaped, since any text can be a YAML key.
   const keyLine = (key: string) => {
-    for (let i = 1; i < end; i++) if (new RegExp(`^${key}\s*:`).test(lines[i])) return i;
+    const re = new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*:`);
+    for (let i = 1; i < end; i++) if (re.test(lines[i])) return i;
     return 0;
   };
   const markKey = (key: string, severity: Severity, code: string, message: string) => {
@@ -208,9 +211,11 @@ function checkFrontMatter(
     if (!prop) {
       const hint = suggest(key, known);
       const l = keyLine(key);
-      push(l, 0, key.length, 'hint', 'frontmatter/unknown-key',
+      // Only offer the rename where the key is written as-is; never rewrite the `---` line.
+      const found = l > 0;
+      push(l, 0, found ? key.length : lines[0].length, 'hint', 'frontmatter/unknown-key',
         `"${key}" is not a standard front matter key${hint ? ` — did you mean "${hint}"?` : '.'} It is kept as custom metadata.`,
-        hint ? { line: l, column: 0, endColumn: key.length, replacement: hint, title: `Change to "${hint}"` } : undefined);
+        hint && found ? { line: l, column: 0, endColumn: key.length, replacement: hint, title: `Change to "${hint}"` } : undefined);
       continue;
     }
     if (key === 'smd' || value === undefined || value === null) continue;

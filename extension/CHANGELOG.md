@@ -68,11 +68,15 @@
   - the agent view and its token counter: 90 ms → 26 ms
   - Outline view and go to definition: no render at all
   Headings and anchors now come from an incremental parse that reuses every top-level block the edit didn't touch, instead of a full HTML render, and results are identical. Math checks are cached per formula, and the status-bar token counter waits longer before updating on long documents.
+- CI runs a seeded fuzz test of the core (render, validate, quick fixes, agent view, outline, document info, tasks, Markdown conversion) and a benchmark suite (`npm run bench`) that fails on order-of-magnitude slowdowns.
 
 ### Deprecated
 
 ### Fixed
 - The preview's Content-Security-Policy nonce is now generated with a cryptographically secure random source instead of `Math.random()`.
+- A lone carriage return (`\r` without `\n`) was treated as a line break, so heading lines in the preview, scroll sync, outlines and `smd meta` drifted from the editor.
+- A front matter key containing regex characters, such as `"a(b": 1`, made validation throw.
+- The `frontmatter/unknown-key` quick fix no longer rewrites the opening `---` when the key is written differently in YAML (e.g. quoted); it is then offered as a hint only.
 
 ## Unreleased
 

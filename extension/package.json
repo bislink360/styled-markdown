@@ -330,6 +330,7 @@
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test.mjs",
+    "bench": "node --import tsx test/bench/bench.ts",
     "test:vscode": "npm run build && node test/integration/run.mjs",
     "package": "npm run build && vsce package --no-dependencies",
     "vscode:prepublish": "npm run build",
