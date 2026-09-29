@@ -39,10 +39,10 @@ How to undo this change (revert, disable a flag), and anything that can't be und
 - [ ] No breaking changes, or they are described above
 - [ ] No secrets, credentials or personal data in the diff
 
-## Screenshots {agent=skip}
-
-Before and after, for visible changes.
-
 :::agent Review focus
 - The files and behaviours a reviewer should check most carefully.
 :::
+
+## Screenshots {agent=skip}
+
+Before and after, for visible changes.

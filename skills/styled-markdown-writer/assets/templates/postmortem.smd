@@ -65,12 +65,12 @@ The technical cause, and the conditions that let it reach users. Keep asking "wh
 Why, and what it replaces.
 :::
 
-## Supporting data {agent=skip}
-
-Graphs, logs and links to the incident channel.
-
 :::agent Rules for follow-up work
 - Link every change to its action item above and reference this postmortem in the pull request.
 - Add a regression test or alert that would have caught this incident.
 - Don't mark an action item done until the fix is deployed and verified.
 :::
+
+## Supporting data {agent=skip}
+
+Graphs, logs and links to the incident channel.

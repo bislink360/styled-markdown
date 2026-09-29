@@ -61,11 +61,11 @@ make setup test
 | :mention[@person] | Owns the product area |
 | :mention[@person] | Runs releases         |
 
-## Team history {agent=skip}
-
-How the team started and what it has shipped, for context.
-
 :::agent Rules for agents helping new team members
 - Point to the links in this guide instead of restating them.
 - Never grant access or change permissions; ask the manager.
 :::
+
+## Team history {agent=skip}
+
+How the team started and what it has shipped, for context.

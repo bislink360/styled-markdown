@@ -1725,15 +1725,15 @@ The technical cause, and the conditions that let it reach users. Keep asking "wh
 Why, and what it replaces.
 :::
 
-## Supporting data {agent=skip}
-
-Graphs, logs and links to the incident channel.
-
 :::agent Rules for follow-up work
 - Link every change to its action item above and reference this postmortem in the pull request.
 - Add a regression test or alert that would have caught this incident.
 - Don't mark an action item done until the fix is deployed and verified.
 :::
+
+## Supporting data {agent=skip}
+
+Graphs, logs and links to the incident channel.
 `;var Am=`---
 smd: 1
 title: "{{title}} release notes"
@@ -1914,14 +1914,14 @@ make setup test
 | :mention[@person] | Owns the product area |
 | :mention[@person] | Runs releases         |
 
-## Team history {agent=skip}
-
-How the team started and what it has shipped, for context.
-
 :::agent Rules for agents helping new team members
 - Point to the links in this guide instead of restating them.
 - Never grant access or change permissions; ask the manager.
 :::
+
+## Team history {agent=skip}
+
+How the team started and what it has shipped, for context.
 `;var Cm=`---
 smd: 1
 title: "Test plan: {{title}}"
@@ -2044,13 +2044,13 @@ How to undo this change (revert, disable a flag), and anything that can't be und
 - [ ] No breaking changes, or they are described above
 - [ ] No secrets, credentials or personal data in the diff
 
-## Screenshots {agent=skip}
-
-Before and after, for visible changes.
-
 :::agent Review focus
 - The files and behaviours a reviewer should check most carefully.
 :::
+
+## Screenshots {agent=skip}
+
+Before and after, for visible changes.
 `;var Sr={prd:{description:"Product requirements / feature spec",text:bm},adr:{description:"Architecture decision record",text:vm},rfc:{description:"Design proposal / technical spec",text:ym},runbook:{description:"On-call / operational procedure",text:xm},api:{description:"API reference",text:wm},"status-report":{description:"Weekly or monthly status update",text:km},"meeting-notes":{description:"Meeting summary with decisions and actions",text:Em},postmortem:{description:"Incident review with timeline, root cause and follow-ups",text:_m},"release-notes":{description:"Release highlights, breaking changes and upgrade steps",text:Am},okrs:{description:"Objectives and key results for a period",text:Sm},onboarding:{description:"Onboarding guide for new team members",text:Tm},"test-plan":{description:"Test scope, strategy, cases and exit criteria",text:Cm},"pr-description":{description:"Pull request summary, testing and rollback",text:Mm}},Nm=[{name:"styled-markdown-reader",summary:"read .smd token-efficiently (outline \u2192 sections \u2192 edit)",files:{"SKILL.md":mm}},{name:"styled-markdown-writer",summary:"create and edit .smd following the rules (templates + validator)",files:{"SKILL.md":pm,"references/syntax.md":hm,"references/style-guide.md":gm,...Object.fromEntries(Object.entries(Sr).map(([e,t])=>[`assets/templates/${e}.smd`,t.text]))}}];var e5={version:"1.3.0"},Dm=`smd \u2014 Styled Markdown tool (spec v${1})
 
 Reading (token-efficient, for agents):
