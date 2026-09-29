@@ -12,6 +12,12 @@ import T_RUNBOOK from '../../skills/styled-markdown-writer/assets/templates/runb
 import T_API from '../../skills/styled-markdown-writer/assets/templates/api.smd';
 import T_STATUS from '../../skills/styled-markdown-writer/assets/templates/status-report.smd';
 import T_MEETING from '../../skills/styled-markdown-writer/assets/templates/meeting-notes.smd';
+import T_POSTMORTEM from '../../skills/styled-markdown-writer/assets/templates/postmortem.smd';
+import T_RELEASE from '../../skills/styled-markdown-writer/assets/templates/release-notes.smd';
+import T_OKRS from '../../skills/styled-markdown-writer/assets/templates/okrs.smd';
+import T_ONBOARDING from '../../skills/styled-markdown-writer/assets/templates/onboarding.smd';
+import T_TEST_PLAN from '../../skills/styled-markdown-writer/assets/templates/test-plan.smd';
+import T_PR from '../../skills/styled-markdown-writer/assets/templates/pr-description.smd';
 
 export const TEMPLATES: Record<string, { description: string; text: string }> = {
   prd: { description: 'Product requirements / feature spec', text: T_PRD },
@@ -21,6 +27,12 @@ export const TEMPLATES: Record<string, { description: string; text: string }> = 
   api: { description: 'API reference', text: T_API },
   'status-report': { description: 'Weekly or monthly status update', text: T_STATUS },
   'meeting-notes': { description: 'Meeting summary with decisions and actions', text: T_MEETING },
+  postmortem: { description: 'Incident review with timeline, root cause and follow-ups', text: T_POSTMORTEM },
+  'release-notes': { description: 'Release highlights, breaking changes and upgrade steps', text: T_RELEASE },
+  okrs: { description: 'Objectives and key results for a period', text: T_OKRS },
+  onboarding: { description: 'Onboarding guide for new team members', text: T_ONBOARDING },
+  'test-plan': { description: 'Test scope, strategy, cases and exit criteria', text: T_TEST_PLAN },
+  'pr-description': { description: 'Pull request summary, testing and rollback', text: T_PR },
 };
 
 export interface SkillBundle {

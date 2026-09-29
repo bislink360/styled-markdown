@@ -13,7 +13,7 @@
 
 ### Writing
 
-- Start from a template when one fits: `{{smd}} init docs/x.smd --template prd|adr|rfc|runbook|api|status-report|meeting-notes --title "…"`. Otherwise start with front matter: `smd: 1`, `title`, `summary` (one or two sentences), `status: draft`, `owners`, `updated`.
+- Start from a template when one fits (`{{smd}} templates` lists them: prd, adr, rfc, runbook, api, status-report, meeting-notes, postmortem, release-notes, okrs, onboarding, test-plan, pr-description): `{{smd}} init docs/x.smd --template <name> --title "…"`. Otherwise start with front matter: `smd: 1`, `title`, `summary` (one or two sentences), `status: draft`, `owners`, `updated`.
 - Write normal Markdown and add Styled Markdown only where it helps: `:::warning Title` … `:::` (also `note`, `info`, `tip`, `danger`, `question`, `details`), `:::agent` for instructions to agents, `:::decision{status=accepted owner=@a} Title`, `:::risk{impact=high likelihood=low} Title`, `:::api{method=POST path="/v1/x"} Title`, `- [ ] Task :priority[P1] @owner :due[2026-10-15]`, `[text]{color=red}`, `:badge[Beta]{color=amber}`, ```` ```mermaid ```` diagrams.
 - A line with only `:::` closes the innermost container. Attributes go directly after the name, with no space. Use named colors. Don't repeat the `title` as a `# H1`. Mark human-only sections `## Background {agent=skip}`.
 - Before you finish, run `{{smd}} validate <file> --fix` until there are 0 errors, then `{{smd}} fmt <file>`.

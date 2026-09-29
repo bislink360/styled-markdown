@@ -1,0 +1,81 @@
+---
+smd: 1
+title: "Test plan: {{title}}"
+summary: What is being tested, for which release, and the exit criteria that decide go or no-go.
+status: draft
+owners: ["@qa-owner"]
+tags: [test-plan, qa]
+updated: {{today}}
+toc: true
+---
+
+## Scope
+
+**In scope**
+
+- Feature or component under test.
+
+**Out of scope**
+
+- What is not tested, and why.
+
+## Strategy
+
+| Level       | What it covers                | Tooling       | Owner  |
+| ----------- | ----------------------------- | ------------- | ------ |
+| Unit        | Business rules, edge cases    | Test runner   | @owner |
+| Integration | Service and database contract | Test runner   | @owner |
+| End-to-end  | Critical user journeys        | Browser tests | @owner |
+| Performance | Latency and load targets      | Load tool     | @owner |
+
+## Environments
+
+| Environment | Setup                         | Data            | Notes          |
+| ----------- | ----------------------------- | --------------- | -------------- |
+| Local       | `make test`                   | Fixtures        | Every change   |
+| Staging     | `https://staging.example.com` | Anonymized copy | Before release |
+
+## Test cases
+
+| ID    | Scenario           | Expected result             | Priority      | Status                       |
+| ----- | ------------------ | --------------------------- | ------------- | ---------------------------- |
+| TC-01 | Happy path         | The user completes the task | :priority[P0] | :status[Not run]{color=gray} |
+| TC-02 | Invalid input      | A clear error, no data lost | :priority[P1] | :status[Not run]{color=gray} |
+| TC-03 | Dependency is down | Graceful fallback           | :priority[P2] | :status[Not run]{color=gray} |
+
+## Entry and exit criteria
+
+::::columns
+:::column
+**Entry**
+
+- Feature complete and deployed to staging.
+- Test data loaded.
+:::
+:::column
+**Exit**
+
+- All P0 and P1 cases pass.
+- No open critical or high defects.
+:::
+::::
+
+## Risks
+
+:::risk{impact=medium likelihood=medium owner=@owner status=open} Risk to coverage or schedule
+How we reduce it.
+:::
+
+## Schedule
+
+:::timeline
+- [ ] **{{today}}** — Test plan approved
+- [ ] **YYYY-MM-DD** — Test execution starts
+- [ ] **YYYY-MM-DD** — Go/no-go review
+:::
+
+:::agent Rules for writing and running tests
+- Name automated tests after their case ID (TC-01) so results map back to this plan.
+- Update the Status column only from an actual run; never mark a case passed without one.
+- Add a case to the table for every new scenario you test.
+:::
