@@ -426,6 +426,7 @@ smd from-md <file.md> [-o out.smd]
 smd init <file> [--template <name>] [--title "…"]
 smd templates
 smd skills install [--dir <path>] [--global] [--only reader|writer]
+smd mcp [--root <dir>]                               MCP server over stdio (tools below)
 smd skills install --target cursor,copilot,agents [--dir <project>]   rules for other agents + .smd/smd.cjs
 smd --version
 ```
@@ -472,6 +473,27 @@ smd --version
 - `--compact` prints one line instead of indented JSON.
 
 How an agent routes with it: read the catalog, pick documents by `summary`, `status`, `tags`, `owners` and counts (for example skip `deprecated` documents, or look for open risks), check the reading cost in `tokens.agent`, then run `smd outline <file>` or go straight to `smd agent <file> --section "<id>"`.
+
+### MCP server
+
+`smd mcp` serves the reading commands to any Model Context Protocol client (Claude Code, Cursor, VS Code, Claude Desktop) over stdio, so agents can use them without a shell:
+
+| Tool | Arguments | Same as |
+|---|---|---|
+| `outline` | `file` | `smd outline` |
+| `section` | `file`, `sections[]`, `brief?` | `smd agent --section …` |
+| `agent` | `file`, `brief?`, `includeHuman?` | `smd agent` |
+| `tasks` | `paths[]?`, `all?`, `mine?` | `smd tasks` |
+| `validate` | `paths[]?` | `smd validate --json` |
+| `query` | `selector`, `paths[]?`, `brief?`, `titles?` | `smd query` |
+
+Paths are relative to `--root` (default: the current folder). Paths outside it are refused, only `.smd` files are read, and nothing is written. Register it with, for example:
+
+```bash
+claude mcp add smd -- npx -y -p styled-markdown smd mcp
+```
+
+Cursor, VS Code and Claude Desktop settings: [AGENTS.md](AGENTS.md#mcp-server).
 
 ## 18. Templates
 
