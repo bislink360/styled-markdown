@@ -14,6 +14,13 @@
 - `smd outline <file> --related` adds a block listing the documents in front matter `related:`: each `.smd` file's title, status, summary and full agent-view token cost, so agents can decide whether to open it. URLs and other files are listed but not read; missing files and files outside the project folders are marked. Without the flag the outline is unchanged.
 - The reader skill and `docs/AGENTS.md` tell agents to check related documents with `smd outline --related` and to open them only when the question needs it.
 - Library: `relatedDocs(source, { readFile })`, `relatedEntries`, `summarizeSmd` and `formatRelated`.
+- `smd skills install --target <claude|cursor|copilot|agents>` sets up agents without Claude-style skills (repeat the flag or separate targets with commas; the default is `claude`, which works as before):
+  - `cursor` writes the project rule `.cursor/rules/styled-markdown.mdc` (applies to `**/*.smd`)
+  - `copilot` writes `.github/instructions/styled-markdown.instructions.md` (`applyTo: "**/*.smd"`)
+  - `agents` adds a section to `AGENTS.md` between `<!-- styled-markdown:start -->` and `<!-- styled-markdown:end -->`; re-running replaces that section and keeps the rest of the file
+  - each also installs the CLI once to `.smd/smd.cjs`, and the rules tell agents to run `node .smd/smd.cjs`
+  - `--dir` sets the project root for these targets; `--global` and `--only` apply to `claude` only
+- All three targets share one set of reading and writing rules, `skills/agent-rules.md`.
 
 ### Changed
 

@@ -4,6 +4,7 @@ import READER_SKILL from '../../skills/styled-markdown-reader/SKILL.md';
 import WRITER_SKILL from '../../skills/styled-markdown-writer/SKILL.md';
 import WRITER_SYNTAX from '../../skills/styled-markdown-writer/references/syntax.md';
 import WRITER_STYLE from '../../skills/styled-markdown-writer/references/style-guide.md';
+import AGENT_RULES_TEMPLATE from '../../skills/agent-rules.md';
 import T_PRD from '../../skills/styled-markdown-writer/assets/templates/prd.smd';
 import T_ADR from '../../skills/styled-markdown-writer/assets/templates/adr.smd';
 import T_RFC from '../../skills/styled-markdown-writer/assets/templates/rfc.smd';
@@ -46,5 +47,8 @@ export const SKILLS: SkillBundle[] = [
     },
   },
 ];
+
+/** Reading and writing rules for agents without skills (Cursor, Copilot, AGENTS.md); `{{smd}}` stands for the CLI command. */
+export const AGENT_RULES: string = AGENT_RULES_TEMPLATE;
 
 export { fillTemplate } from './core';

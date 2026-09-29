@@ -7,7 +7,10 @@ import {
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
-import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
+import { AGENT_RULES, fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
+import {
+  parseTargets, rulesBody, SHARED_CLI_COMMAND, SHARED_CLI_PATH, TARGET_FILES, type AgentTarget, type RulesTarget, type TargetFile,
+} from './agentTargets';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
 declare const __SMD_PKG_VERSION__: string;
@@ -62,11 +65,19 @@ Agent skills:
       a custom directory, or ~/.claude/skills (--global):
         styled-markdown-reader   read .smd token-efficiently
         styled-markdown-writer   create/edit .smd following the rules
+  smd skills install --target <claude|cursor|copilot|agents>[,…] [--dir <project>]
+      Install for other agents too (repeatable or comma-separated; default: claude). Other targets write
+      reading/writing rules into the project (--dir, default: current folder) and this CLI to .smd/smd.cjs:
+        cursor    .cursor/rules/styled-markdown.mdc (applies to **/*.smd)
+        copilot   .github/instructions/styled-markdown.instructions.md (applies to **/*.smd)
+        agents    a styled-markdown section in AGENTS.md (created, or replaced between its markers)
 `;
+
+const SKILLS_USAGE = 'Usage: smd skills install [--dir <dir>] [--global] [--only reader|writer] [--target claude|cursor|copilot|agents]';
 
 interface Args { command?: string; positional: string[]; flags: Set<string>; values: Map<string, string[]> }
 
-const VALUE_OPTIONS = new Set(['--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
+const VALUE_OPTIONS = new Set(['--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--target']);
 
 function parseArgs(argv: string[]): Args {
   const [command, ...rest] = argv;
@@ -160,8 +171,7 @@ function main(argv: string[]): number | Promise<number> {
       for (const [name, t] of Object.entries(TEMPLATES)) console.log(`${name.padEnd(15)} ${t.description}`);
       return 0;
     case 'skills':
-      if (positional[0] !== 'install') return fail('Usage: smd skills install [--dir <skills-dir>] [--global] [--only reader|writer]');
-      return installSkills(flags.has('--global') ? path.join(os.homedir(), '.claude', 'skills') : value('--dir') ?? path.join('.claude', 'skills'), value('--only'));
+      return skillsCommand(args);
     case undefined:
     case 'help':
     case '--help':
@@ -362,6 +372,63 @@ function relatedBlock(file: string, text: string, today?: string): string {
 
 function displayPath(dir: string, rel: string): string {
   return path.relative(process.cwd(), path.resolve(dir, rel)).split(path.sep).join('/');
+}
+
+/** `smd skills install [--target …]`: Claude skills (the default) and/or instruction files for other agents. */
+function skillsCommand(args: Args): number {
+  if (args.positional[0] !== 'install') return fail(SKILLS_USAGE);
+  let targets: AgentTarget[];
+  try {
+    targets = parseTargets(args.values.get('--target') ?? []);
+  } catch (e) {
+    return fail((e as Error).message);
+  }
+  const problem = targetOptionsProblem(targets, args);
+  if (problem) return fail(problem);
+  const others = targets.filter((t): t is RulesTarget => t !== 'claude');
+  const code = targets.includes('claude') ? installSkills(claudeSkillsDir(args), args.values.get('--only')?.[0]) : 0;
+  return code || !others.length ? code : installAgentRules(others, args.values.get('--dir')?.[0] ?? '.');
+}
+
+function claudeSkillsDir(args: Args): string {
+  if (args.flags.has('--global')) return path.join(os.homedir(), '.claude', 'skills');
+  return args.values.get('--dir')?.[0] ?? path.join('.claude', 'skills');
+}
+
+/** Options that only make sense for the Claude skills, or that would mean two different folders at once. */
+function targetOptionsProblem(targets: AgentTarget[], args: Args): string | undefined {
+  const claude = targets.includes('claude');
+  const others = targets.length > (claude ? 1 : 0);
+  if (!others) return undefined;
+  if (args.flags.has('--global')) return '--global only applies to --target claude. Install rules for other agents per project (--dir <project>).';
+  if (!claude && args.values.has('--only')) return '--only only applies to --target claude. The rules for other agents cover reading and writing.';
+  if (claude && args.values.has('--dir')) return '--dir is the skills folder for --target claude but the project root for other targets. Install them in separate runs.';
+  return undefined;
+}
+
+/** Writes the shared CLI to <root>/.smd/smd.cjs and each target's instruction file. */
+function installAgentRules(targets: RulesTarget[], root: string): number {
+  const cli = path.resolve(root, SHARED_CLI_PATH);
+  fs.mkdirSync(path.dirname(cli), { recursive: true });
+  fs.copyFileSync(__filename, cli);
+  console.log(`Installed smd CLI → ${cli}  (agents run it as: ${SHARED_CLI_COMMAND})`);
+  const body = rulesBody(AGENT_RULES);
+  try {
+    for (const target of targets) writeTargetFile(TARGET_FILES[target], root, body);
+  } catch (e) {
+    return fail((e as Error).message);
+  }
+  return 0;
+}
+
+function writeTargetFile(spec: TargetFile, root: string, body: string): void {
+  const file = path.resolve(root, spec.file);
+  const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
+  const content = spec.render(body, existing);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
+  const verb = existing === undefined ? 'Created' : 'Updated';
+  console.log(`${verb} ${file}  (${spec.label})`);
 }
 
 function installSkills(dir: string, only?: string): number {
