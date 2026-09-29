@@ -32,7 +32,7 @@ smd agent docs/spec.smd --section api # compact agent view of one section (+ age
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
 smd render docs/spec.smd -o spec.html # standalone HTML page
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
-smd init docs/plan.smd --template prd # new document: prd, adr, rfc, runbook, api, status-report, meeting-notes
+smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
 ```
 
