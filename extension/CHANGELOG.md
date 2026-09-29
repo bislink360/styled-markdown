@@ -44,6 +44,17 @@
 - Hover previews:
   - over a link's text or target, `#anchor` / `other.smd#anchor` shows the start of that section (up to 20 lines), and `other.smd` shows the document's title, status, summary and top-level sections
   - over a ```` ```lang file="…" lines="…" ```` line, the embedded code (up to 30 lines), or why it can't be read
+- List continuation on Enter (`smd.editor.continueLists`):
+  - tasks continue unchecked and keep their `@owner` mentions, with the cursor before them
+  - bullets repeat and numbered items count up
+  - Enter on an empty item ends the list
+  - nothing changes inside code blocks
+- Paste and drag-and-drop images:
+  - images are saved to `docs/images/` (`smd.images.folder`) and linked relative to the document
+  - images already in the workspace are linked in place
+  - name clashes get `-1`, `-2`…
+  - pasting needs VS Code 1.97 or later; dropping works on every supported version
+- **Styled Markdown: Set Up Spell Checking (cSpell)** adds an `smd` entry to cSpell's `languageSettings`, so container and directive names, attribute lists, mentions, link targets, front matter and code aren't reported as misspellings. It runs only when you ask, because cSpell settings can't be scoped to a language by another extension.
 
 ### Changed
 - The npm package ships Mermaid's parser for `smd validate` (`dist/mermaid-parse.js`, 3.4 MB unpacked). The library entry points don't load it.

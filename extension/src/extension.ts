@@ -5,12 +5,14 @@ import { markdownToSmd, renderStandaloneHtml, smdToMarkdown } from './core';
 import { registerLanguageFeatures } from './language';
 import { readerFor } from './files';
 import { registerAgentView } from './agentViewUi';
+import { registerEditorFeatures } from './editorFeatures';
 import { PreviewManager, renderOptions } from './preview';
 
 export function activate(context: vscode.ExtensionContext): void {
   const previews = new PreviewManager(context);
   const diagnostics = registerLanguageFeatures(context);
   registerAgentView(context);
+  registerEditorFeatures(context);
 
   const activeSmd = (): vscode.TextDocument | undefined => {
     const doc = vscode.window.activeTextEditor?.document;
