@@ -141,3 +141,31 @@ test('document info summarises the file for agents', () => {
   assert.equal(info.diagrams.length, 3);
   assert.equal(info.diagnostics.errors, 0);
 });
+
+test('a lone carriage return does not shift heading lines (found by fuzzing)', () => {
+  // Every other tool splits lines on \r?\n, so a lone \r is not a line break for the preview either.
+  const { headings, html } = renderSmd('para\r# Not a heading\n\n## Next');
+  assert.deepEqual(headings.map((h) => [h.text, h.line]), [['Next', 2]]);
+  assert.match(html, /data-line="2"/);
+  // The incremental parser behind outlines, validation and `smd meta` agrees.
+  const info = getDocumentInfo('```ts\n```\n  -\r nested  -\r nested\n## Section');
+  assert.deepEqual(info.outline.map((h) => [h.text, h.line]), [['Section', 3]]);
+});
+
+test('front matter keys are matched literally (found by fuzzing)', () => {
+  // Regex characters in a key used to throw while looking for its line.
+  const diagnostics = validateSmd('---\nsmd: 1\n"a(b": 1\n"[x": 2\n---\n# T');
+  assert.deepEqual(diagnostics.map((d) => d.code), ['frontmatter/unknown-key', 'frontmatter/unknown-key']);
+});
+
+test('an unknown key YAML wrote differently gets no rename that rewrites --- (found by fuzzing)', () => {
+  const src = '---\nsmd: 1\n"titel": x\n---\n# T';
+  const hint = validateSmd(src).find((d) => d.code === 'frontmatter/unknown-key');
+  assert.ok(hint);
+  assert.equal(hint.line, 0);
+  assert.equal(hint.fix, undefined);
+  assert.equal(applyFixes(src, validateSmd(src)).text, src);
+  // Written as-is, the rename is still offered.
+  const plain = validateSmd('---\nsmd: 1\ntitel: x\n---\n# T').find((d) => d.code === 'frontmatter/unknown-key');
+  assert.deepEqual(plain?.fix && [plain.fix.line, plain.fix.replacement], [2, 'title']);
+});
