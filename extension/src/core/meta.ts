@@ -1,6 +1,7 @@
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
-import { dueState, renderSmd } from './render';
+import { parseSmd } from './parse';
+import { dueState } from './render';
 import { validateSmd, type Diagnostic, type ValidateOptions } from './validate';
 import { inlineText } from './agentView';
 
@@ -80,7 +81,7 @@ export function extractTasks(text: string, today?: string): TaskInfo[] {
 
 export function getDocumentInfo(text: string, options: ValidateOptions = {}): SmdDocumentInfo {
   const fm = parseFrontMatter(text);
-  const rendered = renderSmd(text);
+  const rendered = parseSmd(text);
   const lines = text.split(/\r?\n/);
   const agentBlocks: SmdDocumentInfo['agentBlocks'] = [];
   const decisions: DecisionInfo[] = [];

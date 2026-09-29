@@ -1,4 +1,5 @@
 import katex from 'katex';
+import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules';
 import { attrsToStyle, isStyleKey, parseAttrs, resolveColor } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
@@ -8,8 +9,9 @@ import { parseFenceInfo, sliceLines } from './fence';
 import { suggest } from './util';
 import {
   PRIORITY_VALUES,
-  AUDIENCE_VALUES, CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION, STATUS_VALUES,
+  CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION,
 } from './spec';
+import { FRONTMATTER_SCHEMA, frontMatterProperty } from './frontmatterSchema';
 
 export type Severity = 'error' | 'warning' | 'info' | 'hint';
 
@@ -41,8 +43,18 @@ export interface ValidateOptions {
   fileExists?: (relativePath: string) => boolean;
   /** Read a file relative to the document, for checking `file="…" lines="…"` embeds. */
   readFile?: (relativePath: string) => string | undefined;
-  /** "Today" as YYYY-MM-DD for overdue checks. Defaults to the current date. */
+  /** "Today" as YYYY-MM-DD for overdue and stale checks. Defaults to the current date. */
   today?: string;
+  /**
+   * Report `frontmatter/stale` when `updated` is more than this many days before today and the
+   * status is not archived or deprecated. Default 180; 0 turns the check off.
+   */
+  staleAfterDays?: number;
+  /**
+   * Rule settings, e.g. from `smd.config.json`: `{ "link/missing-file": "off", "frontmatter/*": "hint" }`.
+   * Inline `<!-- smd-disable… -->` comments are always honored.
+   */
+  rules?: RuleSettings;
 }
 
 export function validateSmd(text: string, options: ValidateOptions = {}): Diagnostic[] {
@@ -56,7 +68,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   // --- Front matter -------------------------------------------------------
   const fm = parseFrontMatter(text);
   if (fm.error) wholeLine(fm.error.line, 'error', 'frontmatter/invalid', fm.error.message);
-  if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, wholeLine);
+  if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, options);
 
   // --- Body ---------------------------------------------------------------
   interface Open { name: string; len: number; line: number }
@@ -159,13 +171,21 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
   checkLinks(text, push, options);
 
-  return diagnostics.sort((a, b) => a.line - b.line || a.column - b.column);
+  let result = applySuppressions(text, diagnostics);
+  if (options.rules) result = applyRuleSettings(result, options.rules);
+  return result.sort((a, b) => a.line - b.line || a.column - b.column);
 }
 
 type Push = (line: number, column: number, endColumn: number, severity: Severity, code: string, message: string, fix?: Fix) => void;
 type WholeLine = (line: number, severity: Severity, code: string, message: string) => void;
 
-function checkFrontMatter(data: Record<string, unknown>, lines: string[], end: number, push: Push, wholeLine: WholeLine): void {
+/** Status values whose documents are not expected to be kept up to date. */
+const RETIRED_STATUS = ['archived', 'deprecated'];
+
+/** Front matter checks, driven by FRONTMATTER_SCHEMA. Keys outside the schema are custom metadata. */
+function checkFrontMatter(
+  data: Record<string, unknown>, lines: string[], end: number, push: Push, options: ValidateOptions,
+): void {
   // The line that starts with `key:`, or 0 (the opening `---`) when YAML wrote it differently,
   // e.g. `"quoted":` or `[a]:`. Keys are escaped, since any text can be a YAML key.
   const keyLine = (key: string) => {
@@ -184,37 +204,50 @@ function checkFrontMatter(data: Record<string, unknown>, lines: string[], end: n
   } else if (Number(data.smd) !== SMD_VERSION) {
     markKey('smd', 'warning', 'frontmatter/version', `Unsupported Styled Markdown version "${data.smd}". This tool supports version ${SMD_VERSION}.`);
   }
-  for (const key of Object.keys(data)) {
-    if (!(key in FRONTMATTER_KEYS)) {
-      const hint = suggest(key, Object.keys(FRONTMATTER_KEYS));
+
+  const known = Object.keys(FRONTMATTER_SCHEMA.properties);
+  for (const [key, value] of Object.entries(data)) {
+    const prop = frontMatterProperty(key);
+    if (!prop) {
+      const hint = suggest(key, known);
       const l = keyLine(key);
       // Only offer the rename where the key is written as-is; never rewrite the `---` line.
       const found = l > 0;
       push(l, 0, found ? key.length : lines[0].length, 'hint', 'frontmatter/unknown-key',
         `"${key}" is not a standard front matter key${hint ? ` — did you mean "${hint}"?` : '.'} It is kept as custom metadata.`,
         hint && found ? { line: l, column: 0, endColumn: key.length, replacement: hint, title: `Change to "${hint}"` } : undefined);
+      continue;
+    }
+    if (key === 'smd' || value === undefined || value === null) continue;
+    if (key === 'accent') {
+      if (!resolveColor(String(value))) markKey(key, 'error', 'frontmatter/accent', `Invalid accent color "${value}".`);
+    } else if (prop.enum) {
+      // Status is matched case-insensitively, as it always has been.
+      const v = key === 'status' ? String(value).toLowerCase() : String(value);
+      if (!prop.enum.map(String).includes(v)) {
+        const code = key === 'status' ? 'frontmatter/status' : key === 'audience' ? 'frontmatter/audience' : 'frontmatter/value';
+        markKey(key, 'warning', code, `Unknown ${key} "${value}". Use one of: ${prop.enum.join(', ')}.`);
+      }
+    } else if (prop.anyOf?.some((a) => a.type === 'array')) {
+      if (!Array.isArray(value) && typeof value !== 'string') markKey(key, 'warning', 'frontmatter/type', `"${key}" should be a list, e.g. ${key}: [a, b].`);
+    } else if (prop.type === 'boolean') {
+      if (typeof value !== 'boolean') markKey(key, 'warning', 'frontmatter/type', `"${key}" should be true or false.`);
+    } else if (prop.format === 'date') {
+      if (!/^\d{4}-\d{2}-\d{2}/.test(String(value))) markKey(key, 'warning', 'frontmatter/date', `"${key}" should be a date like 2026-09-26.`);
+    } else if (typeof value === 'object') {
+      markKey(key, 'warning', 'frontmatter/type', `"${key}" should be a single value, not a list or a mapping.`);
     }
   }
-  if (data.status !== undefined && !STATUS_VALUES.includes(String(data.status).toLowerCase())) {
-    markKey('status', 'warning', 'frontmatter/status', `Unknown status "${data.status}". Use one of: ${STATUS_VALUES.join(', ')}.`);
-  }
-  if (data.audience !== undefined && !AUDIENCE_VALUES.includes(String(data.audience))) {
-    markKey('audience', 'warning', 'frontmatter/audience', `Unknown audience "${data.audience}". Use one of: ${AUDIENCE_VALUES.join(', ')}.`);
-  }
-  if (data.accent !== undefined && !resolveColor(String(data.accent))) {
-    markKey('accent', 'error', 'frontmatter/accent', `Invalid accent color "${data.accent}".`);
-  }
-  for (const key of ['owners', 'tags', 'related']) {
-    if (data[key] !== undefined && !Array.isArray(data[key]) && typeof data[key] !== 'string') {
-      markKey(key, 'warning', 'frontmatter/type', `"${key}" should be a list, e.g. ${key}: [a, b].`);
-    }
-  }
-  if (data.toc !== undefined && typeof data.toc !== 'boolean') {
-    markKey('toc', 'warning', 'frontmatter/type', '"toc" should be true or false.');
-  }
-  for (const key of ['updated', 'created']) {
-    if (data[key] !== undefined && !/^\d{4}-\d{2}-\d{2}/.test(String(data[key]))) {
-      markKey(key, 'warning', 'frontmatter/date', `"${key}" should be a date like 2026-09-26.`);
+
+  // Stale documents: `updated` long ago on a document that is still live.
+  const staleAfter = options.staleAfterDays ?? 180;
+  const updated = typeof data.updated === 'string' ? data.updated.slice(0, 10) : '';
+  if (staleAfter > 0 && /^\d{4}-\d{2}-\d{2}$/.test(updated) && !RETIRED_STATUS.includes(String(data.status ?? '').toLowerCase())) {
+    const today = options.today ?? new Date().toISOString().slice(0, 10);
+    const days = Math.floor((Date.parse(today) - Date.parse(updated)) / 86_400_000);
+    if (days > staleAfter) {
+      markKey('updated', 'info', 'frontmatter/stale',
+        `Last updated ${days} days ago (more than ${staleAfter}). Review the document and bump "updated", or set "status: archived".`);
     }
   }
 }
@@ -417,13 +450,22 @@ function checkFence(lang: string, content: string[], line: number, push: Push, w
   }
 }
 
+/** KaTeX results by formula, so re-validating after an edit only checks formulas that changed. */
+const mathResults = new Map<string, string | null>();
+
 function checkMath(tex: string, line: number, wholeLine: WholeLine): void {
-  try {
-    katex.renderToString(tex, { displayMode: true, throwOnError: true });
-  } catch (e) {
-    const msg = (e as Error).message.replace(/^KaTeX parse error:\s*/, '');
-    wholeLine(line, 'error', 'math/syntax', `Math error: ${msg}`);
+  let error = mathResults.get(tex);
+  if (error === undefined) {
+    try {
+      katex.renderToString(tex, { displayMode: true, throwOnError: true });
+      error = null;
+    } catch (e) {
+      error = (e as Error).message.replace(/^KaTeX parse error:\s*/, '');
+    }
+    if (mathResults.size >= 1000) mathResults.clear();
+    mathResults.set(tex, error);
   }
+  if (error !== null) wholeLine(line, 'error', 'math/syntax', `Math error: ${error}`);
 }
 
 function checkHeadingAttrs(raw: string, line: number, push: Push): void {

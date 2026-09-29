@@ -51,6 +51,12 @@
   "contributes": {
     "languages": [
       {
+        "id": "json",
+        "filenames": [
+          ".smdrc"
+        ]
+      },
+      {
         "id": "smd",
         "aliases": [
           "Styled Markdown",
@@ -64,6 +70,16 @@
           "light": "./media/smd-icon.svg",
           "dark": "./media/smd-icon.svg"
         }
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "smd.config.json",
+          ".smdrc",
+          ".smdrc.json"
+        ],
+        "url": "./schemas/smd-config.schema.json"
       }
     ],
     "grammars": [
@@ -90,6 +106,17 @@
       }
     ],
     "commands": [
+      {
+        "command": "smd.setupSpellCheck",
+        "title": "Set Up Spell Checking (cSpell)",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.onEnterKey",
+        "title": "Continue List on Enter",
+        "category": "Styled Markdown",
+        "enablement": "editorLangId == smd"
+      },
       {
         "command": "smd.openPreview",
         "title": "Open Preview",
@@ -188,6 +215,10 @@
       ],
       "commandPalette": [
         {
+          "command": "smd.onEnterKey",
+          "when": "false"
+        },
+        {
           "command": "smd.exportHtml",
           "when": "editorLangId == smd"
         },
@@ -214,6 +245,11 @@
       ]
     },
     "keybindings": [
+      {
+        "command": "smd.onEnterKey",
+        "key": "enter",
+        "when": "editorTextFocus && editorLangId == smd && !editorReadonly && !editorHasMultipleSelections && !suggestWidgetVisible && !inlineSuggestionVisible && !inSnippetMode && !renameInputVisible && config.smd.editor.continueLists"
+      },
       {
         "command": "smd.openPreviewToSide",
         "key": "ctrl+k v",
@@ -264,6 +300,27 @@
           "type": "boolean",
           "default": true,
           "description": "Warn about relative links, images and related: entries that point to missing files or headings."
+        },
+        "smd.validation.mermaid": {
+          "type": "boolean",
+          "default": true,
+          "description": "Parse Mermaid diagrams and report syntax errors before they render."
+        },
+        "smd.validation.staleAfterDays": {
+          "type": "number",
+          "default": 180,
+          "minimum": 0,
+          "description": "Report a document as stale when its front matter \"updated\" date is more than this many days ago and its status is not archived or deprecated. 0 turns the check off."
+        },
+        "smd.editor.continueLists": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enter on a list item starts the next one: tasks start unchecked and keep their @owner mentions, numbers count up. Enter on an empty item ends the list."
+        },
+        "smd.images.folder": {
+          "type": "string",
+          "default": "docs/images",
+          "description": "Folder, relative to the workspace folder, where pasted and dropped images are saved. Documents outside a workspace use this folder next to the document."
         }
       }
     }

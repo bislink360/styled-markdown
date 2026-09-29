@@ -39,6 +39,7 @@
       "require": "./dist/index.cjs"
     },
     "./smd.css": "./dist/smd.css",
+    "./frontmatter.schema.json": "./dist/frontmatter.schema.json",
     "./package.json": "./package.json"
   },
   "bin": {

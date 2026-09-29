@@ -36,20 +36,23 @@ export interface RenderResult {
   headings: Heading[];
 }
 
-type ResolvedOptions = Required<Omit<RenderOptions, 'readFile'>> & Pick<RenderOptions, 'readFile'>;
+export type ResolvedOptions = Required<Omit<RenderOptions, 'readFile'>> & Pick<RenderOptions, 'readFile'>;
 
-interface Env {
+export interface Env {
   lineOffset: number;
   headings: Heading[];
   slugs: Map<string, number>;
   options: ResolvedOptions;
+  /** Per heading, the slug before de-duplication, or null for an explicit {#id} (see parse.ts). */
+  bases?: Array<string | null>;
+  references?: Record<string, unknown>;
 }
 
 const CALLOUT_ICONS: Record<string, string> = {
   note: '✎', info: 'ℹ', tip: '💡', success: '✔', warning: '⚠', danger: '⛔', question: '?',
 };
 
-function createMarkdownIt(options: RenderOptions = {}): MarkdownIt {
+export function createMarkdownIt(options: RenderOptions = {}): MarkdownIt {
   const md = new MarkdownIt({
     html: options.allowHtml ?? true,
     linkify: true,
@@ -653,6 +656,7 @@ function headingIds(state: StateCore): void {
       .map((c) => c.content)
       .join('');
     let slug = t.attrGet('id');
+    env.bases?.push(slug ? null : slugify(text) || 'section');
     if (!slug) {
       const base = slugify(text) || 'section';
       const n = env.slugs?.get(base) ?? 0;
