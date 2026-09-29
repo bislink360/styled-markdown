@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import {
   agentView, extractTasks, getDocumentInfo, outline, renderSmd, smdToMarkdown, validateSmd, type ValidateOptions,
 } from '../../src/core';
+import { resetParseCache } from '../../src/core/parse';
 import { largeDocument } from '../fuzz/generate';
 
 /**
@@ -36,15 +37,15 @@ const CASES: Array<{ name: string; run: (text: string) => unknown }> = [
 
 /**
  * Median milliseconds allowed, by case and document size: about 10x a local run (Node 24, Windows,
- * 1.0k / 10k lines: render 7 / 50 ms, validate 9 / 67, agentView 7 / 65, getDocumentInfo 14 / 126).
- * `outline` is quadratic today (97 ms / 8 s), so its limit only guards against it getting worse.
+ * 1.0k / 10k lines: render 7 / 65 ms, validate 9 / 73, agentView 8 / 70, outline 10 / 95,
+ * getDocumentInfo 9 / 87), with a cold parse cache.
  */
 const LIMITS: Record<string, Record<number, number>> = {
   renderSmd: { 1000: 100, 10000: 750 },
   validateSmd: { 1000: 120, 10000: 1000 },
   agentView: { 1000: 100, 10000: 900 },
   'agentView (brief)': { 1000: 100, 10000: 900 },
-  outline: { 1000: 1500, 10000: 45000 },
+  outline: { 1000: 150, 10000: 1000 },
   getDocumentInfo: { 1000: 200, 10000: 1800 },
   extractTasks: { 1000: 15, 10000: 60 },
   smdToMarkdown: { 1000: 25, 10000: 150 },
@@ -79,7 +80,8 @@ for (const size of SIZES) {
   const text = largeDocument(size);
   const lines = text.split('\n').length;
   for (const c of CASES) {
-    const { median: ms, runs } = time(() => c.run(text), 1500);
+    // Each run parses from scratch: the parse cache would otherwise turn repeats of the same text into hits.
+    const { median: ms, runs } = time(() => { resetParseCache(); c.run(text); }, 1500);
     const limit = LIMITS[c.name]?.[size];
     const over = limit !== undefined && ms > limit;
     if (check && over) failures.push(`${c.name} on ${lines} lines: ${ms.toFixed(1)} ms > limit ${limit} ms`);
