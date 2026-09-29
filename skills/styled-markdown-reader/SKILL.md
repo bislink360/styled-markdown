@@ -33,6 +33,8 @@ Across many documents:
 - `smd query "SELECTOR" DIR` prints only the matching blocks in the agent view: `decision[status=accepted]`, `risk[impact>=high][status!=closed]`, `api[method=POST]`, `question`, `task[owner=@me][done=false]`, `heading[level=2]`. Commas combine selectors. Add `--titles` for one line per block, `--json` for structured output. Exit code 1 means no match.
 - `smd meta FILE --no-diagnostics` gives JSON (outline, tasks, decisions, risks, agent blocks).
 
+**MCP tools available?** If the `smd` MCP server is registered (tools `outline`, `section`, `agent`, `tasks`, `query`, `validate`), follow the same workflow with the tools instead of the shell: `outline` first, then `section` with the headings you need. Paths are relative to the server's root folder.
+
 ## What the agent view means
 
 | You see | Meaning |

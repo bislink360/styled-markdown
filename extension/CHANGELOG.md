@@ -27,6 +27,10 @@
   - counts: open, done and overdue tasks, decisions by status, risks and open risks, questions, API endpoints, diagrams and `:::agent` blocks
   - deterministic output (no timestamps, sorted by path) so the catalog can be committed and diffed; `--today` pins the overdue count
 - Library: `indexEntry(source, path, options)` and `smdIndex(documents, options)`, with the `SmdIndex*` types.
+- `smd mcp [--root <dir>]` runs a Model Context Protocol server over stdio, so agents in Claude Code, Cursor, VS Code or Claude Desktop can read `.smd` documents without a shell:
+  - tools: `outline` (file), `section` (file, sections), `agent` (file, brief, includeHuman), `tasks` (paths, all, mine), `validate` (paths; JSON as `smd validate --json`) and `query` (selector, paths, brief, titles)
+  - paths resolve against the root folder (default: the current folder); paths outside it, including through symbolic links, are refused, only `.smd` files are read, and code embeds only come from inside the root
+  - no new dependencies; register it with `claude mcp add smd -- npx -y -p styled-markdown smd mcp` or the `mcp.json` snippets in docs/AGENTS.md
 
 ### Changed
 
