@@ -14,6 +14,13 @@
 - `smd outline <file> --related` adds a block listing the documents in front matter `related:`: each `.smd` file's title, status, summary and full agent-view token cost, so agents can decide whether to open it. URLs and other files are listed but not read; missing files and files outside the project folders are marked. Without the flag the outline is unchanged.
 - The reader skill and `docs/AGENTS.md` tell agents to check related documents with `smd outline --related` and to open them only when the question needs it.
 - Library: `relatedDocs(source, { readFile })`, `relatedEntries`, `summarizeSmd` and `formatRelated`.
+- Six new templates for `smd init --template` and the writer skill, 13 in total:
+  - `postmortem`: blameless incident review with impact metrics, timeline, root cause, action items with owners and due dates, and rules for agents doing the follow-ups
+  - `release-notes`: highlights, breaking changes with migration steps, deprecations, Added/Changed/Fixed, upgrade and known issues
+  - `okrs`: objectives with key-result tables (owner, baseline, target, progress, confidence), initiatives and risks
+  - `onboarding`: day-one setup, first-week tasks, a 90-day timeline, key links and people to meet
+  - `test-plan`: scope, strategy, environments, test cases, entry and exit criteria, risks and schedule
+  - `pr-description`: summary, changes, testing, risk and rollback, checklist and review focus
 
 ### Changed
 
