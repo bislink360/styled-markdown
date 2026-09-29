@@ -24,7 +24,8 @@ node <this-skill-dir>/scripts/smd.cjs <command> …    # or `smd` if on PATH; No
    - Full agent view is small (≲ 2,000 tokens, shown on the outline's first line): run `smd agent FILE` once.
    - Specific question: run `smd agent FILE --section "Heading" [--section …]`. This matches heading text or id, includes subsections, and always appends `:::agent` instructions from elsewhere in the file.
    - Overview of a large doc: add `--brief`. It condenses diagrams, long code, `:::details` and completed tasks into pointers with line numbers.
-3. **Open raw lines only to edit.** Headings in the agent view carry `[L42]` line references. Read just that range with offset/limit, never the whole file. For writing or restructuring, use the `styled-markdown-writer` skill.
+3. **Related documents:** if the front matter lists `related:`, run `smd outline FILE --related`. It adds each related doc's title, status, summary and agent-view cost. Open a related doc (outline, then sections) only when the question needs it.
+4. **Open raw lines only to edit.** Headings in the agent view carry `[L42]` line references. Read just that range with offset/limit, never the whole file. For writing or restructuring, use the `styled-markdown-writer` skill.
 
 Across many documents:
 - `smd tasks DIR` lists open tasks with priority, owner and due date, overdue first (`--mine @name` filters by owner).

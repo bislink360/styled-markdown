@@ -412,7 +412,7 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 ## 17. CLI reference
 
 ```text
-smd outline <file>                                   sections, line ranges, token costs, markers
+smd outline <file> [--related]                       sections, line ranges, token costs, markers; --related adds related docs
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes

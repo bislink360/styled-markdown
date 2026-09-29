@@ -2,8 +2,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, checkMermaid, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, querySmd, renderPage,
-  smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type Diagnostic, type QueryMatch, type Selector, type TaskInfo,
+  agentView, applyFixes, checkMermaid, extractTasks, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, querySmd,
+  relatedDocs, renderPage, smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type Diagnostic, type QueryMatch, type Selector, type TaskInfo,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
@@ -16,8 +16,9 @@ const pkg = { version: typeof __SMD_PKG_VERSION__ === 'string' ? __SMD_PKG_VERSI
 const HELP = `smd — Styled Markdown tool (spec v${SMD_VERSION})
 
 Reading (token-efficient, for agents):
-  smd outline <file.smd>
+  smd outline <file.smd> [--related]
       Sections with line ranges and token costs, open tasks, where agent instructions are.
+      --related    also list the front matter "related:" documents: title, status, summary and cost
   smd agent <file.smd> [--section "<heading>"]... [--brief] [--include-human] [--embed] [--no-lines]
       Compact agent view: styling, layout and human-only content removed; meaning kept.
       --section    only these sections (repeatable; agent instructions elsewhere are still included)
@@ -95,11 +96,8 @@ function main(argv: string[]): number | Promise<number> {
   if (staleAfterDays !== undefined && !(staleAfterDays >= 0)) return fail('--stale-after needs a number of days (0 turns the check off).');
 
   switch (command) {
-    case 'outline': {
-      const file = requireFile(positional[0]);
-      process.stdout.write(outline(read(file), { readFile: readerFor(file), today }));
-      return 0;
-    }
+    case 'outline':
+      return outlineFile(requireFile(positional[0]), flags.has('--related'), today);
     case 'agent': {
       const file = requireFile(positional[0]);
       const result = agentView(read(file), {
@@ -344,6 +342,26 @@ function titleLine(r: QueryRow): string {
   const attrs = Object.entries(r.attrs).map(([k, v]) => `${k}=${[v].flat().join(',')}`).join(' ');
   const parts = [`${r.file}:${r.line + 1}${end}`, r.type, r.title, attrs && `{${attrs}}`, r.section && `— ${r.section}`];
   return parts.filter(Boolean).join('  ');
+}
+
+function outlineFile(file: string, related: boolean, today?: string): number {
+  const text = read(file);
+  process.stdout.write(outline(text, { readFile: readerFor(file), today }));
+  if (related) process.stdout.write(relatedBlock(file, text, today));
+  return 0;
+}
+
+/** `smd outline --related`: the related documents, with paths relative to the working directory. */
+function relatedBlock(file: string, text: string, today?: string): string {
+  const dir = path.dirname(path.resolve(file));
+  const docs = relatedDocs(text, { readFile: readerFor(file), today })
+    .map((d) => (d.path === undefined ? d : { ...d, path: displayPath(dir, d.path) }));
+  const block = formatRelated(docs);
+  return block ? '\n' + block : '';
+}
+
+function displayPath(dir: string, rel: string): string {
+  return path.relative(process.cwd(), path.resolve(dir, rel)).split(path.sep).join('/');
 }
 
 function installSkills(dir: string, only?: string): number {

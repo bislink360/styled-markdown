@@ -137,7 +137,7 @@ History and research. People see it; agents skip it.
 
 | Command | Purpose |
 |---|---|
-| `smd outline <file>` | Sections with line ranges and token costs |
+| `smd outline <file> [--related]` | Sections with line ranges and token costs; `--related` adds each `related:` doc's title, status, summary and cost |
 | `smd agent <file> [--section …] [--brief]` | Compact agent view |
 | `smd tasks <dir> [--mine @me]` | Open tasks across docs, overdue first |
 | `smd query "<selector>" <paths> [--json]` | Decisions, risks, APIs, callouts, tasks or headings by type and attributes, e.g. `risk[impact>=high]` |
