@@ -43,7 +43,7 @@ Run `smd --help` for every option.
 ```ts
 import {
   renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
-  smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, formatSmd,
+  smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, querySmd, formatSmd,
 } from 'styled-markdown';
 ```
 
@@ -112,9 +112,12 @@ formatSmd(source);                        // the `smd fmt` layout: fence colons,
 const info = getDocumentInfo(source);     // front matter, outline, tasks, decisions, risks, agent blocks, diagnostics
 const open = extractTasks(source).filter((t) => !t.done);
 // [{ text: 'Idempotent order creation', priority: 'P0', assignees: ['@api-team'], due: '2026-10-03', overdue: false, line: 61, section: 'Requirements' }]
+
+const risks = querySmd(source, 'risk[impact>=high][status!=closed]'); // the `smd query` selectors
+// [{ type: 'risk', title: 'Apple Pay domain verification delays launch', attrs: { impact: 'high', … }, line: 144, endLine: 146, section: 'Risks', text: '<risk impact="high" …' }]
 ```
 
-Also exported: `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
+Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
 
 ## A taste of the format
 

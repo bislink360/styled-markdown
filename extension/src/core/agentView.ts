@@ -267,6 +267,11 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
+/** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
+export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
+  return transform(lines.slice(0, end + 1), start, () => true, options).trim();
+}
+
 function renderFence(fence: { start: number; body: string[]; info: string }, endLine: number, options: TransformOptions): string[] {
   const info = parseFenceInfo(fence.info);
   const lang = info.lang.toLowerCase();
