@@ -31,6 +31,13 @@
   - tools: `outline` (file), `section` (file, sections), `agent` (file, brief, includeHuman), `tasks` (paths, all, mine), `validate` (paths; JSON as `smd validate --json`) and `query` (selector, paths, brief, titles)
   - paths resolve against the root folder (default: the current folder); paths outside it, including through symbolic links, are refused, only `.smd` files are read, and code embeds only come from inside the root
   - no new dependencies; register it with `claude mcp add smd -- npx -y -p styled-markdown smd mcp` or the `mcp.json` snippets in docs/AGENTS.md
+- `smd skills install --target <claude|cursor|copilot|agents>` sets up agents without Claude-style skills (repeat the flag or separate targets with commas; the default is `claude`, which works as before):
+  - `cursor` writes the project rule `.cursor/rules/styled-markdown.mdc` (applies to `**/*.smd`)
+  - `copilot` writes `.github/instructions/styled-markdown.instructions.md` (`applyTo: "**/*.smd"`)
+  - `agents` adds a section to `AGENTS.md` between `<!-- styled-markdown:start -->` and `<!-- styled-markdown:end -->`; re-running replaces that section and keeps the rest of the file
+  - each also installs the CLI once to `.smd/smd.cjs`, and the rules tell agents to run `node .smd/smd.cjs`
+  - `--dir` sets the project root for these targets; `--global` and `--only` apply to `claude` only
+- All three targets share one set of reading and writing rules, `skills/agent-rules.md`.
 
 ### Changed
 
