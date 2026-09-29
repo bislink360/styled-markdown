@@ -1,13 +1,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { CONFIG_FILES, loadRuleConfig, type LoadedConfig } from './config';
 import { readerFor } from './files';
+import { loadMermaidParser } from './mermaidLoader';
 import {
-  CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
+  CALLOUT_TYPES, CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
-  formatSmd, parseFrontMatter, parseSmd, renderSmd, validateSmd, type Diagnostic,
+  checkMermaid, formatSmd, FRONTMATTER_SCHEMA, frontMatterValues, parseFrontMatter, parseSmd, renderSmd, validateSmd, type Diagnostic,
 } from './core';
-import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
+import {
+  anchorLine, anchorTargets, isDocumentPath, linkAt, linkCompletionContext, splitTarget, type LinkCompletionContext,
+} from './core/links';
+import { encodeAnchor, headingAt, linksToAnchor, renameHeading } from './core/anchors';
+import { blockquoteToCallout, containerAt, isCallout, wrapLines, type LineEdit } from './core/refactors';
+import { frontMatterProperty } from './core/frontmatterSchema';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
 
@@ -25,30 +32,52 @@ const SEVERITY: Record<Diagnostic['severity'], vscode.DiagnosticSeverity> = {
 /** Keeps the core diagnostic (with its fix) next to the VS Code one. */
 const fixes = new WeakMap<vscode.Diagnostic, NonNullable<Diagnostic['fix']>>();
 
+function toVscodeDiagnostic(d: Diagnostic): vscode.Diagnostic {
+  const diag = new vscode.Diagnostic(new vscode.Range(d.line, d.column, d.line, d.endColumn), d.message, SEVERITY[d.severity]);
+  diag.source = 'smd';
+  diag.code = d.code;
+  if (d.fix) fixes.set(diag, d.fix);
+  return diag;
+}
+
 export class SmdDiagnostics implements vscode.Disposable {
   readonly collection = vscode.languages.createDiagnosticCollection('smd');
+  /** Problems in smd.config.json / .smdrc files, shown on those files. */
+  private readonly configProblems = vscode.languages.createDiagnosticCollection('smd-config');
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly disposables: vscode.Disposable[] = [];
+  private configs = new Map<string, LoadedConfig>();
 
   constructor() {
+    const watcher = vscode.workspace.createFileSystemWatcher(`**/{${CONFIG_FILES.join(',')}}`);
+    const reload = () => {
+      this.configs = new Map();
+      this.configProblems.clear();
+      vscode.workspace.textDocuments.forEach((d) => void this.update(d));
+    };
     this.disposables.push(
-      vscode.workspace.onDidOpenTextDocument((d) => this.update(d)),
+      watcher, watcher.onDidCreate(reload), watcher.onDidChange(reload), watcher.onDidDelete(reload),
+      vscode.workspace.onDidOpenTextDocument((d) => void this.update(d)),
       vscode.workspace.onDidChangeTextDocument((e) => this.schedule(e.document)),
       vscode.workspace.onDidCloseTextDocument((d) => this.collection.delete(d.uri)),
       vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('smd.validation')) vscode.workspace.textDocuments.forEach((d) => this.update(d));
+        if (e.affectsConfiguration('smd.validation')) vscode.workspace.textDocuments.forEach((d) => void this.update(d));
       }),
     );
-    vscode.workspace.textDocuments.forEach((d) => this.update(d));
+    vscode.workspace.textDocuments.forEach((d) => void this.update(d));
   }
 
   schedule(document: vscode.TextDocument): void {
     const key = document.uri.toString();
     clearTimeout(this.timers.get(key));
-    this.timers.set(key, setTimeout(() => this.update(document), 300));
+    this.timers.set(key, setTimeout(() => void this.update(document), 300));
   }
 
-  update(document: vscode.TextDocument): number {
+  /**
+   * Validate a document. Problems appear at once; Mermaid syntax errors are added when parsing
+   * finishes, unless the document changed in the meantime. Resolves to the number of errors.
+   */
+  async update(document: vscode.TextDocument): Promise<number> {
     if (document.languageId !== 'smd') return 0;
     const config = vscode.workspace.getConfiguration('smd.validation', document.uri);
     if (!config.get<boolean>('enabled', true)) {
@@ -59,21 +88,41 @@ export class SmdDiagnostics implements vscode.Disposable {
     const fileExists = dir && config.get<boolean>('checkLinks', true)
       ? (rel: string) => fs.existsSync(path.resolve(dir, rel))
       : undefined;
-    const items = validateSmd(document.getText(), { fileExists, readFile: readerFor(document) }).map((d) => {
-      const range = new vscode.Range(d.line, d.column, d.line, d.endColumn);
-      const diag = new vscode.Diagnostic(range, d.message, SEVERITY[d.severity]);
-      diag.source = 'smd';
-      diag.code = d.code;
-      if (d.fix) fixes.set(diag, d.fix);
-      return diag;
-    });
+    const text = document.getText();
+    const version = document.version;
+    const rules = document.uri.scheme === 'file' ? this.rulesFor(document.uri.fsPath) : undefined;
+    const items = validateSmd(text, { fileExists, readFile: readerFor(document), rules, staleAfterDays: config.get<number>('staleAfterDays', 180) }).map(toVscodeDiagnostic);
     this.collection.set(document.uri, items);
+
+    const parse = config.get<boolean>('mermaid', true) && /^\s{0,3}(```|~~~)\s*mermaid/im.test(text) ? loadMermaidParser() : undefined;
+    if (parse) {
+      const mermaid = (await checkMermaid(text, parse, rules)).map(toVscodeDiagnostic);
+      if (document.isClosed || document.version !== version) return 0;
+      if (mermaid.length) {
+        items.push(...mermaid);
+        this.collection.set(document.uri, items);
+      }
+    }
     return items.filter((d) => d.severity === vscode.DiagnosticSeverity.Error).length;
+  }
+
+  /** Rule settings from the nearest config file; its problems are shown on the config file. */
+  private rulesFor(file: string) {
+    const config = loadRuleConfig(file, this.configs);
+    if (config.file && config.problems.length) {
+      this.configProblems.set(vscode.Uri.file(config.file), config.problems.map((p) => {
+        const diag = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 1), p, vscode.DiagnosticSeverity.Warning);
+        diag.source = 'smd';
+        return diag;
+      }));
+    }
+    return config.rules;
   }
 
   dispose(): void {
     this.timers.forEach((t) => clearTimeout(t));
     this.collection.dispose();
+    this.configProblems.dispose();
     this.disposables.forEach((d) => d.dispose());
   }
 }
@@ -96,6 +145,56 @@ class QuickFixProvider implements vscode.CodeActionProvider {
 }
 
 // ---------------------------------------------------------------------------
+// Refactorings: wrap in a block, change a callout's type, blockquote → callout
+// ---------------------------------------------------------------------------
+
+const WRAP_TARGETS: Array<[string, string]> = [
+  ['note', 'note'], ['tip', 'tip'], ['warning', 'warning'], ['danger', 'danger'],
+  ['card', 'card'], ['details', 'collapsible details'], ['agent', 'agent instructions'], ['human', 'humans only'],
+];
+
+class RefactorProvider implements vscode.CodeActionProvider {
+  static readonly kind = vscode.CodeActionKind.RefactorRewrite.append('smd');
+
+  provideCodeActions(document: vscode.TextDocument, range: vscode.Range): vscode.CodeAction[] {
+    const text = document.getText();
+    const actions: vscode.CodeAction[] = [];
+    const action = (title: string, apply: (edit: vscode.WorkspaceEdit) => void, preferred = false) => {
+      const a = new vscode.CodeAction(title, RefactorProvider.kind);
+      a.edit = new vscode.WorkspaceEdit();
+      apply(a.edit);
+      a.isPreferred = preferred;
+      actions.push(a);
+    };
+    const replaceLines = (edit: vscode.WorkspaceEdit, e: LineEdit) => edit.replace(document.uri,
+      new vscode.Range(e.startLine, 0, e.endLine, document.lineAt(e.endLine).text.length),
+      e.lines.join(document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n'));
+
+    const quote = blockquoteToCallout(text, range.start.line);
+    if (quote) action(`Convert blockquote to :::${quote.type}`, (edit) => replaceLines(edit, quote.edit), true);
+
+    if (!range.isEmpty) {
+      // A selection ending at the start of a line doesn't include that line.
+      const end = range.end.character === 0 && range.end.line > range.start.line ? range.end.line - 1 : range.end.line;
+      for (const [name, label] of WRAP_TARGETS) {
+        const wrap = wrapLines(text, range.start.line, end, name);
+        if (wrap) action(`Wrap in :::${name} (${label})`, (edit) => replaceLines(edit, wrap));
+      }
+    }
+
+    // Offered on the opening line only, so the lightbulb stays quiet inside the callout's content.
+    const container = containerAt(text, range.start.line);
+    if (container && container.openLine === range.start.line && isCallout(container.name)) {
+      const name = new vscode.Range(container.openLine, container.nameColumn, container.openLine, container.nameColumn + container.name.length);
+      for (const type of CALLOUT_TYPES) {
+        if (type !== container.name) action(`Convert :::${container.name} to :::${type}`, (edit) => edit.replace(document.uri, name, type));
+      }
+    }
+    return actions;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Completion
 // ---------------------------------------------------------------------------
 
@@ -112,24 +211,101 @@ const ATTR_VALUES: Record<string, string[]> = {
   collapsible: ['open'],
 };
 
+/**
+ * Paths and `#anchors` for links, `related:` entries and `file="…"` embeds. Paths are relative to the
+ * document; after `#` the headings and ids of the current or linked document are offered.
+ */
+function linkCompletions(document: vscode.TextDocument, position: vscode.Position, ctx: LinkCompletionContext): vscode.CompletionItem[] {
+  const hash = ctx.kind === 'embed' ? -1 : ctx.target.indexOf('#');
+  const dir = document.uri.scheme === 'file' ? path.dirname(document.uri.fsPath) : undefined;
+
+  if (hash >= 0) {
+    const rel = ctx.target.slice(0, hash);
+    let text: string | undefined;
+    if (!rel) text = document.getText();
+    else if (dir && isDocumentPath(rel)) text = readDocument(path.resolve(dir, decodePath(rel)));
+    if (text === undefined) return [];
+    const range = new vscode.Range(position.line, ctx.column + hash + 1, position.line, position.character);
+    return anchorItems(text, range, '');
+  }
+
+  const items: vscode.CompletionItem[] = [];
+  const slash = ctx.target.lastIndexOf('/');
+  const range = new vscode.Range(position.line, ctx.column + slash + 1, position.line, position.character);
+  if (dir) {
+    const folder = path.resolve(dir, decodePath(ctx.target.slice(0, slash + 1)));
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(folder, { withFileTypes: true }); } catch { /* no such folder */ }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      if (path.join(folder, entry.name) === document.uri.fsPath) continue;
+      const isDir = entry.isDirectory();
+      const isDoc = !isDir && isDocumentPath(entry.name);
+      if (ctx.kind === 'related' && !isDir && !isDoc) continue;
+      const name = ctx.kind === 'link' ? entry.name.replace(/ /g, '%20') : entry.name;
+      const item = new vscode.CompletionItem(isDir ? `${entry.name}/` : entry.name, isDir ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File);
+      item.range = range;
+      item.insertText = isDir ? `${name}/` : name;
+      item.sortText = `${isDoc ? 0 : isDir ? 1 : 2}${entry.name.toLowerCase()}`;
+      if (isDir) item.command = { command: 'editor.action.triggerSuggest', title: 'Suggest files' };
+      items.push(item);
+    }
+  }
+  // An empty link target can also point into this document.
+  if (ctx.kind === 'link' && ctx.target === '') items.push(...anchorItems(document.getText(), range, '#'));
+  return items;
+}
+
+function anchorItems(text: string, range: vscode.Range, prefix: string): vscode.CompletionItem[] {
+  return anchorTargets(text).map((t, i) => {
+    const item = new vscode.CompletionItem(`${prefix}${t.id}`, vscode.CompletionItemKind.Reference);
+    item.range = range;
+    item.detail = t.text !== undefined ? `${'#'.repeat(t.level ?? 1)} ${t.text}` : t.line !== undefined ? `id on line ${t.line + 1}` : 'id';
+    item.sortText = `3${String(i).padStart(5, '0')}`;
+    return item;
+  });
+}
+
+/** The open (possibly unsaved) version of a file, or its contents on disk. */
+function readDocument(file: string): string | undefined {
+  const open = vscode.workspace.textDocuments.find((d) => d.uri.scheme === 'file' && d.uri.fsPath === file);
+  if (open) return open.getText();
+  try { return fs.readFileSync(file, 'utf8'); } catch { return undefined; }
+}
+
+function decodePath(p: string): string {
+  try { return decodeURIComponent(p); } catch { return p; }
+}
+
 class CompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
+    const link = linkCompletionContext(document.getText(), position.line, position.character);
+    if (link) return linkCompletions(document, position, link);
     const fm = parseFrontMatter(document.getText());
 
-    // Front matter keys and values
+    // Front matter keys and values, from FRONTMATTER_SCHEMA
     if (fm.present && position.line > 0 && position.line < fm.bodyStartLine - 1) {
-      const value = /^(status|audience|theme|accent):\s*(\w*)$/.exec(prefix);
+      const value = /^([\w-]+):\s*(\S*)$/.exec(prefix);
       if (value) {
-        const options = value[1] === 'status' ? STATUS_VALUES : value[1] === 'audience' ? AUDIENCE_VALUES
-          : value[1] === 'theme' ? ['auto', 'light', 'dark'] : [...NAMED_COLORS];
-        return options.map((o) => new vscode.CompletionItem(o, vscode.CompletionItemKind.EnumMember));
+        const prop = frontMatterProperty(value[1]);
+        if (prop?.format === 'date') {
+          const item = new vscode.CompletionItem(new Date().toISOString().slice(0, 10), vscode.CompletionItemKind.Value);
+          item.detail = 'Today';
+          return [item];
+        }
+        return frontMatterValues(value[1]).map((o) => new vscode.CompletionItem(o,
+          value[1] === 'accent' ? vscode.CompletionItemKind.Color : vscode.CompletionItemKind.EnumMember));
       }
       if (/^\w*$/.test(prefix)) {
-        return Object.entries(FRONTMATTER_KEYS).map(([key, doc]) => {
+        const present = new Set(Object.keys(fm.data));
+        return Object.entries(FRONTMATTER_SCHEMA.properties).filter(([key]) => !present.has(key)).map(([key, prop], i) => {
           const item = new vscode.CompletionItem(key, vscode.CompletionItemKind.Property);
           item.insertText = `${key}: `;
-          item.documentation = doc;
+          item.documentation = prop.description;
+          item.sortText = String(i).padStart(2, '0');
+          // Offer the allowed values right away.
+          if (frontMatterValues(key).length || prop.format === 'date') item.command = { command: 'editor.action.triggerSuggest', title: 'Suggest values' };
           return item;
         });
       }
@@ -367,6 +543,102 @@ class DefinitionProvider implements vscode.DefinitionProvider {
 }
 
 // ---------------------------------------------------------------------------
+// Find references and rename for heading anchors, across the workspace
+// ---------------------------------------------------------------------------
+
+interface WorkspaceDoc { uri: vscode.Uri; text: string }
+
+/** Every .smd / .md document in the workspace (open ones with their unsaved text), plus `current`. */
+async function workspaceDocuments(current: vscode.TextDocument): Promise<WorkspaceDoc[]> {
+  const uris = await vscode.workspace.findFiles('**/*.{smd,md,markdown}', '**/node_modules/**');
+  const docs = new Map<string, WorkspaceDoc>();
+  for (const uri of [current.uri, ...uris]) {
+    const key = uri.toString();
+    if (docs.has(key)) continue;
+    const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === key);
+    if (open) { docs.set(key, { uri, text: open.getText() }); continue; }
+    try { docs.set(key, { uri, text: Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8') }); } catch { /* unreadable */ }
+  }
+  return [...docs.values()];
+}
+
+const samePath = (a: string, b: string) =>
+  process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);
+
+/** Does a link path written in `from` point at `target`? An empty path is the document itself. */
+function pointsAt(from: vscode.Uri, linkPath: string, target: vscode.Uri): boolean {
+  if (!linkPath) return from.toString() === target.toString();
+  if (from.scheme !== 'file' || target.scheme !== 'file') return false;
+  return samePath(path.resolve(path.dirname(from.fsPath), linkPath), target.fsPath);
+}
+
+/** The anchor at a position: a heading, or the `#anchor` of a link to an existing document. */
+function anchorAt(document: vscode.TextDocument, position: vscode.Position): { uri: vscode.Uri; id: string } | undefined {
+  const text = document.getText();
+  const heading = headingAt(text, position.line);
+  if (heading) return { uri: document.uri, id: heading.slug };
+  const hit = linkAt(text, position.line, position.character);
+  const parts = hit && !hit.reference ? splitTarget(hit.link.target) : undefined;
+  if (!parts?.anchor) return undefined;
+  if (!parts.path) return { uri: document.uri, id: parts.anchor };
+  if (document.uri.scheme !== 'file' || !isDocumentPath(parts.path)) return undefined;
+  const target = path.resolve(path.dirname(document.uri.fsPath), parts.path);
+  return fs.existsSync(target) ? { uri: vscode.Uri.file(target), id: parts.anchor } : undefined;
+}
+
+class ReferenceProvider implements vscode.ReferenceProvider {
+  async provideReferences(document: vscode.TextDocument, position: vscode.Position, context: vscode.ReferenceContext): Promise<vscode.Location[]> {
+    const anchor = anchorAt(document, position);
+    if (!anchor) return [];
+    const docs = await workspaceDocuments(document);
+    const locations: vscode.Location[] = [];
+    if (context.includeDeclaration) {
+      const target = docs.find((d) => d.uri.toString() === anchor.uri.toString());
+      const line = target ? anchorLine(target.text, anchor.id) : undefined;
+      if (target && line !== undefined) {
+        const h = headingAt(target.text, line);
+        locations.push(new vscode.Location(anchor.uri, new vscode.Range(line, h?.start ?? 0, line, h?.end ?? 0)));
+      }
+    }
+    for (const doc of docs) {
+      for (const l of linksToAnchor(doc.text, anchor.id, (p) => pointsAt(doc.uri, p, anchor.uri))) {
+        locations.push(new vscode.Location(doc.uri, new vscode.Range(l.line, l.column, l.line, l.endColumn)));
+      }
+    }
+    return locations;
+  }
+}
+
+class RenameProvider implements vscode.RenameProvider {
+  prepareRename(document: vscode.TextDocument, position: vscode.Position): { range: vscode.Range; placeholder: string } {
+    const heading = headingAt(document.getText(), position.line);
+    if (!heading) throw new Error('Rename a heading to update every link to it.');
+    return { range: new vscode.Range(heading.line, heading.start, heading.line, heading.end), placeholder: heading.text };
+  }
+
+  async provideRenameEdits(document: vscode.TextDocument, position: vscode.Position, newName: string): Promise<vscode.WorkspaceEdit | undefined> {
+    const text = document.getText();
+    const heading = headingAt(text, position.line);
+    const renamed = heading && renameHeading(text, position.line, newName);
+    if (!heading || !renamed) return undefined;
+    const edit = new vscode.WorkspaceEdit();
+    const headingRange = new vscode.Range(heading.line, heading.start, heading.line, heading.end);
+    edit.replace(document.uri, headingRange, renamed.lineText.slice(heading.start, renamed.lineText.length - (text.split(/\r?\n/)[heading.line].length - heading.end)));
+    if (!renamed.changes.length) return edit;
+    for (const doc of await workspaceDocuments(document)) {
+      for (const { from, to } of renamed.changes) {
+        for (const l of linksToAnchor(doc.text, from, (p) => pointsAt(doc.uri, p, document.uri))) {
+          // A link inside the renamed heading text is replaced along with it.
+          if (doc.uri.toString() === document.uri.toString() && headingRange.contains(new vscode.Position(l.line, l.column))) continue;
+          edit.replace(doc.uri, new vscode.Range(l.line, l.column, l.line, l.endColumn), encodeAnchor(l.raw, to));
+        }
+      }
+    }
+    return edit;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Formatting (Format Document, format on save): the same rules as `smd fmt`
 // ---------------------------------------------------------------------------
 
@@ -396,12 +668,15 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdD
   context.subscriptions.push(
     diagnostics,
     vscode.languages.registerCodeActionsProvider(SELECTOR, new QuickFixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
-    vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`'),
+    vscode.languages.registerCodeActionsProvider(SELECTOR, new RefactorProvider(), { providedCodeActionKinds: [RefactorProvider.kind] }),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`', '(', '/', '#', '"'),
     vscode.languages.registerHoverProvider(SELECTOR, new HoverProvider()),
     vscode.languages.registerColorProvider(SELECTOR, new ColorProvider()),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, new SymbolProvider()),
     vscode.languages.registerFoldingRangeProvider(SELECTOR, new FoldingProvider()),
     vscode.languages.registerDefinitionProvider(SELECTOR, new DefinitionProvider()),
+    vscode.languages.registerReferenceProvider(SELECTOR, new ReferenceProvider()),
+    vscode.languages.registerRenameProvider(SELECTOR, new RenameProvider()),
     vscode.languages.registerDocumentFormattingEditProvider(SELECTOR, new FormattingProvider()),
   );
   return diagnostics;

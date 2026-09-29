@@ -160,3 +160,91 @@ export function anchorLine(text: string, id: string): number | undefined {
   const i = text.split(/\r?\n/).findIndex((l) => attr.test(l));
   return i < 0 ? undefined : i;
 }
+
+/**
+ * What is being typed at a cursor, for path and anchor completion. `target` is the partial link
+ * target before the cursor and `column` where it starts. Kinds:
+ * - `link`: an inline link or image `](…`, or a reference definition `[label]: …`
+ * - `related`: a front matter `related:` entry (documents only)
+ * - `embed`: a code fence `file="…"` (any file, no anchors)
+ */
+export interface LinkCompletionContext {
+  kind: 'link' | 'related' | 'embed';
+  target: string;
+  column: number;
+}
+
+export function linkCompletionContext(text: string, line: number, character: number): LinkCompletionContext | undefined {
+  const lines = text.split(/\r?\n/);
+  const prefix = (lines[line] ?? '').slice(0, character);
+  const at = (kind: LinkCompletionContext['kind'], target: string): LinkCompletionContext =>
+    ({ kind, target, column: character - target.length });
+
+  const fm = parseFrontMatter(text);
+  if (fm.present && line > 0 && line < fm.bodyStartLine - 1) {
+    const inline = /^related\s*:\s*(?:\[(?:[^\]]*,)?)?\s*["']?([^\s,"'[\]]*)$/.exec(prefix);
+    if (inline) return at('related', inline[1]);
+    const item = /^\s*-\s+["']?([^\s"']*)$/.exec(prefix);
+    if (item) {
+      // A block list item belongs to the nearest key above it.
+      for (let i = line - 1; i > 0; i--) {
+        const key = /^([\w-]+)\s*:/.exec(lines[i]);
+        if (key) return key[1] === 'related' ? at('related', item[1]) : undefined;
+      }
+    }
+    return undefined;
+  }
+
+  const fence = codeFenceAt(lines, line, fm.bodyStartLine);
+  if (fence === 'open') {
+    const embed = /\bfile\s*=\s*["']([^"']*)$/.exec(prefix);
+    return embed ? at('embed', embed[1]) : undefined;
+  }
+  if (fence === 'inside') return undefined;
+  // Inside inline code: an odd number of backtick runs before the cursor.
+  if ((prefix.match(/`+/g) ?? []).length % 2 === 1) return undefined;
+
+  const inlineLink = /\]\(\s*<?([^\s()<>]*)$/.exec(prefix);
+  if (inlineLink) return at('link', inlineLink[1]);
+  const definition = /^\s{0,3}\[[^\]\n]+\]:\s*<?([^\s<>]*)$/.exec(prefix);
+  if (definition) return at('link', definition[1]);
+  return undefined;
+}
+
+/** Whether `line` opens a code fence, is inside one, or neither. */
+function codeFenceAt(lines: string[], line: number, start: number): 'open' | 'inside' | undefined {
+  let fence: { char: string; len: number } | null = null;
+  for (let i = start; i <= line && i < lines.length; i++) {
+    const mark = /^\s{0,3}(`{3,}|~{3,})/.exec(lines[i]);
+    if (fence) {
+      if (i === line) return 'inside';
+      if (mark && mark[1][0] === fence.char && mark[1].length >= fence.len && !lines[i].slice(mark[0].length).trim()) fence = null;
+      continue;
+    }
+    if (mark) {
+      if (i === line) return 'open';
+      fence = { char: mark[1][0], len: mark[1].length };
+    }
+  }
+  return undefined;
+}
+
+/** Something a `#fragment` can point at, for completion: headings first, then other ids. */
+export interface AnchorTarget {
+  id: string;
+  /** Heading text, or undefined for `{#id}` blocks and HTML ids. */
+  text?: string;
+  level?: number;
+  line?: number;
+}
+
+export function anchorTargets(text: string): AnchorTarget[] {
+  // From the incremental parse, like anchorIds: headings, then `{#id}` blocks and HTML ids/names.
+  const { headings, ids } = parseSmd(text);
+  const targets: AnchorTarget[] = headings.map((h) => ({ id: h.slug, text: h.text, level: h.level, line: h.line }));
+  const seen = new Set(targets.map((t) => t.id));
+  for (const id of ids) {
+    if (id && !seen.has(id)) { seen.add(id); targets.push({ id, line: anchorLine(text, id) }); }
+  }
+  return targets;
+}
