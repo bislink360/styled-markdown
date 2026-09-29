@@ -1,0 +1,66 @@
+# Local SonarQube for the pre-release static analysis gate. Driven by scripts/sonar-scan.mjs;
+# you normally don't run this file by hand.
+#
+#   server:  docker compose -p smd-sonar -f .claude/skills/sonarqube-scan/docker-compose.yml up -d
+#   scanner: started per run by the script (profile "scan"), with the repository mounted read-write
+#
+# The UI is bound to 127.0.0.1 only. Data (issue triage, reviewed hotspots, history) lives in
+# named volumes and survives restarts; `down -v` wipes it.
+
+name: smd-sonar
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar   # only reachable on the compose network
+      POSTGRES_DB: sonar
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonar"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  sonarqube:
+    image: ${SONARQUBE_IMAGE:-sonarqube:community}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+      # Docker Desktop / WSL2 hosts rarely have vm.max_map_count tuned for Elasticsearch.
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      SONAR_TELEMETRY_ENABLE: "false"
+    ports:
+      - "127.0.0.1:${SONAR_PORT:-9000}:9000"
+    volumes:
+      - data:/opt/sonarqube/data
+      - extensions:/opt/sonarqube/extensions
+      - logs:/opt/sonarqube/logs
+    restart: unless-stopped
+
+  scanner:
+    image: ${SONAR_SCANNER_IMAGE:-sonarsource/sonar-scanner-cli:latest}
+    profiles: ["scan"]
+    depends_on:
+      - sonarqube
+    environment:
+      SONAR_HOST_URL: http://sonarqube:9000
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+    working_dir: /usr/src
+    volumes:
+      - ${SMD_REPO_ROOT:-../../..}:/usr/src
+      - scanner-cache:/opt/sonar-scanner/.sonar/cache
+
+volumes:
+  db:
+  data:
+  extensions:
+  logs:
+  scanner-cache:

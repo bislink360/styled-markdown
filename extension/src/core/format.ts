@@ -41,107 +41,136 @@ interface Line { text: string; kind: Kind; indent: number }
 
 interface ContainerNode { open: number; close: number; children: ContainerNode[] }
 
-function formatBody(lines: string[]): Line[] {
-  const out: Line[] = [];
-  const indentOf = (s: string) => /^[ \t]*/.exec(s)![0].replace(/\t/g, '    ').length;
-  const push = (text: string, kind: Kind) => out.push({ text, kind, indent: indentOf(text) });
-  const prevKind = () => out[out.length - 1]?.kind;
-
+/** State shared by the block readers while the body is formatted. */
+interface Body {
+  lines: string[];
+  out: Line[];
   // Container tree, used to pick colon counts once every fence is known.
-  const roots: ContainerNode[] = [];
-  const stack: ContainerNode[] = [];
-  let balanced = true;
-  const opens = new Map<number, { indent: string; name: string; rest: string }>();
-  const closes = new Map<number, string>();
+  roots: ContainerNode[];
+  stack: ContainerNode[];
+  balanced: boolean;
+  opens: Map<number, { indent: string; name: string; rest: string }>;
+  closes: Map<number, string>;
+}
 
+/**
+ * Reads the block starting at line `i`. Returns the index of the last line it consumed, or
+ * null when the line doesn't start that kind of block.
+ */
+type BlockReader = (b: Body, i: number) => number | null;
+
+const indentOf = (s: string) => /^[ \t]*/.exec(s)![0].replace(/\t/g, '    ').length;
+const push = (b: Body, text: string, kind: Kind) => b.out.push({ text, kind, indent: indentOf(text) });
+const prevKind = (b: Body) => b.out[b.out.length - 1]?.kind;
+
+function formatBody(lines: string[]): Line[] {
+  const b: Body = { lines, out: [], roots: [], stack: [], balanced: true, opens: new Map(), closes: new Map() };
   for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-
-    // Fenced code (the same rules as the validator): contents are never touched.
-    const fenceOpen = /^(\s{0,3})(`{3,}|~{3,})(.*)$/.exec(raw);
-    if (fenceOpen && !(fenceOpen[2][0] === '`' && fenceOpen[3].includes('`'))) {
-      const close = new RegExp(`^\\s{0,3}${fenceOpen[2][0] === '`' ? '`' : '~'}{${fenceOpen[2].length},}\\s*$`);
-      push(raw.trimEnd(), 'codeOpen');
-      let j = i + 1;
-      for (; j < lines.length && !close.test(lines[j]); j++) push(lines[j], 'code');
-      if (j < lines.length) push(lines[j].trimEnd(), 'codeClose');
-      i = j;
-      continue;
+    for (const read of BLOCK_READERS) {
+      const last = read(b, i);
+      if (last !== null) { i = last; break; }
     }
-
-    // Display math $$ … $$
-    const trimmed = raw.trim();
-    if (trimmed.startsWith('$$')) {
-      const rest = trimmed.slice(2);
-      if (rest.endsWith('$$') && rest.length > 2) { push(raw, 'text'); continue; }
-      push(raw, 'mathOpen');
-      let j = i + 1;
-      for (; j < lines.length && !lines[j].trimEnd().endsWith('$$'); j++) push(lines[j], 'math');
-      if (j < lines.length) push(lines[j], 'mathClose');
-      i = j;
-      continue;
-    }
-
-    // Raw HTML blocks that start a block: kept verbatim until they end.
-    const html = /^\s{0,3}<(?:(pre|script|style|textarea)\b|(!--)|[A-Za-z/?!])/i.exec(raw);
-    if (html && prevKind() !== 'text') {
-      const ends = html[1] ? (s: string) => new RegExp(`</${html[1]}>`, 'i').test(s)
-        : html[2] ? (s: string) => s.includes('-->')
-          : (s: string) => s.trim() === '';
-      let j = i;
-      if (html[1] || html[2]) {
-        for (; j < lines.length && !ends(lines[j]); j++) push(lines[j], 'raw');
-        if (j < lines.length) push(lines[j], 'raw');
-      } else {
-        for (; j < lines.length && !ends(lines[j]); j++) push(lines[j], 'raw');
-        j--;
-      }
-      i = j;
-      continue;
-    }
-
-    // Containers
-    const close = CONTAINER_CLOSE.exec(raw);
-    if (close) {
-      const node = stack.pop();
-      if (node) node.close = out.length; else balanced = false;
-      closes.set(out.length, close[1]);
-      push(`${close[1]}${close[2]}`, 'close');
-      continue;
-    }
-    const open = CONTAINER_OPEN.exec(raw);
-    if (open) {
-      const node: ContainerNode = { open: out.length, close: -1, children: [] };
-      (stack[stack.length - 1]?.children ?? roots).push(node);
-      stack.push(node);
-      opens.set(out.length, { indent: open[1], name: open[3], rest: open[4] });
-      push(raw, 'open');
-      continue;
-    }
-
-    // Pipe tables (only where one can start, so a new blank line can't turn text into a table)
-    const table = prevKind() === 'text' ? null : readTable(lines, i);
-    if (table) {
-      const rows = formatTable(table.rows);
-      rows.forEach((r, k) => push(r, k === 0 ? 'tableStart' : k === rows.length - 1 ? 'tableEnd' : 'table'));
-      i += table.rows.length - 1;
-      continue;
-    }
-
-    if (trimmed === '') { push('', 'blank'); continue; }
-    // Indented lines may be code blocks: leave them exactly as written.
-    if (indentOf(raw) >= 4) { push(raw, 'text'); continue; }
-
-    if (/^\s{0,3}#{1,6}(\s|$)/.test(raw)) {
-      push(formatHeading(raw.trimEnd()), 'heading');
-      continue;
-    }
-    push(formatInline(raw), 'text');
   }
+  if (b.stack.length) b.balanced = false;
+  applyFenceColons(b);
+  return b.out;
+}
 
-  if (stack.length) balanced = false;
-  // Within each top-level container, every nesting level shares one colon count: the
-  // deepest level uses three and each level above it one more.
+/** Fenced code (the same rules as the validator): contents are never touched. */
+const readCode: BlockReader = (b, i) => {
+  const fenceOpen = /^(\s{0,3})(`{3,}|~{3,})(.*)$/.exec(b.lines[i]);
+  if (!fenceOpen || (fenceOpen[2][0] === '`' && fenceOpen[3].includes('`'))) return null;
+  const close = new RegExp(`^\\s{0,3}${fenceOpen[2][0] === '`' ? '`' : '~'}{${fenceOpen[2].length},}\\s*$`);
+  push(b, b.lines[i].trimEnd(), 'codeOpen');
+  let j = i + 1;
+  for (; j < b.lines.length && !close.test(b.lines[j]); j++) push(b, b.lines[j], 'code');
+  if (j < b.lines.length) push(b, b.lines[j].trimEnd(), 'codeClose');
+  return j;
+};
+
+/** Display math `$$ … $$`, on one line or several. */
+const readMath: BlockReader = (b, i) => {
+  const raw = b.lines[i];
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('$$')) return null;
+  const rest = trimmed.slice(2);
+  if (rest.endsWith('$$') && rest.length > 2) { push(b, raw, 'text'); return i; }
+  push(b, raw, 'mathOpen');
+  let j = i + 1;
+  for (; j < b.lines.length && !b.lines[j].trimEnd().endsWith('$$'); j++) push(b, b.lines[j], 'math');
+  if (j < b.lines.length) push(b, b.lines[j], 'mathClose');
+  return j;
+};
+
+/** Raw HTML blocks that start a block: kept verbatim until they end. */
+const readHtml: BlockReader = (b, i) => {
+  const html = /^\s{0,3}<(?:(pre|script|style|textarea)\b|(!--)|[A-Za-z/?!])/i.exec(b.lines[i]);
+  if (!html || prevKind(b) === 'text') return null;
+  const [, tag, comment] = html;
+  let ends = (s: string) => s.trim() === '';
+  if (tag) ends = (s) => new RegExp(`</${tag}>`, 'i').test(s);
+  else if (comment) ends = (s) => s.includes('-->');
+  let j = i;
+  for (; j < b.lines.length && !ends(b.lines[j]); j++) push(b, b.lines[j], 'raw');
+  // `<pre>` and comments include their closing line; other blocks end before the blank line.
+  if (!tag && !comment) return j - 1;
+  if (j < b.lines.length) push(b, b.lines[j], 'raw');
+  return j;
+};
+
+/** Container fences; the colon counts are fixed afterwards by applyFenceColons. */
+const readContainerFence: BlockReader = (b, i) => {
+  const raw = b.lines[i];
+  const close = CONTAINER_CLOSE.exec(raw);
+  if (close) {
+    const node = b.stack.pop();
+    if (node) node.close = b.out.length; else b.balanced = false;
+    b.closes.set(b.out.length, close[1]);
+    push(b, `${close[1]}${close[2]}`, 'close');
+    return i;
+  }
+  const open = CONTAINER_OPEN.exec(raw);
+  if (!open) return null;
+  const node: ContainerNode = { open: b.out.length, close: -1, children: [] };
+  (b.stack[b.stack.length - 1]?.children ?? b.roots).push(node);
+  b.stack.push(node);
+  b.opens.set(b.out.length, { indent: open[1], name: open[3], rest: open[4] });
+  push(b, raw, 'open');
+  return i;
+};
+
+/** Pipe tables, only where one can start, so a new blank line can't turn text into a table. */
+const readTableBlock: BlockReader = (b, i) => {
+  const table = prevKind(b) === 'text' ? null : readTable(b.lines, i);
+  if (!table) return null;
+  const rows = formatTable(table.rows);
+  rows.forEach((r, k) => {
+    let kind: Kind = 'table';
+    if (k === 0) kind = 'tableStart';
+    else if (k === rows.length - 1) kind = 'tableEnd';
+    push(b, r, kind);
+  });
+  return i + table.rows.length - 1;
+};
+
+/** Blank lines, indented lines, headings and paragraph text; always consumes one line. */
+const readLine: BlockReader = (b, i) => {
+  const raw = b.lines[i];
+  if (raw.trim() === '') push(b, '', 'blank');
+  // Indented lines may be code blocks: leave them exactly as written.
+  else if (indentOf(raw) >= 4) push(b, raw, 'text');
+  else if (/^\s{0,3}#{1,6}(\s|$)/.test(raw)) push(b, formatHeading(raw.trimEnd()), 'heading');
+  else push(b, formatInline(raw), 'text');
+  return i;
+};
+
+const BLOCK_READERS: BlockReader[] = [readCode, readMath, readHtml, readContainerFence, readTableBlock, readLine];
+
+/**
+ * Within each top-level container, every nesting level shares one colon count: the deepest
+ * level uses three and each level above it one more. Unbalanced documents keep their colons.
+ */
+function applyFenceColons(b: Body): void {
   const colons = new Map<number, number>();
   const height = (n: ContainerNode): number => (n.children.length ? 1 + Math.max(...n.children.map(height)) : 0);
   const assign = (n: ContainerNode, count: number) => {
@@ -149,17 +178,16 @@ function formatBody(lines: string[]): Line[] {
     colons.set(n.close, count);
     n.children.forEach((c) => assign(c, count - 1));
   };
-  if (balanced) roots.forEach((r) => assign(r, 3 + height(r)));
+  if (b.balanced) b.roots.forEach((r) => assign(r, 3 + height(r)));
 
-  for (const [idx, o] of opens) {
-    const count = colons.get(idx) ?? /^\s*(:+)/.exec(out[idx].text)![1].length;
-    out[idx].text = `${o.indent}${':'.repeat(count)}${o.name}${formatContainerRest(o.name, o.rest)}`;
+  for (const [idx, o] of b.opens) {
+    const count = colons.get(idx) ?? /^\s*(:+)/.exec(b.out[idx].text)![1].length;
+    b.out[idx].text = `${o.indent}${':'.repeat(count)}${o.name}${formatContainerRest(o.name, o.rest)}`;
   }
-  for (const [idx, indent] of closes) {
+  for (const [idx, indent] of b.closes) {
     const count = colons.get(idx);
-    if (count) out[idx].text = `${indent}${':'.repeat(count)}`;
+    if (count) b.out[idx].text = `${indent}${':'.repeat(count)}`;
   }
-  return out;
 }
 
 /** Everything after the container name: `{attrs} Title`. */
