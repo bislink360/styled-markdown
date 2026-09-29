@@ -2,7 +2,8 @@ import { parseAttrs } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { parseFrontMatter, asStringList } from './frontmatter';
-import { dueState, HEADING_ATTRS, renderSmd, slugify, type Heading } from './render';
+import { parseSmd } from './parse';
+import { dueState, HEADING_ATTRS, slugify, type Heading } from './render';
 import { CALLOUT_TYPES } from './spec';
 
 /**
@@ -64,7 +65,7 @@ function matches(h: Heading, query: string): boolean {
 export function agentView(text: string, options: AgentViewOptions = {}): AgentViewResult {
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);
-  const headings = renderSmd(text).headings;
+  const headings = parseSmd(text).headings;
   const sections = sectionsOf(headings, lines.length);
 
   // Which lines are in scope?
@@ -121,7 +122,11 @@ function header(data: Record<string, unknown>, sections: string[] | null): strin
   return out.join('\n');
 }
 
-interface TransformOptions extends AgentViewOptions { onlyAgentBlocks?: boolean }
+interface TransformOptions extends AgentViewOptions {
+  onlyAgentBlocks?: boolean;
+  /** Receives every emitted line with the source line it came from. */
+  collect?: Array<[at: number, line: string]>;
+}
 
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
@@ -134,6 +139,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     if (!inScope(at) || dropping()) return;
     if (options.onlyAgentBlocks && !inAgent()) return;
     out.push(line);
+    options.collect?.push([at, line]);
   };
 
   let fence: { marker: string; start: number; body: string[]; info: string } | null = null;
@@ -329,10 +335,37 @@ function plain(s: string, today: string | undefined, openTask: boolean): string 
 // decide what to read before reading anything.
 // ---------------------------------------------------------------------------
 
+/**
+ * The agent view of any line range, as `transform` would produce it for that scope. The document is
+ * transformed once and each range is cut from the result, so an outline stays linear in document
+ * size. Brief views count completed tasks per scope, so they are transformed per range.
+ */
+function sectionViews(lines: string[], from: number, options: TransformOptions): (start: number, end: number) => string {
+  if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);
+  const emitted: Array<[number, string]> = [];
+  transform(lines, from, () => true, { ...options, collect: emitted });
+  const bound = (line: number) => {
+    let lo = 0;
+    let hi = emitted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (emitted[mid][0] < line) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  };
+  const ordered = emitted.every((e, i) => i === 0 || emitted[i - 1][0] <= e[0]);
+  return (start, end) => {
+    const inRange = ordered
+      ? emitted.slice(bound(start), bound(end + 1))
+      : emitted.filter(([at]) => at >= start && at <= end);
+    return inRange.map(([, line]) => line).join('\n').replace(/\n{3,}/g, '\n\n');
+  };
+}
+
 export function outline(text: string, options: AgentViewOptions = {}): string {
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);
-  const headings = renderSmd(text).headings;
+  const headings = parseSmd(text).headings;
   const full = agentView(text, { ...options, sections: undefined });
   const title = typeof fm.data.title === 'string' ? fm.data.title : headings.find((h) => h.level === 1)?.text ?? '(untitled)';
   const status = typeof fm.data.status === 'string' ? ` · ${fm.data.status}` : '';
@@ -343,10 +376,11 @@ export function outline(text: string, options: AgentViewOptions = {}): string {
   out.push('');
 
   const sections = sectionsOf(headings, lines.length);
+  const sectionView = sectionViews(lines, fm.bodyStartLine, { ...options, lineRefs: false });
   const rows = sections.map((s) => {
     const sectionText = lines.slice(s.start, s.end + 1);
     // Cost of reading this section (including its subsections) through the agent view.
-    const view = transform(lines, fm.bodyStartLine, (l) => l >= s.start && l <= s.end, { ...options, lineRefs: false });
+    const view = sectionView(s.start, s.end);
     const openTasks = sectionText.filter((l) => /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(l)).length;
     const notes = [
       openTasks ? `${openTasks} open task${openTasks > 1 ? 's' : ''}` : '',

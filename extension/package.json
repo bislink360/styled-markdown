@@ -51,6 +51,12 @@
   "contributes": {
     "languages": [
       {
+        "id": "json",
+        "filenames": [
+          ".smdrc"
+        ]
+      },
+      {
         "id": "smd",
         "aliases": [
           "Styled Markdown",
@@ -64,6 +70,16 @@
           "light": "./media/smd-icon.svg",
           "dark": "./media/smd-icon.svg"
         }
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "smd.config.json",
+          ".smdrc",
+          ".smdrc.json"
+        ],
+        "url": "./schemas/smd-config.schema.json"
       }
     ],
     "grammars": [
@@ -264,6 +280,17 @@
           "type": "boolean",
           "default": true,
           "description": "Warn about relative links, images and related: entries that point to missing files or headings."
+        },
+        "smd.validation.mermaid": {
+          "type": "boolean",
+          "default": true,
+          "description": "Parse Mermaid diagrams and report syntax errors before they render."
+        },
+        "smd.validation.staleAfterDays": {
+          "type": "number",
+          "default": 180,
+          "minimum": 0,
+          "description": "Report a document as stale when its front matter \"updated\" date is more than this many days ago and its status is not archived or deprecated. 0 turns the check off."
         }
       }
     }

@@ -1,0 +1,172 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/bislink360/styled-markdown/main/extension/schemas/smd-frontmatter.schema.json",
+  "title": "Styled Markdown (.smd) front matter",
+  "description": "YAML front matter at the top of a .smd document. Keys not listed here are kept as custom metadata.",
+  "type": "object",
+  "properties": {
+    "smd": {
+      "description": "Styled Markdown spec version (currently 1)",
+      "type": "integer",
+      "enum": [
+        1
+      ]
+    },
+    "title": {
+      "description": "Document title",
+      "type": "string"
+    },
+    "summary": {
+      "description": "One or two sentence summary — agents read this first",
+      "type": "string"
+    },
+    "status": {
+      "description": "draft | review | approved | deprecated | archived",
+      "type": "string",
+      "enum": [
+        "draft",
+        "review",
+        "approved",
+        "deprecated",
+        "archived"
+      ]
+    },
+    "owners": {
+      "description": "List of owners (people or teams)",
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "examples": [
+        [
+          "@maya",
+          "@platform-team"
+        ]
+      ]
+    },
+    "audience": {
+      "description": "Who it is for: humans | agents | both",
+      "type": "string",
+      "enum": [
+        "humans",
+        "agents",
+        "both"
+      ]
+    },
+    "tags": {
+      "description": "List of tags",
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "examples": [
+        [
+          "checkout",
+          "q4"
+        ]
+      ]
+    },
+    "version": {
+      "description": "Document version",
+      "type": [
+        "string",
+        "number"
+      ],
+      "examples": [
+        "1.0"
+      ]
+    },
+    "updated": {
+      "description": "Last updated date (YYYY-MM-DD)",
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "created": {
+      "description": "Created date (YYYY-MM-DD)",
+      "type": "string",
+      "format": "date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "theme": {
+      "description": "Preview theme hint: auto | light | dark",
+      "type": "string",
+      "enum": [
+        "auto",
+        "light",
+        "dark"
+      ]
+    },
+    "accent": {
+      "description": "Accent color used for headings and links (named color or #hex)",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "red",
+            "orange",
+            "amber",
+            "yellow",
+            "green",
+            "teal",
+            "cyan",
+            "blue",
+            "indigo",
+            "purple",
+            "pink",
+            "gray",
+            "muted",
+            "accent"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+        },
+        {
+          "type": "string",
+          "pattern": "^(?:rgb|rgba|hsl|hsla)\\(\\s*[\\d.%\\s,/-]+\\)$"
+        }
+      ]
+    },
+    "toc": {
+      "description": "true to render a table of contents after the header",
+      "type": "boolean"
+    },
+    "related": {
+      "description": "List of related documents (paths or URLs)",
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "examples": [
+        [
+          "adr-0007-event-bus.smd",
+          "https://example.com/spec"
+        ]
+      ]
+    }
+  },
+  "additionalProperties": true
+}

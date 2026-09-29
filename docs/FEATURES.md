@@ -52,6 +52,8 @@ theme: auto               # auto | light | dark
 - **Preview:** a header card with a status pill, version, date, owners and tags, plus an optional table of contents.
 - **Agent view:** `# Saved Searches`, one `status: review · owners: … · tags: …` line, and `summary: …`.
 - **Tip:** the `summary` is the first thing every agent reads. Make it self-contained.
+- **Schema:** keys and values are completed and checked from one JSON Schema, published as [`smd-frontmatter.schema.json`](../extension/schemas/smd-frontmatter.schema.json) and as `styled-markdown/frontmatter.schema.json` on npm for YAML tooling and pipelines. Typing `updated: ` suggests today's date.
+- **Staleness:** a live document whose `updated` date is more than 180 days old gets a `frontmatter/stale` hint. Bump `updated` after a review, or set `status: archived`. The threshold is set with `smd.validation.staleAfterDays` or `smd validate --stale-after <days>`, where `0` turns it off.
 
 ## 2. Callouts and collapsibles
 
@@ -293,12 +295,15 @@ People-only content anywhere in the document.
 | Feature | How |
 |---|---|
 | Syntax highlighting | Blocks, attributes, directives, math and front matter |
-| Completions | After `:::` (blocks, with snippets for tabs/columns), `:` (directives), `{` (attributes), `=` (allowed values: colors, statuses, HTTP methods…), front matter keys and values, Mermaid types |
+| Completions | After `:::` (blocks, with snippets for tabs/columns), `:` (directives), `{` (attributes), `=` (allowed values: colors, statuses, HTTP methods…), front matter keys and values, Mermaid types. In links (`](…`, `[label]: …`), `related:` entries and `file="…"` embeds: relative files and folders, then after `#` the headings and ids of this or the linked document |
 | Hover | Documentation for blocks and directives |
 | Color picker | Swatches next to `color=`, `bg=`, `border=`, `accent:` |
 | Outline & folding | Headings in the Outline view; fold blocks, code and front matter |
 | Go to definition | `F12` or `Ctrl+Click` on `#anchor`, `other.smd#anchor`, a relative file, a `related:` entry or a `[text][label]` reference jumps to the heading, `{#id}` block, file or definition |
 | Format Document | `Shift+Alt+F` or format on save applies the `smd fmt` rules: container fence colons by nesting level, canonical attribute lists, aligned tables, blank lines around blocks. Layout only; the rendered document never changes |
+| Find references | `Shift+F12` on a heading, or on the `#anchor` of a link, lists the heading and every link to it in the workspace's `.smd` and `.md` files |
+| Rename heading | `F2` on a heading renames it and updates every `#anchor` and `other.smd#anchor` link to it across the workspace, including the numbered anchors of later headings with the same text. Headings with an explicit `{#id}` keep their anchor, so links are left alone |
+| Refactorings | `Ctrl+.` with a selection wraps it in `:::note`, `:::tip`, `:::warning`, `:::danger`, `:::card`, `:::details`, `:::agent` or `:::human` (a selection that splits a code block or container isn't offered). On a callout's opening line: convert it to another callout type. In a blockquote that starts with `[!NOTE]`-style alerts or a bold label (`**Warning:**`, `**Tip**:`…): convert it to the matching callout |
 | Workspace symbols | `Ctrl+T` searches every `.smd` in the workspace: headings, `:::decision` and `:::risk` titles, and `:::api` endpoints by method and path (`post orders` finds `POST /v1/orders — Create an order`) |
 | Hover previews | Hover a link's text or target: `#anchor` and `other.smd#anchor` show the start of that section, `other.smd` shows its title, status, summary and sections. Hover a ```` ```ts file="…" lines="…" ```` line to see the embedded code |
 | Snippets (34) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `api` `timeline` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
@@ -326,15 +331,49 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `:::api{method=POST}` | `attrs/required` | — |
 | unclosed `:::` | `container/unclosed` | — |
 | ```` ```mermaid flowchat ```` | `mermaid/type` | → `flowchart` |
+| `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |
 | `$$\frac{1}{$$` | `math/syntax` | — |
 | `file="nope.ts"` | `fence/embed-missing` | — |
 | `[x](#rolout)`, `[x](plan.smd#rolout)` | `link/missing-anchor` | → closest heading id |
 | `[x](gone.md)`, `related: [gone.smd]` | `link/missing-file` | — |
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
+| `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
+| `updated` more than 180 days ago | `frontmatter/stale` | — |
 | overdue open task | `task/overdue` | — |
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
+
+### Configuring rules
+
+Put a `smd.config.json` (or `.smdrc`, `.smdrc.json`) next to your documents or in any parent folder. The nearest one applies, and the search stops at the repository root. Turn rules off, or change their severity, by code, by category (`link/*`) or for every rule (`*`). The most specific key wins:
+
+```json
+{
+  "rules": {
+    "frontmatter/unknown-key": "off",
+    "link/*": "error",
+    "task/overdue": "warning"
+  }
+}
+```
+
+Settings are `off`, `error`, `warning`, `info` and `hint`. VS Code completes and checks rule codes in these files, reloads them as you edit, and shows any problems on the config file. `smd validate` prints them and counts them as warnings; use `--config <file>` to point at a specific file.
+
+Silence a rule in one place with an HTML comment, which renders as nothing:
+
+```markdown
+<!-- smd-disable-next-line link/missing-file -->
+See the [draft](drafts/not-yet.smd).
+
+Legacy table [x]{color=brand} <!-- smd-disable-line attrs/value -->
+
+<!-- smd-disable link/* -->
+…a section of links that are checked elsewhere…
+<!-- smd-enable link/* -->
+```
+
+Without codes, a comment silences every rule. Codes can be separated by spaces or commas. An unknown code is reported as `rules/unknown`, with a fix when a close match exists. Comments inside code blocks are ignored.
 
 ## 16. Export and conversion
 
@@ -351,7 +390,7 @@ smd outline <file>                                   sections, line ranges, toke
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
-smd validate <files|dirs> [--json] [--fix] [--strict]
+smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]
 smd to-md <file> [-o out.md]
