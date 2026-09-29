@@ -34,6 +34,7 @@ smd render docs/spec.smd -o spec.html # standalone HTML page
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
 smd init docs/plan.smd --template prd # new document: prd, adr, rfc, runbook, api, status-report, meeting-notes
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
+smd mcp                               # MCP server (stdio) with outline, section, agent, tasks, validate, query
 ```
 
 Run `smd --help` for every option.

@@ -109,6 +109,8 @@ Agents without skill support can follow the same workflow through their instruct
      then run `node tools/smd.cjs validate <file> --fix` until there are 0 errors.
    ```
 
+Agents that support the Model Context Protocol (Cursor, VS Code, Claude Desktop, Claude Code) can instead register the MCP server, `smd mcp`, which offers the same reading commands as tools. See [MCP server](AGENTS.md#mcp-server).
+
 ## Verify the skills work
 
 Try these prompts in a new session in a repository that contains `.smd` files (this repository's `examples/` folder works):

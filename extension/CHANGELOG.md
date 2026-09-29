@@ -11,6 +11,10 @@
   - `--titles` prints one line per block, `--json` gives type, lines, title, attributes, section and agent-view text; `--brief` and `--no-lines` work as in `smd agent`
   - a misspelled type or attribute is an error with a suggestion (exit code 2), and the exit code is 1 when nothing matches
 - Library: `querySmd(source, selector, options)`, `parseSelector` and `SelectorError`.
+- `smd mcp [--root <dir>]` runs a Model Context Protocol server over stdio, so agents in Claude Code, Cursor, VS Code or Claude Desktop can read `.smd` documents without a shell:
+  - tools: `outline` (file), `section` (file, sections), `agent` (file, brief, includeHuman), `tasks` (paths, all, mine), `validate` (paths; JSON as `smd validate --json`) and `query` (selector, paths, brief, titles)
+  - paths resolve against the root folder (default: the current folder); paths outside it, including through symbolic links, are refused, only `.smd` files are read, and code embeds only come from inside the root
+  - no new dependencies; register it with `claude mcp add smd -- npx -y -p styled-markdown smd mcp` or the `mcp.json` snippets in docs/AGENTS.md
 
 ### Changed
 

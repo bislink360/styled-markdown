@@ -145,6 +145,7 @@ History and research. People see it; agents skip it.
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
 | `smd init <file> --template prd` | New doc from 7 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect |
+| `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
 | `smd skills install [--global]` | Install the agent skills |
 
 </details>
@@ -200,6 +201,16 @@ node smd.cjs skills install --global
 ```
 
 Or download `styled-markdown-reader.zip` and `styled-markdown-writer.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest). This installs both skills into `~/.claude/skills/` for Claude Code. For Claude.ai, the Claude API / Agent SDK, Copilot, Cursor and other agents, see **[docs/SKILLS.md](docs/SKILLS.md)**.
+
+### MCP server
+
+Give any MCP client (Claude Code, Cursor, VS Code, Claude Desktop) the reading tools without shell access:
+
+```bash
+claude mcp add smd -- npx -y -p styled-markdown smd mcp
+```
+
+Other clients and options: **[docs/AGENTS.md](docs/AGENTS.md#mcp-server)**.
 
 ## Token-efficient reading for agents
 

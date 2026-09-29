@@ -2,12 +2,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, checkMermaid, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, querySmd, renderPage,
-  smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type Diagnostic, type QueryMatch, type Selector, type TaskInfo,
+  agentView, applyFixes, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, renderPage,
+  smdToMarkdown, SelectorError, SMD_VERSION, type Diagnostic, type Selector,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
+import { runMcpServer } from './mcp';
 import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
+import { collect, diagnose, existsFrom, queryRows, querySummary, queryText, read, readerFor, taskLine, taskRows, taskSummary } from './workspace';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
 declare const __SMD_PKG_VERSION__: string;
@@ -55,6 +57,12 @@ Checking and converting:
       New document from a template: ${Object.keys(TEMPLATES).join(', ')} (default: prd)
   smd templates                            List templates
 
+Agent integration:
+  smd mcp [--root <dir>]
+      Model Context Protocol server over stdio with the tools outline, section, agent, tasks, validate
+      and query. Only .smd files inside --root (default: the current directory) can be read.
+      Register it, e.g.: claude mcp add smd -- npx -y -p styled-markdown smd mcp
+
 Agent skills:
   smd skills install [--dir <skills-dir>] [--global] [--only reader|writer]
       Install the agent skills (each with this CLI bundled) into .claude/skills (default),
@@ -65,7 +73,7 @@ Agent skills:
 
 interface Args { command?: string; positional: string[]; flags: Set<string>; values: Map<string, string[]> }
 
-const VALUE_OPTIONS = new Set(['--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
+const VALUE_OPTIONS = new Set(['--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root']);
 
 function parseArgs(argv: string[]): Args {
   const [command, ...rest] = argv;
@@ -161,6 +169,8 @@ function main(argv: string[]): number | Promise<number> {
     case 'templates':
       for (const [name, t] of Object.entries(TEMPLATES)) console.log(`${name.padEnd(15)} ${t.description}`);
       return 0;
+    case 'mcp':
+      return mcp(value('--root'));
     case 'skills':
       if (positional[0] !== 'install') return fail('Usage: smd skills install [--dir <skills-dir>] [--global] [--only reader|writer]');
       return installSkills(flags.has('--global') ? path.join(os.homedir(), '.claude', 'skills') : value('--dir') ?? path.join('.claude', 'skills'), value('--only'));
@@ -196,12 +206,7 @@ async function validate(
       configProblems += config.problems.length;
       for (const p of config.problems) console.error(`${config.file}: warning  ${p}`);
     }
-    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today, staleAfterDays, rules: config.rules };
-    const check = async (text: string) => {
-      const found = validateSmd(text, opts);
-      if (parse) found.push(...await checkMermaid(text, parse, config.rules));
-      return found.sort((a, b) => a.line - b.line || a.column - b.column);
-    };
+    const check = (text: string) => diagnose(text, file, { rules: config.rules, today, staleAfterDays, parse });
     let text = read(file);
     let diagnostics = await check(text);
     let fixed: number | undefined;
@@ -274,40 +279,17 @@ ${files.length} file(s) checked: ${changed.length} ${check ? 'need formatting' :
 function tasks(targets: string[], all: boolean, mine: string | undefined, json: boolean, today?: string): number {
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
-  const rows: Array<TaskInfo & { file: string }> = [];
-  for (const file of files) {
-    for (const t of extractTasks(read(file), today)) {
-      if (!all && t.done) continue;
-      if (mine && !t.assignees.some((a) => a.toLowerCase() === mine.toLowerCase())) continue;
-      rows.push({ ...t, file });
-    }
-  }
-  const rank = (p?: string) => {
-    const k = (p ?? '').toLowerCase();
-    return ({ p0: 0, critical: 0, p1: 1, high: 1, p2: 2, medium: 2, p3: 3, low: 3, p4: 4 } as Record<string, number>)[k] ?? 5;
-  };
-  rows.sort((a, b) => Number(b.overdue ?? false) - Number(a.overdue ?? false) || rank(a.priority) - rank(b.priority)
-    || (a.due ?? '9999').localeCompare(b.due ?? '9999') || a.file.localeCompare(b.file) || a.line - b.line);
+  const rows = taskRows(files, { all, mine, today });
   if (json) {
     process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
     return 0;
   }
-  for (const r of rows) {
-    const bits = [
-      r.done ? '[x]' : '[ ]',
-      r.priority ? `[${r.priority}]` : '',
-      r.text,
-      r.assignees.length ? r.assignees.join(' ') : '',
-      r.due ? `(due ${r.due}${r.overdue ? ', OVERDUE' : ''})` : '',
-    ].filter(Boolean);
-    console.log(`${r.file}:${r.line + 1}  ${bits.join(' ')}${r.section ? `  — ${r.section}` : ''}`);
-  }
-  console.error(`[smd] ${rows.length} task(s)${all ? '' : ' open'}${rows.some((r) => r.overdue) ? `, ${rows.filter((r) => r.overdue).length} overdue` : ''}.`);
+  for (const r of rows) console.log(taskLine(r));
+  console.error(`[smd] ${taskSummary(rows, all)}`);
   return 0;
 }
 
 interface QueryFlags { json: boolean; titles: boolean; brief: boolean; lineRefs: boolean; today?: string }
-type QueryRow = QueryMatch & { file: string };
 
 function query(selector: string | undefined, targets: string[], flags: QueryFlags): number {
   if (!selector) return fail('Usage: smd query "<selector>" <files|dirs...>, e.g. smd query "decision[status=accepted]" docs/');
@@ -321,29 +303,16 @@ function query(selector: string | undefined, targets: string[], flags: QueryFlag
   const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
   const options = { brief: flags.brief, lineRefs: flags.lineRefs, today: flags.today };
-  const rows: QueryRow[] = files.flatMap((file) => querySmd(read(file), selectors, options).map((m) => ({ file, ...m })));
-  if (flags.json) {
-    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
-  } else if (rows.length) {
-    const blocks = rows.map((r) => (flags.titles ? titleLine(r) : `${location(r)}\n${r.text}\n`));
-    process.stdout.write(blocks.join('\n').trimEnd() + '\n');
-  }
-  console.error(`[smd] ${rows.length} match(es) in ${new Set(rows.map((r) => r.file)).size} of ${files.length} file(s).`);
+  const rows = queryRows(files, selectors, options);
+  process.stdout.write(flags.json ? JSON.stringify(rows, null, 2) + '\n' : queryText(rows, flags.titles));
+  console.error(`[smd] ${querySummary(rows, files.length)}`);
   return rows.length ? 0 : 1;
 }
 
-/** `docs/plan.smd:12-20  — Section` */
-function location(r: QueryRow): string {
-  const end = r.endLine > r.line ? `-${r.endLine + 1}` : '';
-  return `${r.file}:${r.line + 1}${end}${r.section ? `  — ${r.section}` : ''}`;
-}
-
-/** `docs/plan.smd:12  decision  Title  {status=accepted}` (then the section, as in `location`). */
-function titleLine(r: QueryRow): string {
-  const end = r.endLine > r.line ? `-${r.endLine + 1}` : '';
-  const attrs = Object.entries(r.attrs).map(([k, v]) => `${k}=${[v].flat().join(',')}`).join(' ');
-  const parts = [`${r.file}:${r.line + 1}${end}`, r.type, r.title, attrs && `{${attrs}}`, r.section && `— ${r.section}`];
-  return parts.filter(Boolean).join('  ');
+async function mcp(root = '.'): Promise<number> {
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return fail(`--root must be a folder: ${root}`);
+  await runMcpServer({ root, version: pkg.version });
+  return 0;
 }
 
 function installSkills(dir: string, only?: string): number {
@@ -361,50 +330,6 @@ function installSkills(dir: string, only?: string): number {
     console.log(`Installed ${skill.name.padEnd(24)} → ${target}  (${skill.summary})`);
   }
   return 0;
-}
-
-function collect(target: string): string[] {
-  if (!fs.existsSync(target)) {
-    console.error(`Not found: ${target}`);
-    return [];
-  }
-  if (fs.statSync(target).isFile()) return [target];
-  const out: string[] = [];
-  for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
-    const full = path.join(target, entry.name);
-    if (entry.isDirectory()) out.push(...collect(full));
-    else if (entry.name.endsWith('.smd')) out.push(full);
-  }
-  return out;
-}
-
-function existsFrom(file: string) {
-  const dir = path.dirname(path.resolve(file));
-  return (rel: string) => fs.existsSync(path.resolve(dir, rel));
-}
-
-/**
- * File reader for code embeds. Only files inside the current working directory, the enclosing Git repository or the
- * document's own folder can be embedded, so a document cannot pull in e.g. ~/.ssh keys.
- */
-function readerFor(file: string) {
-  const dir = path.dirname(path.resolve(file));
-  const roots = [path.resolve(process.cwd()), dir];
-  // Also allow the enclosing Git repository (docs/ commonly embeds ../src/…).
-  for (let d = dir; ; d = path.dirname(d)) {
-    if (fs.existsSync(path.join(d, '.git'))) { roots.push(d); break; }
-    if (path.dirname(d) === d) break;
-  }
-  return (rel: string): string | undefined => {
-    const target = path.resolve(dir, rel);
-    if (!roots.some((r) => target === r || target.startsWith(r + path.sep))) return undefined;
-    try { return fs.readFileSync(target, 'utf8'); } catch { return undefined; }
-  };
-}
-
-function read(file: string): string {
-  return fs.readFileSync(file, 'utf8');
 }
 
 function requireFile(file: string | undefined): string {
