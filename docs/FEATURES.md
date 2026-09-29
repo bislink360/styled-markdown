@@ -352,10 +352,12 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 |---|---|---|
 | `:::warnign` | `container/unknown` | → `:::warning` |
 | `:badg[x]` | `directive/unknown` | → `:badge` |
-| `[x]{color=blu}` | `attrs/value` | suggests `blue` |
-| `:::risk{impact=hgh}` | `attrs/value` | suggests `high` |
+| `[x]{color=blu}` | `attrs/value` | → `blue` |
+| `:::risk{impact=hgh}` | `attrs/value` | → `high` |
+| `[x]{colr=red}` | `attrs/unknown` | → `color` |
 | `:::api{method=POST}` | `attrs/required` | — |
-| unclosed `:::` | `container/unclosed` | — |
+| unclosed `:::` | `container/unclosed` | adds the closing `:::` at the end |
+| unclosed ```` ``` ```` | `fence/unclosed` | adds the closing fence at the end |
 | ```` ```mermaid flowchat ```` | `mermaid/type` | → `flowchart` |
 | `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |
 | `$$\frac{1}{$$` | `math/syntax` | — |
@@ -365,10 +367,32 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
+| `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |
+| `toc: yes`, `updated: 2026/9/5` | `frontmatter/type`, `frontmatter/date` | → `true`, `2026-09-05` |
 | `updated` more than 180 days ago | `frontmatter/stale` | — |
 | overdue open task | `task/overdue` | — |
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
+
+### What `--fix` changes
+
+A fix is attached only when there is exactly one sensible repair. VS Code offers the same fixes as quick fixes, and `--json` includes them as `fix` for agents. `smd validate --fix` applies them and checks again until nothing is left to fix (a code block is closed before the container around it).
+
+| Rule | Fixed when |
+|---|---|
+| `frontmatter/version` | `smd:` is missing (adds `smd: 1`) |
+| `frontmatter/unknown-key` | a standard key is close, e.g. `titel` → `title` |
+| `frontmatter/status`, `frontmatter/audience`, `frontmatter/value` | exactly one allowed value is close, e.g. `aproved` → `approved`, `Dark` → `dark` |
+| `frontmatter/accent` | the color is a misspelled named color, e.g. `bleu` → `blue` |
+| `frontmatter/type` | a true/false key holds `yes`, `no`, `on`, `off` or a quoted `"true"`/`"false"` |
+| `frontmatter/date` | the date is year-first with other separators or no zero padding, e.g. `2026/9/5` → `2026-09-05` |
+| `container/unknown`, `directive/unknown`, `mermaid/type`, `rules/unknown` | a known name is close |
+| `container/unclosed`, `fence/unclosed` | the block starts without indentation: the closing line goes at the end of the document, where the block already ends when rendered |
+| `attrs/unknown` | exactly one accepted attribute name is close and not already set, e.g. `colr` → `color` |
+| `attrs/value` | exactly one allowed value is close (block and directive values, named colors, `size`, `weight`, `font`, `align`, `:priority[…]`, heading `agent=skip`), or a `date`/`:due[…]` is year-first, e.g. `2026/10/5` → `2026-10-05` |
+| `link/missing-anchor` | a heading id is close |
+
+Everything else needs a decision only the author can make (which file was meant, where a block should end inside a list, what a missing attribute should be), so it has no fix. Fixes never touch values with several equally close matches, dates like `09/05/2026` whose day/month order is unclear, or `style=…`, which takes several words.
 
 ### Configuring rules
 

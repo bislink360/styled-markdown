@@ -21,6 +21,16 @@
   - `onboarding`: day-one setup, first-week tasks, a 90-day timeline, key links and people to meet
   - `test-plan`: scope, strategy, environments, test cases, entry and exit criteria, risks and schedule
   - `pr-description`: summary, changes, testing, risk and rollback, checklist and review focus
+- More diagnostics carry a machine-applicable `fix` (quick fix in VS Code, `fix` in `--json`, applied by `smd validate --fix`). A fix is attached only when there is one clear repair:
+  - `frontmatter/status`, `frontmatter/audience`, `frontmatter/value`: the one close allowed value (`aproved` → `approved`, `Dark` → `dark`)
+  - `frontmatter/accent`: a misspelled named color (`bleu` → `blue`)
+  - `frontmatter/type`: `yes`/`no`/`on`/`off` or a quoted `"true"`/`"false"` on a true/false key → `true`/`false`
+  - `frontmatter/date`: year-first dates with other separators or no zero padding (`2026/9/5` → `2026-09-05`)
+  - `container/unclosed`, `fence/unclosed`: add the closing line at the end of the document, where the block already ends (unindented blocks only)
+  - `attrs/unknown`: the one close accepted attribute name, when it is not already set (`{colr=red}` → `{color=red}`)
+  - `attrs/value`: the one close allowed value for block and directive enums, named colors, `size`, `weight`, `font`, `align`, `:priority[…]` and heading `agent=skip`; year-first `date="…"` and `:due[…]` dates
+- `smd validate --fix` applies fixes and checks again until nothing is left to fix, e.g. a code block is closed before the container around it. The `fixed` count covers all rounds.
+- `applyFixes` applies adjacent edits and orders several insertions at the same point innermost block first, whatever order the diagnostics come in.
 
 ### Changed
 

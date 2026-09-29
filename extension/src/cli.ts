@@ -200,19 +200,10 @@ async function validate(
       if (parse) found.push(...await checkMermaid(text, parse, config.rules));
       return found.sort((a, b) => a.line - b.line || a.column - b.column);
     };
-    let text = read(file);
-    let diagnostics = await check(text);
-    let fixed: number | undefined;
-    if (fix && diagnostics.some((d) => d.fix)) {
-      const result = applyFixes(text, diagnostics);
-      if (result.applied) {
-        text = result.text;
-        fs.writeFileSync(file, text);
-        fixed = result.applied;
-        diagnostics = await check(text);
-      }
-    }
-    report.push({ file, diagnostics, ...(fixed ? { fixed } : {}) });
+    const text = read(file);
+    const result = fix ? await fixUntilStable(text, check) : { text, diagnostics: await check(text), applied: 0 };
+    if (result.applied) fs.writeFileSync(file, result.text);
+    report.push({ file, diagnostics: result.diagnostics, ...(result.applied ? { fixed: result.applied } : {}) });
   }
 
   const all = report.flatMap((r) => r.diagnostics);
@@ -234,6 +225,26 @@ async function validate(
     console.log(`\n${files.length} file(s) checked: ${errors} error(s), ${warnings} warning(s).`);
   }
   return errors > 0 || (strict && warnings > 0) ? 1 : 0;
+}
+
+/** Rounds of `--fix`: one fix can make another possible, e.g. a code block closed before its container. */
+const FIX_PASSES = 5;
+
+/** Apply fixes and check again until none apply, so `--fix` leaves nothing it could still fix. */
+async function fixUntilStable(
+  text: string, check: (text: string) => Promise<Diagnostic[]>,
+): Promise<{ text: string; diagnostics: Diagnostic[]; applied: number }> {
+  let current = text;
+  let diagnostics = await check(current);
+  let applied = 0;
+  for (let pass = 0; pass < FIX_PASSES; pass++) {
+    const result = applyFixes(current, diagnostics);
+    if (!result.applied) break;
+    current = result.text;
+    applied += result.applied;
+    diagnostics = await check(current);
+  }
+  return { text: current, diagnostics, applied };
 }
 
 /** Rule settings for a file: from `--config`, else the nearest config file. */

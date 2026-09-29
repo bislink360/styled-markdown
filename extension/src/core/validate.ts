@@ -1,6 +1,6 @@
 import katex from 'katex';
 import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules';
-import { attrsToStyle, isStyleKey, parseAttrs, resolveColor } from './attrs';
+import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS } from './render';
@@ -8,7 +8,10 @@ import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
 import { parseFenceInfo, sliceLines } from './fence';
 import { suggest } from './util';
 import {
-  PRIORITY_VALUES,
+  attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
+} from './fixes';
+import {
+  ALIGN_VALUES, FONT_VALUES, NAMED_COLORS, PRIORITY_VALUES, SIZE_VALUES, STYLE_KEYS, WEIGHT_VALUES,
   CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION,
 } from './spec';
 import { FRONTMATTER_SCHEMA, frontMatterProperty } from './frontmatterSchema';
@@ -137,7 +140,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
         const parent = stack[stack.length - 1];
         const nameStart = raw.indexOf(open[3], col + len);
         const nameEnd = nameStart + info.name.length;
-        checkContainer(info, i, nameStart, nameEnd, parent?.name, push);
+        checkContainer(info, i, nameStart, nameEnd, parent?.name, push, raw);
         stack.push({ name: info.name, len, line: i });
       }
       continue;
@@ -158,10 +161,14 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     checkInline(raw, i, push);
   }
 
-  if (fence) wholeLine(fence.line, 'error', 'fence/unclosed', `Code block opened here is never closed with ${fence.char.repeat(fence.len)}.`);
+  if (fence) {
+    push(fence.line, 0, lines[fence.line].length, 'error', 'fence/unclosed', `Code block opened here is never closed with ${fence.char.repeat(fence.len)}.`,
+      closeAtEndFix(lines, fence.line, fence.char.repeat(fence.len)));
+  }
   if (mathStart >= 0) wholeLine(mathStart, 'error', 'math/unclosed', 'Display math "$$" is never closed.');
   for (const o of stack) {
-    wholeLine(o.line, 'error', 'container/unclosed', `":::${o.name}" is never closed. Add a line with ${':'.repeat(o.len)} after its content.`);
+    push(o.line, 0, lines[o.line].length, 'error', 'container/unclosed', `":::${o.name}" is never closed. Add a line with ${':'.repeat(o.len)} after its content.`,
+      containerCloseFix(lines, o.line, o.len, fence, mathStart));
   }
 
   if (firstH1 && typeof fm.data.title === 'string' && firstH1.text.trim() === fm.data.title.trim()) {
@@ -193,9 +200,9 @@ function checkFrontMatter(
     for (let i = 1; i < end; i++) if (re.test(lines[i])) return i;
     return 0;
   };
-  const markKey = (key: string, severity: Severity, code: string, message: string) => {
+  const markKey = (key: string, severity: Severity, code: string, message: string, fix?: FrontMatterFix) => {
     const l = keyLine(key);
-    push(l, 0, lines[l]?.length ?? key.length, severity, code, message);
+    push(l, 0, lines[l]?.length ?? key.length, severity, code, message, fix?.(lines, l, key, String(data[key])));
   };
 
   if (data.smd === undefined) {
@@ -220,20 +227,20 @@ function checkFrontMatter(
     }
     if (key === 'smd' || value === undefined || value === null) continue;
     if (key === 'accent') {
-      if (!resolveColor(String(value))) markKey(key, 'error', 'frontmatter/accent', `Invalid accent color "${value}".`);
+      if (!resolveColor(String(value))) markKey(key, 'error', 'frontmatter/accent', `Invalid accent color "${value}".`, fixColorValue);
     } else if (prop.enum) {
       // Status is matched case-insensitively, as it always has been.
       const v = key === 'status' ? String(value).toLowerCase() : String(value);
       if (!prop.enum.map(String).includes(v)) {
         const code = key === 'status' ? 'frontmatter/status' : key === 'audience' ? 'frontmatter/audience' : 'frontmatter/value';
-        markKey(key, 'warning', code, `Unknown ${key} "${value}". Use one of: ${prop.enum.join(', ')}.`);
+        markKey(key, 'warning', code, `Unknown ${key} "${value}". Use one of: ${prop.enum.join(', ')}.`, fixEnumValue(prop.enum.map(String)));
       }
     } else if (prop.anyOf?.some((a) => a.type === 'array')) {
       if (!Array.isArray(value) && typeof value !== 'string') markKey(key, 'warning', 'frontmatter/type', `"${key}" should be a list, e.g. ${key}: [a, b].`);
     } else if (prop.type === 'boolean') {
-      if (typeof value !== 'boolean') markKey(key, 'warning', 'frontmatter/type', `"${key}" should be true or false.`);
+      if (typeof value !== 'boolean') markKey(key, 'warning', 'frontmatter/type', `"${key}" should be true or false.`, fixBooleanValue);
     } else if (prop.format === 'date') {
-      if (!/^\d{4}-\d{2}-\d{2}/.test(String(value))) markKey(key, 'warning', 'frontmatter/date', `"${key}" should be a date like 2026-09-26.`);
+      if (!/^\d{4}-\d{2}-\d{2}/.test(String(value))) markKey(key, 'warning', 'frontmatter/date', `"${key}" should be a date like 2026-09-26.`, fixDateValue);
     } else if (typeof value === 'object') {
       markKey(key, 'warning', 'frontmatter/type', `"${key}" should be a single value, not a list or a mapping.`);
     }
@@ -252,9 +259,62 @@ function checkFrontMatter(
   }
 }
 
+/**
+ * Close an unclosed container at the end of the document, unless a code block or `$$` math is still open there:
+ * it would swallow the closing line, so that one is fixed first.
+ */
+function containerCloseFix(lines: string[], line: number, len: number, fence: object | null, mathStart: number): Fix | undefined {
+  return fence || mathStart >= 0 ? undefined : closeAtEndFix(lines, line, ':'.repeat(len));
+}
+
+/** Builds the fix for a front matter value on line `line`, if one is unambiguous. */
+type FrontMatterFix = (lines: string[], line: number, key: string, value: string) => Fix | undefined;
+
+const fixEnumValue = (allowed: string[]): FrontMatterFix => (lines, line, key, value) =>
+  frontMatterValueFix(lines, line, key, value, uniqueSuggestion(value, allowed));
+
+const fixColorValue: FrontMatterFix = (lines, line, key, value) => frontMatterValueFix(lines, line, key, value, namedColor(value));
+
+const fixDateValue: FrontMatterFix = (lines, line, key, value) => frontMatterValueFix(lines, line, key, value, normalizeDate(value));
+
+/** `toc: "true"` or `toc: yes` → `toc: true` (unquoted). */
+const fixBooleanValue: FrontMatterFix = (lines, line, key, value) =>
+  frontMatterValueFix(lines, line, key, value, booleanValue(value), true);
+
+/** The named color a misspelled color word meant, e.g. "bleu" or "Blue" → "blue". Never for #hex or rgb(). */
+function namedColor(value: string): string | undefined {
+  return /^[a-z]+$/i.test(value) ? uniqueSuggestion(value, NAMED_COLORS) : undefined;
+}
+
+/** Values of the single-word style keys, for fixing typos such as {weight=bld}. */
+const STYLE_CHOICES: Record<string, readonly string[]> = {
+  size: Object.keys(SIZE_VALUES), weight: Object.keys(WEIGHT_VALUES), font: Object.keys(FONT_VALUES), align: ALIGN_VALUES,
+};
+const COLOR_KEYS = new Set(['color', 'bg', 'border']);
+
+/** Fix a misspelled style value in the attribute list in `text[start, end)`. `style` takes several words and is left alone. */
+function styleFix(line: number, text: string, start: number, end: number, problem: AttrProblem): Fix | undefined {
+  const { key = '', value = '' } = problem;
+  const choices = STYLE_CHOICES[key] ?? [];
+  const replacement = COLOR_KEYS.has(key) ? namedColor(value) : uniqueSuggestion(value, choices);
+  return attrValueFix(line, text, start, end, key, value, replacement);
+}
+
+/** Replace a directive's `[content]`, e.g. :priority[hgh] → :priority[high]. */
+function contentFix(line: number, text: string, col: number, name: string, content: string, replacement: string | undefined): Fix | undefined {
+  const start = col + 1 + name.length;
+  return replaceOnceFix(line, text, start, text.indexOf(']', start) + 1, content, replacement);
+}
+
+/** A due date written year-first with other separators or without zero padding, when that makes it valid. */
+function dueDate(content: string): string | undefined {
+  const date = normalizeDate(content);
+  return date && dueState(date) !== 'invalid' ? date : undefined;
+}
+
 function checkContainer(
   info: NonNullable<ReturnType<typeof parseContainerInfo>>,
-  line: number, nameStart: number, nameEnd: number, parent: string | undefined, push: Push,
+  line: number, nameStart: number, nameEnd: number, parent: string | undefined, push: Push, raw: string,
 ): void {
   const spec = CONTAINERS[info.name];
   if (!spec) {
@@ -270,17 +330,22 @@ function checkContainer(
       `":::${info.name}" should be placed directly inside "::::${spec.parent}".`);
   }
   const allowed = new Set([...(spec.attrs ?? []), 'title']);
-  for (const key of Object.keys(info.attrs.values)) {
+  const keys = Object.keys(info.attrs.values);
+  for (const key of keys) {
     if (!allowed.has(key) && !isStyleKey(key)) {
-      push(line, nameStart, nameEnd, 'warning', 'attrs/unknown', `Unknown attribute "${key}" on ":::${info.name}".`);
+      push(line, nameStart, nameEnd, 'warning', 'attrs/unknown', `Unknown attribute "${key}" on ":::${info.name}".`,
+        attrKeyFix(line, raw, nameEnd, raw.length, key, [...allowed, ...Object.keys(STYLE_KEYS)], keys));
     }
   }
-  for (const p of attrsToStyle(info.attrs, true).problems) push(line, nameStart, nameEnd, p.severity, 'attrs/value', p.message);
+  for (const p of attrsToStyle(info.attrs, true).problems) {
+    push(line, nameStart, nameEnd, p.severity, 'attrs/value', p.message, styleFix(line, raw, nameEnd, raw.length, p));
+  }
   for (const [key, allowed] of Object.entries(spec.values ?? {})) {
     const v = info.attrs.values[key];
     if (v !== undefined && !allowed.some((a) => a.toLowerCase() === v.toLowerCase())) {
       const hint = suggest(v, allowed);
-      push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`);
+      push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
+        attrValueFix(line, raw, nameEnd, raw.length, key, v, uniqueSuggestion(v, allowed)));
     }
   }
   for (const key of spec.required ?? []) {
@@ -290,14 +355,16 @@ function checkContainer(
     }
   }
   if (info.attrs.values.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(info.attrs.values.date)) {
-    push(line, nameStart, nameEnd, 'warning', 'attrs/value', '"date" should look like 2026-09-26.');
+    push(line, nameStart, nameEnd, 'warning', 'attrs/value', '"date" should look like 2026-09-26.',
+      attrValueFix(line, raw, nameEnd, raw.length, 'date', info.attrs.values.date, normalizeDate(info.attrs.values.date)));
   }
   const width = info.attrs.values.width;
   if (info.name === 'column' && width && !/^\d+(\.\d+)?%?$/.test(width)) {
     push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid column width "${width}". Use a percentage (30%) or a ratio (2).`);
   }
   if (info.name === 'card' && info.attrs.values.accent && !resolveColor(info.attrs.values.accent)) {
-    push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid accent color "${info.attrs.values.accent}".`);
+    push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid accent color "${info.attrs.values.accent}".`,
+      attrValueFix(line, raw, nameEnd, raw.length, 'accent', info.attrs.values.accent, namedColor(info.attrs.values.accent)));
   }
 }
 
@@ -328,21 +395,28 @@ function checkInline(raw: string, line: number, push: Push): void {
     if (m[4] && !attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed attribute list.'); continue; }
     const content = m[3]?.slice(1, -1).trim() ?? '';
     if (name === 'priority' && content && !PRIORITY_VALUES.some((v) => v.toLowerCase() === content.toLowerCase())) {
-      push(line, col, end, 'warning', 'attrs/value', `Unknown priority "${content}". Use one of: ${PRIORITY_VALUES.join(', ')}.`);
+      push(line, col, end, 'warning', 'attrs/value', `Unknown priority "${content}". Use one of: ${PRIORITY_VALUES.join(', ')}.`,
+        contentFix(line, text, col, name, content, uniqueSuggestion(content, PRIORITY_VALUES)));
     }
     if (name === 'due' && content && dueState(content) === 'invalid') {
-      push(line, col, end, 'error', 'attrs/value', `Due date "${content}" should look like 2026-10-15.`);
+      push(line, col, end, 'error', 'attrs/value', `Due date "${content}" should look like 2026-10-15.`, contentFix(line, text, col, name, content, dueDate(content)));
     }
     if (name === 'metric' && !attrs?.values.label) {
       push(line, col, end, 'warning', 'attrs/required', `":metric" should have a label, e.g. :metric[${content || '42%'}]{label="Activation"}.`);
     }
     if (!attrs) continue;
     const values = spec.values ?? {};
+    const keys = Object.keys(attrs.values);
     for (const [key, value] of Object.entries(attrs.values)) {
       if (values[key] && !values[key].includes(value)) {
-        push(line, col, end, 'error', 'attrs/value', `Invalid ${key} "${value}" for ":${name}". Use one of: ${values[key].join(', ')}.`);
-      } else if (!spec.attrs.includes(key)) push(line, col, end, 'warning', 'attrs/unknown', `":${name}" does not take "${key}". Accepted: ${spec.attrs.join(', ') || 'none'}.`);
-      else if (key === 'color' && !resolveColor(value)) push(line, col, end, 'error', 'attrs/value', `Invalid color "${value}".`);
+        push(line, col, end, 'error', 'attrs/value', `Invalid ${key} "${value}" for ":${name}". Use one of: ${values[key].join(', ')}.`,
+          attrValueFix(line, text, col, end, key, value, uniqueSuggestion(value, values[key])));
+      } else if (!spec.attrs.includes(key)) {
+        push(line, col, end, 'warning', 'attrs/unknown', `":${name}" does not take "${key}". Accepted: ${spec.attrs.join(', ') || 'none'}.`,
+          attrKeyFix(line, text, col, end, key, spec.attrs, keys));
+      } else if (key === 'color' && !resolveColor(value)) {
+        push(line, col, end, 'error', 'attrs/value', `Invalid color "${value}".`, attrValueFix(line, text, col, end, key, value, namedColor(value)));
+      }
       else if (key === 'value') {
         const n = Number(value);
         if (!Number.isFinite(n) || n < 0 || n > 100) push(line, col, end, 'error', 'attrs/value', `Progress value must be a number from 0 to 100, got "${value}".`);
@@ -357,10 +431,14 @@ function checkInline(raw: string, line: number, push: Push): void {
     if (directiveSpans.some(([s, e]) => col > s && col < e)) continue;
     const attrs = parseAttrs(m[1]);
     if (!attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed attribute list. Expected {key=value key2="value 2" .class}.'); continue; }
-    for (const key of Object.keys(attrs.values)) {
-      if (!isStyleKey(key)) push(line, col, end, 'warning', 'attrs/unknown', `Unknown style attribute "${key}". Known: color, bg, border, size, weight, font, style.`);
+    const keys = Object.keys(attrs.values);
+    for (const key of keys) {
+      if (!isStyleKey(key)) {
+        push(line, col, end, 'warning', 'attrs/unknown', `Unknown style attribute "${key}". Known: color, bg, border, size, weight, font, style.`,
+          attrKeyFix(line, text, col, end, key, Object.keys(STYLE_KEYS), keys));
+      }
     }
-    for (const p of attrsToStyle(attrs).problems) push(line, col, end, p.severity, 'attrs/value', p.message);
+    for (const p of attrsToStyle(attrs).problems) push(line, col, end, p.severity, 'attrs/value', p.message, styleFix(line, text, col, end, p));
   }
 }
 
@@ -475,9 +553,15 @@ function checkHeadingAttrs(raw: string, line: number, push: Push): void {
   const end = col + m[1].length + 2;
   const attrs = parseAttrs(m[1]);
   if (!attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed heading attribute list. Expected {#id .class agent=skip}.'); return; }
+  const keys = Object.keys(attrs.values);
   for (const [key, value] of Object.entries(attrs.values)) {
-    if (key !== 'agent') push(line, col, end, 'warning', 'attrs/unknown', `Unknown heading attribute "${key}". Headings accept #id, .class and agent=skip.`);
-    else if (value !== 'skip') push(line, col, end, 'error', 'attrs/value', `agent="${value}" is not supported on headings — use agent=skip to hide the section from agent views.`);
+    if (key !== 'agent') {
+      push(line, col, end, 'warning', 'attrs/unknown', `Unknown heading attribute "${key}". Headings accept #id, .class and agent=skip.`,
+        attrKeyFix(line, raw, col, end, key, ['agent'], keys));
+    } else if (value !== 'skip') {
+      push(line, col, end, 'error', 'attrs/value', `agent="${value}" is not supported on headings — use agent=skip to hide the section from agent views.`,
+        attrValueFix(line, raw, col, end, key, value, uniqueSuggestion(value, ['skip'])));
+    }
   }
 }
 
@@ -504,14 +588,18 @@ function checkEmbed(info: string, content: string[], line: number, raw: string, 
   }
 }
 
-/** Apply every diagnostic fix to the text (bottom-up, skipping overlaps). Returns the new text and the count applied. */
+/**
+ * Apply every diagnostic fix to the text (bottom-up, skipping overlaps). Returns the new text and the count applied.
+ * Adjacent edits all apply. Insertions at one point are written in diagnostic order reversed, so closings added
+ * at the end of the document close the innermost (latest opened) block first.
+ */
 export function applyFixes(text: string, diagnostics: Diagnostic[]): { text: string; applied: number } {
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const lines = text.split(/\r?\n/);
   const fixes = diagnostics
-    .map((d) => d.fix)
-    .filter((f): f is Fix => !!f)
-    .sort((a, b) => b.line - a.line || b.column - a.column);
+    .flatMap((d) => (d.fix ? [{ at: d, fix: d.fix }] : []))
+    .sort(bottomUp)
+    .map((f) => f.fix);
   let applied = 0;
   let last: Fix | undefined;
   for (const f of fixes) {
@@ -523,4 +611,10 @@ export function applyFixes(text: string, diagnostics: Diagnostic[]): { text: str
     last = f;
   }
   return { text: lines.join(eol), applied };
+}
+
+/** Last fix first; a replacement before an insertion at its start; tied insertions in diagnostic order. */
+function bottomUp(a: { at: Diagnostic; fix: Fix }, b: { at: Diagnostic; fix: Fix }): number {
+  return b.fix.line - a.fix.line || b.fix.column - a.fix.column || b.fix.endColumn - a.fix.endColumn
+    || a.at.line - b.at.line || a.at.column - b.at.column;
 }

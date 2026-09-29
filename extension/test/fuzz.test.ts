@@ -68,10 +68,12 @@ function check(text: string): string | undefined {
     let fixed = timed('applyFixes', () => applyFixes(text, diagnostics)).text;
     const after = timed('validateSmd (after fixes)', () => validateSmd(fixed, options));
     // A fix must not create an error, except that renaming `:::ap` to `:::api` exposes the checks of
-    // the block it now is (attrs/required, attrs/syntax), which is the point of the rename.
+    // the block it now is (attrs/required, attrs/syntax), which is the point of the rename. Likewise,
+    // closing an unclosed code block exposes the checks of its content (embeds, diagrams, math).
     const before = errorCodes(diagnostics);
+    const exposed = before.has('fence/unclosed') ? /^(attrs|fence|mermaid|math)\// : /^attrs\//;
     for (const code of errorCodes(after)) {
-      if (!before.has(code) && !code.startsWith('attrs/')) return `applying fixes introduced error ${code}`;
+      if (!before.has(code) && !exposed.test(code)) return `applying fixes introduced error ${code}`;
     }
     let current = after;
     for (let round = 0; ; round++) {

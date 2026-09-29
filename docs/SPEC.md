@@ -230,23 +230,23 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `frontmatter/invalid` | error | YAML does not parse, or is not a mapping, or is unclosed |
 | `frontmatter/version` | info / warning | `smd` missing (fix: add it) or unsupported |
 | `frontmatter/unknown-key` | hint | Non-standard key (fix when a close match exists) |
-| `frontmatter/status` · `/audience` · `/accent` · `/type` · `/date` | warning / error | Invalid values |
+| `frontmatter/status` · `/audience` · `/accent` · `/type` · `/date` | warning / error | Invalid values (fix: the one close allowed value or color, `true`/`false` for `yes`/`no`/`"true"`, `2026-09-05` for `2026/9/5`) |
 | `frontmatter/duplicate-title` | hint | First `# H1` repeats the front matter title |
-| `frontmatter/value` | warning | A value outside the schema's allowed values for keys without their own rule (e.g. `theme`) |
+| `frontmatter/value` | warning | A value outside the schema's allowed values for keys without their own rule (e.g. `theme`; fix when one allowed value is close) |
 | `frontmatter/stale` | info | `updated` is older than the stale threshold and the document is not archived or deprecated |
 | `container/unknown` | warning | Unknown container name (fix: closest name) |
-| `container/unclosed` | error | Missing closing `:::` |
+| `container/unclosed` | error | Missing closing `:::` (fix: add it at the end of the document, for an unindented container) |
 | `container/stray-close` | warning | `:::` with nothing open |
 | `container/parent` | warning | `tab` outside `tabs`, `column` outside `columns` |
 | `attrs/syntax` | error | Malformed `{…}` |
-| `attrs/unknown` | warning | Attribute not accepted in this position |
-| `attrs/value` | error | Invalid color, size, width, progress value… |
+| `attrs/unknown` | warning | Attribute not accepted in this position (fix when one accepted name is close and not already set) |
+| `attrs/value` | error | Invalid color, size, width, progress value… (fix when one allowed value is close, or a year-first date needs `-` separators) |
 | `directive/unknown` | warning | `:name[…]` close to a known directive (fix: closest name) |
 | `directive/content` | error | Directive needs `[content]` |
 | `mermaid/type` · `mermaid/empty` | error / warning | Unknown diagram type (fix: closest type) / empty diagram |
 | `mermaid/syntax` | warning | The diagram does not parse (checked with Mermaid's own parser where the tool ships it) |
 | `math/syntax` · `math/unclosed` | error | KaTeX parse error / unclosed `$$` |
-| `fence/unclosed` | error | Unclosed code fence |
+| `fence/unclosed` | error | Unclosed code fence (fix: add it at the end of the document, for an unindented fence) |
 | `link/missing-anchor` | warning | `[x](#id)` or `[x](other.smd#id)` with no heading or element with that id (fix: closest id) |
 | `link/missing-file` | warning | Relative link, image, reference definition, HTML `href`/`src` or `related:` entry does not exist |
 | `link/undefined-reference` | warning | `[text][label]` or `[label][]` with no `[label]: …` definition |
