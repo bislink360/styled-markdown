@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { renderSmd, type RenderOptions } from './core';
@@ -120,7 +121,7 @@ class Preview {
   private shell(): string {
     const webview = this.panel.webview;
     const media = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', ...p));
-    const nonce = Array.from({ length: 32 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    const nonce = randomBytes(16).toString('base64'); // CSP nonces must be unguessable
     const base = webview.asWebviewUri(vscode.Uri.file(path.dirname(this.document.uri.fsPath))).toString().replace(/\/$/, '');
     const result = renderSmd(this.document.getText(), renderOptions(this.document));
     const csp = [

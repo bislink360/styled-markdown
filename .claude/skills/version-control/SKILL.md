@@ -67,7 +67,7 @@ The compatibility gate, versioning rules, changelog format and publishing steps 
    ```
 
    Use the PR checklist from ▶ smd-release `references/branching.md`.
-2. CI runs on PRs into `release/**`. The compatibility job runs `release-check.mjs --pr` against the last tag. Review anything it flags (▶ smd-release §2–3).
+2. CI runs on PRs into `release/**`. The compatibility job runs `release-check.mjs --pr` against the last tag. Review anything it flags (▶ smd-release §2–3). CI does no static analysis, so run the SonarQube gate locally before opening the PR (▶ sonarqube-scan).
 3. **Squash-merge** after approval: one commit per feature on the release branch. Then tick the feature in the tracking PR's checklist and delete the feature branch.
 4. A feature that isn't ready by the release date **leaves the train**. Close its PR, or retarget it to the next release branch once that exists. Don't hold the release for it.
 
@@ -76,7 +76,7 @@ The compatibility gate, versioning rules, changelog format and publishing steps 
 On the release branch, once every planned feature is merged or dropped:
 
 1. Finish `extension/CHANGELOG.md` for the version: every ⚠️ breaking change with a migration note, and empty headings removed.
-2. Run the **full** check, `node .claude/skills/smd-release/scripts/release-check.mjs` (release mode), and get the maintainer's approval of the report (▶ smd-release §5, mandatory).
+2. Run the **full** check, `node .claude/skills/smd-release/scripts/release-check.mjs` (release mode), and the SonarQube gate, `node .claude/skills/sonarqube-scan/scripts/sonar-scan.mjs` (▶ sonarqube-scan, must pass). Get the maintainer's approval of both reports (▶ smd-release §5, mandatory).
 3. Mark the tracking PR ready for review. Its CI runs the release gate as well.
 4. **Tag the release branch head** (the exact commit that ships), then build and publish from the tag (▶ smd-release §6–7):
 
