@@ -11,6 +11,9 @@
   - `--titles` prints one line per block, `--json` gives type, lines, title, attributes, section and agent-view text; `--brief` and `--no-lines` work as in `smd agent`
   - a misspelled type or attribute is an error with a suggestion (exit code 2), and the exit code is 1 when nothing matches
 - Library: `querySmd(source, selector, options)`, `parseSelector` and `SelectorError`.
+- `smd outline <file> --related` adds a block listing the documents in front matter `related:`: each `.smd` file's title, status, summary and full agent-view token cost, so agents can decide whether to open it. URLs and other files are listed but not read; missing files and files outside the project folders are marked. Without the flag the outline is unchanged.
+- The reader skill and `docs/AGENTS.md` tell agents to check related documents with `smd outline --related` and to open them only when the question needs it.
+- Library: `relatedDocs(source, { readFile })`, `relatedEntries`, `summarizeSmd` and `formatRelated`.
 
 ### Changed
 
