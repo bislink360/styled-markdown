@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyFixes, validateSmd, type ValidateOptions } from '../src/core';
-import { anchorLine, linkAt } from '../src/core/links';
+import { anchorLine, anchorTargets, linkAt, linkCompletionContext } from '../src/core/links';
 
 const files: Record<string, string> = {
   'other.smd': '---\nsmd: 1\ntitle: Other\n---\n## Pricing rules\n\n## Refunds {#refund-policy}\n',
@@ -97,4 +97,36 @@ test('anchorLine locates headings, {#id} blocks and HTML ids', () => {
   assert.equal(anchorLine(src, 'legacy.v1'), 11);
   assert.equal(anchorLine(src, 'legacy-v1'), undefined);
   assert.equal(anchorLine(src, 'price'), undefined);
+});
+
+test('link completion context: links, definitions, related and embeds', () => {
+  // `|` marks the cursor.
+  const ctx = (src: string) => {
+    const lines = src.split('\n');
+    const line = lines.findIndex((l) => l.includes('|'));
+    return linkCompletionContext(src.replace('|', ''), line, lines[line].indexOf('|'));
+  };
+  assert.deepEqual(ctx('See [the plan](docs/pl|'), { kind: 'link', target: 'docs/pl', column: 15 });
+  assert.deepEqual(ctx('![logo](|'), { kind: 'link', target: '', column: 8 });
+  assert.deepEqual(ctx('[a](other.smd#pri|'), { kind: 'link', target: 'other.smd#pri', column: 4 });
+  assert.deepEqual(ctx('[a](<my fi|'), undefined, 'spaces need a closing > first');
+  assert.deepEqual(ctx('[ref]: ../specs/|'), { kind: 'link', target: '../specs/', column: 7 });
+  assert.deepEqual(ctx('---\nrelated: [a.smd, docs/b|]\n---\n'), { kind: 'related', target: 'docs/b', column: 17 });
+  assert.deepEqual(ctx('---\nrelated: "x|"\n---\n'), { kind: 'related', target: 'x', column: 10 });
+  assert.deepEqual(ctx('---\nrelated:\n  - adr.smd\n  - specs/|\n---\n'), { kind: 'related', target: 'specs/', column: 4 });
+  assert.equal(ctx('---\ntags:\n  - specs/|\n---\n'), undefined);
+  assert.deepEqual(ctx('```ts file="src/pri|'), { kind: 'embed', target: 'src/pri', column: 12 });
+  assert.equal(ctx('```ts\n[a](x|\n```'), undefined, 'inside a code block');
+  assert.equal(ctx('Use `[a](x|` here'), undefined, 'inside inline code');
+  assert.equal(ctx('[a](done.smd) and more|'), undefined);
+});
+
+test('anchor targets list headings, then {#id} blocks and HTML ids', () => {
+  const targets = anchorTargets('# Guide\n\n## Pricing rules {#pricing}\n\n:::card{#price-card} Price\nx\n:::\n\n<a id="legacy"></a>\n');
+  assert.deepEqual(targets, [
+    { id: 'guide', text: 'Guide', level: 1, line: 0 },
+    { id: 'pricing', text: 'Pricing rules', level: 2, line: 2 },
+    { id: 'price-card', line: 4 },
+    { id: 'legacy', line: 8 },
+  ]);
 });

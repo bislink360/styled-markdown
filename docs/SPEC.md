@@ -244,6 +244,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `directive/unknown` | warning | `:name[…]` close to a known directive (fix: closest name) |
 | `directive/content` | error | Directive needs `[content]` |
 | `mermaid/type` · `mermaid/empty` | error / warning | Unknown diagram type (fix: closest type) / empty diagram |
+| `mermaid/syntax` | error | The diagram does not parse (checked with Mermaid's own parser where the tool ships it) |
 | `math/syntax` · `math/unclosed` | error | KaTeX parse error / unclosed `$$` |
 | `fence/unclosed` | error | Unclosed code fence |
 | `link/missing-anchor` | warning | `[x](#id)` or `[x](other.smd#id)` with no heading or element with that id (fix: closest id) |
@@ -252,6 +253,9 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `attrs/required` | error / warning | Required attribute missing (`:::api` needs `method` and `path`; `:metric` should have `label`) |
 | `fence/embed-missing` · `fence/range` · `fence/embed-body` · `fence/lines-without-file` | error / warning | Embedded file missing or outside the workspace, bad line range, non-empty embed body, `lines` without `file` |
 | `task/overdue` | info | Open task past its `:due[…]` date |
+| `rules/unknown` | warning | A suppression comment names an unknown rule code (fix: closest code) |
+
+Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.smdrc.json` file in the document's folder or a parent folder has `{"rules": {"<code>" | "<category>/*" | "*": "off" | "error" | "warning" | "info" | "hint"}}`. The nearest file applies, the search stops at the repository root, and the most specific key wins. Inside a document, the comments `<!-- smd-disable-next-line [codes] -->`, `<!-- smd-disable-line [codes] -->` and `<!-- smd-disable [codes] -->` … `<!-- smd-enable [codes] -->` silence rules. No codes means every rule. Codes are separated by spaces or commas and may be `category/*`.
 
 ---
 

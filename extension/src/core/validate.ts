@@ -1,4 +1,5 @@
 import katex from 'katex';
+import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules';
 import { attrsToStyle, isStyleKey, parseAttrs, resolveColor } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
@@ -49,6 +50,11 @@ export interface ValidateOptions {
    * status is not archived or deprecated. Default 180; 0 turns the check off.
    */
   staleAfterDays?: number;
+  /**
+   * Rule settings, e.g. from `smd.config.json`: `{ "link/missing-file": "off", "frontmatter/*": "hint" }`.
+   * Inline `<!-- smd-disable… -->` comments are always honored.
+   */
+  rules?: RuleSettings;
 }
 
 export function validateSmd(text: string, options: ValidateOptions = {}): Diagnostic[] {
@@ -165,7 +171,9 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
   checkLinks(text, push, options);
 
-  return diagnostics.sort((a, b) => a.line - b.line || a.column - b.column);
+  let result = applySuppressions(text, diagnostics);
+  if (options.rules) result = applyRuleSettings(result, options.rules);
+  return result.sort((a, b) => a.line - b.line || a.column - b.column);
 }
 
 type Push = (line: number, column: number, endColumn: number, severity: Severity, code: string, message: string, fix?: Fix) => void;
