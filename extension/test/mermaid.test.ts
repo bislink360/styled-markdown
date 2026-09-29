@@ -52,6 +52,19 @@ test('parse errors map to the document line and columns', async () => {
   assert.deepEqual([o.line, o.column, o.endColumn, o.message], [1, 2, 14, 'Mermaid syntax error: something odd']);
 });
 
+test('mermaid/syntax follows suppression comments and rule settings', async () => {
+  const fail: MermaidParse = async () => { throw new Error('Parsing failed: bad'); };
+  const src = '```mermaid\nflowchart LR\n```\n';
+  const codes = async (text: string, rules?: Record<string, 'off' | 'error' | 'warning' | 'info' | 'hint'>) =>
+    (await checkMermaid(text, fail, rules)).map((d) => `${d.line}:${d.code}:${d.severity}`);
+  assert.deepEqual(await codes(src), ['1:mermaid/syntax:error']);
+  assert.deepEqual(await codes(src, { 'mermaid/syntax': 'off' }), []);
+  assert.deepEqual(await codes(src, { 'mermaid/*': 'warning' }), ['1:mermaid/syntax:warning']);
+  assert.deepEqual(await codes('<!-- smd-disable mermaid/syntax -->\n' + src), []);
+  // Unknown codes in comments are validateSmd's to report, so they aren't repeated here.
+  assert.deepEqual(await codes('<!-- smd-disable-next-line nope/x -->\n' + src), ['2:mermaid/syntax:error']);
+});
+
 test('the bundled Mermaid parser accepts every example and reports real errors', { skip: !fs.existsSync(bundle) && 'run npm run build first' }, async () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { parse } = require(bundle) as { parse: MermaidParse };

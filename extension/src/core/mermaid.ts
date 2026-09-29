@@ -1,5 +1,6 @@
 import { parseFrontMatter } from './frontmatter';
 import { MERMAID_TYPES } from './spec';
+import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules';
 import type { Diagnostic } from './validate';
 
 /**
@@ -49,8 +50,12 @@ function hasKnownType(content: string[]): boolean {
   return false;
 }
 
-/** Parse every Mermaid block and report syntax errors as `mermaid/syntax` (one per diagram). */
-export async function checkMermaid(text: string, parse: MermaidParse): Promise<Diagnostic[]> {
+/**
+ * Parse every Mermaid block and report syntax errors as `mermaid/syntax` (one per diagram).
+ * Suppression comments and `rules` apply as in `validateSmd`; unknown codes in comments are
+ * reported by `validateSmd`, not here.
+ */
+export async function checkMermaid(text: string, parse: MermaidParse, rules?: RuleSettings): Promise<Diagnostic[]> {
   const lines = text.split(/\r?\n/);
   const diagnostics: Diagnostic[] = [];
   for (const block of mermaidBlocks(text)) {
@@ -60,7 +65,8 @@ export async function checkMermaid(text: string, parse: MermaidParse): Promise<D
       diagnostics.push(toDiagnostic(e, block, lines));
     }
   }
-  return diagnostics;
+  const kept = applySuppressions(text, diagnostics, false);
+  return rules ? applyRuleSettings(kept, rules) : kept;
 }
 
 interface ErrorPosition { line: number; column?: number; endColumn?: number; message: string }
