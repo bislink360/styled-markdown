@@ -20,6 +20,8 @@ export { querySmd, parseSelector, SelectorError } from './query';
 export type { QueryMatch, QueryOptions, Selector, AttributeTest, QueryOperator } from './query';
 export { relatedDocs, relatedEntries, summarizeSmd, formatRelated } from './related';
 export type { RelatedDoc, RelatedOptions, SmdSummary } from './related';
+export { indexEntry, smdIndex, INDEX_FORMAT, INDEX_VERSION } from './catalog';
+export type { IndexOptions, SmdIndex, SmdIndexEntry, SmdIndexSection, SmdIndexCounts } from './catalog';
 export { parseFenceInfo } from './fence';
 export { checkMermaid, mermaidBlocks } from './mermaid';
 export type { MermaidParse, MermaidBlock } from './mermaid';

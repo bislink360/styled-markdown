@@ -21,6 +21,12 @@
   - `onboarding`: day-one setup, first-week tasks, a 90-day timeline, key links and people to meet
   - `test-plan`: scope, strategy, environments, test cases, entry and exit criteria, risks and schedule
   - `pr-description`: summary, changes, testing, risk and rollback, checklist and review focus
+- `smd index <files|dirs…> [-o catalog.json] [--compact]` writes a JSON catalog of every document for agent routing:
+  - per document: path (relative to the working directory, `/` separators), title, summary, status, owners, tags, audience, updated, related, and token costs of the file and of its full agent view
+  - sections with level, text, id, zero-based line range and agent-view token cost (the numbers `smd outline` shows)
+  - counts: open, done and overdue tasks, decisions by status, risks and open risks, questions, API endpoints, diagrams and `:::agent` blocks
+  - deterministic output (no timestamps, sorted by path) so the catalog can be committed and diffed; `--today` pins the overdue count
+- Library: `indexEntry(source, path, options)` and `smdIndex(documents, options)`, with the `SmdIndex*` types.
 
 ### Changed
 

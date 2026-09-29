@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   agentView, applyFixes, checkMermaid, extractTasks, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, querySmd,
-  relatedDocs, renderPage, smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type Diagnostic, type QueryMatch, type Selector, type TaskInfo,
+  relatedDocs, renderPage, smdIndex, smdToMarkdown, validateSmd, SelectorError, SMD_VERSION, type Diagnostic, type QueryMatch, type Selector, type TaskInfo,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
@@ -36,6 +36,11 @@ Reading (token-efficient, for agents):
       --titles  one line per match instead of its content
   smd meta <file.smd> [--no-diagnostics]
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
+  smd index <files|dirs...> [-o catalog.json] [--compact]
+      JSON catalog of every document: title, summary, status, owners, tags, token costs, sections
+      and counts (open tasks, decisions, risks, questions, APIs). Agents read it to pick documents,
+      then run outline or agent --section on them. Paths are relative to the working directory.
+      --compact  one line of JSON instead of indented
 
 Checking and converting:
   smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
@@ -130,6 +135,8 @@ function main(argv: string[]): number | Promise<number> {
       process.stdout.write(JSON.stringify(info, null, 2) + '\n');
       return 0;
     }
+    case 'index':
+      return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
       return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'), staleAfterDays);
     case 'fmt':
@@ -361,7 +368,23 @@ function relatedBlock(file: string, text: string, today?: string): string {
 }
 
 function displayPath(dir: string, rel: string): string {
-  return path.relative(process.cwd(), path.resolve(dir, rel)).split(path.sep).join('/');
+  return relativePath(path.resolve(dir, rel));
+}
+
+function index(targets: string[], out: string | undefined, compact: boolean, today?: string): number {
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const documents = files.map((file) => ({ path: relativePath(file), text: read(file) }));
+  const catalog = smdIndex(documents, { today, generator: `smd ${pkg.version}` });
+  const json = compact ? JSON.stringify(catalog) : JSON.stringify(catalog, null, 2);
+  const tokens = catalog.documents.reduce((sum, d) => sum + d.tokens.agent, 0);
+  console.error(`[smd] ${catalog.documents.length} document(s) indexed, ≈${tokens} tokens in full agent view.`);
+  return write(out, json + '\n');
+}
+
+/** `docs/plan.smd`: relative to the working directory, with forward slashes on every platform. */
+function relativePath(file: string): string {
+  return path.relative(process.cwd(), path.resolve(file)).split(path.sep).join('/');
 }
 
 function installSkills(dir: string, only?: string): number {
