@@ -11,7 +11,7 @@ const found = (diagnostics: Diagnostic[]) => diagnostics.map((d) => `${d.line}:$
 const src = ':::warnign\nA [word]{color=blu}\n:::\n';
 
 test('every code the validator reports is registered, and the schema lists them all', () => {
-  const sources = ['validate.ts', 'rules.ts'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'core', f), 'utf8')).join('\n');
+  const sources = ['validate.ts', 'rules.ts', 'mermaid.ts'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'core', f), 'utf8')).join('\n');
   const emitted = new Set([...sources.matchAll(/'((?:frontmatter|container|attrs|directive|mermaid|math|fence|link|task|rules)\/[a-z-]+)'/g)].map((m) => m[1]));
   assert.deepEqual([...emitted].sort(), Object.keys(RULE_CODES).sort());
 

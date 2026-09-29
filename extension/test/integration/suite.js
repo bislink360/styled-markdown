@@ -254,6 +254,20 @@ const checks = {
     const blank = (await actions(new vscode.Range(4, 0, 4, 0))).map((a) => a.title);
     assert.deepEqual(blank, [], `no actions on a blank line: ${JSON.stringify(blank)}`);
   },
+
+  async 'Mermaid syntax errors are reported, and cleared when fixed'() {
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content: '# D\n\n```mermaid\nsequenceDiagram\n  A->>B hi\n```\n' });
+    await vscode.window.showTextDocument(doc);
+    const mermaid = () => vscode.languages.getDiagnostics(doc.uri).filter((d) => d.code === 'mermaid/syntax');
+    const [d] = await waitFor(() => mermaid().length && mermaid(), 'a mermaid/syntax diagnostic');
+    assert.equal(d.range.start.line, 4);
+    assert.match(d.message, /^Mermaid syntax error: expected TXT/);
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(doc.uri, new vscode.Position(4, 7), ':');
+    await vscode.workspace.applyEdit(edit);
+    await waitFor(() => mermaid().length === 0, 'the diagnostic to clear');
+  },
 };
 
 async function run() {

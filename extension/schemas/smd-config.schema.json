@@ -330,6 +330,16 @@
           ],
           "description": "Empty Mermaid diagram"
         },
+        "mermaid/syntax": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Mermaid diagram does not parse (checked where a Mermaid parser is available: the editor and the CLI)"
+        },
         "math/syntax": {
           "enum": [
             "off",

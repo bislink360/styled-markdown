@@ -2,9 +2,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
+  agentView, applyFixes, checkMermaid, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
   validateSmd, SMD_VERSION, type Diagnostic, type TaskInfo,
 } from './core';
+import { loadMermaidParser } from './mermaidLoader';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
@@ -28,11 +29,12 @@ Reading (token-efficient, for agents):
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
 
 Checking and converting:
-  smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>]
+  smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid]
       Check .smd files. Exit code 1 on errors (or warnings with --strict). --fix applies safe fixes.
       Rules are configured by the nearest smd.config.json or .smdrc (or --config):
         { "rules": { "link/missing-file": "off", "frontmatter/*": "hint", "task/overdue": "error" } }
       and silenced inline with <!-- smd-disable-next-line rule/code -->.
+      Mermaid diagrams are parsed for syntax errors (--no-mermaid skips it).
   smd fmt <files|dirs...> [--check] [--stdout]
       Format .smd files in place: container fences, attribute lists, tables and blank lines.
       --check   change nothing; list unformatted files and exit 1 if there are any
@@ -74,7 +76,7 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-function main(argv: string[]): number {
+function main(argv: string[]): number | Promise<number> {
   const args = parseArgs(argv);
   const { command, positional, flags } = args;
   const value = (name: string) => args.values.get(name)?.[0];
@@ -117,7 +119,7 @@ function main(argv: string[]): number {
       return 0;
     }
     case 'validate':
-      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'));
+      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'));
     case 'fmt':
       return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
     case 'render': {
@@ -163,13 +165,16 @@ function main(argv: string[]): number {
   }
 }
 
-function validate(targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, configFile?: string): number {
+async function validate(
+  targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, configFile?: string, mermaid = true,
+): Promise<number> {
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
   const report: Array<{ file: string; diagnostics: Diagnostic[]; fixed?: number }> = [];
   const configs = new Map<string, LoadedConfig>();
   const reported = new Set<string>();
   let configProblems = 0;
+  const parse = mermaid ? loadMermaidParser() : undefined;
   for (const file of files) {
     const config = configFor(file, configFile, configs);
     if (config.problems.length && !reported.has(config.file!)) {
@@ -178,8 +183,13 @@ function validate(targets: string[], json: boolean, fix: boolean, strict: boolea
       for (const p of config.problems) console.error(`${config.file}: warning  ${p}`);
     }
     const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today, rules: config.rules };
+    const check = async (text: string) => {
+      const found = validateSmd(text, opts);
+      if (parse) found.push(...await checkMermaid(text, parse, config.rules));
+      return found.sort((a, b) => a.line - b.line || a.column - b.column);
+    };
     let text = read(file);
-    let diagnostics = validateSmd(text, opts);
+    let diagnostics = await check(text);
     let fixed: number | undefined;
     if (fix && diagnostics.some((d) => d.fix)) {
       const result = applyFixes(text, diagnostics);
@@ -187,7 +197,7 @@ function validate(targets: string[], json: boolean, fix: boolean, strict: boolea
         text = result.text;
         fs.writeFileSync(file, text);
         fixed = result.applied;
-        diagnostics = validateSmd(text, opts);
+        diagnostics = await check(text);
       }
     }
     report.push({ file, diagnostics, ...(fixed ? { fixed } : {}) });
@@ -366,4 +376,4 @@ function fail(message: string): number {
   return 2;
 }
 
-process.exitCode = main(process.argv.slice(2));
+void Promise.resolve(main(process.argv.slice(2))).then((code) => { process.exitCode = code; });

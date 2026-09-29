@@ -29,8 +29,14 @@
   - wrap the selected lines in `:::note`, `:::tip`, `:::warning`, `:::danger`, `:::card`, `:::details`, `:::agent` or `:::human`; the new fence gets one more colon than any container inside it, and selections that split a code block or container aren't offered
   - convert a callout to another type, from its opening line
   - convert a blockquote callout into a `:::callout`, from GitHub alerts (`> [!WARNING]`, mapped like `smd from-md`) or bold labels (`> **Warning:**`, `> **Tip**:`); nested quotes keep their extra `>`
+- Mermaid syntax errors as diagnostics (`mermaid/syntax`), on the line and columns the parser points at, e.g. "expected TXT, got end of line". Diagrams are parsed with Mermaid's own parser, which ships as a separate `dist/mermaid-parse.js` and is loaded only when a document has diagrams.
+  - VS Code: errors appear as you type, and `smd.validation.mermaid` turns the check off.
+  - `smd validate`: `--no-mermaid` skips the check. The single-file CLI bundled in the agent skills doesn't include the parser and skips it.
+  - Library: `checkMermaid(text, parse, rules?)` and `mermaidBlocks(text)`; pass `mermaid.parse` or any compatible parser.
+  - Like other rules, `mermaid/syntax` can be turned off or given another severity in `smd.config.json` / `.smdrc`, and silenced with `<!-- smd-disable-next-line mermaid/syntax -->`.
 
 ### Changed
+- The npm package ships Mermaid's parser for `smd validate` (`dist/mermaid-parse.js`, 3.4 MB unpacked). The library entry points don't load it.
 
 ### Deprecated
 

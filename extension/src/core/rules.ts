@@ -24,6 +24,7 @@ export const RULE_CODES: Record<string, string> = {
   'directive/content': 'Inline directive needs `[content]`',
   'mermaid/type': 'Unknown Mermaid diagram type',
   'mermaid/empty': 'Empty Mermaid diagram',
+  'mermaid/syntax': 'Mermaid diagram does not parse (checked where a Mermaid parser is available: the editor and the CLI)',
   'math/syntax': 'KaTeX parse error',
   'math/unclosed': 'Display math `$$` is never closed',
   'fence/unclosed': 'Code fence is never closed',
@@ -118,7 +119,7 @@ const COMMENT = /<!--\s*smd-(disable-next-line|disable-line|disable|enable)\b([^
  * Codes are separated by spaces or commas and may use `category/*`; no codes means every rule.
  * Unknown codes are reported as `rules/unknown`, with a fix when a close match exists.
  */
-export function applySuppressions(text: string, diagnostics: Diagnostic[]): Diagnostic[] {
+export function applySuppressions(text: string, diagnostics: Diagnostic[], reportUnknown = true): Diagnostic[] {
   const lines = text.split(/\r?\n/);
   const suppressed = new Map<number, string[]>();
   const add = (line: number, patterns: string[]) => suppressed.set(line, [...(suppressed.get(line) ?? []), ...patterns]);
@@ -163,5 +164,6 @@ export function applySuppressions(text: string, diagnostics: Diagnostic[]): Diag
   }
 
   const kept = diagnostics.filter((d) => !(suppressed.get(d.line) ?? []).some((p) => matches(p, d.code)));
+  if (!reportUnknown) return kept;
   return [...kept, ...problems.filter((d) => !(suppressed.get(d.line) ?? []).some((p) => matches(p, d.code)))];
 }

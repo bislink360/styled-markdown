@@ -327,6 +327,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `:::api{method=POST}` | `attrs/required` | — |
 | unclosed `:::` | `container/unclosed` | — |
 | ```` ```mermaid flowchat ```` | `mermaid/type` | → `flowchart` |
+| `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |
 | `$$\frac{1}{$$` | `math/syntax` | — |
 | `file="nope.ts"` | `fence/embed-missing` | — |
 | `[x](#rolout)`, `[x](plan.smd#rolout)` | `link/missing-anchor` | → closest heading id |
@@ -383,7 +384,7 @@ smd outline <file>                                   sections, line ranges, toke
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
-smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>]
+smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid]
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]
 smd to-md <file> [-o out.md]
