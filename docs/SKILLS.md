@@ -4,7 +4,7 @@ Styled Markdown ships two **agent skills**: folders of instructions, references,
 
 | Skill | The agent learns to… | Contents |
 |---|---|---|
-| **`styled-markdown-writer`** | **Create and edit `.smd` that follows the rules.** It picks the right template, uses only valid blocks and values, validates and auto-fixes, and writes documents that are cheap for other agents to read. | `SKILL.md`, `references/syntax.md` (complete syntax), `references/style-guide.md` (authoring rules), `assets/templates/*.smd` (7 templates), `scripts/smd.cjs` |
+| **`styled-markdown-writer`** | **Create and edit `.smd` that follows the rules.** It picks the right template, uses only valid blocks and values, validates and auto-fixes, and writes documents that are cheap for other agents to read. | `SKILL.md`, `references/syntax.md` (complete syntax), `references/style-guide.md` (authoring rules), `assets/templates/*.smd` (13 templates), `scripts/smd.cjs` |
 | **`styled-markdown-reader`** | **Read `.smd` with minimal tokens**, focusing only on meaningful content: outline first, then only the relevant sections through the agent view, and raw lines only when editing. | `SKILL.md`, `scripts/smd.cjs` |
 
 `scripts/smd.cjs` is the complete `smd` CLI in one file (Node.js 18+, no `npm install`).
@@ -105,9 +105,11 @@ Agents without skill support can follow the same workflow through their instruct
    Project docs use Styled Markdown. Follow docs/AGENTS.md.
    - Reading: run `node tools/smd.cjs outline <file>`, then `node tools/smd.cjs agent <file> --section "<heading>"`.
      Don't read .smd files whole.
-   - Writing: start from `node tools/smd.cjs init <file> --template prd|adr|rfc|runbook|api|status-report|meeting-notes`,
+   - Writing: start from `node tools/smd.cjs init <file> --template prd|adr|rfc|runbook|api|status-report|meeting-notes|postmortem|release-notes|okrs|onboarding|test-plan|pr-description`,
      then run `node tools/smd.cjs validate <file> --fix` until there are 0 errors.
    ```
+
+Agents that support the Model Context Protocol (Cursor, VS Code, Claude Desktop, Claude Code) can instead register the MCP server, `smd mcp`, which offers the same reading commands as tools. See [MCP server](AGENTS.md#mcp-server).
 
 ## Verify the skills work
 
@@ -120,6 +122,7 @@ Try these prompts in a new session in a repository that contains `.smd` files (t
 | *"Write an ADR for moving our cron jobs to a managed scheduler, as docs/adr-0012-scheduler.smd."* | The agent uses the `adr` template, fills every placeholder, runs `smd validate --fix`, and ends with 0 errors. |
 | *"What's overdue across docs/?"* | It runs `smd tasks docs/`. |
 | *"Which high-impact risks are still open, and what did we decide about payments?"* | It runs `smd query "risk[impact>=high][status!=closed], decision[title*=pay]" docs/` and reads only those blocks. |
+| *"Which of our docs covers refunds, and what does it say about retries?"* | It runs `smd index docs/`, picks the document by title, summary and tags, then reads only the matching section with `smd agent … --section …`. |
 | *"The spec changed since last week. What's different?"* | It runs `smd diff docs/spec.smd --since "HEAD@{1.week.ago}"` (or a commit) and reads only the changed sections. |
 
 ## How token reduction works
@@ -148,7 +151,7 @@ flowchart LR
    | `:::human`, `{agent=skip}` sections | *(omitted)* |
    | With `--brief`: diagrams, long code, details, done tasks | One-line pointers with line ranges |
 
-3. **The reader skill** turns this into a habit: `smd outline` (≈100–300 tokens) shows every section's cost, and the agent then pulls only what it needs.
+3. **The reader skill** turns this into a habit: `smd outline` (≈100–300 tokens) shows every section's cost, and the agent then pulls only what it needs. For documents with `related:` links, `smd outline --related` adds each related document's summary and cost, so the agent opens one only when the question needs it.
 
 Measured on the examples:
 

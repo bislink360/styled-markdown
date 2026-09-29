@@ -412,13 +412,14 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 ## 17. CLI reference
 
 ```text
-smd outline <file>                                   sections, line ranges, token costs, markers
+smd outline <file> [--related]                       sections, line ranges, token costs, markers; --related adds related docs
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
 smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]          sections that changed
 smd diff <files|dirs> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
+smd index <files|dirs> [-o catalog.json] [--compact] JSON catalog of every document, for agent routing
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]
@@ -427,8 +428,73 @@ smd from-md <file.md> [-o out.smd]
 smd init <file> [--template <name>] [--title "…"]
 smd templates
 smd skills install [--dir <path>] [--global] [--only reader|writer]
+smd mcp [--root <dir>]                               MCP server over stdio (tools below)
 smd --version
 ```
+
+### Document catalog: `smd index`
+
+`smd index docs/ -o docs/catalog.json` writes one JSON entry per document, so an agent can choose what to read across many documents without opening any of them:
+
+```json
+{
+  "format": "smd-index",
+  "version": 1,
+  "smd": 1,
+  "generator": "smd 1.3.0",
+  "documents": [
+    {
+      "path": "docs/api-orders.smd",
+      "title": "Orders API",
+      "summary": "Create, fetch and cancel orders. …",
+      "status": "approved",
+      "owners": ["@api-team"],
+      "tags": ["api", "reference", "orders"],
+      "audience": null,
+      "updated": "2026-09-24",
+      "related": [],
+      "tokens": { "file": 748, "agent": 562 },
+      "counts": {
+        "openTasks": 0, "doneTasks": 3, "overdueTasks": 0, "decisions": {}, "risks": 0, "openRisks": 0,
+        "questions": 0, "apis": 3, "diagrams": 0, "agentInstructions": 1
+      },
+      "sections": [
+        { "level": 2, "text": "Endpoints", "id": "endpoints", "line": 24, "endLine": 45, "tokens": 188 }
+      ]
+    }
+  ]
+}
+```
+
+- `path` is relative to the working directory, with `/` separators. Documents are sorted by path.
+- `title` comes from front matter, else the first `#` heading, else the file name. Missing metadata is `null` or `[]`.
+- `tokens.file` is the raw file, `tokens.agent` the full `smd agent` view. Each section's `tokens` is what `smd outline` shows for it (subsections included). `line` and `endLine` are zero-based, as in `smd meta` and `smd query --json`. A section marked `{agent=skip}` has `"agent": "skip"`.
+- `counts.decisions` groups decisions by status. `openRisks` counts risks whose status is not `mitigated` or `closed`. `agentInstructions` counts `:::agent` blocks.
+- The output has no timestamps, so a committed catalog only changes when documents do. `overdueTasks` depends on the date: pass `--today YYYY-MM-DD` to pin it.
+- `--compact` prints one line instead of indented JSON.
+
+How an agent routes with it: read the catalog, pick documents by `summary`, `status`, `tags`, `owners` and counts (for example skip `deprecated` documents, or look for open risks), check the reading cost in `tokens.agent`, then run `smd outline <file>` or go straight to `smd agent <file> --section "<id>"`.
+
+### MCP server
+
+`smd mcp` serves the reading commands to any Model Context Protocol client (Claude Code, Cursor, VS Code, Claude Desktop) over stdio, so agents can use them without a shell:
+
+| Tool | Arguments | Same as |
+|---|---|---|
+| `outline` | `file` | `smd outline` |
+| `section` | `file`, `sections[]`, `brief?` | `smd agent --section …` |
+| `agent` | `file`, `brief?`, `includeHuman?` | `smd agent` |
+| `tasks` | `paths[]?`, `all?`, `mine?` | `smd tasks` |
+| `validate` | `paths[]?` | `smd validate --json` |
+| `query` | `selector`, `paths[]?`, `brief?`, `titles?` | `smd query` |
+
+Paths are relative to `--root` (default: the current folder). Paths outside it are refused, only `.smd` files are read, and nothing is written. Register it with, for example:
+
+```bash
+claude mcp add smd -- npx -y -p styled-markdown smd mcp
+```
+
+Cursor, VS Code and Claude Desktop settings: [AGENTS.md](AGENTS.md#mcp-server).
 
 ### What changed: `smd diff`
 
@@ -475,3 +541,9 @@ Ship to 10% of EU traffic first, then 50%.
 | `api` | Overview, Endpoints (`:::api`), Errors, Changelog (timeline), Rules (agent) |
 | `status-report` | Summary (status, progress, KPIs), Done, Next, Risks, Decisions needed |
 | `meeting-notes` | Attendees, Decisions, Action items, Notes (agent-skip) |
+| `postmortem` | Blameless note, Summary (severity, KPIs), Impact, Timeline, Root cause, Contributing factors (columns), Action items, Decision, Supporting data (agent-skip), Follow-up rules (agent) |
+| `release-notes` | Highlights (card), Breaking changes (danger, migration steps), Deprecations (warning), Changes (Added/Changed/Fixed), Upgrade, Known issues, Upgrade rules (agent) |
+| `okrs` | Period and overall progress, Objectives with key-result tables (owner, baseline, target, progress, confidence), Initiatives, Risks, Scoring tip, Rules (agent) |
+| `onboarding` | Buddy and manager, Start-here tip, Day 1 setup (tasks, steps, code), Week 1, First 90 days (timeline), Key links, People to meet, Team history (agent-skip), Rules (agent) |
+| `test-plan` | Scope, Strategy (table), Environments (table), Test cases (table), Entry and exit criteria (columns), Risks, Schedule (timeline), Testing rules (agent) |
+| `pr-description` | Links and risk, Summary, Changes, Testing, Risk and rollback (warning), Checklist, Screenshots (agent-skip), Review focus (agent) |

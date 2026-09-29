@@ -41,7 +41,7 @@ Markdown is the lingua franca of engineering docs, but teams keep stretching it.
 
 | | Developers | Product & project managers | AI agents |
 |---|---|---|---|
-| Write | API blocks, code highlights, live code embeds, diagrams, math | Decisions, risks, timelines, KPIs, task owners and due dates | A writer skill with 7 templates and a validator |
+| Write | API blocks, code highlights, live code embeds, diagrams, math | Decisions, risks, timelines, KPIs, task owners and due dates | A writer skill with 13 templates and a validator |
 | Read | Syntax-highlighted preview, outline, folding | Status header, colored callouts, overdue tasks in red | A reader skill: outline → only the needed sections |
 | Check | Problems panel + quick fixes, `smd validate` in CI | `smd tasks` across all docs, overdue first | `--json` diagnostics with machine-applicable fixes |
 
@@ -137,15 +137,17 @@ History and research. People see it; agents skip it.
 
 | Command | Purpose |
 |---|---|
-| `smd outline <file>` | Sections with line ranges and token costs |
+| `smd index <dir> [-o catalog.json]` | JSON catalog of every doc (title, summary, status, owners, tags, sections, token costs, open tasks, risks…) so agents pick which docs to read |
+| `smd outline <file> [--related]` | Sections with line ranges and token costs; `--related` adds each `related:` doc's title, status, summary and cost |
 | `smd agent <file> [--section …] [--brief]` | Compact agent view |
 | `smd tasks <dir> [--mine @me]` | Open tasks across docs, overdue first |
 | `smd query "<selector>" <paths> [--json]` | Decisions, risks, APIs, callouts, tasks or headings by type and attributes, e.g. `risk[impact>=high]` |
 | `smd diff <paths> --since <git-ref>` / `smd diff <old> <new>` | Only the sections that changed, in the agent view: catch up on a doc without rereading it |
 | `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->` |
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
-| `smd init <file> --template prd` | New doc from 7 templates (`smd templates` lists them) |
+| `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect |
+| `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
 | `smd skills install [--global]` | Install the agent skills |
 
 </details>
@@ -155,7 +157,7 @@ History and research. People see it; agents skip it.
 
 | Skill | What it teaches an agent |
 |---|---|
-| **`styled-markdown-writer`** | Create and edit `.smd` that follows every rule: choose a template (PRD, ADR, RFC, runbook, API, status report, meeting notes), fill it, validate with `--fix`, and keep it cheap for agents to read |
+| **`styled-markdown-writer`** | Create and edit `.smd` that follows every rule: choose a template (PRD, ADR, RFC, runbook, API, status report, meeting notes, postmortem, release notes, OKRs, onboarding, test plan, PR description), fill it, validate with `--fix`, and keep it cheap for agents to read |
 | **`styled-markdown-reader`** | Read `.smd` with minimal tokens: `outline` first, then only the relevant sections through the agent view, and raw lines only when editing |
 
 </details>
@@ -201,6 +203,16 @@ node smd.cjs skills install --global
 ```
 
 Or download `styled-markdown-reader.zip` and `styled-markdown-writer.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest). This installs both skills into `~/.claude/skills/` for Claude Code. For Claude.ai, the Claude API / Agent SDK, Copilot, Cursor and other agents, see **[docs/SKILLS.md](docs/SKILLS.md)**.
+
+### MCP server
+
+Give any MCP client (Claude Code, Cursor, VS Code, Claude Desktop) the reading tools without shell access:
+
+```bash
+claude mcp add smd -- npx -y -p styled-markdown smd mcp
+```
+
+Other clients and options: **[docs/AGENTS.md](docs/AGENTS.md#mcp-server)**.
 
 ## Token-efficient reading for agents
 
