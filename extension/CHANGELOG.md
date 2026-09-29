@@ -40,6 +40,10 @@
   - New `frontmatter/value` warning for values the schema doesn't allow on keys without their own rule, such as `theme: neon`.
   - `title`, `summary` and `version` given as a list or mapping are reported as `frontmatter/type`.
 - Stale document check `frontmatter/stale` (info): `updated` is more than 180 days old and the status isn't `archived` or `deprecated`. Configure it with `smd.validation.staleAfterDays`, `smd validate --stale-after <days>` or `validateSmd(text, { staleAfterDays })`; `0` turns it off. Like other rules, it can also be turned off or given another severity in `smd.config.json` / `.smdrc`.
+- Workspace symbol search (`Ctrl+T`) across every `.smd` file: headings, `:::decision` and `:::risk` titles, and `:::api` endpoints, which are searchable by method and path. Each file's symbols are cached until it changes.
+- Hover previews:
+  - over a link's text or target, `#anchor` / `other.smd#anchor` shows the start of that section (up to 20 lines), and `other.smd` shows the document's title, status, summary and top-level sections
+  - over a ```` ```lang file="…" lines="…" ```` line, the embedded code (up to 30 lines), or why it can't be read
 
 ### Changed
 - The npm package ships Mermaid's parser for `smd validate` (`dist/mermaid-parse.js`, 3.4 MB unpacked). The library entry points don't load it.
