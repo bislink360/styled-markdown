@@ -44,5 +44,6 @@ Every pull request to `main` or a `release/**` branch, and every push to them, r
 - `npm test` includes a seeded fuzz test (`test/fuzz.test.ts`). To reproduce or widen it: `SMD_FUZZ_SEED=<seed> SMD_FUZZ_RUNS=5000 npm test`; a failure writes a shrunk input to `test/fuzz-failures/`. A bug it finds gets its own regression test.
 - For changes to parsing or rendering, `npm run bench` shows timings on large documents.
 - `node dist/cli.js validate ../examples` reports 0 errors.
+- The static analysis gate passes: `node .claude/skills/sonarqube-scan/scripts/sonar-scan.mjs` from the repository root (needs Docker). It runs SonarQube locally, since CI has no static analysis. It is mandatory before every release; see the `sonarqube-scan` skill.
 - New syntax is documented in `docs/SPEC.md`, `docs/FEATURES.md` and the writer skill's `references/syntax.md`.
 - The CHANGELOG has an entry.
