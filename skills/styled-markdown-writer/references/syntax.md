@@ -16,6 +16,7 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 10. Headings
 11. Diagrams
 12. Attribute lists and colors
+13. Silencing validation rules
 
 ---
 
@@ -243,3 +244,21 @@ The first non-comment line must be a Mermaid type: `flowchart` (or `graph`), `se
 Named colors: `red` `orange` `amber` `yellow` `green` `teal` `cyan` `blue` `indigo` `purple` `pink` `gray` `muted` `accent`. They adapt to light and dark themes.
 
 Any other key or value is a validation error and is dropped by renderers.
+
+## 13. Silencing validation rules
+
+Fix problems rather than silence them. When a finding is intended (a link to a file that is generated later, an example of a broken diagram), silence only that rule, on the fewest lines:
+
+```markdown
+<!-- smd-disable-next-line link/missing-file -->
+See the [generated report](build/report.html).
+
+<!-- smd-disable mermaid/* -->
+…a section of deliberately broken diagrams…
+<!-- smd-enable mermaid/* -->
+```
+
+- `smd-disable-next-line` covers the line below, `smd-disable-line` its own line, and `smd-disable` … `smd-enable` a range.
+- Codes are separated by spaces or commas and may be `category/*`. No codes silences every rule, which is rarely what you want.
+- An unknown code is reported as `rules/unknown`.
+- Project-wide settings belong in `smd.config.json` (`{"rules": {"link/missing-file": "off"}}`), not in comments.

@@ -2,9 +2,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, extractTasks, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
+  agentView, applyFixes, checkMermaid, extractTasks, formatSmd, getDocumentInfo, markdownToSmd, outline, renderPage, smdToMarkdown,
   validateSmd, SMD_VERSION, type Diagnostic, type TaskInfo,
 } from './core';
+import { loadMermaidParser } from './mermaidLoader';
+import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
@@ -27,8 +29,17 @@ Reading (token-efficient, for agents):
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
 
 Checking and converting:
-  smd validate <files|dirs...> [--json] [--fix] [--strict]
+  smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
       Check .smd files. Exit code 1 on errors (or warnings with --strict). --fix applies safe fixes.
+      Rules are configured by the nearest smd.config.json or .smdrc (or --config):
+        { "rules": { "link/missing-file": "off", "frontmatter/*": "hint", "task/overdue": "error" } }
+      and silenced inline with <!-- smd-disable-next-line rule/code -->.
+      Mermaid diagrams are parsed for syntax errors (--no-mermaid skips it).
+      Documents whose "updated" date is over 180 days old are reported as stale (--stale-after 0: off).
+  smd fmt <files|dirs...> [--check] [--stdout]
+      Format .smd files in place: container fences, attribute lists, tables and blank lines.
+      --check   change nothing; list unformatted files and exit 1 if there are any
+      --stdout  print the formatted file instead of writing it (one file)
   smd render <file.smd> [-o out.html]      Standalone HTML page
   smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
@@ -46,7 +57,7 @@ Agent skills:
 
 interface Args { command?: string; positional: string[]; flags: Set<string>; values: Map<string, string[]> }
 
-const VALUE_OPTIONS = new Set(['-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
+const VALUE_OPTIONS = new Set(['--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only']);
 
 function parseArgs(argv: string[]): Args {
   const [command, ...rest] = argv;
@@ -66,11 +77,14 @@ function parseArgs(argv: string[]): Args {
   return args;
 }
 
-function main(argv: string[]): number {
+function main(argv: string[]): number | Promise<number> {
   const args = parseArgs(argv);
   const { command, positional, flags } = args;
   const value = (name: string) => args.values.get(name)?.[0];
   const today = value('--today');
+  const staleAfter = value('--stale-after');
+  const staleAfterDays = staleAfter === undefined ? undefined : Number(staleAfter);
+  if (staleAfterDays !== undefined && !(staleAfterDays >= 0)) return fail('--stale-after needs a number of days (0 turns the check off).');
 
   switch (command) {
     case 'outline': {
@@ -102,13 +116,16 @@ function main(argv: string[]): number {
       return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
     case 'meta': {
       const file = requireFile(positional[0]);
-      const info = getDocumentInfo(read(file), { fileExists: existsFrom(file), readFile: readerFor(file), today });
+      const rules = configFor(file, value('--config')).rules;
+      const info = getDocumentInfo(read(file), { fileExists: existsFrom(file), readFile: readerFor(file), today, rules, staleAfterDays });
       if (flags.has('--no-diagnostics')) delete (info as Partial<typeof info>).diagnostics;
       process.stdout.write(JSON.stringify(info, null, 2) + '\n');
       return 0;
     }
     case 'validate':
-      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today);
+      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'), staleAfterDays);
+    case 'fmt':
+      return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
     case 'render': {
       const file = requireFile(positional[0]);
       return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
@@ -152,14 +169,31 @@ function main(argv: string[]): number {
   }
 }
 
-function validate(targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string): number {
+async function validate(
+  targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, configFile?: string, mermaid = true, staleAfterDays?: number,
+): Promise<number> {
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
   const report: Array<{ file: string; diagnostics: Diagnostic[]; fixed?: number }> = [];
+  const configs = new Map<string, LoadedConfig>();
+  const reported = new Set<string>();
+  let configProblems = 0;
+  const parse = mermaid ? loadMermaidParser() : undefined;
   for (const file of files) {
-    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today };
+    const config = configFor(file, configFile, configs);
+    if (config.problems.length && !reported.has(config.file!)) {
+      reported.add(config.file!);
+      configProblems += config.problems.length;
+      for (const p of config.problems) console.error(`${config.file}: warning  ${p}`);
+    }
+    const opts = { fileExists: existsFrom(file), readFile: readerFor(file), today, staleAfterDays, rules: config.rules };
+    const check = async (text: string) => {
+      const found = validateSmd(text, opts);
+      if (parse) found.push(...await checkMermaid(text, parse, config.rules));
+      return found.sort((a, b) => a.line - b.line || a.column - b.column);
+    };
     let text = read(file);
-    let diagnostics = validateSmd(text, opts);
+    let diagnostics = await check(text);
     let fixed: number | undefined;
     if (fix && diagnostics.some((d) => d.fix)) {
       const result = applyFixes(text, diagnostics);
@@ -167,7 +201,7 @@ function validate(targets: string[], json: boolean, fix: boolean, strict: boolea
         text = result.text;
         fs.writeFileSync(file, text);
         fixed = result.applied;
-        diagnostics = validateSmd(text, opts);
+        diagnostics = await check(text);
       }
     }
     report.push({ file, diagnostics, ...(fixed ? { fixed } : {}) });
@@ -175,7 +209,7 @@ function validate(targets: string[], json: boolean, fix: boolean, strict: boolea
 
   const all = report.flatMap((r) => r.diagnostics);
   const errors = all.filter((d) => d.severity === 'error').length;
-  const warnings = all.filter((d) => d.severity === 'warning').length;
+  const warnings = all.filter((d) => d.severity === 'warning').length + configProblems;
 
   if (json) {
     process.stdout.write(JSON.stringify({ files: report, errors, warnings }, null, 2) + '\n');
@@ -192,6 +226,39 @@ function validate(targets: string[], json: boolean, fix: boolean, strict: boolea
     console.log(`\n${files.length} file(s) checked: ${errors} error(s), ${warnings} warning(s).`);
   }
   return errors > 0 || (strict && warnings > 0) ? 1 : 0;
+}
+
+/** Rule settings for a file: from `--config`, else the nearest config file. */
+function configFor(file: string, configFile?: string, cache?: Map<string, LoadedConfig>): LoadedConfig {
+  if (!configFile) return loadRuleConfig(file, cache);
+  const key = `explicit:${configFile}`;
+  const cached = cache?.get(key);
+  if (cached) return cached;
+  const config = fs.existsSync(configFile) ? readConfigFile(configFile) : { file: configFile, rules: {}, problems: ['Config file not found.'] };
+  cache?.set(key, config);
+  return config;
+}
+
+function fmt(targets: string[], check: boolean, stdout: boolean): number {
+  if (stdout) {
+    if (targets.length !== 1 || !fs.existsSync(targets[0]) || !fs.statSync(targets[0]).isFile()) return fail('--stdout needs exactly one file.');
+    process.stdout.write(formatSmd(read(targets[0])));
+    return 0;
+  }
+  const files = targets.flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const changed: string[] = [];
+  for (const file of files) {
+    const text = read(file);
+    const formatted = formatSmd(text);
+    if (formatted === text) continue;
+    changed.push(file);
+    if (!check) fs.writeFileSync(file, formatted);
+    console.log(check ? `${file}: not formatted` : `${file}: formatted`);
+  }
+  console.log(`
+${files.length} file(s) checked: ${changed.length} ${check ? 'need formatting' : 'formatted'}.`);
+  return check && changed.length ? 1 : 0;
 }
 
 function tasks(targets: string[], all: boolean, mine: string | undefined, json: boolean, today?: string): number {
@@ -313,4 +380,4 @@ function fail(message: string): number {
   return 2;
 }
 
-process.exitCode = main(process.argv.slice(2));
+void Promise.resolve(main(process.argv.slice(2))).then((code) => { process.exitCode = code; });

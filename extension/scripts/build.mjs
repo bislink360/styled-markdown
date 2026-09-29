@@ -33,6 +33,17 @@ const common = {
 const builds = [
   { ...common, entryPoints: [join(root, 'src', 'extension.ts')], outfile: join(root, 'dist', 'extension.js'), external: ['vscode'] },
   { ...common, entryPoints: [join(root, 'src', 'cli.ts')], outfile: join(root, 'dist', 'cli.js'), banner: { js: '#!/usr/bin/env node' } },
+  // Mermaid's parser for syntax diagnostics, loaded on demand by the extension and CLI.
+  {
+    ...common,
+    entryPoints: [join(root, 'src', 'mermaidParser.ts')],
+    outfile: join(root, 'dist', 'mermaid-parse.js'),
+    alias: { dompurify: join(root, 'src', 'shims', 'dompurify.ts') },
+    mainFields: ['module', 'main'],
+    sourcemap: false,
+    minify: true,
+    logLevel: 'warning',
+  },
 ];
 
 if (watch) {

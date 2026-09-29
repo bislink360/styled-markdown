@@ -63,6 +63,10 @@ A YAML mapping between `---` lines at the very start of the file. It is parsed w
 
 Unknown keys are allowed and preserved (reported as *hints* so typos are caught).
 
+The table is published as a JSON Schema: [`extension/schemas/smd-frontmatter.schema.json`](https://raw.githubusercontent.com/bislink360/styled-markdown/main/extension/schemas/smd-frontmatter.schema.json), also shipped on npm as `styled-markdown/frontmatter.schema.json`. The validator and editor completion read the same schema, and YAML tools or pipelines can use it to check document metadata.
+
+A document is **stale** when `updated` is more than 180 days before today (tools may make this configurable) and `status` is not `archived` or `deprecated`.
+
 ---
 
 ## 3. Block containers
@@ -228,6 +232,8 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `frontmatter/unknown-key` | hint | Non-standard key (fix when a close match exists) |
 | `frontmatter/status` · `/audience` · `/accent` · `/type` · `/date` | warning / error | Invalid values |
 | `frontmatter/duplicate-title` | hint | First `# H1` repeats the front matter title |
+| `frontmatter/value` | warning | A value outside the schema's allowed values for keys without their own rule (e.g. `theme`) |
+| `frontmatter/stale` | info | `updated` is older than the stale threshold and the document is not archived or deprecated |
 | `container/unknown` | warning | Unknown container name (fix: closest name) |
 | `container/unclosed` | error | Missing closing `:::` |
 | `container/stray-close` | warning | `:::` with nothing open |
@@ -238,6 +244,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `directive/unknown` | warning | `:name[…]` close to a known directive (fix: closest name) |
 | `directive/content` | error | Directive needs `[content]` |
 | `mermaid/type` · `mermaid/empty` | error / warning | Unknown diagram type (fix: closest type) / empty diagram |
+| `mermaid/syntax` | warning | The diagram does not parse (checked with Mermaid's own parser where the tool ships it) |
 | `math/syntax` · `math/unclosed` | error | KaTeX parse error / unclosed `$$` |
 | `fence/unclosed` | error | Unclosed code fence |
 | `link/missing-anchor` | warning | `[x](#id)` or `[x](other.smd#id)` with no heading or element with that id (fix: closest id) |
@@ -246,6 +253,9 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `attrs/required` | error / warning | Required attribute missing (`:::api` needs `method` and `path`; `:metric` should have `label`) |
 | `fence/embed-missing` · `fence/range` · `fence/embed-body` · `fence/lines-without-file` | error / warning | Embedded file missing or outside the workspace, bad line range, non-empty embed body, `lines` without `file` |
 | `task/overdue` | info | Open task past its `:due[…]` date |
+| `rules/unknown` | warning | A suppression comment names an unknown rule code (fix: closest code) |
+
+Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.smdrc.json` file in the document's folder or a parent folder has `{"rules": {"<code>" | "<category>/*" | "*": "off" | "error" | "warning" | "info" | "hint"}}`. The nearest file applies, the search stops at the repository root, and the most specific key wins. Inside a document, the comments `<!-- smd-disable-next-line [codes] -->`, `<!-- smd-disable-line [codes] -->` and `<!-- smd-disable [codes] -->` … `<!-- smd-enable [codes] -->` silence rules. No codes means every rule. Codes are separated by spaces or commas and may be `category/*`.
 
 ---
 

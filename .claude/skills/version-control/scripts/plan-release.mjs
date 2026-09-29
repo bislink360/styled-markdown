@@ -122,17 +122,17 @@ for (const b of featureBranches) {
 if (!DRY) git(['fetch', '--quiet', 'origin']);
 
 // ---- 4. draft tracking PR --------------------------------------------------------
-const hasGh = spawnSync('gh', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' }).status === 0;
+const hasGh = spawnSync('gh', ['--version'], { encoding: 'utf8' }).status === 0;
 const repo = (tryGit(['remote', 'get-url', 'origin']) ?? '').replace(/^.*github\.com[:/]/, '').replace(/\.git$/, '');
 let trackingPr = null;
 if (!flag('--no-pr') && hasGh && repo) {
-  const find = spawnSync('gh', ['api', `repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${RELEASE}&base=${PR_BASE}`, '--jq', '.[0].html_url // ""'], { encoding: 'utf8', shell: process.platform === 'win32' });
+  const find = spawnSync('gh', ['api', `repos/${repo}/pulls?state=open&head=${repo.split('/')[0]}:${RELEASE}&base=${PR_BASE}`, '--jq', '.[0].html_url // ""'], { encoding: 'utf8' });
   trackingPr = find.stdout?.trim() || null;
   const list = featureBranches.map((b) => `- [ ] \`${b}\` → PR into \`${RELEASE}\``).join('\n');
   if (!trackingPr) {
     const body = `## Release ${version}\n\nTracking PR for the ${RELEASE} release train. Feature branches (each merged into \`${RELEASE}\` by its own PR):\n\n${list}\n\n## Before merging this PR (after the release is published)\n- [ ] All feature PRs merged into \`${RELEASE}\`\n- [ ] CHANGELOG entry for ${version} complete; release-check (full mode) ✅\n- [ ] Maintainer approval of the release report\n- [ ] Tag \`v${version}\` pushed on the release branch, artifacts built and published, registries verified\n\nMerge with a **merge commit** (not squash) so the tagged commit stays in \`${PR_BASE}\`'s history.`;
     act(`open draft tracking PR ${RELEASE} → ${PR_BASE}`, () => {
-      const r = spawnSync('gh', ['pr', 'create', '--repo', repo, '--draft', '--base', PR_BASE, '--head', RELEASE, '--title', `chore(release): ${version}`, '--body', body], { encoding: 'utf8', shell: process.platform === 'win32' });
+      const r = spawnSync('gh', ['pr', 'create', '--repo', repo, '--draft', '--base', PR_BASE, '--head', RELEASE, '--title', `chore(release): ${version}`, '--body', body], { encoding: 'utf8' });
       if (r.status !== 0) console.warn(`warning: could not open the tracking PR: ${(r.stderr || '').trim()}`);
       trackingPr = r.stdout?.trim().split('\n').pop() || null;
     });

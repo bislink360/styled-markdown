@@ -16,12 +16,12 @@ toc: true
 
 Plain **bold**, *italic*, ~~strike~~, `inline code`, [links](#callouts), autolinks like https://code.visualstudio.com, tables, lists and images.
 
-| Feature        | `.md` | `.smd` |
-| -------------- | :---: | :----: |
-| Text & tables  |  ✅   |   ✅   |
-| Colors         |  ❌   |   ✅   |
-| Diagrams       |  ⚠️   |   ✅   |
-| Validation     |  ❌   |   ✅   |
+| Feature       | `.md` | `.smd` |
+| ------------- | :---: | :----: |
+| Text & tables |  ✅   |   ✅   |
+| Colors        |  ❌   |   ✅   |
+| Diagrams      |  ⚠️   |   ✅   |
+| Validation    |  ❌   |   ✅   |
 
 - [x] Every `.md` file is already a valid `.smd` file
 - [x] Click a checkbox in the preview to toggle it in the source
@@ -91,20 +91,20 @@ pie title Effort split
 
 ## Layout
 
-::::columns
-:::column{width=50%}
-:::::card{accent=green} Frontend
+:::::columns
+::::column{width=50%}
+:::card{accent=green} Frontend
 - React 19
 - :progress{value=80 color=green}
-:::::
-:::
-:::column
-:::::card{accent=blue} Backend
-- Go services
-- :progress{value=45 color=blue}
-:::::
 :::
 ::::
+::::column
+:::card{accent=blue} Backend
+- Go services
+- :progress{value=45 color=blue}
+:::
+::::
+:::::
 
 ::::tabs
 :::tab npm
@@ -181,10 +181,10 @@ Pre-warm the connection pool and ask the provider for a temporary quota increase
 ## For developers
 
 :::api{method=POST path="/v1/orders" auth="bearer token"} Create an order
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `items` | array | yes | At least one line item |
-| `coupon` | string | no | Validated server-side |
+| Field    | Type   | Required | Notes                  |
+| -------- | ------ | -------- | ---------------------- |
+| `items`  | array  | yes      | At least one line item |
+| `coupon` | string | no       | Validated server-side  |
 
 **Responses:** `201` created · `409` duplicate idempotency key · `422` validation error
 :::
