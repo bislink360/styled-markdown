@@ -1,0 +1,71 @@
+---
+smd: 1
+title: "Onboarding: {{title}}"
+summary: Who this guide is for, what a new team member can do by the end of week one, and where to ask for help.
+status: approved
+owners: ["@team-lead"]
+tags: [onboarding]
+updated: {{today}}
+---
+
+**Buddy:** :mention[@buddy] · **Manager:** :mention[@manager] · **Help:** #team-help
+
+:::tip Start here
+Read this guide on day one and work through it in order. Ask your buddy anything, however small.
+:::
+
+## Day 1: access and setup
+
+- [ ] Accounts: email, chat, code host, issue tracker @new-hire
+- [ ] Development environment set up with the steps below @new-hire
+- [ ] Intro call with your buddy @buddy
+
+:::steps
+1. **Clone** the main repository.
+2. **Install** the dependencies.
+3. **Run** the tests to confirm your setup works.
+:::
+
+```bash title="setup"
+git clone https://example.com/org/repo.git
+cd repo
+make setup test
+```
+
+## Week 1: first contribution
+
+- [ ] Read the architecture overview @new-hire
+- [ ] Ship a small fix from the starter issues @new-hire :due[{{today}}]
+- [ ] Shadow an on-call shift @new-hire
+
+## First 90 days
+
+:::timeline
+- [ ] **Day 30** — Owns small features end to end
+- [ ] **Day 60** — Reviews pull requests for the team
+- [ ] **Day 90** — Joins the on-call rotation
+:::
+
+## Key links
+
+| Resource              | Link                                               | Use it for                   |
+| --------------------- | -------------------------------------------------- | ---------------------------- |
+| Architecture overview | [architecture](https://example.com/architecture)   | How the system fits together |
+| Starter issues        | [issues](https://example.com/issues?label=starter) | Your first contributions     |
+| Team calendar         | [calendar](https://example.com/calendar)           | Stand-ups and rituals        |
+
+## People to meet
+
+| Who               | Why                   |
+| ----------------- | --------------------- |
+| :mention[@person] | Owns the product area |
+| :mention[@person] | Runs releases         |
+
+## Team history {agent=skip}
+
+How the team started and what it has shipped, for context.
+
+:::agent Rules for agents helping new team members
+- Point to the links in this guide instead of restating them.
+- Never grant access or change permissions; ask the manager.
+:::

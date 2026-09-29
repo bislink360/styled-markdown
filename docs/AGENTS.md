@@ -24,7 +24,7 @@ How to interpret what you read:
 
 ## Writing `.smd` files
 
-Start from a template when one fits: `smd init docs/x.smd --template prd|adr|rfc|runbook|api|status-report|meeting-notes --title "…"`. Otherwise, always start with front matter:
+Start from a template when one fits: `smd init docs/x.smd --template prd|adr|rfc|runbook|api|status-report|meeting-notes|postmortem|release-notes|okrs|onboarding|test-plan|pr-description --title "…"`. Otherwise, always start with front matter:
 
 ```yaml
 ---

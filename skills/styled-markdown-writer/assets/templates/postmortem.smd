@@ -1,0 +1,76 @@
+---
+smd: 1
+title: "Postmortem: {{title}}"
+summary: What users saw and for how long, the root cause in one clause, and the most important follow-up.
+status: review
+owners: ["@incident-commander"]
+tags: [postmortem, incident]
+created: {{today}}
+updated: {{today}}
+---
+
+:::info Blameless review
+This review is about systems and processes, not people. Describe what happened and why each action made sense at the time.
+:::
+
+## Summary
+
+**Severity:** :badge[SEV-2]{color=orange} · **Status:** :status[Resolved]{color=green}
+
+:metric[—]{label="Time to detect"} :metric[—]{label="Time to mitigate"} :metric[—]{label="Users affected"}
+
+One paragraph: what broke, who was affected, and how it ended.
+
+## Impact
+
+- Customer impact: failed requests, delayed data, lost revenue.
+- Internal impact: teams paged, deploys frozen, support tickets.
+
+## Timeline
+
+All times UTC.
+
+:::timeline
+- [x] **{{today}} 00:00** — Trigger: the change or event that started it
+- [x] **{{today}} 00:05** — Detection: the alert or report that surfaced it
+- [x] **{{today}} 00:20** — Mitigation: what stopped the impact
+- [x] **{{today}} 01:00** — Resolution: service fully recovered
+:::
+
+## Root cause
+
+The technical cause, and the conditions that let it reach users. Keep asking "why?" until you reach something a follow-up can fix.
+
+## Contributing factors
+
+::::columns
+:::column
+**Went well**
+
+- Detection, tooling or response that helped.
+:::
+:::column
+**Went poorly**
+
+- Gaps that slowed detection or recovery.
+:::
+::::
+
+## Action items
+
+- [ ] Fix that prevents recurrence :priority[P1] @owner :due[{{today}}]
+- [ ] Alert or dashboard that detects this sooner :priority[P2] @owner :due[{{today}}]
+
+:::decision{status=proposed date={{today}} owner=@owner} Process or design change agreed in the review
+Why, and what it replaces.
+:::
+
+## Supporting data {agent=skip}
+
+Graphs, logs and links to the incident channel.
+
+:::agent Rules for follow-up work
+- Link every change to its action item above and reference this postmortem in the pull request.
+- Add a regression test or alert that would have caught this incident.
+- Don't mark an action item done until the fix is deployed and verified.
+:::

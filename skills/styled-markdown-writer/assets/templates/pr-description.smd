@@ -1,0 +1,48 @@
+---
+smd: 1
+title: "{{title}}"
+summary: What this pull request changes and why, in one or two sentences.
+status: review
+owners: ["@author"]
+tags: [pull-request]
+updated: {{today}}
+---
+
+**Closes:** #123 · **Type:** :badge[feature]{color=indigo} · **Risk:** :status[Low]{color=green}
+
+## Summary
+
+Why this change is needed, and the approach in a few sentences.
+
+## Changes
+
+- `path/to/file`: what changed and why.
+
+## Testing
+
+- [x] Unit tests added or updated
+- [ ] Manual check a reviewer can repeat, described below
+
+```bash title="verify"
+npm test
+```
+
+## Risk and rollback
+
+:::warning Rollback
+How to undo this change (revert, disable a flag), and anything that can't be undone, such as data migrations.
+:::
+
+## Checklist
+
+- [ ] Docs and changelog updated
+- [ ] No breaking changes, or they are described above
+- [ ] No secrets, credentials or personal data in the diff
+
+## Screenshots {agent=skip}
+
+Before and after, for visible changes.
+
+:::agent Review focus
+- The files and behaviours a reviewer should check most carefully.
+:::

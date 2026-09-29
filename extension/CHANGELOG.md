@@ -11,6 +11,13 @@
   - `--titles` prints one line per block, `--json` gives type, lines, title, attributes, section and agent-view text; `--brief` and `--no-lines` work as in `smd agent`
   - a misspelled type or attribute is an error with a suggestion (exit code 2), and the exit code is 1 when nothing matches
 - Library: `querySmd(source, selector, options)`, `parseSelector` and `SelectorError`.
+- Six new templates for `smd init --template` and the writer skill, 13 in total:
+  - `postmortem`: blameless incident review with impact metrics, timeline, root cause, action items with owners and due dates, and rules for agents doing the follow-ups
+  - `release-notes`: highlights, breaking changes with migration steps, deprecations, Added/Changed/Fixed, upgrade and known issues
+  - `okrs`: objectives with key-result tables (owner, baseline, target, progress, confidence), initiatives and risks
+  - `onboarding`: day-one setup, first-week tasks, a 90-day timeline, key links and people to meet
+  - `test-plan`: scope, strategy, environments, test cases, entry and exit criteria, risks and schedule
+  - `pr-description`: summary, changes, testing, risk and rollback, checklist and review focus
 
 ### Changed
 
