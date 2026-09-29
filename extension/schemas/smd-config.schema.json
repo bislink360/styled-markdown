@@ -1,0 +1,488 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Styled Markdown config (smd.config.json / .smdrc)",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "rules": {
+      "type": "object",
+      "description": "Turn rules off or change their severity, by rule code, category (link/*) or * for all.",
+      "properties": {
+        "*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every rule. More specific keys win."
+        },
+        "frontmatter/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every frontmatter/… rule. Exact codes win."
+        },
+        "container/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every container/… rule. Exact codes win."
+        },
+        "attrs/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every attrs/… rule. Exact codes win."
+        },
+        "directive/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every directive/… rule. Exact codes win."
+        },
+        "mermaid/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every mermaid/… rule. Exact codes win."
+        },
+        "math/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every math/… rule. Exact codes win."
+        },
+        "fence/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every fence/… rule. Exact codes win."
+        },
+        "link/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every link/… rule. Exact codes win."
+        },
+        "task/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every task/… rule. Exact codes win."
+        },
+        "rules/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every rules/… rule. Exact codes win."
+        },
+        "frontmatter/invalid": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "YAML front matter does not parse, is not a mapping, or is never closed"
+        },
+        "frontmatter/version": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "smd version missing or unsupported"
+        },
+        "frontmatter/unknown-key": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Non-standard front matter key"
+        },
+        "frontmatter/status": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Invalid status value"
+        },
+        "frontmatter/audience": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Invalid audience value"
+        },
+        "frontmatter/value": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Value outside the allowed values for its key (e.g. theme)"
+        },
+        "frontmatter/accent": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Invalid accent color"
+        },
+        "frontmatter/type": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Front matter value has the wrong type"
+        },
+        "frontmatter/date": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Front matter date is not YYYY-MM-DD"
+        },
+        "frontmatter/duplicate-title": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The first # heading repeats the front matter title"
+        },
+        "frontmatter/stale": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "updated is older than the stale limit and the document is not archived or deprecated"
+        },
+        "container/unknown": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Unknown container name"
+        },
+        "container/unclosed": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Container is never closed"
+        },
+        "container/stray-close": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Closing ::: with nothing open"
+        },
+        "container/parent": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Container used outside its required parent (tab outside tabs…)"
+        },
+        "attrs/syntax": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Malformed {…} attribute list"
+        },
+        "attrs/unknown": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Attribute not accepted in this position"
+        },
+        "attrs/value": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Invalid attribute value"
+        },
+        "attrs/required": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Required attribute missing"
+        },
+        "directive/unknown": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Unknown inline directive"
+        },
+        "directive/content": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Inline directive needs [content]"
+        },
+        "mermaid/type": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Unknown Mermaid diagram type"
+        },
+        "mermaid/empty": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Empty Mermaid diagram"
+        },
+        "mermaid/syntax": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Mermaid diagram does not parse (checked where a Mermaid parser is available: the editor and the CLI)"
+        },
+        "math/syntax": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "KaTeX parse error"
+        },
+        "math/unclosed": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Display math $$ is never closed"
+        },
+        "fence/unclosed": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Code fence is never closed"
+        },
+        "fence/embed-missing": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Embedded file is missing or outside the workspace"
+        },
+        "fence/range": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Invalid lines=\"…\" range"
+        },
+        "fence/embed-body": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A file=\"…\" embed has a non-empty body"
+        },
+        "fence/lines-without-file": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "lines=\"…\" without file=\"…\""
+        },
+        "link/missing-anchor": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Link to an #anchor that does not exist"
+        },
+        "link/missing-file": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Link to a relative file that does not exist"
+        },
+        "link/undefined-reference": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Reference link with no [label]: … definition"
+        },
+        "task/overdue": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Open task past its :due[…] date"
+        },
+        "rules/unknown": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Suppression comment or rule setting names an unknown rule code"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

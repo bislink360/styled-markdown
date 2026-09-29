@@ -32,5 +32,10 @@ await esbuild.build({ ...common, platform: 'neutral', mainFields: ['module', 'ma
 // Stylesheet for users who render fragments with renderSmd().
 copyFileSync(join(root, 'media', 'smd.css'), join(out, 'smd.css'));
 
+// JSON Schema for front matter, for YAML tooling and pipelines that check document metadata.
+copyFileSync(join(root, 'schemas', 'smd-frontmatter.schema.json'), join(out, 'frontmatter.schema.json'));
+
 // The CLI is built by scripts/build.mjs; ship the identical file.
 copyFileSync(join(root, 'dist', 'cli.js'), join(out, 'cli.js'));
+// Mermaid's parser, loaded by the CLI on demand for mermaid/syntax diagnostics.
+copyFileSync(join(root, 'dist', 'mermaid-parse.js'), join(out, 'mermaid-parse.js'));

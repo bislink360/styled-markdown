@@ -86,7 +86,7 @@ export function activate(context: vscode.ExtensionContext): void {
       let errors = 0;
       for (const file of files) {
         const doc = await vscode.workspace.openTextDocument(file);
-        errors += diagnostics.update(doc);
+        errors += await diagnostics.update(doc);
       }
       const msg = `Validated ${files.length} .smd file(s): ${errors} error(s).`;
       if (errors) {

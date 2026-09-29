@@ -156,6 +156,157 @@ const checks = {
     }
   },
 
+  async 'completion suggests paths and anchors in links, related and embeds'() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'smd-lc-'));
+    fs.mkdirSync(path.join(dir, 'specs'));
+    fs.writeFileSync(path.join(dir, 'specs', 'pricing.smd'), '# Pricing\n\n## Refund rules\n');
+    fs.writeFileSync(path.join(dir, 'logo.png'), '');
+    fs.writeFileSync(path.join(dir, 'util.ts'), '');
+    const main = path.join(dir, 'main.smd');
+    fs.writeFileSync(main, [
+      '---', 'related: [specs/]', '---', '## Intro', '',
+      '[a](', '[b](specs/pricing.smd#', '[c](#', '```ts file="', '```', '',
+    ].join('\n'));
+    const doc = await vscode.workspace.openTextDocument(main);
+    const labels = async (line, character) => {
+      const list = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', doc.uri, new vscode.Position(line, character));
+      return list.items.map((i) => (typeof i.label === 'string' ? i.label : i.label.label)).sort();
+    };
+    assert.deepEqual(await labels(5, 4), ['#intro', 'logo.png', 'specs/', 'util.ts']);
+    assert.deepEqual(await labels(6, 22), ['pricing', 'refund-rules']);
+    assert.deepEqual(await labels(7, 5), ['intro']);
+    assert.deepEqual(await labels(1, 16), ['pricing.smd'], 'related: offers documents only');
+    assert.deepEqual(await labels(8, 12), ['logo.png', 'specs/', 'util.ts']);
+  },
+
+  async 'find references and rename follow heading anchors across the workspace'() {
+    // Workspace-wide search only covers the open folder (examples/), so the fixture lives there briefly.
+    const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const dir = fs.mkdtempSync(path.join(root, 'zz-refs-'));
+    try {
+      fs.mkdirSync(path.join(dir, 'sub'));
+      const a = path.join(dir, 'a.smd');
+      fs.writeFileSync(a, '# Guide\n\n## Pricing rules\n\nSee [p](#pricing-rules).\n');
+      fs.writeFileSync(path.join(dir, 'b.smd'), '[x](a.smd#pricing-rules) [y](a.smd#guide)\n');
+      fs.writeFileSync(path.join(dir, 'sub', 'c.md'), '[z](../a.smd#pricing-rules)\n');
+      const doc = await vscode.workspace.openTextDocument(a);
+      const heading = new vscode.Position(2, 6);
+
+      const refs = await vscode.commands.executeCommand('vscode.executeReferenceProvider', doc.uri, heading);
+      const where = refs.map((r) => `${path.relative(dir, r.uri.fsPath).replace(/\\/g, '/')}:${r.range.start.line}:${r.range.start.character}`).sort();
+      assert.deepEqual(where, ['a.smd:2:3', 'a.smd:4:9', 'b.smd:0:10', 'sub/c.md:0:13'], JSON.stringify(where));
+
+      const edit = await vscode.commands.executeCommand('vscode.executeDocumentRenameProvider', doc.uri, heading, 'Pricing');
+      assert.ok(await vscode.workspace.applyEdit(edit));
+      const text = async (rel) => (await vscode.workspace.openTextDocument(path.join(dir, rel))).getText();
+      assert.equal(await text('a.smd'), '# Guide\n\n## Pricing\n\nSee [p](#pricing).\n');
+      assert.equal(await text('b.smd'), '[x](a.smd#pricing) [y](a.smd#guide)\n');
+      assert.equal(await text('sub/c.md'), '[z](../a.smd#pricing)\n');
+    } finally {
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+
+  async 'smd.config.json and suppression comments shape diagnostics, and config edits apply live'() {
+    // The config watcher covers the open folder (examples/), so the fixture lives there briefly.
+    const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const dir = fs.mkdtempSync(path.join(root, 'zz-rules-'));
+    try {
+      const config = path.join(dir, 'smd.config.json');
+      fs.writeFileSync(config, '{ "rules": { "container/unknown": "off", "attrs/value": "hint" } }');
+      const file = path.join(dir, 'a.smd');
+      fs.writeFileSync(file, ':::warnign\nA [word]{color=blu}\n:::\n\n<!-- smd-disable-next-line -->\n:::tpi\nx\n:::\n');
+      const doc = await vscode.workspace.openTextDocument(file);
+      const state = () => vscode.languages.getDiagnostics(doc.uri)
+        .map((d) => `${d.range.start.line}:${d.code}:${d.severity}`).sort().join(' ');
+      await waitFor(() => state() === `1:attrs/value:${vscode.DiagnosticSeverity.Hint}`, `configured diagnostics, got "${state()}"`);
+
+      fs.writeFileSync(config, '{ "rules": { "attrs/*": "off", "contaner/unknown": "off" } }');
+      await waitFor(() => state() === `0:container/unknown:${vscode.DiagnosticSeverity.Warning}`, `reloaded config, got "${state()}"`);
+      const problems = await waitFor(() => vscode.languages.getDiagnostics(vscode.Uri.file(config)).map((d) => d.message).join(), 'config file problems');
+      assert.match(problems, /Unknown rule "contaner\/unknown" — did you mean "container\/unknown"\?/);
+    } finally {
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+
+  async 'refactorings wrap selections, change callout types and convert blockquotes'() {
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'smd',
+      content: 'First line.\nSecond line.\n\n:::note\nKeep it short.\n:::\n\n> **Warning:** Rotate keys.\n',
+    });
+    const actions = async (range) =>
+      ((await vscode.commands.executeCommand('vscode.executeCodeActionProvider', doc.uri, range, 'refactor.rewrite.smd')) ?? []).filter((a) => a.kind?.value === 'refactor.rewrite.smd');
+    const run = async (range, title) => {
+      const action = (await actions(range)).find((a) => a.title === title);
+      assert.ok(action, `no "${title}" in ${JSON.stringify((await actions(range)).map((a) => a.title))}`);
+      assert.ok(await vscode.workspace.applyEdit(action.edit));
+    };
+
+    const wraps = (await actions(new vscode.Range(0, 0, 2, 0))).map((a) => a.title);
+    assert.ok(wraps.includes('Wrap in :::agent (agent instructions)') && wraps.includes('Wrap in :::human (humans only)'), JSON.stringify(wraps));
+    await run(new vscode.Range(0, 0, 2, 0), 'Wrap in :::tip (tip)');
+    await run(new vscode.Range(5, 2, 5, 2), 'Convert :::note to :::info');
+    await run(new vscode.Range(9, 3, 9, 3), 'Convert blockquote to :::warning');
+    assert.equal(doc.getText(), ':::tip\nFirst line.\nSecond line.\n:::\n\n:::info\nKeep it short.\n:::\n\n:::warning\nRotate keys.\n:::\n');
+    const blank = (await actions(new vscode.Range(4, 0, 4, 0))).map((a) => a.title);
+    assert.deepEqual(blank, [], `no actions on a blank line: ${JSON.stringify(blank)}`);
+  },
+
+  async 'Mermaid syntax errors are reported, and cleared when fixed'() {
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content: '# D\n\n```mermaid\nsequenceDiagram\n  A->>B hi\n```\n' });
+    await vscode.window.showTextDocument(doc);
+    const mermaid = () => vscode.languages.getDiagnostics(doc.uri).filter((d) => d.code === 'mermaid/syntax');
+    const [d] = await waitFor(() => mermaid().length && mermaid(), 'a mermaid/syntax diagnostic');
+    assert.equal(d.range.start.line, 4);
+    assert.match(d.message, /^Mermaid syntax error: expected TXT/);
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(doc.uri, new vscode.Position(4, 7), ':');
+    await vscode.workspace.applyEdit(edit);
+    await waitFor(() => mermaid().length === 0, 'the diagnostic to clear');
+  },
+
+  async 'front matter completion follows the schema, and stale documents are flagged'() {
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content: '---\nsmd: 1\ntheme: \nupdated: 2020-01-01\n\n---\n\nBody\n' });
+    const labels = async (line, character) => {
+      const list = await vscode.commands.executeCommand('vscode.executeCompletionItemProvider', doc.uri, new vscode.Position(line, character));
+      // Snippets are always mixed in; keep this provider's keys and values.
+      const ours = [vscode.CompletionItemKind.Property, vscode.CompletionItemKind.EnumMember];
+      return list.items.filter((i) => ours.includes(i.kind)).map((i) => (typeof i.label === 'string' ? i.label : i.label.label));
+    };
+    const themes = (await labels(2, 7)).sort();
+    assert.deepEqual(themes, ['auto', 'dark', 'light'], JSON.stringify(themes));
+    const keys = await labels(4, 0);
+    assert.ok(keys.includes('status') && keys.includes('owners'), JSON.stringify(keys));
+    assert.ok(!keys.includes('smd') && !keys.includes('updated'), 'keys already present are not offered');
+    await waitFor(() => vscode.languages.getDiagnostics(doc.uri).some((d) => d.code === 'frontmatter/stale' && d.range.start.line === 3), 'a frontmatter/stale diagnostic');
+  },
+
+  async 'workspace symbols find headings, decisions and APIs; hovers preview sections and embeds'() {
+    const symbols = await vscode.commands.executeCommand('vscode.executeWorkspaceSymbolProvider', 'post orders');
+    const api = symbols.find((s) => s.name === 'POST /v1/orders — Create an order' && s.kind === vscode.SymbolKind.Method);
+    assert.ok(api, JSON.stringify(symbols.map((s) => s.name)));
+    const decisions = await vscode.commands.executeCommand('vscode.executeWorkspaceSymbolProvider', 'launch in the eu');
+    assert.ok(decisions.some((s) => s.kind === vscode.SymbolKind.Event), JSON.stringify(decisions.map((s) => s.name)));
+
+    const hoverText = async (doc, line, character) => {
+      const hovers = await vscode.commands.executeCommand('vscode.executeHoverProvider', doc.uri, new vscode.Position(line, character));
+      return hovers.flatMap((h) => h.contents.map((c) => (typeof c === 'string' ? c : c.value))).join('\n');
+    };
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content: '## Setup\n\nInstall it.\n\nSee [setup](#setup).\n' });
+    assert.match(await hoverText(doc, 4, 7), /Install it\./);
+
+    const showcase = await vscode.workspace.openTextDocument(path.join(examples, 'showcase.smd'));
+    const embedLine = showcase.getText().split('\n').findIndex((l) => l.includes('file="src/pricing.ts"'));
+    assert.ok(embedLine > 0);
+    const embed = await hoverText(showcase, embedLine, 3);
+    assert.match(embed, /src\/pricing\\\.ts\*\* · lines 1–12/, 'the file name is escaped Markdown');
+    assert.match(embed, /```ts/);
+  },
+
   async 'Enter continues task lists, ends empty items, and leaves code alone'() {
     const doc = await vscode.workspace.openTextDocument({ language: 'smd', content: '- [x] Ship it :priority[P1] @maya\n\n```md\n- [ ] in code\n```\n' });
     const editor = await vscode.window.showTextDocument(doc);
