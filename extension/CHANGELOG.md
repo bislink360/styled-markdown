@@ -43,6 +43,16 @@
 
 ### Changed
 - The npm package ships Mermaid's parser for `smd validate` (`dist/mermaid-parse.js`, 3.4 MB unpacked). The library entry points don't load it.
+- `parseSmd(text)` in the library: headings and anchor ids without rendering HTML, parsed incrementally.
+
+### Changed
+- Large documents stay responsive. On a 12,000-line document, after typical edits:
+  - validation: about 110 ms → 30 ms
+  - `smd outline`: 11 s → 80 ms (it transformed the document once per section; now once)
+  - `smd meta`: 180 ms → 40 ms
+  - the agent view and its token counter: 90 ms → 26 ms
+  - Outline view and go to definition: no render at all
+  Headings and anchors now come from an incremental parse that reuses every top-level block the edit didn't touch, instead of a full HTML render, and results are identical. Math checks are cached per formula, and the status-bar token counter waits longer before updating on long documents.
 
 ### Deprecated
 

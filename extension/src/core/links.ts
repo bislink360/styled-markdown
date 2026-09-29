@@ -1,5 +1,5 @@
 import { parseFrontMatter } from './frontmatter';
-import { renderSmd } from './render';
+import { parseSmd } from './parse';
 
 /** A link target found in a document. Positions are zero-based; `column` is where `target` starts. */
 export interface LinkTarget {
@@ -119,18 +119,12 @@ function decode(s: string): string {
 
 /** Every id a `#fragment` can point at: heading slugs, `{#id}` attributes and raw HTML ids/names. */
 export function anchorIds(text: string): Set<string> {
-  const result = renderSmd(text);
-  const ids = new Set(result.headings.map((h) => h.slug));
-  for (const m of result.html.matchAll(/\s(?:id|name)="([^"]*)"/g)) ids.add(unescapeHtml(m[1]));
-  return ids;
+  // The same ids the rendered HTML carries, from an incremental parse instead of a render.
+  return new Set(parseSmd(text).ids);
 }
 
 /** Files whose headings can be linked to with `file#anchor`. */
 export const isDocumentPath = (path: string): boolean => /\.(?:smd|md|markdown)$/i.test(path);
-
-function unescapeHtml(s: string): string {
-  return s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-}
 
 /**
  * The link target under a zero-based position, for go to definition. On a reference `[text][label]`,
@@ -159,7 +153,7 @@ export function linkAt(
  * element with `id`/`name`. Returns undefined when nothing in the document has that id.
  */
 export function anchorLine(text: string, id: string): number | undefined {
-  const heading = renderSmd(text).headings.find((h) => h.slug === id);
+  const heading = parseSmd(text).headings.find((h) => h.slug === id);
   if (heading) return heading.line;
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const attr = new RegExp(`\\{[^{}\\n]*#${escaped}(?=[\\s}])|\\s(?:id|name)\\s*=\\s*(["'])${escaped}\\1`);
@@ -245,11 +239,11 @@ export interface AnchorTarget {
 }
 
 export function anchorTargets(text: string): AnchorTarget[] {
-  const result = renderSmd(text);
-  const targets: AnchorTarget[] = result.headings.map((h) => ({ id: h.slug, text: h.text, level: h.level, line: h.line }));
+  // From the incremental parse, like anchorIds: headings, then `{#id}` blocks and HTML ids/names.
+  const { headings, ids } = parseSmd(text);
+  const targets: AnchorTarget[] = headings.map((h) => ({ id: h.slug, text: h.text, level: h.level, line: h.line }));
   const seen = new Set(targets.map((t) => t.id));
-  for (const m of result.html.matchAll(/\s(?:id|name)="([^"]*)"/g)) {
-    const id = unescapeHtml(m[1]);
+  for (const id of ids) {
     if (id && !seen.has(id)) { seen.add(id); targets.push({ id, line: anchorLine(text, id) }); }
   }
   return targets;

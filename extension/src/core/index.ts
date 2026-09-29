@@ -3,6 +3,8 @@ export { parseFrontMatter } from './frontmatter';
 export { FRONTMATTER_SCHEMA, frontMatterValues } from './frontmatterSchema';
 export { renderSmd, renderStandaloneHtml, slugify } from './render';
 export type { RenderOptions, RenderResult, Heading } from './render';
+export { parseSmd } from './parse';
+export type { ParseResult } from './parse';
 export { validateSmd, applyFixes } from './validate';
 export { suggest } from './util';
 export { RULE_CODES, applyRuleSettings, readRuleConfig } from './rules';
