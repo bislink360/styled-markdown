@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.0 — 2026-09-29
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 1.2.0 — 2026-09-28
 
 No breaking changes. Documents, CLI commands and flags, diagnostic codes, library exports, extension commands and settings from 1.1.0 all keep working, and every document that passed `smd validate` still passes. New checks are warnings or info: `link/undefined-reference`, `frontmatter/value` and `mermaid/syntax` are warnings, `frontmatter/type` now also covers a `title`, `summary` or `version` given as a list or mapping, and `frontmatter/stale` is info. So `smd validate --strict` can report warnings on documents that passed before; turn any rule off in `smd.config.json`.
