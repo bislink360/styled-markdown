@@ -18,6 +18,8 @@
   - after `#`, the headings, `{#id}` blocks and HTML ids of the current document or of the linked `other.smd#…` are suggested, using its unsaved text when it is open
   - an empty link target also offers this document's `#anchors`
   - nothing is suggested inside code
+- Find references (`Shift+F12`) for heading anchors across the workspace, from a heading or from a link's `#anchor`. The results cover inline links, reference definitions and HTML `href`s in `.smd` and `.md` files.
+- Rename a heading (`F2`) and update every link to its anchor across the workspace. When a rename renumbers the anchors of later headings with the same text (`#setup-1` → `#setup`), links to those are updated too. Headings with an explicit `{#id}` keep their anchor, and percent-encoded anchors stay encoded.
 
 ### Changed
 
