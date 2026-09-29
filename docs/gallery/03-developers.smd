@@ -4,10 +4,10 @@ accent: indigo
 ---
 
 :::api{method=POST path="/v1/orders" auth="bearer token"} Create an order
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `items` | LineItem[] | yes | At least one item |
-| `coupon` | string | no | Validated server-side |
+| Field    | Type       | Required | Notes                 |
+| -------- | ---------- | -------- | --------------------- |
+| `items`  | LineItem[] | yes      | At least one item     |
+| `coupon` | string     | no       | Validated server-side |
 
 **Responses:** `201` created · `409` idempotency key reused · `422` validation errors
 :::
