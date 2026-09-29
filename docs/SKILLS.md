@@ -147,7 +147,7 @@ flowchart LR
    | `:::human`, `{agent=skip}` sections | *(omitted)* |
    | With `--brief`: diagrams, long code, details, done tasks | One-line pointers with line ranges |
 
-3. **The reader skill** turns this into a habit: `smd outline` (≈100–300 tokens) shows every section's cost, and the agent then pulls only what it needs.
+3. **The reader skill** turns this into a habit: `smd outline` (≈100–300 tokens) shows every section's cost, and the agent then pulls only what it needs. For documents with `related:` links, `smd outline --related` adds each related document's summary and cost, so the agent opens one only when the question needs it.
 
 Measured on the examples:
 
