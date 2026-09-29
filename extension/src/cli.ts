@@ -368,7 +368,7 @@ function relatedBlock(file: string, text: string, today?: string): string {
 }
 
 function displayPath(dir: string, rel: string): string {
-  return path.relative(process.cwd(), path.resolve(dir, rel)).split(path.sep).join('/');
+  return relativePath(path.resolve(dir, rel));
 }
 
 function index(targets: string[], out: string | undefined, compact: boolean, today?: string): number {
