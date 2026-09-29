@@ -404,7 +404,7 @@ function fileSince(file: string, ref: string, top: string, flags: DiffFlags): Fi
 }
 
 function deletedFile(topPath: string, ref: string, top: string, flags: DiffFlags): FileDiff {
-  const file = path.relative(process.cwd(), path.join(top, topPath));
+  const file = path.relative(realPath(process.cwd()), path.join(realPath(top), topPath));
   return { file, status: 'deleted', result: diffSmd(git(['show', `${ref}:${topPath}`]) ?? '', '', flags) };
 }
 
@@ -418,7 +418,16 @@ function deletedSince(ref: string, targets: string[], top: string): string[] {
 
 /** A path relative to the Git top level, with forward slashes. */
 function gitPath(top: string, file: string): string {
-  return path.relative(top, path.resolve(file)).split(path.sep).join('/');
+  return path.relative(realPath(top), realPath(file)).split(path.sep).join('/');
+}
+
+/** The canonical path: links resolved and Windows short names (RUNNER~1) expanded, as Git reports them. */
+function realPath(p: string): string {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 /** Run git without a shell; undefined when it fails. */

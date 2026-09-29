@@ -129,6 +129,14 @@ test('CLI: smd diff compares two files and a Git revision', { skip: !existsSync(
     assert.equal(run('plan.smd', '--since', 'HEAD', '--exit-code').status, 1);
     assert.equal(run('--since', 'no-such-ref').status, 2);
     assert.equal(run('plan.smd').status, 2);
+
+    // Windows: from an 8.3 short path (as tmpdir() is on CI runners, C:\Users\RUNNER~1\…), Git reports the long
+    // path; files must still be found at the revision instead of all showing up as added.
+    if (process.platform === 'win32') {
+      const short = execFileSync('cmd.exe', ['/d', '/s', '/c', `"for %I in ("${dir}") do @echo %~sI"`], { encoding: 'utf8', windowsVerbatimArguments: true }).trim();
+      const fromShort = spawnSync(process.execPath, [cli, 'diff', '--since', 'HEAD'], { cwd: short, encoding: 'utf8' });
+      assert.equal(fromShort.stdout, since.stdout);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
