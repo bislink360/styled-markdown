@@ -30,10 +30,12 @@ smd fmt docs/ --check                 # formatting check for CI; without --check
 smd outline docs/spec.smd             # sections, line ranges and token cost per section
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
+smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
 smd render docs/spec.smd -o spec.html # standalone HTML page
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
-smd init docs/plan.smd --template prd # new document: prd, adr, rfc, runbook, api, status-report, meeting-notes
+smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
+smd mcp                               # MCP server (stdio) with outline, section, agent, tasks, validate, query
 ```
 
 Run `smd --help` for every option.
@@ -43,7 +45,7 @@ Run `smd --help` for every option.
 ```ts
 import {
   renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
-  smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, formatSmd,
+  smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
 } from 'styled-markdown';
 ```
 
@@ -98,7 +100,20 @@ view.originalTokens  // ≈ tokens of the raw file
 view.skippedSections // headings marked {agent=skip}
 
 console.log(outline(source)); // sections with line ranges and token costs
+
+// Fit a budget: condense as brief, then leave out the least important sections (each becomes a pointer).
+const fitted = agentView(source, { maxTokens: 800, file: 'docs/spec.smd' });
+fitted.budget        // { maxTokens, tokens, fits, condensed, omitted: [{ heading, level, line, endLine, tokens }] }
+
+// Exact counts with a tokenizer you bring, e.g. js-tiktoken (not a dependency of this package).
+import { getEncoding } from 'js-tiktoken';
+const o200k = getEncoding('o200k_base');
+const tokenizer = { name: 'o200k_base', count: (text: string) => o200k.encode(text).length };
+agentView(source, { tokenizer, maxTokens: 800 }).counted; // { tokenizer, tokens, originalTokens }
+outline(source, { tokenizer });                          // exact counts next to each estimate
 ```
+
+`maxTokens` never leaves out the header, text before the first `##` section, sections with `:::agent` instructions, or the requested `sections`. Sections with danger or warning callouts, accepted decisions, questions or open tasks are kept longest. OpenAI encodings are approximate for Claude models, which have no public tokenizer.
 
 The agent view drops styling, layout, `:::human` blocks and `{agent=skip}` sections. It keeps callouts (`<warning>`), decisions, risks, API definitions, tasks with owner, priority and due date, and **always** includes `:::agent` instructions, even when you select a single section.
 
@@ -112,9 +127,18 @@ formatSmd(source);                        // the `smd fmt` layout: fence colons,
 const info = getDocumentInfo(source);     // front matter, outline, tasks, decisions, risks, agent blocks, diagnostics
 const open = extractTasks(source).filter((t) => !t.done);
 // [{ text: 'Idempotent order creation', priority: 'P0', assignees: ['@api-team'], due: '2026-10-03', overdue: false, line: 61, section: 'Requirements' }]
+
+const risks = querySmd(source, 'risk[impact>=high][status!=closed]'); // the `smd query` selectors
+// [{ type: 'risk', title: 'Apple Pay domain verification delays launch', attrs: { impact: 'high', … }, line: 144, endLine: 146, section: 'Risks', text: '<risk impact="high" …' }]
+
+const entry = indexEntry(source, 'docs/checkout.smd'); // one `smd index` catalog entry
+// { path, title, summary, status, owners, tags, audience, updated, related, tokens: { file, agent }, counts: { openTasks, … }, sections: [{ level, text, id, line, endLine, tokens }] }
+const catalog = smdIndex([{ path: 'docs/checkout.smd', text: source }]); // { format: 'smd-index', version: 1, smd: 1, documents: [entry, …] }, sorted by path
+const changes = diffSmd(oldSource, newSource); // the `smd diff` sections that changed
+// { frontMatter: [{ key: 'status', before: 'draft', after: 'accepted' }], sections: [{ change: 'changed', heading: 'Rollout', level: 3, line: 40, endLine: 46, text: '### Rollout  [L41]\n…' }], text: '…', tokens: 42, fullTokens: 1480 }
 ```
 
-Also exported: `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
+Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
 
 ## A taste of the format
 

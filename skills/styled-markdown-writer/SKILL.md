@@ -1,6 +1,6 @@
 ---
 name: styled-markdown-writer
-description: Create and edit Styled Markdown (.smd) documents that follow the .smd rules — PRDs, ADRs, RFCs/design docs, runbooks, API references, status reports, meeting notes, specs and plans. Use this skill whenever the user asks to write, draft, create, convert, restructure or update a .smd file, asks for a spec/PRD/ADR/runbook/status report "in smd" or "styled markdown", wants a Markdown doc converted to .smd, or wants a document that both people and AI agents will read. It provides templates, the full syntax, authoring rules and a validator that fixes mistakes.
+description: Create and edit Styled Markdown (.smd) documents that follow the .smd rules — PRDs, ADRs, RFCs/design docs, runbooks, API references, status reports, meeting notes, postmortems, release notes, OKRs, onboarding guides, test plans, PR descriptions, specs and plans. Use this skill whenever the user asks to write, draft, create, convert, restructure or update a .smd file, asks for a spec/PRD/ADR/runbook/status report "in smd" or "styled markdown", wants a Markdown doc converted to .smd, or wants a document that both people and AI agents will read. It provides templates, the full syntax, authoring rules and a validator that fixes mistakes.
 ---
 
 # Writing Styled Markdown (.smd)
@@ -22,6 +22,12 @@ Tool (Node 18+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (
    | Endpoint reference | `api` |
    | Weekly/monthly update | `status-report` |
    | Meeting summary with actions | `meeting-notes` |
+   | Incident review, post-incident report | `postmortem` |
+   | Release announcement, what's new, upgrade guide | `release-notes` |
+   | Objectives and key results, quarterly goals | `okrs` |
+   | New team member guide | `onboarding` |
+   | Test scope, strategy and cases, QA plan | `test-plan` |
+   | Pull request description | `pr-description` |
 
    `smd init docs/name.smd --template prd --title "Saved searches"` creates the file with today's date filled in. The raw templates are in `assets/templates/`. For anything else, start from front matter + headings.
 
@@ -36,7 +42,7 @@ Tool (Node 18+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (
 
    `fmt` only changes layout (fence colons, attribute order and quoting, table columns, blank lines), never meaning.
 
-   `--fix` repairs typos automatically. Fix any remaining errors yourself: each has a line:column, a message and a rule code. **A document is done only when validation reports 0 errors.**
+   `--fix` repairs what has one clear repair: typos in names and values, misspelled colors, `yes`/`no` on true/false keys, `2026/9/5`-style dates, and unclosed `:::` or code fences at the end of the file. Fix any remaining errors yourself: each has a line:column, a message and a rule code. **A document is done only when validation reports 0 errors.**
 
 4. **Check what agents will see:** `smd agent docs/name.smd --brief`. If it's still long, move narrative into `{agent=skip}` sections or `:::human` blocks.
 

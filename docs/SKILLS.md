@@ -4,7 +4,7 @@ Styled Markdown ships two **agent skills**: folders of instructions, references,
 
 | Skill | The agent learns to… | Contents |
 |---|---|---|
-| **`styled-markdown-writer`** | **Create and edit `.smd` that follows the rules.** It picks the right template, uses only valid blocks and values, validates and auto-fixes, and writes documents that are cheap for other agents to read. | `SKILL.md`, `references/syntax.md` (complete syntax), `references/style-guide.md` (authoring rules), `assets/templates/*.smd` (7 templates), `scripts/smd.cjs` |
+| **`styled-markdown-writer`** | **Create and edit `.smd` that follows the rules.** It picks the right template, uses only valid blocks and values, validates and auto-fixes, and writes documents that are cheap for other agents to read. | `SKILL.md`, `references/syntax.md` (complete syntax), `references/style-guide.md` (authoring rules), `assets/templates/*.smd` (13 templates), `scripts/smd.cjs` |
 | **`styled-markdown-reader`** | **Read `.smd` with minimal tokens**, focusing only on meaningful content: outline first, then only the relevant sections through the agent view, and raw lines only when editing. | `SKILL.md`, `scripts/smd.cjs` |
 
 `scripts/smd.cjs` is the complete `smd` CLI in one file (Node.js 18+, no `npm install`).
@@ -85,15 +85,50 @@ The skills need a sandbox with Node.js 18+ for `scripts/smd.cjs`.
 
 ## GitHub Copilot, Cursor, Codex, Windsurf and other agents
 
-Agents without skill support can follow the same workflow through their instruction files.
+Agents without skill support follow the same workflow through their instruction files.
 
-1. Make the CLI available in the repository, for example by committing `tools/smd.cjs` (copied from `skills/styled-markdown-reader/scripts/smd.cjs`) or installing it with `npm link`.
+### Option 1 — install with the CLI (recommended)
+
+Run this from your repository root (get `smd.cjs` as in [Claude Code](#claude-code)), then commit the files it writes:
+
+```bash
+node smd.cjs skills install --target cursor,copilot,agents
+```
+
+| `--target` | Writes | Loaded by the agent |
+|---|---|---|
+| `cursor` | `.cursor/rules/styled-markdown.mdc` | When a `.smd` file is in context (`globs: **/*.smd`) |
+| `copilot` | `.github/instructions/styled-markdown.instructions.md` | When Copilot works on a `.smd` file (`applyTo: "**/*.smd"`) |
+| `agents` | A section in `AGENTS.md` between `<!-- styled-markdown:start -->` and `<!-- styled-markdown:end -->` | Always, by OpenAI Codex and other agents that read `AGENTS.md` |
+| `claude` | The Claude Code skills (the default) | See [Claude Code](#claude-code) |
+
+Pick any combination: repeat `--target` or separate targets with commas. Each run also copies the CLI to `.smd/smd.cjs`, and the rules tell the agent to run `node .smd/smd.cjs outline <file>` and so on, so the agent needs Node.js 18+ and nothing else.
+
+Output:
+
+```text
+Installed smd CLI → …/.smd/smd.cjs  (agents run it as: node .smd/smd.cjs)
+Created …/.cursor/rules/styled-markdown.mdc  (Cursor rule for **/*.smd)
+Created …/.github/instructions/styled-markdown.instructions.md  (Copilot instructions for **/*.smd)
+Updated …/AGENTS.md  (styled-markdown section)
+```
+
+Notes:
+- `AGENTS.md` is created if it's missing. If it exists, only the styled-markdown section is added or replaced; the rest of the file is kept, and re-running never adds a second section.
+- The rule file, the instructions file and the section all have the same content, a short version of [docs/AGENTS.md](AGENTS.md).
+- `--dir <project>` writes into another project root. `--global` and `--only` apply to the Claude skills only, and `--dir` means the skills folder for `claude`, so install `claude` and the other targets in separate runs when you use `--dir`.
+
+### Option 2 — add the guide by hand
+
+For other agents, or to customize the text:
+
+1. Make the CLI available in the repository, for example by committing `.smd/smd.cjs` (copied from `skills/styled-markdown-reader/scripts/smd.cjs`) or installing it with `npm link`.
 2. Add the one-page guide [docs/AGENTS.md](AGENTS.md) to the agent's instructions, either by copying it or by referencing it:
 
    | Agent | Instruction file |
    |---|---|
-   | GitHub Copilot | `.github/copilot-instructions.md` |
-   | Cursor | `.cursor/rules/smd.mdc` (or `.cursorrules`) |
+   | GitHub Copilot | `.github/copilot-instructions.md` or `.github/instructions/*.instructions.md` |
+   | Cursor | `.cursor/rules/*.mdc` |
    | OpenAI Codex, and most agents | `AGENTS.md` at the repository root |
    | Windsurf | `.windsurfrules` |
    | Gemini CLI | `GEMINI.md` |
@@ -103,11 +138,13 @@ Agents without skill support can follow the same workflow through their instruct
    ```markdown
    ## Styled Markdown (.smd)
    Project docs use Styled Markdown. Follow docs/AGENTS.md.
-   - Reading: run `node tools/smd.cjs outline <file>`, then `node tools/smd.cjs agent <file> --section "<heading>"`.
+   - Reading: run `node .smd/smd.cjs outline <file>`, then `node .smd/smd.cjs agent <file> --section "<heading>"`.
      Don't read .smd files whole.
-   - Writing: start from `node tools/smd.cjs init <file> --template prd|adr|rfc|runbook|api|status-report|meeting-notes`,
-     then run `node tools/smd.cjs validate <file> --fix` until there are 0 errors.
+   - Writing: start from `node .smd/smd.cjs init <file> --template prd|adr|rfc|runbook|api|status-report|meeting-notes|postmortem|release-notes|okrs|onboarding|test-plan|pr-description`,
+     then run `node .smd/smd.cjs validate <file> --fix` until there are 0 errors.
    ```
+
+Agents that support the Model Context Protocol (Cursor, VS Code, Claude Desktop, Claude Code) can instead register the MCP server, `smd mcp`, which offers the same reading commands as tools. See [MCP server](AGENTS.md#mcp-server).
 
 ## Verify the skills work
 
@@ -119,6 +156,9 @@ Try these prompts in a new session in a repository that contains `.smd` files (t
 | *"Which decisions in the checkout spec are final and what is still open?"* | It lists the accepted and rejected decisions, the open question with its owner and deadline, and the fallback from the agent instructions. |
 | *"Write an ADR for moving our cron jobs to a managed scheduler, as docs/adr-0012-scheduler.smd."* | The agent uses the `adr` template, fills every placeholder, runs `smd validate --fix`, and ends with 0 errors. |
 | *"What's overdue across docs/?"* | It runs `smd tasks docs/`. |
+| *"Which high-impact risks are still open, and what did we decide about payments?"* | It runs `smd query "risk[impact>=high][status!=closed], decision[title*=pay]" docs/` and reads only those blocks. |
+| *"Which of our docs covers refunds, and what does it say about retries?"* | It runs `smd index docs/`, picks the document by title, summary and tags, then reads only the matching section with `smd agent … --section …`. |
+| *"The spec changed since last week. What's different?"* | It runs `smd diff docs/spec.smd --since "HEAD@{1.week.ago}"` (or a commit) and reads only the changed sections. |
 
 ## How token reduction works
 
@@ -145,8 +185,11 @@ flowchart LR
    | ```` ```ts file="src/x.ts" lines="7-13" ```` | `[code: src/x.ts lines 7-13 — read that file]` |
    | `:::human`, `{agent=skip}` sections | *(omitted)* |
    | With `--brief`: diagrams, long code, details, done tasks | One-line pointers with line ranges |
+   | With `--max-tokens N`: the least important sections, when the view is still too big | `[section omitted: ## Architecture, L90-L128, ≈231 tokens — smd agent … --section "Architecture"]` |
 
-3. **The reader skill** turns this into a habit: `smd outline` (≈100–300 tokens) shows every section's cost, and the agent then pulls only what it needs.
+   Token counts are estimates (characters / 4). `--tokenizer o200k_base` on `smd outline` and `smd agent` adds exact counts for that OpenAI encoding if `js-tiktoken` is installed; there is no public tokenizer for current Claude models, so for Claude they are approximate too. See [Token budgets and exact counts](FEATURES.md#token-budgets-and-exact-counts).
+
+3. **The reader skill** turns this into a habit: `smd outline` (≈100–300 tokens) shows every section's cost, and the agent then pulls only what it needs. For documents with `related:` links, `smd outline --related` adds each related document's summary and cost, so the agent opens one only when the question needs it.
 
 Measured on the examples:
 
@@ -156,7 +199,8 @@ Measured on the examples:
 | outline | 230 | 90% |
 | full agent view | 1,531 | 37% |
 | one section (+ agent instructions) | 365–542 | 78–85% |
-| `smd tasks examples/` vs. reading all 7 examples | 685 vs 6,867 | 90% |
+| `smd tasks examples/` vs. reading all 7 examples | 672 vs 7,258 | 91% |
+| `smd query "decision, risk" examples/` vs. reading all 7 examples | 821 vs 7,258 | 89% |
 
 **What to expect in practice:** in a head-to-head test on that PRD, agents with and without the reader skill both answered correctly, and total session tokens were within about 1%. On a single ~2k-token document, the skill's own cost (≈900 tokens for SKILL.md plus the outline) roughly cancels the saving. The benefit grows with **larger documents, many documents, and repeated reads**, which is why the skill tells agents to read small files in one call and select sections only when a file is big.
 
@@ -172,5 +216,5 @@ The writer skill applies these rules automatically. Humans can follow them too:
 
 ## Update or remove
 
-- **Update:** run `smd skills install` again (it overwrites the files), or re-copy the folders or zips from the newer release.
-- **Remove:** delete the `styled-markdown-reader` and `styled-markdown-writer` folders from your skills directory, or remove them in Claude.ai under **Settings → Capabilities → Skills**.
+- **Update:** run `smd skills install` again, with the same `--target` values (it overwrites the files and replaces the `AGENTS.md` section), or re-copy the folders or zips from the newer release.
+- **Remove:** delete the `styled-markdown-reader` and `styled-markdown-writer` folders from your skills directory, or remove them in Claude.ai under **Settings → Capabilities → Skills**. For other agents, delete `.smd/`, `.cursor/rules/styled-markdown.mdc`, `.github/instructions/styled-markdown.instructions.md` and the styled-markdown section of `AGENTS.md` (markers included).

@@ -41,7 +41,7 @@ Markdown is the lingua franca of engineering docs, but teams keep stretching it.
 
 | | Developers | Product & project managers | AI agents |
 |---|---|---|---|
-| Write | API blocks, code highlights, live code embeds, diagrams, math | Decisions, risks, timelines, KPIs, task owners and due dates | A writer skill with 7 templates and a validator |
+| Write | API blocks, code highlights, live code embeds, diagrams, math | Decisions, risks, timelines, KPIs, task owners and due dates | A writer skill with 13 templates and a validator |
 | Read | Syntax-highlighted preview, outline, folding | Status header, colored callouts, overdue tasks in red | A reader skill: outline → only the needed sections |
 | Check | Problems panel + quick fixes, `smd validate` in CI | `smd tasks` across all docs, overdue first | `--json` diagnostics with machine-applicable fixes |
 
@@ -137,14 +137,19 @@ History and research. People see it; agents skip it.
 
 | Command | Purpose |
 |---|---|
-| `smd outline <file>` | Sections with line ranges and token costs |
-| `smd agent <file> [--section …] [--brief]` | Compact agent view |
+| `smd index <dir> [-o catalog.json]` | JSON catalog of every doc (title, summary, status, owners, tags, sections, token costs, open tasks, risks…) so agents pick which docs to read |
+| `smd outline <file> [--related]` | Sections with line ranges and token costs; `--related` adds each `related:` doc's title, status, summary and cost |
+| `smd agent <file> [--section …] [--brief] [--max-tokens N]` | Compact agent view; `--max-tokens` condenses it and leaves out the least important sections (with pointers) to fit |
+| `… --tokenizer o200k_base` | Exact token counts next to the estimate on `outline` and `agent`, if you have installed `js-tiktoken` (OpenAI encodings; approximate for Claude) |
 | `smd tasks <dir> [--mine @me]` | Open tasks across docs, overdue first |
+| `smd query "<selector>" <paths> [--json]` | Decisions, risks, APIs, callouts, tasks or headings by type and attributes, e.g. `risk[impact>=high]` |
+| `smd diff <paths> --since <git-ref>` / `smd diff <old> <new>` | Only the sections that changed, in the agent view: catch up on a doc without rereading it |
 | `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->` |
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
-| `smd init <file> --template prd` | New doc from 7 templates (`smd templates` lists them) |
+| `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect |
-| `smd skills install [--global]` | Install the agent skills |
+| `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
+| `smd skills install [--global] [--target …]` | Install the agent skills, or rules for Cursor, Copilot and `AGENTS.md` |
 
 </details>
 
@@ -153,7 +158,7 @@ History and research. People see it; agents skip it.
 
 | Skill | What it teaches an agent |
 |---|---|
-| **`styled-markdown-writer`** | Create and edit `.smd` that follows every rule: choose a template (PRD, ADR, RFC, runbook, API, status report, meeting notes), fill it, validate with `--fix`, and keep it cheap for agents to read |
+| **`styled-markdown-writer`** | Create and edit `.smd` that follows every rule: choose a template (PRD, ADR, RFC, runbook, API, status report, meeting notes, postmortem, release notes, OKRs, onboarding, test plan, PR description), fill it, validate with `--fix`, and keep it cheap for agents to read |
 | **`styled-markdown-reader`** | Read `.smd` with minimal tokens: `outline` first, then only the relevant sections through the agent view, and raw lines only when editing |
 
 </details>
@@ -162,11 +167,11 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-1.1.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+1. Download **`styled-markdown-1.3.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
 2. Install it:
 
    ```bash
-   code --install-extension styled-markdown-1.1.0.vsix
+   code --install-extension styled-markdown-1.3.0.vsix
    ```
 
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
@@ -179,8 +184,8 @@ History and research. People see it; agents skip it.
 Install the package straight from the release:
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.1.0/styled-markdown-1.1.0.tgz   # the smd command
-npm install https://github.com/bislink360/styled-markdown/releases/download/v1.1.0/styled-markdown-1.1.0.tgz      # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.3.0/styled-markdown-1.3.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v1.3.0/styled-markdown-1.3.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -194,11 +199,29 @@ Full instructions, building from source and troubleshooting: **[docs/INSTALL.md]
 ### Agent skills
 
 ```bash
-curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.1.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.3.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs skills install --global
 ```
 
-Or download `styled-markdown-reader.zip` and `styled-markdown-writer.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest). This installs both skills into `~/.claude/skills/` for Claude Code. For Claude.ai, the Claude API / Agent SDK, Copilot, Cursor and other agents, see **[docs/SKILLS.md](docs/SKILLS.md)**.
+Or download `styled-markdown-reader.zip` and `styled-markdown-writer.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest). This installs both skills into `~/.claude/skills/` for Claude Code.
+
+For Cursor, GitHub Copilot and agents that read `AGENTS.md` (Codex and others), run this from your repository root and commit the result:
+
+```bash
+node smd.cjs skills install --target cursor,copilot,agents
+```
+
+It writes `.cursor/rules/styled-markdown.mdc`, `.github/instructions/styled-markdown.instructions.md`, a section in `AGENTS.md`, and the CLI to `.smd/smd.cjs`. For Claude.ai, the Claude API / Agent SDK and other agents, see **[docs/SKILLS.md](docs/SKILLS.md)**.
+
+### MCP server
+
+Give any MCP client (Claude Code, Cursor, VS Code, Claude Desktop) the reading tools without shell access:
+
+```bash
+claude mcp add smd -- npx -y -p styled-markdown smd mcp
+```
+
+Other clients and options: **[docs/AGENTS.md](docs/AGENTS.md#mcp-server)**.
 
 ## Token-efficient reading for agents
 
@@ -211,7 +234,8 @@ Measured on [`examples/checkout-redesign.smd`](examples/checkout-redesign.smd), 
 | `smd agent` (whole doc) | 1,531 | 37% |
 | `smd agent --section requirements` | 542 | 78% |
 | `smd agent --section "open questions"` | 365 | 85% |
-| `smd tasks examples/` vs. reading all 7 examples | 685 vs 6,867 | 90% |
+| `smd tasks examples/` vs. reading all 7 examples | 672 vs 7,258 | 91% |
+| `smd query "decision, risk" examples/` vs. reading all 7 examples | 821 vs 7,258 | 89% |
 
 The skill and CLI cost a few hundred tokens themselves, so the savings grow with document size, the number of documents, and repeated reads. [How it works →](docs/SKILLS.md#how-token-reduction-works)
 
@@ -264,7 +288,7 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-1.1.0.vsix
+npm run package        # → styled-markdown-1.3.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
 ```
 

@@ -163,6 +163,29 @@ Start in week 1; Google Pay can launch alone.
 
 Rejected and superseded decisions are struck through in the preview. `smd meta` lists all decisions and risks as JSON.
 
+**`smd query`** selects blocks across documents by type and attributes, and prints each one in the agent view (`--titles` for one line per block, `--json` for tools):
+
+```bash
+smd query "decision[status=accepted]" docs/
+smd query "risk[impact>=high][status!=closed]" docs/
+smd query "api[method=POST|PUT], question" docs/
+smd query "task[owner=@api-team][due<today][done=false]" docs/
+```
+
+```text
+docs/checkout.smd:145-147  risk  Apple Pay domain verification delays launch  {impact=high likelihood=medium owner=@payments status=open}  — Risks
+```
+
+| Selector part | Meaning |
+|---|---|
+| `decision`, `risk`, `api`, `warning`, … | Any container type. `callout` is any callout, `task` a task item, `heading` a heading with its section, `*` (or nothing) any block. `a, b` lists alternatives. |
+| `[key]` | The attribute is set (and not `false`) |
+| `[key=a\|b]` `[key!=v]` | Equals one of the values / none of them. Case-insensitive; a leading `@` is ignored. |
+| `[key*=v]` `[key^=v]` `[key$=v]` | Contains / starts with / ends with |
+| `[key<v]` `<=` `>` `>=` | Numbers, dates (`YYYY-MM-DD` or `today`), priorities (`P0` < `P1` …, `critical` = `P0`, `high` = `P1`) and risk levels (`low` < `medium` < `high` < `critical`) |
+
+Every block also has `title`, `section` (the heading it sits under) and `type`. Defaults count: a decision without `status` is `proposed` and a risk without `impact` is `medium`. Tasks have `done`, `overdue`, `owner`, `priority` and `due`; headings have `level` and `id`. A misspelled type or attribute is an error with a suggestion, and the exit code is 1 when nothing matches.
+
 ## 7. Developer blocks: APIs, code, embeds
 
 ![API endpoint, embedded source with highlighted lines, sequence diagram](images/03-developers.png)
@@ -329,10 +352,12 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 |---|---|---|
 | `:::warnign` | `container/unknown` | → `:::warning` |
 | `:badg[x]` | `directive/unknown` | → `:badge` |
-| `[x]{color=blu}` | `attrs/value` | suggests `blue` |
-| `:::risk{impact=hgh}` | `attrs/value` | suggests `high` |
+| `[x]{color=blu}` | `attrs/value` | → `blue` |
+| `:::risk{impact=hgh}` | `attrs/value` | → `high` |
+| `[x]{colr=red}` | `attrs/unknown` | → `color` |
 | `:::api{method=POST}` | `attrs/required` | — |
-| unclosed `:::` | `container/unclosed` | — |
+| unclosed `:::` | `container/unclosed` | adds the closing `:::` at the end |
+| unclosed ```` ``` ```` | `fence/unclosed` | adds the closing fence at the end |
 | ```` ```mermaid flowchat ```` | `mermaid/type` | → `flowchart` |
 | `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |
 | `$$\frac{1}{$$` | `math/syntax` | — |
@@ -342,10 +367,32 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
+| `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |
+| `toc: yes`, `updated: 2026/9/5` | `frontmatter/type`, `frontmatter/date` | → `true`, `2026-09-05` |
 | `updated` more than 180 days ago | `frontmatter/stale` | — |
 | overdue open task | `task/overdue` | — |
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
+
+### What `--fix` changes
+
+A fix is attached only when there is exactly one sensible repair. VS Code offers the same fixes as quick fixes, and `--json` includes them as `fix` for agents. `smd validate --fix` applies them and checks again until nothing is left to fix (a code block is closed before the container around it).
+
+| Rule | Fixed when |
+|---|---|
+| `frontmatter/version` | `smd:` is missing (adds `smd: 1`) |
+| `frontmatter/unknown-key` | a standard key is close, e.g. `titel` → `title` |
+| `frontmatter/status`, `frontmatter/audience`, `frontmatter/value` | exactly one allowed value is close, e.g. `aproved` → `approved`, `Dark` → `dark` |
+| `frontmatter/accent` | the color is a misspelled named color, e.g. `bleu` → `blue` |
+| `frontmatter/type` | a true/false key holds `yes`, `no`, `on`, `off` or a quoted `"true"`/`"false"` |
+| `frontmatter/date` | the date is year-first with other separators or no zero padding, e.g. `2026/9/5` → `2026-09-05` |
+| `container/unknown`, `directive/unknown`, `mermaid/type`, `rules/unknown` | a known name is close |
+| `container/unclosed`, `fence/unclosed` | the block starts without indentation: the closing line goes at the end of the document, where the block already ends when rendered |
+| `attrs/unknown` | exactly one accepted attribute name is close and not already set, e.g. `colr` → `color` |
+| `attrs/value` | exactly one allowed value is close (block and directive values, named colors, `size`, `weight`, `font`, `align`, `:priority[…]`, heading `agent=skip`), or a `date`/`:due[…]` is year-first, e.g. `2026/10/5` → `2026-10-05` |
+| `link/missing-anchor` | a heading id is close |
+
+Everything else needs a decision only the author can make (which file was meant, where a block should end inside a list, what a missing attribute should be), so it has no fix. Fixes never touch values with several equally close matches, dates like `09/05/2026` whose day/month order is unclear, or `style=…`, which takes several words.
 
 ### Configuring rules
 
@@ -389,10 +436,15 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 ## 17. CLI reference
 
 ```text
-smd outline <file>                                   sections, line ranges, token costs, markers
+smd outline <file> [--related] [--tokenizer <name>]  sections, line ranges, token costs, markers; --related adds related docs
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
+                 [--max-tokens <n>] [--tokenizer <name>]   fit the view into n tokens; exact counts
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
+smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
+smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]          sections that changed
+smd diff <files|dirs> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
+smd index <files|dirs> [-o catalog.json] [--compact] JSON catalog of every document, for agent routing
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]
@@ -401,8 +453,131 @@ smd from-md <file.md> [-o out.smd]
 smd init <file> [--template <name>] [--title "…"]
 smd templates
 smd skills install [--dir <path>] [--global] [--only reader|writer]
+smd mcp [--root <dir>]                               MCP server over stdio (tools below)
+smd skills install --target cursor,copilot,agents [--dir <project>]   rules for other agents + .smd/smd.cjs
 smd --version
 ```
+
+### Document catalog: `smd index`
+
+`smd index docs/ -o docs/catalog.json` writes one JSON entry per document, so an agent can choose what to read across many documents without opening any of them:
+
+```json
+{
+  "format": "smd-index",
+  "version": 1,
+  "smd": 1,
+  "generator": "smd 1.3.0",
+  "documents": [
+    {
+      "path": "docs/api-orders.smd",
+      "title": "Orders API",
+      "summary": "Create, fetch and cancel orders. …",
+      "status": "approved",
+      "owners": ["@api-team"],
+      "tags": ["api", "reference", "orders"],
+      "audience": null,
+      "updated": "2026-09-24",
+      "related": [],
+      "tokens": { "file": 748, "agent": 562 },
+      "counts": {
+        "openTasks": 0, "doneTasks": 3, "overdueTasks": 0, "decisions": {}, "risks": 0, "openRisks": 0,
+        "questions": 0, "apis": 3, "diagrams": 0, "agentInstructions": 1
+      },
+      "sections": [
+        { "level": 2, "text": "Endpoints", "id": "endpoints", "line": 24, "endLine": 45, "tokens": 188 }
+      ]
+    }
+  ]
+}
+```
+
+- `path` is relative to the working directory, with `/` separators. Documents are sorted by path.
+- `title` comes from front matter, else the first `#` heading, else the file name. Missing metadata is `null` or `[]`.
+- `tokens.file` is the raw file, `tokens.agent` the full `smd agent` view. Each section's `tokens` is what `smd outline` shows for it (subsections included). `line` and `endLine` are zero-based, as in `smd meta` and `smd query --json`. A section marked `{agent=skip}` has `"agent": "skip"`.
+- `counts.decisions` groups decisions by status. `openRisks` counts risks whose status is not `mitigated` or `closed`. `agentInstructions` counts `:::agent` blocks.
+- The output has no timestamps, so a committed catalog only changes when documents do. `overdueTasks` depends on the date: pass `--today YYYY-MM-DD` to pin it.
+- `--compact` prints one line instead of indented JSON.
+
+How an agent routes with it: read the catalog, pick documents by `summary`, `status`, `tags`, `owners` and counts (for example skip `deprecated` documents, or look for open risks), check the reading cost in `tokens.agent`, then run `smd outline <file>` or go straight to `smd agent <file> --section "<id>"`.
+
+### MCP server
+
+`smd mcp` serves the reading commands to any Model Context Protocol client (Claude Code, Cursor, VS Code, Claude Desktop) over stdio, so agents can use them without a shell:
+
+| Tool | Arguments | Same as |
+|---|---|---|
+| `outline` | `file` | `smd outline` |
+| `section` | `file`, `sections[]`, `brief?` | `smd agent --section …` |
+| `agent` | `file`, `brief?`, `includeHuman?` | `smd agent` |
+| `tasks` | `paths[]?`, `all?`, `mine?` | `smd tasks` |
+| `validate` | `paths[]?` | `smd validate --json` |
+| `query` | `selector`, `paths[]?`, `brief?`, `titles?` | `smd query` |
+
+Paths are relative to `--root` (default: the current folder). Paths outside it are refused, only `.smd` files are read, and nothing is written. Register it with, for example:
+
+```bash
+claude mcp add smd -- npx -y -p styled-markdown smd mcp
+```
+
+Cursor, VS Code and Claude Desktop settings: [AGENTS.md](AGENTS.md#mcp-server).
+
+### What changed: `smd diff`
+
+`smd diff` shows an agent only what changed in a document, so it can catch up without rereading it. Compare two files, or each `.smd` file with its version at a Git commit, branch or tag:
+
+```bash
+smd diff docs/plan-v1.smd docs/plan.smd
+smd diff docs/ --since HEAD~5          # also lists files added and deleted since
+smd diff docs/plan.smd --since main --json
+```
+
+```text
+docs/plan.smd: changed since HEAD~5
+
+Front matter:
+  status: draft → accepted
+
+[changed L41-47]
+### Rollout  [L41]
+Ship to 10% of EU traffic first, then 50%.
+
+[renamed from "Objectives" L12-20]
+## Goals  [L12]
+
+[removed: ## Open questions, was L60-66]
+```
+
+- Sections are matched by heading id, then by content, so a renamed heading is a rename, not a removal and an addition.
+- A change is shown in the smallest section that contains it (a heading up to the next heading), so unchanged subsections stay out. Content before the first heading counts as a section.
+- Only changes an agent can see count: styling, comments and `:::human` content don't. Sections marked `{agent=skip}` are listed without their content.
+- Line refs point into the new version. stderr shows the token cost against the full agent view.
+- `--json` gives front-matter changes and sections (`change`, `heading`, `level`, `id`, `line`, `endLine`, `oldLine`, `oldEndLine`, `oldHeading`, `text`). The exit code is 0; with `--exit-code` it is 1 when something changed.
+
+### Token budgets and exact counts
+
+Token counts are estimates (characters / 4) unless you pass `--tokenizer`.
+
+**`smd agent <file> --max-tokens <n>`** fits the agent view into a budget, for prompts with a fixed context size. When the view is too big it:
+
+1. condenses it as `--brief` does (diagrams, long code, `:::details`, completed tasks), then
+2. leaves out whole sections, least important first, until it fits. Each one is replaced by a pointer that says how to read it:
+
+```text
+[section omitted: ## Architecture, L90-L128, ≈231 tokens — smd agent examples/checkout-redesign.smd --section "Architecture"]
+```
+
+| Rule | Sections |
+|---|---|
+| Never left out | the header (title, front matter, summary), text before the first `##` section, sections with `:::agent` instructions, sections requested with `--section` (and their subsections) |
+| Kept longer | sections with a `:::danger` or `:::warning` callout, an accepted decision, a `:::question` or an open task |
+| Left out first | everything else; the deepest headings first, then the largest, then the latest. A section is left out after its subsections, and its pointer then replaces theirs |
+
+A section is only left out when its content costs more than its pointer. stderr reports the result, e.g. `[smd] budget 700 tokens: condensed as --brief; omitted 6 section(s): ## Snapshot (≈55), …; now ≈656 tokens.` When even the smallest view is over the budget, smd prints it anyway, warns on stderr and exits 0. Without `--max-tokens` the output is unchanged.
+
+**`--tokenizer <name>`** on `smd agent` and `smd outline` adds exact counts next to the estimate (`≈1531 est · 1402 o200k_base tokens`), and `--max-tokens` then counts with it. Names: `o200k_base` (GPT-4o and later), `cl100k_base`, `p50k_base`, `r50k_base`. smd has no runtime dependencies, so it uses the [`js-tiktoken`](https://www.npmjs.com/package/js-tiktoken) package only if you have installed it, in your project (`npm install --save-dev js-tiktoken`, run smd from the project folder) or globally (`npm install -g js-tiktoken`). When it is missing, smd says how to install it and exits 2.
+
+These are OpenAI encodings. There is no public tokenizer for current Claude models, so for Claude these counts are approximate too: leave some headroom in a budget.
 
 ## 18. Templates
 
@@ -417,3 +592,9 @@ smd --version
 | `api` | Overview, Endpoints (`:::api`), Errors, Changelog (timeline), Rules (agent) |
 | `status-report` | Summary (status, progress, KPIs), Done, Next, Risks, Decisions needed |
 | `meeting-notes` | Attendees, Decisions, Action items, Notes (agent-skip) |
+| `postmortem` | Blameless note, Summary (severity, KPIs), Impact, Timeline, Root cause, Contributing factors (columns), Action items, Decision, Supporting data (agent-skip), Follow-up rules (agent) |
+| `release-notes` | Highlights (card), Breaking changes (danger, migration steps), Deprecations (warning), Changes (Added/Changed/Fixed), Upgrade, Known issues, Upgrade rules (agent) |
+| `okrs` | Period and overall progress, Objectives with key-result tables (owner, baseline, target, progress, confidence), Initiatives, Risks, Scoring tip, Rules (agent) |
+| `onboarding` | Buddy and manager, Start-here tip, Day 1 setup (tasks, steps, code), Week 1, First 90 days (timeline), Key links, People to meet, Team history (agent-skip), Rules (agent) |
+| `test-plan` | Scope, Strategy (table), Environments (table), Test cases (table), Entry and exit criteria (columns), Risks, Schedule (timeline), Testing rules (agent) |
+| `pr-description` | Links and risk, Summary, Changes, Testing, Risk and rollback (warning), Checklist, Screenshots (agent-skip), Review focus (agent) |

@@ -1,0 +1,50 @@
+---
+smd: 1
+title: "{{title}} OKRs"
+summary: The period, the outcomes that matter most, and overall confidence in reaching them.
+status: draft
+owners: ["@owner"]
+tags: [okrs, planning]
+updated: {{today}}
+---
+
+**Period:** YYYY-QN · **Overall:** :status[On track]{color=green} · **Progress:** :progress{value=0 label="0%"}
+
+## Objective 1: A qualitative, inspiring outcome
+
+**Owner:** :mention[@owner] · **Why now:** one sentence.
+
+:metric[—]{label="KR 1.1 today"} :metric[—]{label="KR 1.1 target"}
+
+| Key result                   | Owner  | Baseline | Target | Progress           | Confidence                     |
+| ---------------------------- | ------ | -------- | ------ | ------------------ | ------------------------------ |
+| **KR 1.1** Measurable result | @owner | —        | —      | :progress{value=0} | :status[On track]{color=green} |
+| **KR 1.2** Measurable result | @owner | —        | —      | :progress{value=0} | :status[At risk]{color=amber}  |
+
+## Objective 2: A second outcome
+
+**Owner:** :mention[@owner] · **Why now:** one sentence.
+
+| Key result                   | Owner  | Baseline | Target | Progress           | Confidence                     |
+| ---------------------------- | ------ | -------- | ------ | ------------------ | ------------------------------ |
+| **KR 2.1** Measurable result | @owner | —        | —      | :progress{value=0} | :status[On track]{color=green} |
+
+## Initiatives
+
+- [ ] Project that moves KR 1.1 :priority[P1] @owner :due[{{today}}]
+- [ ] Project that moves KR 2.1 :priority[P2] @owner :due[{{today}}]
+
+## Risks
+
+:::risk{impact=medium likelihood=medium owner=@owner status=open} What could stop a key result
+How we will notice early, and what we would change.
+:::
+
+:::tip Scoring
+Score each key result from 0.0 to 1.0 at the end of the period. For stretch goals, 0.7 is a good result.
+:::
+
+:::agent Rules for work linked to these OKRs
+- Tie every initiative and pull request to a key result by its ID, e.g. KR 1.1.
+- Report progress as measured values, not estimates, and update the Progress column.
+:::
