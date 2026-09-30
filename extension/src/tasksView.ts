@@ -68,7 +68,6 @@ class TaskIndex implements vscode.Disposable {
         if (this.scanned) this.scanned = this.scan();
       }),
     );
-    void this.updateHasSmd();
   }
 
   /** Every task, after the first scan. */
@@ -146,8 +145,8 @@ class TaskIndex implements vscode.Disposable {
     this.files.set(key, extractTasks(text).map((t) => ({ ...t, file, uri })));
   }
 
-  /** The view is shown only in workspaces with .smd files. */
-  private async updateHasSmd(): Promise<void> {
+  /** The view is shown only in workspaces with .smd files. Call once after creating the index. */
+  async updateHasSmd(): Promise<void> {
     const found = await vscode.workspace.findFiles('**/*.smd', EXCLUDE, 1);
     await vscode.commands.executeCommand('setContext', HAS_SMD_KEY, found.length > 0);
   }
@@ -302,6 +301,7 @@ async function pickGrouping(current: TaskGrouping): Promise<TaskGrouping | undef
 
 export function registerTasksView(context: vscode.ExtensionContext): void {
   const index = new TaskIndex();
+  void index.updateHasSmd();
   const provider = new TasksProvider(index, context.workspaceState);
   const view = vscode.window.createTreeView(VIEW_ID, { treeDataProvider: provider, manageCheckboxStateManually: true, showCollapseAll: true });
 
