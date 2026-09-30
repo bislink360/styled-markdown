@@ -24,6 +24,7 @@ node <this-skill-dir>/scripts/smd.cjs <command> …    # or `smd` if on PATH; No
    - Full agent view is small (≲ 2,000 tokens, shown on the outline's first line): run `smd agent FILE` once.
    - Specific question: run `smd agent FILE --section "Heading" [--section …]`. This matches heading text or id, includes subsections, and always appends `:::agent` instructions from elsewhere in the file.
    - Overview of a large doc: add `--brief`. It condenses diagrams, long code, `:::details` and completed tasks into pointers with line numbers.
+   - Overview within a fixed budget: `smd agent FILE --max-tokens 2000`. It condenses as `--brief`, then leaves out the least important sections, never agent instructions or sections you asked for with `--section`.
 3. **Related documents:** if the front matter lists `related:`, run `smd outline FILE --related`. It adds each related doc's title, status, summary and agent-view cost. Open a related doc (outline, then sections) only when the question needs it.
 4. **Open raw lines only to edit.** Headings in the agent view carry `[L42]` line references. Read just that range with offset/limit, never the whole file. For writing or restructuring, use the `styled-markdown-writer` skill.
 
@@ -52,6 +53,7 @@ Catching up on a changed document:
 | `[P1]`, `@name`, `(due …, OVERDUE)` | Task priority, owner, due date |
 | `[code: path lines a-b …]` | Real source embedded by the doc. Read that file range if you need it (or rerun with `--embed`). |
 | `[diagram: …]`, `[details: … omitted]` | Condensed by `--brief`. Read the given lines if you need them. |
+| `[section omitted: ## X, L90-L128, ≈231 tokens — smd agent …]` | Left out by `--max-tokens`. Run the given command if the question needs that section. |
 
 **No Node.js available?** Read the front matter and headings first (for example the first 20 lines, then search for `^## `), then read only the relevant line ranges. Skip `:::human` blocks and sections whose heading ends in `{agent=skip}`, and always read the `:::agent` block.
 

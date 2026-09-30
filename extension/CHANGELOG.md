@@ -14,6 +14,13 @@
 - `smd outline <file> --related` adds a block listing the documents in front matter `related:`: each `.smd` file's title, status, summary and full agent-view token cost, so agents can decide whether to open it. URLs and other files are listed but not read; missing files and files outside the project folders are marked. Without the flag the outline is unchanged.
 - The reader skill and `docs/AGENTS.md` tell agents to check related documents with `smd outline --related` and to open them only when the question needs it.
 - Library: `relatedDocs(source, { readFile })`, `relatedEntries`, `summarizeSmd` and `formatRelated`.
+- `smd agent --max-tokens N` fits the agent view into a token budget. It first condenses the view as `--brief` does, then leaves out whole sections, least important first, and puts a one-line pointer in each one's place: `[section omitted: ## Rollout plan, L153-L166, ≈118 tokens — smd agent plan.smd --section "Rollout plan"]`.
+  - never left out: the header (title, front matter, summary), text before the first `##` section, sections with `:::agent` instructions, and sections requested with `--section`
+  - kept longer: sections with a danger or warning callout, an accepted decision, a question or an open task; among the rest the deepest headings go first, then the largest, then the latest
+  - stderr says what was condensed and left out and the final size; when even the smallest view is over the budget it is printed anyway with a warning (exit code 0)
+  - without the flag the output is unchanged
+- `--tokenizer o200k_base|cl100k_base|p50k_base|r50k_base` on `smd agent` and `smd outline` shows exact token counts next to the estimate (`≈1531 est · 1402 o200k_base tokens`), and `--max-tokens` then counts with it. It uses the `js-tiktoken` package if you have installed it in your project or globally; smd still has no runtime dependencies and says how to install it when it is missing. These are OpenAI encodings: there is no public tokenizer for current Claude models, so for Claude the counts are still approximate.
+- Library: `agentView` options `maxTokens`, `tokenizer` (any `{ name, count(text) }`) and `file` (used in the pointers), result fields `budget` and `counted`, and `outline(source, { tokenizer })`. Types `BudgetResult`, `OmittedSection` and `Tokenizer`.
 - Six new templates for `smd init --template` and the writer skill, 13 in total:
   - `postmortem`: blameless incident review with impact metrics, timeline, root cause, action items with owners and due dates, and rules for agents doing the follow-ups
   - `release-notes`: highlights, breaking changes with migration steps, deprecations, Added/Changed/Fixed, upgrade and known issues
