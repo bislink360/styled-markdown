@@ -5,6 +5,13 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- VS Code: an **SMD Tasks** view in the Explorer (shown in workspaces with `.smd` files) lists the tasks of every `.smd` file in the workspace:
+  - **Group Tasks By…** (view title bar) switches between owner (Unassigned last; a task with two owners is under both), due date (Overdue, Today, This week, Later, No due date) and document; the choice is remembered per workspace
+  - inside every group: overdue first, then by priority and due date, as in `smd tasks`
+  - open tasks only, or all with **Show Completed Tasks**; each task shows its priority, due date (and "overdue") and owners, with the section and file in the tooltip
+  - click a task to open it at its line; tick its checkbox to check it off (or uncheck it) in the file, which is saved unless it already had unsaved changes
+  - follows unsaved edits, saves and files created or deleted on disk; the view's badge shows the number of overdue tasks
+  - new commands: `smd.groupTasksBy`, `smd.showCompletedTasks`, `smd.hideCompletedTasks`, `smd.refreshTasks` and `smd.openTask`; the extension now also activates when the workspace contains `.smd` files
 
 ### Changed
 

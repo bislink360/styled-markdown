@@ -7,12 +7,14 @@ import { readerFor } from './files';
 import { registerAgentView } from './agentViewUi';
 import { registerEditorFeatures } from './editorFeatures';
 import { PreviewManager, renderOptions } from './preview';
+import { registerTasksView } from './tasksView';
 
 export function activate(context: vscode.ExtensionContext): void {
   const previews = new PreviewManager(context);
   const diagnostics = registerLanguageFeatures(context);
   registerAgentView(context);
   registerEditorFeatures(context);
+  registerTasksView(context);
 
   const activeSmd = (): vscode.TextDocument | undefined => {
     const doc = vscode.window.activeTextEditor?.document;

@@ -10,6 +10,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 
 - **Live preview** (`Ctrl+K V`): themed to match VS Code, scroll sync, double-click to jump to source, clickable tasks, Mermaid diagrams, KaTeX math, tabs and columns. Edits keep your scroll position, diagrams, selected tabs and open collapsibles.
 - **Project blocks:** `:::decision`, `:::risk`, `:::timeline`, KPI tiles (`:metric`), priorities, and due dates that turn red when overdue. Tasks carry owners.
+- **SMD Tasks view** in the Explorer: open tasks from every `.smd` file in the workspace, grouped by owner, due date (Overdue, Today, This week, Later) or document, overdue first, then by priority. Tick a checkbox to check the task off in its file, click a task to open it, and see the overdue count as a badge.
 - **Developer blocks:** `:::api` endpoint cards, code line highlights `{2,5-7}`, and live source embeds `file="…" lines="…"` so docs never drift from code.
 - **Refactorings** (`Ctrl+.`): wrap the selection in a callout, card, `:::details`, `:::agent` or `:::human` block; change a callout's type; turn a `> **Warning:**` or `> [!WARNING]` blockquote into a `:::warning` callout.
 - **Validation with quick fixes** as you type (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`), including Mermaid syntax errors on the exact line before the diagram renders. Turn rules off or change their severity in `smd.config.json` / `.smdrc`, which get completion from a schema, or silence one line with `<!-- smd-disable-next-line rule/code -->`.
@@ -32,6 +33,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | Styled Markdown: Convert Markdown File to .smd | Explorer context menu |
 | Styled Markdown: Validate All .smd Files in Workspace | — |
 | Styled Markdown: Set Up Spell Checking (cSpell) | — |
+| Styled Markdown: Group Tasks By… / Show Completed Tasks / Refresh Tasks | SMD Tasks view title bar |
 
 ## Settings
 
