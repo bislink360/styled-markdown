@@ -42,7 +42,7 @@ Tool (Node 18+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (
 
    `fmt` only changes layout (fence colons, attribute order and quoting, table columns, blank lines), never meaning.
 
-   `--fix` repairs typos automatically. Fix any remaining errors yourself: each has a line:column, a message and a rule code. **A document is done only when validation reports 0 errors.**
+   `--fix` repairs what has one clear repair: typos in names and values, misspelled colors, `yes`/`no` on true/false keys, `2026/9/5`-style dates, and unclosed `:::` or code fences at the end of the file. Fix any remaining errors yourself: each has a line:column, a message and a rule code. **A document is done only when validation reports 0 errors.**
 
 4. **Check what agents will see:** `smd agent docs/name.smd --brief`. If it's still long, move narrative into `{agent=skip}` sections or `:::human` blocks.
 

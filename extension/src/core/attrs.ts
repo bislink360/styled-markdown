@@ -16,6 +16,9 @@ export interface Attrs {
 export interface AttrProblem {
   message: string;
   severity: 'error' | 'warning';
+  /** The attribute and the invalid value (one word of it for `style`). */
+  key?: string;
+  value?: string;
 }
 
 export function emptyAttrs(): Attrs {
@@ -90,7 +93,7 @@ export function attrsToStyle(attrs: Attrs, block = false): { style: string; prob
   const css: string[] = [];
   const problems: AttrProblem[] = [];
   const bad = (key: string, value: string, hint: string) =>
-    problems.push({ severity: 'error', message: `Invalid value "${value}" for "${key}". ${hint}` });
+    problems.push({ severity: 'error', message: `Invalid value "${value}" for "${key}". ${hint}`, key, value });
 
   for (const [key, value] of Object.entries(attrs.values)) {
     switch (key) {
