@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const files = readdirSync(join(root, 'test'))
   .filter((f) => f.endsWith('.test.ts'))
-  .sort()
+  .sort((a, b) => a.localeCompare(b))
   .map((f) => join('test', f));
 
 if (!files.length) {
