@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0 — 2026-09-30
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 1.3.0 — 2026-09-29
 
 No breaking changes. Documents, CLI commands and flags, diagnostic codes and messages, library exports, extension commands and settings from 1.2.0 all keep working, and every document that passed `smd validate` still passes: there are no new rules. Everything new is additive: new commands (`smd mcp`, `smd query`, `smd index`, `smd diff`), new flags, new templates and new library exports. Without the new flags, `smd outline` and `smd agent` print exactly what they did in 1.2.0. Two things behave differently: `smd validate --fix` now fixes more (see Added) and repeats until nothing is left to fix, and `smd --help` lists the new commands.
