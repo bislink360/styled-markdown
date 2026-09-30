@@ -3,8 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, diffSmd, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderPage,
-  smdIndex, smdToMarkdown, SelectorError, SMD_VERSION, type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic,
+  agentView, applyFixes, decisionLog, decisionLogMarkdown, diffSmd, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline,
+  parseSelector, relatedDocs, renderPage, smdIndex, smdToMarkdown, suggest, DECISION_STATUS_FILTERS, SelectorError, SMD_VERSION, type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic,
   type DiffResult, type Selector, type Tokenizer,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
@@ -15,7 +15,9 @@ import { AGENT_RULES, fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 import {
   parseTargets, rulesBody, SHARED_CLI_COMMAND, SHARED_CLI_PATH, TARGET_FILES, type AgentTarget, type RulesTarget, type TargetFile,
 } from './agentTargets';
-import { collect, diagnose, existsFrom, queryRows, querySummary, queryText, read, readerFor, taskLine, taskRows, taskSummary } from './workspace';
+import {
+  collect, decisionLine, decisionSummary, diagnose, existsFrom, queryRows, querySummary, queryText, read, readerFor, taskLine, taskRows, taskSummary,
+} from './workspace';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
 declare const __SMD_PKG_VERSION__: string;
@@ -56,6 +58,13 @@ Reading (token-efficient, for agents):
       --exit-code  exit 1 when something changed (like git diff); the default is 0
   smd meta <file.smd> [--no-diagnostics]
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
+  smd decisions <files|dirs...> [--status <list>] [--owner @name] [--json] [--md] [-o <file>] [--title "…"]
+      Decision log (ADR index): every :::decision across documents, newest first and undated last, with
+      date, status, title, owner, file:line and document › section.
+      --status  only these statuses, comma-separated: ${DECISION_STATUS_FILTERS.join(', ')} (open = proposed)
+      --owner   only decisions owned by @name
+      --md      an ADR index to commit: front matter and a table linking each decision (--title sets its title).
+                Links are relative to the -o file: smd decisions docs/ --md -o docs/decisions.smd
   smd index <files|dirs...> [-o catalog.json] [--compact]
       JSON catalog of every document: title, summary, status, owners, tags, token costs, sections
       and counts (open tasks, decisions, risks, questions, APIs). Agents read it to pick documents,
@@ -107,7 +116,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
-  '--max-tokens', '--tokenizer',
+  '--max-tokens', '--tokenizer', '--status', '--owner',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -156,6 +165,8 @@ function main(argv: string[]): number | Promise<number> {
       process.stdout.write(JSON.stringify(info, null, 2) + '\n');
       return 0;
     }
+    case 'decisions':
+      return decisions(positional, args);
     case 'index':
       return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
@@ -448,6 +459,36 @@ function index(targets: string[], out: string | undefined, compact: boolean, tod
   const tokens = catalog.documents.reduce((sum, d) => sum + d.tokens.agent, 0);
   console.error(`[smd] ${catalog.documents.length} document(s) indexed, ≈${tokens} tokens in full agent view.`);
   return write(out, json + '\n');
+}
+
+/** `smd decisions`: the decision log as text, JSON (`--json`) or an ADR index document (`--md`). */
+function decisions(targets: string[], args: Args): number {
+  const status = statusFilter(args.values.get('--status'));
+  if (typeof status === 'string') return fail(status);
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const documents = files.map((file) => ({ path: relativePath(file), text: read(file) }));
+  const rows = decisionLog(documents, { status, owner: args.values.get('--owner')?.[0] });
+  const out = args.values.get('-o')?.[0];
+  console.error(`[smd] ${decisionSummary(rows, files.length)}`);
+  if (args.flags.has('--json')) return write(out, JSON.stringify(rows, null, 2) + '\n');
+  if (!args.flags.has('--md')) return write(out, rows.map((r) => decisionLine(r) + '\n').join(''));
+  const base = out ? path.dirname(path.resolve(out)) : process.cwd();
+  const link = (p: string) => path.relative(base, path.resolve(p)).split(path.sep).join('/');
+  return write(out, decisionLogMarkdown(rows, { title: args.values.get('--title')?.[0], link }));
+}
+
+/** `--status accepted,open` (repeatable) as a list; a message when a status is unknown. */
+function statusFilter(values: string[] | undefined): string[] | string | undefined {
+  if (!values) return undefined;
+  const list = values.flatMap((v) => v.split(',')).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const known = `Statuses: ${DECISION_STATUS_FILTERS.join(', ')} (open = proposed).`;
+  if (!list.length) return `--status needs one or more decision statuses. ${known}`;
+  const unknown = list.find((s) => !DECISION_STATUS_FILTERS.includes(s));
+  if (unknown === undefined) return list;
+  const hint = suggest(unknown, DECISION_STATUS_FILTERS);
+  const didYouMean = hint ? ` Did you mean "${hint}"?` : '';
+  return `Unknown decision status "${unknown}".${didYouMean} ${known}`;
 }
 
 /** `docs/plan.smd`: relative to the working directory, with forward slashes on every platform. */
