@@ -201,6 +201,8 @@ import { renderSmd, validateSmd, agentView } from 'styled-markdown';
 
 See the [package README](npm/README.md) for the API.
 
+**Pre-commit hooks:** check staged `.smd` files on every commit with the [pre-commit](https://pre-commit.com) framework (`repo: https://github.com/bislink360/styled-markdown`, hooks `smd-fmt`, `smd-validate`, `smd-fmt-check`), lint-staged and husky, or a plain Git hook: copy-paste setups in [docs/INSTALL.md](docs/INSTALL.md#pre-commit-hooks).
+
 Full instructions, building from source and troubleshooting: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 ### Agent skills
@@ -306,7 +308,9 @@ styled-markdown/
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
 ├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)
-└── docs/                 guides, specification, gallery and screenshots
+├── docs/                 guides, specification, gallery and screenshots
+├── .pre-commit-hooks.yaml    hooks for the pre-commit framework
+└── package.json          lets pre-commit install the bundled CLI (not published)
 ```
 
 ## Development
