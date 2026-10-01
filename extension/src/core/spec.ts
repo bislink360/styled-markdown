@@ -14,6 +14,7 @@ export const NAMED_COLORS = [
 
 export const DECISION_STATUS = ['proposed', 'accepted', 'rejected', 'superseded', 'deprecated'];
 export const RISK_LEVELS = ['low', 'medium', 'high', 'critical'];
+export const RISK_STATUS = ['open', 'mitigated', 'accepted', 'closed'];
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'WS', 'RPC', 'EVENT'];
 export const PRIORITY_VALUES = ['P0', 'P1', 'P2', 'P3', 'P4', 'critical', 'high', 'medium', 'low'];
 
@@ -73,7 +74,12 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
     description: 'Risk with impact and likelihood. Body = description and mitigation.',
     title: true,
     attrs: ['title', 'impact', 'likelihood', 'owner', 'status'],
-    values: { impact: RISK_LEVELS, likelihood: RISK_LEVELS, status: ['open', 'mitigated', 'accepted', 'closed'] },
+    values: { impact: RISK_LEVELS, likelihood: RISK_LEVELS, status: RISK_STATUS },
+  },
+  'risk-matrix': {
+    description: 'Impact × likelihood matrix of the :::risk blocks in this document (closed risks left out). Title after the name; usually no body.',
+    title: true,
+    attrs: ['title'],
   },
   timeline: { description: 'Renders the list inside as a vertical timeline (start items with a date).' },
 

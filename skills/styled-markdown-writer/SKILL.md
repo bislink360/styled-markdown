@@ -55,7 +55,7 @@ These are the rules the validator and renderers depend on. `references/syntax.md
 1. **Front matter first:** `smd: 1`, `title`, a precise one- or two-sentence `summary`, `status` (`draft` · `review` · `approved` · `deprecated` · `archived`), `owners`, and `updated` (`YYYY-MM-DD`). Don't repeat the title as a `# H1`; start the body at `##`.
 2. **Blocks** are `:::name{attrs} Title` … `:::`. Attributes go directly after the name with no space. A bare `:::` closes the innermost block. Write outer containers with more colons (`::::tabs`) for readability.
 3. **Only known names:**
-   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `decision` `risk` `api` `agent` `human`.
+   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `decision` `risk` `risk-matrix` `api` `agent` `human`.
    - Inline: `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention`.
 4. **Enumerated values exactly as specified:**
    - decision `status`: proposed, accepted, rejected, superseded, deprecated
