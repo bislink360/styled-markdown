@@ -1,13 +1,12 @@
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   agentView, applyFixes, DECISION_STATUS_FILTERS, decisionLog, decisionLogMarkdown, diffSmd, formatRelated, formatSmd, ganttDate, ganttDocument,
   getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderPage, renderRiskPage, RISK_STATUS, riskRegister, riskRegisterSummary,
-  riskRegisterText, SelectorError, SMD_VERSION, smdIndex, smdToMarkdown, suggest, tasksToCsv, tasksToGantt, type AgentViewOptions,
-  type AgentViewResult, type BudgetResult, type Diagnostic,
-  type DiffResult, type Selector, type Tokenizer,
+  riskRegisterText, SelectorError, SMD_VERSION, smdIndex, smdToMarkdown, statusChanges, statusReportMarkdown, suggest, tasksToCsv, tasksToGantt,
+  type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic, type DiffResult, type ReportDocument, type Selector,
+  type Tokenizer,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
@@ -18,8 +17,8 @@ import {
   parseTargets, rulesBody, SHARED_CLI_COMMAND, SHARED_CLI_PATH, TARGET_FILES, type AgentTarget, type RulesTarget, type TargetFile,
 } from './agentTargets';
 import {
-  collect, decisionLine, decisionSummary, diagnose, existsFrom, queryRows, querySummary, queryText, read, readerFor, taskLine, taskRows, taskSummary,
-  type TaskRow,
+  collect, decisionLine, decisionSummary, deletedSince, diagnose, existsFrom, git, gitPath, queryRows, querySummary, queryText, read, readerFor,
+  reportSummary, taskLine, taskRows, taskSummary, workingPath, type TaskRow,
 } from './workspace';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
@@ -78,6 +77,13 @@ Reading (token-efficient, for agents):
       --owner   only decisions owned by @name
       --md      an ADR index to commit: front matter and a table linking each decision (--title sets its title).
                 Links are relative to the -o file: smd decisions docs/ --md -o docs/decisions.smd
+  smd report <files|dirs...> --since <date|git-ref> [-o report.smd] [--title "…"] [--today YYYY-MM-DD]
+      Draft a status report (the status-report template) from how tasks and decisions changed since a Git
+      commit, branch or tag, or a date (the last commit before it): done and new tasks, open tasks with
+      overdue and due in the next 7 days, decisions since and still needed, open high-impact risks, and
+      links to each source section. Tasks are matched by document and text, so a reworded task counts
+      as removed and added. Without Git history, a date reports the current state only.
+      -o        write the draft there (never over an existing file); links are relative to it
   smd index <files|dirs...> [-o catalog.json] [--compact]
       JSON catalog of every document: title, summary, status, owners, tags, token costs, sections
       and counts (open tasks, decisions, risks, questions, APIs). Agents read it to pick documents,
@@ -182,6 +188,8 @@ function main(argv: string[]): number | Promise<number> {
     }
     case 'decisions':
       return decisions(positional, args);
+    case 'report':
+      return report(positional, args);
     case 'index':
       return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
@@ -527,6 +535,51 @@ function decisions(targets: string[], args: Args): number {
   return write(out, decisionLogMarkdown(rows, { title: args.values.get('--title')?.[0], link }));
 }
 
+/** `smd report`: a draft status report comparing the documents with their version at --since. */
+function report(positional: string[], args: Args): number {
+  const since = args.values.get('--since')?.[0];
+  if (!since || since.startsWith('-')) return fail('report needs --since <date|git-ref>, e.g. smd report docs/ --since 2026-09-01 -o status.smd');
+  const out = args.values.get('-o')?.[0];
+  if (out && fs.existsSync(out)) return fail(`${out} already exists. The report is a draft to edit: choose another -o file or remove it first.`);
+  const targets = positional.length ? positional : ['.'];
+  const files = targets.filter((t) => fs.existsSync(t)).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const base = baseline(since, targets, files);
+  if (typeof base === 'string') return fail(base);
+  const options = { since, revision: base.revision, today: args.values.get('--today')?.[0], title: args.values.get('--title')?.[0] };
+  const changes = statusChanges(base.before, files.map((file) => ({ path: relativePath(file), text: read(file) })), options);
+  console.error(`[smd] ${reportSummary(changes, files.length, since, base.revision)}`);
+  const dir = out ? path.dirname(path.resolve(out)) : process.cwd();
+  const link = (p: string) => path.relative(dir, path.resolve(p)).split(path.sep).join('/');
+  return write(out, statusReportMarkdown(changes, { ...options, link }));
+}
+
+interface Baseline { before: ReportDocument[] | null; revision?: string }
+
+/** The documents at --since: a Git revision, or the last commit before a date. Null without history; a message on error. */
+function baseline(since: string, targets: string[], files: string[]): Baseline | string {
+  const isDate = /^\d{4}-\d{2}-\d{2}$/.test(since);
+  const top = git(['rev-parse', '--show-toplevel'])?.trim();
+  if (!top) return isDate ? { before: null } : `--since ${since} needs a Git repository; outside one, give a date (YYYY-MM-DD) to report the current state.`;
+  const commit = isDate ? git(['rev-list', '-1', `--before=${since}T00:00:00`, 'HEAD']) : git(['rev-parse', '--verify', '--quiet', `${since}^{commit}`]);
+  if (commit === undefined) return isDate ? { before: null } : `Unknown Git revision "${since}".`;
+  // No commit before the date: the documents didn't exist yet, so every task is new.
+  if (!commit.trim()) return { before: [], revision: 'before the first commit' };
+  return { before: versionAt(commit.trim(), top, targets, files), revision: commit.trim().slice(0, 7) };
+}
+
+/** The documents as they were at a commit, including ones deleted since, labelled with their working-tree paths. */
+function versionAt(commit: string, top: string, targets: string[], files: string[]): ReportDocument[] {
+  const at = (topPath: string, file: string): ReportDocument[] => {
+    const text = git(['show', `${commit}:${topPath}`]);
+    return text === undefined ? [] : [{ path: relativePath(file), text }];
+  };
+  return [
+    ...files.flatMap((file) => at(gitPath(top, file), file)),
+    ...deletedSince(commit, targets, top).flatMap((p) => at(p, workingPath(top, p))),
+  ];
+}
+
 /** `--status accepted,open` (repeatable) as a list; a message when a status is unknown. */
 function statusFilter(values: string[] | undefined): string[] | string | undefined {
   if (!values) return undefined;
@@ -641,39 +694,8 @@ function fileSince(file: string, ref: string, top: string, flags: DiffFlags): Fi
 }
 
 function deletedFile(topPath: string, ref: string, top: string, flags: DiffFlags): FileDiff {
-  const file = path.relative(realPath(process.cwd()), path.join(realPath(top), topPath));
+  const file = workingPath(top, topPath);
   return { file, status: 'deleted', result: diffSmd(git(['show', `${ref}:${topPath}`]) ?? '', '', flags) };
-}
-
-/** .smd files under the targets that exist at the revision but not in the working tree (paths from the top level). */
-function deletedSince(ref: string, targets: string[], top: string): string[] {
-  const pathspecs = targets.map((t) => gitPath(top, t) || '.');
-  const out = git(['-C', top, 'diff', '--name-only', '--diff-filter=D', '-z', ref, '--', ...pathspecs]) ?? '';
-  const hidden = (p: string) => p.split('/').some((seg) => seg === 'node_modules' || seg.startsWith('.'));
-  return out.split('\0').filter((p) => p.endsWith('.smd') && !hidden(p));
-}
-
-/** A path relative to the Git top level, with forward slashes. */
-function gitPath(top: string, file: string): string {
-  return path.relative(realPath(top), realPath(file)).split(path.sep).join('/');
-}
-
-/** The canonical path: links resolved and Windows short names (RUNNER~1) expanded, as Git reports them. */
-function realPath(p: string): string {
-  try {
-    return fs.realpathSync.native(p);
-  } catch {
-    return path.resolve(p);
-  }
-}
-
-/** Run git without a shell; undefined when it fails. */
-function git(args: string[]): string | undefined {
-  try {
-    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }); // NOSONAR(typescript:S4036): --since runs the user's own git, found on PATH like any git-aware CLI
-  } catch {
-    return undefined;
-  }
 }
 
 function reportDiffs(diffs: FileDiff[], checked: number, base: { since?: string; oldFile?: string }, flags: DiffFlags): number {

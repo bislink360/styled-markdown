@@ -42,3 +42,5 @@ export { riskMatrixHtml, riskRegisterHtml, riskBand } from './riskHtml';
 export type { RiskBand, RiskMatrixHtmlOptions } from './riskHtml';
 export { diffSmd } from './diff';
 export type { DiffOptions, DiffResult, FrontMatterChange, SectionChange } from './diff';
+export { statusChanges, statusReport, statusReportMarkdown } from './report';
+export type { ReportDecision, ReportDocument, ReportRisk, ReportTask, StatusChanges, StatusReportOptions } from './report';

@@ -137,6 +137,8 @@ docs/checkout.smd:61  [ ] [P1] Server-side validation returns all field errors @
 docs/checkout.smd:62  [ ] [P0] Idempotent order creation @api-team (due 2026-10-03)  — Requirements
 ```
 
+- **`smd report docs/ --since 2026-09-01`** drafts a status report from what happened to these tasks since a date or Git revision (see [§6](#6-project-blocks-decisions-risks-timelines)).
+
 ### Export: CSV and a Gantt chart
 
 `smd tasks` takes the same filters (`--all`, `--mine`) with one export format, printed or written with `-o <file>`:
@@ -264,6 +266,23 @@ docs/adr-0007-event-bus.smd:44  2026-06-02  [superseded]  Add a retry queue in f
 - `--status` takes a comma-separated list (`accepted,proposed`) of `proposed`, `accepted`, `rejected`, `superseded`, `deprecated`, or `open` for `proposed`. A decision without a status is `proposed`. `--owner @name` keeps decisions whose `owner` includes that name.
 - `--json` prints one object per decision: `title`, `status`, `date`, `owner`, `path`, `line` and `endLine` (zero-based), `section`, `anchor` (the decision's `{#id}`, else its section's heading id), `document` (the document's title) and `adr`. `adr` is `true` for a document's own decision, as in an ADR: its first decision, when the document is tagged `adr` or the decision comes before any `##` section.
 - `--md` prints an ADR index: front matter and a table of date, status badge, decision, owner and document, with each decision linked to its section (an ADR's own decision to its document) and rejected, superseded and deprecated ones struck through. Links are relative to the `-o` file (to the working directory without `-o`), so the index passes `smd validate` and `smd fmt --check`; `--title` sets its title. Regenerate it instead of editing it.
+
+**`smd report`** drafts a status report (the `status-report` template) from how tasks and decisions changed since a Git commit, branch or tag, or a date:
+
+```bash
+smd report docs/ --since 2026-09-01 -o docs/status-2026-09-30.smd     # since the last commit before Sep 1
+smd report docs/ --since v1.3.0 --title "Checkout squad"             # since a tag, to stdout
+```
+
+```text
+[smd] Status report since 2026-09-01 (c1802c4) from 4 file(s): 5 done, 3 new, 1 removed; 9 open, 1 overdue, 2 due soon; 2 decision change(s), 1 high-impact risk(s).
+```
+
+- The draft has a **Summary** (status, progress and counts, with a line for you to replace; the front matter `summary` too), **Done since** (tasks that went from `[ ]` to `[x]`, and new tasks already done), **New since**, **Removed since** (only when tasks disappeared), **Open tasks** split into *Overdue*, *Due in the next 7 days* and *Other open tasks* (by priority), **Risks and blockers** (open risks with impact high or critical), **Decisions since** (new decisions, and ones whose status changed), **Decisions needed** (proposed decisions) and **Sources**. Each item links to its section (`docs/plan.smd#rollout`), relative to the `-o` file.
+- `--since` takes a Git revision, or a date `YYYY-MM-DD` that means the last commit before that day (`git rev-list -1 --before=<date> HEAD`); the earlier version of each file is read with `git show`, and documents deleted since count too. Before the first commit, every task is new.
+- Tasks have no ids, so a task is the same task when its document and text match (ignoring case and spacing); its owner, priority and due date may change. A reworded task shows up as removed and added. Decisions are matched by document and title the same way.
+- Without Git history (outside a repository), `--since` a date reports the current state only and the draft says so; `--since` a revision is an error.
+- Items are plain list entries, not tasks, decisions or risks of their own, so the report doesn't add to `smd tasks` or `smd decisions`, and it passes `smd validate --strict` and `smd fmt --check`. `-o` never overwrites a file: the draft is for you to edit. `--today` sets the date for overdue and due-soon tasks and the title.
 
 ## 7. Developer blocks: APIs, code, embeds
 
@@ -529,6 +548,7 @@ smd diff <files|dirs> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
 smd index <files|dirs> [-o catalog.json] [--compact] JSON catalog of every document, for agent routing
 smd decisions <files|dirs> [--status <list>] [--owner @name] [--json] [--md] [-o <file>] [--title "…"]   decision log, ADR index
+smd report <files|dirs> --since <date|git-ref> [-o report.smd] [--title "…"] [--today YYYY-MM-DD]   draft a status report
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]

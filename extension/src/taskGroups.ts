@@ -1,4 +1,5 @@
 import { dueState, type TaskInfo } from './core';
+import { priorityRank } from './core/util';
 
 /**
  * Grouping and ordering for the tasks view, without VS Code dependencies so it can be unit tested.
@@ -18,8 +19,7 @@ export interface TaskGroup<T extends FileTask = FileTask> {
   tasks: T[];
 }
 
-const PRIORITY_RANK: Record<string, number> = { p0: 0, critical: 0, p1: 1, high: 1, p2: 2, medium: 2, p3: 3, low: 3, p4: 4 };
-const rank = (p?: string) => PRIORITY_RANK[(p ?? '').toLowerCase()] ?? 5;
+const rank = priorityRank;
 
 /** Overdue first, then by priority, due date (none last), file and line. */
 export function compareTasks(a: FileTask, b: FileTask): number {
