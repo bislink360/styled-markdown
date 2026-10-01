@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -740,15 +741,6 @@ function issues(targets: string[], args: Args): number {
   };
   const io = { gh, out: (text: string) => process.stdout.write(text), err: (text: string) => console.error(text) };
   return runIssues(targets.length ? targets : ['.'], options, io);
-}
-
-/** Run git without a shell; undefined when it fails. */
-function git(args: string[]): string | undefined {
-  try {
-    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }); // NOSONAR(typescript:S4036): --since runs the user's own git, found on PATH like any git-aware CLI
-  } catch {
-    return undefined;
-  }
 }
 
 function reportDiffs(diffs: FileDiff[], checked: number, base: { since?: string; oldFile?: string }, flags: DiffFlags): number {
