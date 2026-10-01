@@ -5,6 +5,10 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- `smd tasks --csv` exports tasks for spreadsheets: RFC 4180 with a header row and CRLF line endings, UTF-8 without a byte order mark, columns `file,line,done,text,owners,priority,due,overdue,section` in that order, 1-based lines (as `smd tasks` prints them; `--json` stays zero-based) and owners joined with `;`. Fields that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading `'` so spreadsheets don't run them as formulas; this includes owners (`'@maya`).
+- `smd tasks --gantt` prints a Mermaid `gantt` chart of tasks with a `YYYY-MM-DD` due date: one section per document, one milestone per task on its due date, done tasks (with `--all`) marked `done` and overdue ones `crit`; tasks without a due date are left out and counted on stderr. Characters Mermaid would misread in names become entity codes (`#58;`). `--title` sets the chart title, and `--smd` wraps the chart in a small `.smd` document that `smd render` draws.
+- `smd tasks -o <file>` writes any of its outputs to a file. Without the new flags `smd tasks` prints exactly what it did in 1.3.0; `--json`, `--csv` and `--gantt` together are a usage error (exit code 2).
+- Library: `tasksToCsv(rows)`, `tasksToGantt(rows, { title })`, `ganttDocument(chart, title)`, `ganttDate(due)` and `TASK_CSV_COLUMNS`, with the `TaskExportRow` and `GanttOptions` types.
 
 ### Changed
 
