@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.6.0 — 2026-10-01
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 1.5.0 — 2026-10-01
 
 No breaking changes. Documents, CLI commands and flags, diagnostic codes and messages, library exports, extension commands and settings from 1.4.0 all keep working, and every document that passed `smd validate` still passes: there are no new rules or syntax. New: a GitHub Action, pre-commit hooks, markdown-it and remark/rehype plugins, `.smd` syntax in VS Code's built-in Markdown preview, a static site generator (`smd build`), PDF export (`smd pdf`, with Playwright or Puppeteer you install), and a standalone language server for other editors. Releases are now built and published by a workflow when a version is tagged; the VS Code Marketplace, Open VSX and npm listings start once their publishing tokens are set up.
