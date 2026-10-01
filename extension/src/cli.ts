@@ -22,6 +22,9 @@ import {
   collect, decisionLine, decisionSummary, deletedSince, diagnose, existsFrom, git, gitPath, queryRows, querySummary, queryText, read, readerFor,
   reportSummary, taskLine, taskRows, taskSummary, workingPath, type TaskRow,
 } from './workspace';
+import {
+  blobBase, githubAnnotations, validationSummary, type ConfigProblem, type FileReport, type ValidationResult,
+} from './validateFormats';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
 declare const __SMD_PKG_VERSION__: string;
@@ -112,6 +115,11 @@ Checking and converting:
       and silenced inline with <!-- smd-disable-next-line rule/code -->.
       Mermaid diagrams are parsed for syntax errors (--no-mermaid skips it).
       Documents whose "updated" date is over 180 days old are reported as stale (--stale-after 0: off).
+  smd validate <files|dirs...> --format github [--summary <file>] [...]
+      GitHub Actions annotations: one ::error/::warning/::notice workflow command per problem (hints are
+      left out), with paths relative to $GITHUB_WORKSPACE (else the current folder). --format json = --json.
+      --summary  also append a Markdown summary (counts and the first 50 problems) to a file, with any
+                 format, e.g. --summary "$GITHUB_STEP_SUMMARY"
   smd fmt <files|dirs...> [--check] [--stdout]
       Format .smd files in place: container fences, attribute lists, tables and blank lines.
       --check   change nothing; list unformatted files and exit 1 if there are any
@@ -149,7 +157,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
-  '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label',
+  '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -209,7 +217,7 @@ function main(argv: string[]): number | Promise<number> {
     case 'index':
       return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
-      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'), staleAfterDays);
+      return validate(positional.length ? positional : ['.'], args, today, staleAfterDays);
     case 'fmt':
       return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
     case 'render': {
@@ -256,49 +264,92 @@ function main(argv: string[]): number | Promise<number> {
   }
 }
 
-async function validate(
-  targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, configFile?: string, mermaid = true, staleAfterDays?: number,
-): Promise<number> {
+/** `smd validate` output formats: `--json` is short for `--format json`. */
+const VALIDATE_FORMATS = ['text', 'json', 'github'];
+
+interface Validation { files: number; report: FileReport[]; configProblems: ConfigProblem[]; errors: number; warnings: number }
+
+async function validate(targets: string[], args: Args, today?: string, staleAfterDays?: number): Promise<number> {
+  const format = validateFormat(args);
+  if (!format) return fail(`--format needs one of: ${VALIDATE_FORMATS.join(', ')} (--json is --format json).`);
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
-  const report: Array<{ file: string; diagnostics: Diagnostic[]; fixed?: number }> = [];
+  const { report, configProblems } = await checkFiles(files, args, { today, staleAfterDays });
+  const all = report.flatMap((r) => r.diagnostics);
+  const errors = all.filter((d) => d.severity === 'error').length;
+  const warnings = all.filter((d) => d.severity === 'warning').length + configProblems.length;
+  const result: Validation = { files: files.length, report, configProblems, errors, warnings };
+  VALIDATE_PRINTERS[format](result);
+  const summary = args.values.get('--summary')?.[0];
+  if (summary) fs.appendFileSync(summary, validationSummary(ciResult(result), { linkBase: blobBase(process.env) }) + '\n');
+  return errors > 0 || (args.flags.has('--strict') && warnings > 0) ? 1 : 0;
+}
+
+/** The chosen output format, or undefined when it is unknown or conflicts with `--json`. */
+function validateFormat(args: Args): string | undefined {
+  const json = args.flags.has('--json');
+  const format = args.values.get('--format')?.[0] ?? (json ? 'json' : 'text');
+  if (json && format !== 'json') return undefined;
+  return VALIDATE_FORMATS.includes(format) ? format : undefined;
+}
+
+/** Check (and with `--fix`, fix) each file under its nearest rule config; config problems go to stderr once per file. */
+async function checkFiles(
+  files: string[], args: Args, options: { today?: string; staleAfterDays?: number },
+): Promise<{ report: FileReport[]; configProblems: ConfigProblem[] }> {
+  const report: FileReport[] = [];
+  const configProblems: ConfigProblem[] = [];
   const configs = new Map<string, LoadedConfig>();
-  const reported = new Set<string>();
-  let configProblems = 0;
-  const parse = mermaid ? loadMermaidParser() : undefined;
+  const parse = args.flags.has('--no-mermaid') ? undefined : loadMermaidParser();
   for (const file of files) {
-    const config = configFor(file, configFile, configs);
-    if (config.problems.length && !reported.has(config.file!)) {
-      reported.add(config.file!);
-      configProblems += config.problems.length;
-      for (const p of config.problems) console.error(`${config.file}: warning  ${p}`);
-    }
-    const check = (text: string) => diagnose(text, file, { rules: config.rules, today, staleAfterDays, parse });
+    const config = configFor(file, args.values.get('--config')?.[0], configs);
+    reportConfigProblems(config, configProblems);
+    const check = (text: string) => diagnose(text, file, { rules: config.rules, ...options, parse });
     const text = read(file);
-    const result = fix ? await fixUntilStable(text, check) : { text, diagnostics: await check(text), applied: 0 };
+    const result = args.flags.has('--fix') ? await fixUntilStable(text, check) : { text, diagnostics: await check(text), applied: 0 };
     if (result.applied) fs.writeFileSync(file, result.text);
     report.push({ file, diagnostics: result.diagnostics, ...(result.applied ? { fixed: result.applied } : {}) });
   }
+  return { report, configProblems };
+}
 
-  const all = report.flatMap((r) => r.diagnostics);
-  const errors = all.filter((d) => d.severity === 'error').length;
-  const warnings = all.filter((d) => d.severity === 'warning').length + configProblems;
+/** Print a config file's problems to stderr and collect them, the first time the file is seen. */
+function reportConfigProblems(config: LoadedConfig, seen: ConfigProblem[]): void {
+  const file = config.file;
+  if (!file || !config.problems.length || seen.some((p) => p.file === file)) return;
+  for (const p of config.problems) console.error(`${file}: warning  ${p}`);
+  seen.push(...config.problems.map((message) => ({ file, message })));
+}
 
-  if (json) {
-    process.stdout.write(JSON.stringify({ files: report, errors, warnings }, null, 2) + '\n');
-  } else {
-    const color = process.stdout.isTTY;
-    const paint = (code: number, s: string) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
-    const sev = { error: paint(31, 'error'), warning: paint(33, 'warning'), info: paint(36, 'info'), hint: paint(90, 'hint') };
-    for (const r of report) {
-      if (r.fixed) console.log(`${r.file}: applied ${r.fixed} fix(es)`);
-      for (const d of r.diagnostics) {
-        console.log(`${r.file}:${d.line + 1}:${d.column + 1}  ${sev[d.severity]}  ${d.message}  ${paint(90, d.code)}`);
-      }
+const VALIDATE_PRINTERS: Record<string, (result: Validation) => void> = {
+  text: printValidationText,
+  json: ({ report, errors, warnings }) => process.stdout.write(JSON.stringify({ files: report, errors, warnings }, null, 2) + '\n'),
+  github: (result) => {
+    for (const line of githubAnnotations(ciResult(result))) console.log(line);
+  },
+};
+
+function printValidationText({ files, report, errors, warnings }: Validation): void {
+  const color = process.stdout.isTTY;
+  const paint = (code: number, s: string) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
+  const sev = { error: paint(31, 'error'), warning: paint(33, 'warning'), info: paint(36, 'info'), hint: paint(90, 'hint') };
+  for (const r of report) {
+    if (r.fixed) console.log(`${r.file}: applied ${r.fixed} fix(es)`);
+    for (const d of r.diagnostics) {
+      console.log(`${r.file}:${d.line + 1}:${d.column + 1}  ${sev[d.severity]}  ${d.message}  ${paint(90, d.code)}`);
     }
-    console.log(`\n${files.length} file(s) checked: ${errors} error(s), ${warnings} warning(s).`);
   }
-  return errors > 0 || (strict && warnings > 0) ? 1 : 0;
+  console.log(`\n${files} file(s) checked: ${errors} error(s), ${warnings} warning(s).`);
+}
+
+/** The result with paths relative to the repository root (`GITHUB_WORKSPACE`, else the working directory), as GitHub expects. */
+function ciResult({ report, configProblems }: Validation): ValidationResult {
+  const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const rel = (file: string) => path.relative(root, path.resolve(file)).split(path.sep).join('/');
+  return {
+    files: report.map((r) => ({ ...r, file: rel(r.file) })),
+    configProblems: configProblems.map((p) => ({ ...p, file: rel(p.file) })),
+  };
 }
 
 /** Rounds of `--fix`: one fix can make another possible, e.g. a code block closed before its container. */
