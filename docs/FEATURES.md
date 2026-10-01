@@ -707,6 +707,7 @@ smd init <file> [--template <name>] [--title "…"]
 smd templates
 smd skills install [--dir <path>] [--global] [--only reader|writer]
 smd mcp [--root <dir>]                               MCP server over stdio (tools below)
+smd lsp [--stdio]                                    language server over stdio for other editors (below); also smd-language-server
 smd skills install --target cursor,copilot,agents [--dir <project>]   rules for other agents + .smd/smd.cjs
 smd --version
 ```
@@ -776,6 +777,23 @@ claude mcp add smd -- npx -y -p styled-markdown smd mcp
 ```
 
 Cursor, VS Code and Claude Desktop settings: [AGENTS.md](AGENTS.md#mcp-server).
+
+### Language server
+
+`smd lsp --stdio` (also installed by the npm package as `smd-language-server`) brings the extension's editing features to Neovim, Helix, Zed and any other Language Server Protocol client. It needs no dependencies and speaks LSP over stdio:
+
+| Feature | LSP method |
+|---|---|
+| Problems as you type (same rules and config files as `smd validate`, Mermaid syntax errors included) | `textDocument/publishDiagnostics` |
+| Quick fixes (the `fix` of each problem that has one) | `textDocument/codeAction` |
+| Outline: headings as a tree, decisions, risks and APIs in their section | `textDocument/documentSymbol` |
+| Symbol search across the workspace's `.smd` files | `workspace/symbol` |
+| Hover: blocks, inline directives, link and embed previews | `textDocument/hover` |
+| Completion: blocks, attributes, front matter, directives, languages, link paths and anchors | `textDocument/completion` |
+| Go to definition for links and anchors | `textDocument/definition` |
+| Formatting (as `smd fmt`) | `textDocument/formatting` |
+
+Positions are UTF-16 columns, as LSP specifies (UTF-8 or UTF-32 when the client offers only those). Setups for Neovim, Helix and Zed: [EDITORS.md](EDITORS.md).
 
 ### What changed: `smd diff`
 

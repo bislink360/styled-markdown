@@ -32,7 +32,9 @@
     "remark",
     "rehype",
     "unified",
-    "remark-plugin"
+    "remark-plugin",
+    "lsp",
+    "language-server"
   ],
   "type": "commonjs",
   "main": "./dist/index.cjs",
@@ -64,7 +66,8 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "smd": "dist/cli.js"
+    "smd": "dist/cli.js",
+    "smd-language-server": "dist/language-server.js"
   },
   "files": [
     "dist",

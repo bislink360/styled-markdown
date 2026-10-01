@@ -159,6 +159,7 @@ History and research. People see it; agents skip it.
 | `smd pdf <file> [--format A4\|Letter] [--landscape]` | PDF with diagrams as vectors, if you have installed Playwright or Puppeteer (smd bundles no browser) |
 | `smd build <dir> --out site` | Static docs site: a page per doc, sidebar, breadcrumbs, search, backlinks and a task/decision/risk dashboard |
 | `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
+| `smd lsp --stdio` | Language server for Neovim, Helix, Zed and other LSP editors: diagnostics, quick fixes, outline, hover, completion, go to definition, formatting (also `smd-language-server`; [setup](docs/EDITORS.md)) |
 | `smd skills install [--global] [--target …]` | Install the agent skills, or rules for Cursor, Copilot and `AGENTS.md` |
 
 **Publish a docs site:** `smd build docs --out site` turns a folder of `.smd` files (and `.md` with `--md`) into a static site in the same folder structure, with links between documents rewritten to pages, a sidebar, previous/next links, backlinks, a search box that works offline, and a dashboard of open tasks, decisions and risks. Open `site/index.html` from disk or upload the folder to any static host (`--base /docs/` for absolute links). It only writes to a new, empty or previously built folder, and `--clean` removes only files of the previous build. See the [feature guide](docs/FEATURES.md#publish-a-docs-site-smd-build).
@@ -246,6 +247,19 @@ claude mcp add smd -- npx -y -p styled-markdown smd mcp
 
 Other clients and options: **[docs/AGENTS.md](docs/AGENTS.md#mcp-server)**.
 
+### Neovim, Helix, Zed and other editors
+
+`smd-language-server` (installed with the [npm package](#npm-library-and-smd-cli), 1.5.0 or later) brings validation with quick fixes, the outline, symbol search, hover, completion, go to definition and formatting to any editor that speaks the Language Server Protocol:
+
+```lua
+-- Neovim 0.11+
+vim.filetype.add({ extension = { smd = 'smd' } })
+vim.lsp.config('smd', { cmd = { 'smd-language-server', '--stdio' }, filetypes = { 'smd' }, root_markers = { '.git' } })
+vim.lsp.enable('smd')
+```
+
+Neovim (also with nvim-lspconfig), Helix and Zed setups: **[docs/EDITORS.md](docs/EDITORS.md)** (written from each editor's documented configuration, not yet tested in those editors).
+
 ### GitHub Action
 
 Validate `.smd` files on every pull request, with each problem annotated on its line and a summary on the run page:
@@ -316,6 +330,7 @@ Each has a rendered `.html` version next to it that you can open in a browser. M
 | [docs/INSTALL.md](docs/INSTALL.md) | Installing, updating and building the extension and CLI |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature guide: every construct with syntax, rendering, agent view and plain-Markdown fallback |
 | [docs/SKILLS.md](docs/SKILLS.md) | Importing the agent skills into Claude Code, Claude.ai, the API/Agent SDK and other agents |
+| [docs/EDITORS.md](docs/EDITORS.md) | Using `.smd` in Neovim, Helix, Zed and other editors with the language server |
 | [docs/AGENTS.md](docs/AGENTS.md) | One-page guide to paste into any agent's instructions |
 | [docs/SPEC.md](docs/SPEC.md) | The formal specification (v1) and validation rules |
 

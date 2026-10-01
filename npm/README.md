@@ -44,9 +44,12 @@ smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitH
 smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
 smd mcp                               # MCP server (stdio) with outline, section, agent, tasks, validate, query
+smd lsp --stdio                       # language server for Neovim, Helix, Zed… (also installed as smd-language-server)
 ```
 
 Run `smd --help` for every option.
+
+The package also installs **`smd-language-server`**, the same as `smd lsp`: point your editor's LSP client at `smd-language-server --stdio` for `.smd` files to get diagnostics with quick fixes, the outline, symbol search, hover, completion, go to definition and formatting. Setups for Neovim, Helix and Zed: [editor guide](https://github.com/bislink360/styled-markdown/blob/main/docs/EDITORS.md).
 
 ## Library
 
