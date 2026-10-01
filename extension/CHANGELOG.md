@@ -5,12 +5,15 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- npm: a **markdown-it plugin**, `styled-markdown/markdown-it` (ESM and CommonJS, with types), so any markdown-it 13 or 14 host renders `.smd` syntax: `md.use(smd, options)`. It adds rules to the host's own instance (never a second markdown-it), keeps the host's options, other plugins and code highlighting, and leaves plain Markdown unchanged. Options turn containers, inline directives, attribute lists, `==marks==`, math, task lists and `.smd` code fences on or off (all on by default), and opt into code frames, heading ids, `data-line` source lines and the front matter header; `agentBlocks`, `readFile` (embeds, off unless given) and `today` work as in `renderSmd`. markdown-it is an optional peer dependency: the package keeps zero runtime dependencies. Style the output with `styled-markdown/smd.css`. `renderSmd` uses the same rules, and its output is unchanged.
+- VS Code: `.md` files that use `.smd` syntax render in VS Code's **built-in Markdown preview** (containers, directives, attribute lists, marks, Mermaid diagrams, code titles and embeds; math stays VS Code's own while `markdown.math.enabled` is on). New setting `smd.markdownPreview.enabled` (default on). Opening a Markdown preview now activates the extension.
 
 ### Changed
 
 ### Deprecated
 
 ### Fixed
+- `:priority[…]` with a value such as `constructor` rendered a broken color; unknown values are gray, as documented.
 
 ## 1.4.0 — 2026-09-30
 
