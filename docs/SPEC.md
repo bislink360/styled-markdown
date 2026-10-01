@@ -175,6 +175,40 @@ A heading may end with an attribute list: `## Title {#custom-id .class agent=ski
 
 GFM task lists (`- [ ]`, `- [x]`). Renderers connected to an editor MAY make them toggleable.
 
+### 4.6 Footnotes
+
+GitHub-compatible (GFM) footnotes, since 1.6:
+
+```markdown
+Retries are capped at five[^retries], as the SRE review asked[^SRE].
+
+[^retries]: Five covers 99.9% of transient failures in last quarter's logs.
+[^sre]: SRE review, 2026-09-12.
+    Lines indented by 4 spaces continue the footnote.
+
+    So do further paragraphs, lists and code, indented the same way.
+```
+
+- **Reference:** `[^label]`. The label is a number or a word without spaces or tabs and matches its definition case-insensitively (`[^SRE]` uses `[^sre]:`).
+- **Definition:** `[^label]: text` at the start of a line (up to 3 spaces of indent), anywhere in the document, including inside containers and lists. Lines indented by 4 spaces continue it, so a footnote can hold several paragraphs, lists or code.
+- **Rendering:** footnotes are numbered by their first reference, whatever the labels and the order of the definitions, and collected in a footnotes section at the end of the document, each with a back link (↩) to every reference. Unreferenced definitions are not shown, the first definition of a repeated label wins, and a reference to an undefined label stays literal text — all as on GitHub. References inside link text stay text, and `[^x](url)` remains a link.
+- **HTML:** GitHub's structure, with `smd-` classes added and ids without GitHub's `user-content-` prefix:
+
+  ```html
+  <p>…capped at five<sup class="smd-footnote-ref"><a href="#fn-1" id="fnref-1" data-footnote-ref role="doc-noteref" aria-describedby="footnote-label">1</a></sup>…</p>
+  <section class="footnotes smd-footnotes" data-footnotes>
+  <h2 id="footnote-label" class="smd-sr-only">Footnotes</h2>
+  <ol>
+  <li id="fn-1">
+  <p>Five covers… <a href="#fnref-1" class="smd-footnote-backref" data-footnote-backref role="doc-backlink" aria-label="Back to reference 1">↩︎</a></p>
+  </li>
+  </ol>
+  </section>
+  ```
+
+  Ids use the footnote's number: `fn-1`, `fnref-1`, and `fnref-1-2` for the second reference to the same footnote, whose back link reads `↩︎²` ("Back to reference 1-2"). The "Footnotes" heading is visually hidden; it labels the references for screen readers. Heading ids and outlines are unchanged: a reference in a heading counts as its text as written, as it did before 1.6.
+- **Older renderers** (Styled Markdown before 1.6, and Markdown renderers without footnotes) show the syntax as written: `[^1]` stays text and a definition is a plain paragraph — except a definition whose text is a single word, such as `[^1]: Note`, which CommonMark reads as a link reference definition, so `[^1]` then renders as a link labelled `^1` pointing at `Note`. Write definitions as sentences to keep that degradation readable. Conversely, a document that used `[^label]: url` as a link reference definition now gets a footnote; GitHub reads it the same way.
+
 ---
 
 ## 5. Attributes
@@ -254,6 +288,9 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `link/undefined-reference` | warning | `[text][label]` or `[label][]` with no `[label]: …` definition |
 | `attrs/required` | error / warning | Required attribute missing (`:::api` needs `method` and `path`; `:metric` should have `label`) |
 | `fence/embed-missing` · `fence/range` · `fence/embed-body` · `fence/lines-without-file` | error / warning | Embedded file missing or outside the workspace, bad line range, non-empty embed body, `lines` without `file` |
+| `footnote/undefined` | warning (info) | `[^label]` with no `[^label]: …` definition; it renders as plain text (fix: the closest defined label). `info` when the document defines no footnotes at all, since `[^a-z]` may be meant literally |
+| `footnote/unused` | info | A footnote definition nothing references; it is not shown |
+| `footnote/duplicate` | warning | A second definition of a footnote label; the first one is used |
 | `task/overdue` | info | Open task past its `:due[…]` date |
 | `rules/unknown` | warning | A suppression comment names an unknown rule code (fix: closest code) |
 
@@ -282,7 +319,7 @@ Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.s
 | `:progress{value=60}` | `▰▰▰▰▰▰▱▱▱▱ 60%` |
 | `:kbd[Ctrl+S]` | `<kbd>Ctrl</kbd>+<kbd>S</kbd>` |
 | `==x==` | `**x**` |
-| Mermaid, math, tables, tasks | unchanged (GitHub renders them) |
+| Mermaid, math, tables, tasks, footnotes | unchanged (GitHub renders them) |
 
 ---
 
@@ -305,6 +342,7 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 | Images, HTML comments | `[image: alt]`, removed |
 | Tables | Cell padding removed |
 | File embeds | `[code: path lines a-b — read that file]` (or inlined with `--embed`) |
+| Footnotes | As written: `[^1]` references in the text, `[^1]: …` definitions where they are (no renumbering). A `--section` excerpt lists the definitions its references need once, after a `Footnotes referenced above:` line, unless they are in a `{agent=skip}` section or `:::human` block |
 
 `--brief` also condenses Mermaid diagrams to `[diagram: type, n lines — see Lx-Ly]`, long code blocks to their first 10 lines, `:::details` to a pointer, and completed tasks to a count.
 

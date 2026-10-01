@@ -100,6 +100,16 @@
           ],
           "description": "Every link/… rule. Exact codes win."
         },
+        "footnote/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every footnote/… rule. Exact codes win."
+        },
         "task/*": {
           "enum": [
             "off",
@@ -459,6 +469,36 @@
             "hint"
           ],
           "description": "Reference link with no [label]: … definition"
+        },
+        "footnote/undefined": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Footnote reference [^label] with no [^label]: … definition (info when the document defines no footnotes)"
+        },
+        "footnote/unused": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Footnote definition that nothing references (it is not shown)"
+        },
+        "footnote/duplicate": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Second definition of a footnote label (the first one is used)"
         },
         "task/overdue": {
           "enum": [

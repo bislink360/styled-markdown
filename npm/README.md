@@ -100,6 +100,7 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 | `attributes` | `true` | `[text]{color=red .muted}` spans and `## Heading {#id .class}` |
 | `mark` | `true` | `==highlighted==` text |
 | `math` | `true` | `$inline$` and `$$display$$` math with KaTeX (include KaTeX's CSS) |
+| `footnotes` | `true` | GitHub-style `[^1]` footnotes, collected in a numbered section at the end (since 1.6). If you use markdown-it-footnote, add it before this plugin (this option then steps aside) or set `footnotes: false` |
 | `tasks` | `true` | `- [ ]` / `- [x]` task lists as checkboxes |
 | `fences` | `true` | ```` ```mermaid ```` and ```` ```math ```` blocks, and `title="…"`, `file="…"` and `{2,5-7}` on code blocks; turn it off if your host has its own fence attributes |
 | `codeFrames` | `false` | Frame every code block with a language label, as the `.smd` preview does |

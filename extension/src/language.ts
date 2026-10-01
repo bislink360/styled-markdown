@@ -14,6 +14,7 @@ import {
 } from './core/links';
 import { encodeAnchor, headingAt, linksToAnchor, renameHeading } from './core/anchors';
 import { blockquoteToCallout, containerAt, isCallout, wrapLines, type LineEdit } from './core/refactors';
+import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from './core/footnotes';
 import { frontMatterProperty } from './core/frontmatterSchema';
 import { documentPreview, documentSymbols, embedPreview, fuzzyMatch, sectionExcerpt, type SmdSymbol } from './core/symbols';
 
@@ -278,6 +279,21 @@ function decodePath(p: string): string {
   try { return decodeURIComponent(p); } catch { return p; }
 }
 
+/** The document's footnote labels after `[^`. */
+class FootnoteCompletionProvider implements vscode.CompletionItemProvider {
+  provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
+    const typed = footnoteLabelPrefix(document.lineAt(position.line).text.slice(0, position.character));
+    const labels = typed === undefined ? [] : footnoteLabels(document.getText());
+    if (typed === undefined || !labels.length) return undefined;
+    const range = new vscode.Range(position.line, position.character - typed.length, position.line, position.character);
+    return labels.map((label) => {
+      const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Reference);
+      item.range = range;
+      return item;
+    });
+  }
+}
+
 class CompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
@@ -416,8 +432,17 @@ class HoverProvider implements vscode.HoverProvider {
       const spec = INLINE_DIRECTIVES[name];
       if (spec) return new vscode.Hover(new vscode.MarkdownString(`**:${name}** — ${spec.description}\n\n\`${spec.example}\``), range);
     }
-    return linkHover(document, position) ?? embedHover(document, position);
+    return footnoteHover(document, position) ?? linkHover(document, position) ?? embedHover(document, position);
   }
+}
+
+/** A footnote reference `[^1]` previews its definition. */
+function footnoteHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+  const text = document.getText();
+  const hit = footnoteAt(text, position.line, position.character);
+  if (!hit) return undefined;
+  const markdown = new vscode.MarkdownString(`**[^${hit.definition.raw}]**\n\n${footnoteText(text, hit.definition)}`);
+  return new vscode.Hover(markdown, new vscode.Range(position.line, hit.start, position.line, hit.end));
 }
 
 /** Preview what a link points at: the start of a section, or a linked document's title and outline. */
@@ -787,6 +812,7 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdD
     vscode.languages.registerCodeActionsProvider(SELECTOR, new QuickFixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
     vscode.languages.registerCodeActionsProvider(SELECTOR, new RefactorProvider(), { providedCodeActionKinds: [RefactorProvider.kind] }),
     vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`', '(', '/', '#', '"'),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, new FootnoteCompletionProvider(), '^'),
     vscode.languages.registerHoverProvider(SELECTOR, new HoverProvider()),
     vscode.languages.registerColorProvider(SELECTOR, new ColorProvider()),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, new SymbolProvider()),

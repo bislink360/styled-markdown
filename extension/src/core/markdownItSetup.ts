@@ -1,8 +1,11 @@
 import type MarkdownIt from 'markdown-it';
-import { fenceRule, renderContainer, renderHeader, renderMath, type RenderRule } from './markdownItHtml';
 import {
-  annotateContainers, containerBlock, frontMatterBlock, headingAttrs, headingIds, inlineDirective, mark, mathBlock,
-  mathInline, sourceLines, styledSpan, taskLists,
+  fenceRule, footnoteBackref, footnoteClose, footnoteOpen, footnoteRef, footnotesClose, footnotesOpen, renderContainer, renderHeader,
+  renderMath, type RenderRule,
+} from './markdownItHtml';
+import {
+  annotateContainers, containerBlock, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock, headingAttrs, headingIds,
+  inlineDirective, mark, mathBlock, mathInline, sourceLines, styledSpan, taskLists,
 } from './markdownItRules';
 import type { MarkdownItSmdOptions } from './markdownIt';
 
@@ -29,7 +32,8 @@ export interface SmdContext {
 
 /** The syntax to add, all resolved. */
 export type SmdFeatures = Required<Pick<MarkdownItSmdOptions,
-  'containers' | 'directives' | 'attributes' | 'mark' | 'math' | 'tasks' | 'fences' | 'codeFrames' | 'headingIds' | 'sourceLines' | 'frontMatter'>>;
+  'containers' | 'directives' | 'attributes' | 'mark' | 'math' | 'footnotes' | 'tasks' | 'fences' | 'codeFrames' | 'headingIds' | 'sourceLines' |
+  'frontMatter'>>;
 
 export function smdFeatures(options: MarkdownItSmdOptions): SmdFeatures {
   return {
@@ -38,6 +42,7 @@ export function smdFeatures(options: MarkdownItSmdOptions): SmdFeatures {
     attributes: options.attributes ?? true,
     mark: options.mark ?? true,
     math: options.math ?? true,
+    footnotes: options.footnotes ?? true,
     tasks: options.tasks ?? true,
     fences: options.fences ?? true,
     codeFrames: options.codeFrames ?? false,
@@ -67,6 +72,7 @@ export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext)
   if (features.frontMatter) addFrontMatter(md);
   if (features.containers) addContainers(md, ctx);
   if (features.math) addMath(md);
+  if (features.footnotes) addFootnotes(md);
   addInline(md, features, ctx);
   addCorePasses(md, features);
   if (features.fences) {
@@ -93,6 +99,22 @@ function addMath(md: MarkdownIt): void {
   md.renderer.rules.smd_math_block = (tokens, idx) =>
     `<div class="smd-math-block" data-line="${tokens[idx].attrGet('data-line') ?? ''}">${renderMath(tokens[idx].content, true)}</div>\n`;
   md.renderer.rules.smd_math_inline = (tokens, idx) => renderMath(tokens[idx].content, false);
+}
+
+/** GFM footnotes, unless markdown-it-footnote already handles them on this instance. */
+function addFootnotes(md: MarkdownIt): void {
+  if (md.renderer.rules.footnote_ref) return;
+  md.block.ruler.before('reference', 'smd_footnote_def', footnoteDefinition, { alt: ['paragraph', 'reference'] });
+  // After links, so `[^1](url)` stays a link.
+  md.inline.ruler.after('image', 'smd_footnote_ref', footnoteReference);
+  // Added before the passes in addCorePasses, so it runs after them.
+  md.core.ruler.after('inline', 'smd_footnote_tail', footnoteTail);
+  md.renderer.rules.smd_footnote_ref = footnoteRef;
+  md.renderer.rules.smd_footnote_backref = footnoteBackref;
+  md.renderer.rules.smd_footnotes_open = footnotesOpen;
+  md.renderer.rules.smd_footnotes_close = footnotesClose;
+  md.renderer.rules.smd_footnote_open = footnoteOpen;
+  md.renderer.rules.smd_footnote_close = footnoteClose;
 }
 
 function addInline(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext): void {

@@ -4,6 +4,7 @@ import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem } 
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS } from './render';
+import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
 import { parseFenceInfo, sliceLines } from './fence';
 import { suggest } from './util';
@@ -177,6 +178,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   }
 
   checkLinks(text, push, options);
+  checkFootnotes(text, push);
 
   let result = applySuppressions(text, diagnostics);
   if (options.rules) result = applyRuleSettings(result, options.rules);
@@ -492,6 +494,43 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
         `No definition for the reference "[${ref.label}]". Add a line like "[${ref.label}]: https://…" or use an inline link.`);
     }
   }
+}
+
+/**
+ * Footnotes: every `[^label]` needs a definition, and each definition a reference and a label of its own.
+ * Without any definition in the document, `[^x]` is as likely plain text (a regex class such as `[^a-z]`),
+ * so an undefined reference is only `info` then.
+ */
+function checkFootnotes(text: string, push: Push): void {
+  const { definitions, references } = findFootnotes(text);
+  const defined = new Map<string, FootnoteDefinition>();
+  for (const d of definitions) {
+    const first = defined.get(d.label);
+    if (first) {
+      push(d.line, d.column, d.endColumn, 'warning', 'footnote/duplicate',
+        `Footnote "[^${d.raw}]" is already defined on line ${first.line + 1}; this definition is ignored.`);
+    } else {
+      defined.set(d.label, d);
+    }
+  }
+  const labels = [...defined.values()].map((d) => d.raw);
+  for (const r of references) {
+    if (!defined.has(r.label)) undefinedFootnote(r, labels, push);
+  }
+  const used = new Set(references.map((r) => r.label));
+  for (const d of defined.values()) {
+    if (!used.has(d.label)) {
+      push(d.line, d.column, d.endColumn, 'info', 'footnote/unused', `Footnote "[^${d.raw}]" is never referenced, so it is not shown.`);
+    }
+  }
+}
+
+function undefinedFootnote(ref: FootnoteReference, labels: string[], push: Push): void {
+  const hint = uniqueSuggestion(ref.raw, labels);
+  const column = ref.column + 2;
+  push(ref.line, ref.column, ref.endColumn, labels.length ? 'warning' : 'info', 'footnote/undefined',
+    `No definition for the footnote "[^${ref.raw}]"${hint ? ` — did you mean "[^${hint}]"?` : '.'} Add a line like "[^${ref.raw}]: …"; until then it shows as plain text.`,
+    hint ? { line: ref.line, column, endColumn: column + ref.raw.length, replacement: hint, title: `Change to "[^${hint}]"` } : undefined);
 }
 
 function missingAnchor(
