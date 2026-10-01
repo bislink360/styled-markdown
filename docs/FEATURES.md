@@ -445,7 +445,7 @@ People-only content anywhere in the document.
 
 ## 11. Headings, links and anchors
 
-- `## Title {#custom-id}` sets a stable anchor, and `{.lead}` adds a class.
+- `## Title {#custom-id}` sets a stable anchor, and `{.lead}` adds a class (`{.page-break}` starts a new page when printed: [section 16](#pdf-and-printing)).
 - Headings get automatic ids, so `[see API](#api)` works. Broken anchors and missing relative files are reported.
 - The outline view and folding follow headings and blocks.
 
@@ -461,6 +461,12 @@ People-only content anywhere in the document.
 | Task toggling | Click a checkbox in the preview to update the source |
 | Theme | Follows VS Code light/dark/high contrast. Override with `smd.preview.theme` or front matter `theme:`. |
 | Security | A strict Content Security Policy: scripts in documents never run |
+
+**`.md` files in VS Code's built-in preview.** A `.md` file that uses `.smd` syntax renders in VS Code's own Markdown preview too (`Ctrl+Shift+V` on a `.md` file): containers, inline directives, attribute lists, `==marks==`, Mermaid diagrams (drawn in the preview's theme), and code titles, line highlights and `file="…"` embeds. Plain Markdown looks as before, and code blocks without `.smd` attributes keep VS Code's highlighting. Compared with the `.smd` preview:
+
+- math is VS Code's own while `markdown.math.enabled` is on (the default); with it off, the `.smd` math rules apply
+- task lists, the front matter header and the table of contents are left to VS Code, and tabs show one after another
+- `smd.markdownPreview.enabled` (default on) turns it off; settings apply after **Developer: Reload Window**
 
 ## 13. VS Code: editing assistance
 
@@ -525,6 +531,8 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
 
+To check documents before they are committed, use the `smd-validate`, `smd-fmt` and `smd-fmt-check` hooks for the [pre-commit](https://pre-commit.com) framework, lint-staged, or a plain Git hook: see [INSTALL.md › Pre-commit hooks](INSTALL.md#pre-commit-hooks).
+
 ### What `--fix` changes
 
 A fix is attached only when there is exactly one sensible repair. VS Code offers the same fixes as quick fixes, and `--json` includes them as `fix` for agents. `smd validate --fix` applies them and checks again until nothing is left to fix (a code block is closed before the container around it).
@@ -544,6 +552,24 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 | `link/missing-anchor` | a heading id is close |
 
 Everything else needs a decision only the author can make (which file was meant, where a block should end inside a list, what a missing attribute should be), so it has no fix. Fixes never touch values with several equally close matches, dates like `09/05/2026` whose day/month order is unclear, or `style=…`, which takes several words.
+
+### In GitHub Actions
+
+`uses: bislink360/styled-markdown/validate@v1.5.0` validates on every pull request and shows each problem as an inline annotation on the changed lines, plus a job summary with counts per severity and the first 50 problems linked to their lines. It runs the bundled CLI with the runner's Node.js 18+, without installing anything; the inputs (`paths`, `fail-on: error|warning|never`, `strict`, `config`, `mermaid`, `stale-after`, `summary`, `cli`) are in [INSTALL.md](INSTALL.md#github-actions).
+
+Underneath it is `smd validate --format github`, which prints one [workflow command](https://docs.github.com/actions/reference/workflow-commands-for-github-actions) per problem:
+
+```text
+::error file=docs/plan.smd,line=42,col=1,endColumn=7,title=smd container/unclosed::":::note" is never closed. Add a line with ::: after its content.
+::warning file=docs/my plan.smd,line=7,col=9,endColumn=19,title=smd link/missing-file::"missing.smd" does not exist.
+::notice file=docs/plan.smd,line=61,col=95,endColumn=110,title=smd task/overdue::Open task is overdue (due 2026-09-25).
+```
+
+- Errors are `::error`, warnings `::warning`, info `::notice`; hints are left out (GitHub shows only a few annotations per step). A problem in a rule config file is a `::warning` titled `smd config`.
+- Lines and columns are 1-based and `endColumn` is inclusive. Paths are relative to `$GITHUB_WORKSPACE` (the repository root), else the current folder, with forward slashes.
+- `%`, carriage returns and line feeds are escaped in messages (`%25`, `%0D`, `%0A`), and also `:` and `,` in the path and title (`%3A`, `%2C`), so every problem is one line.
+- `--summary <file>` appends the Markdown summary to a file with any output format, e.g. `--summary "$GITHUB_STEP_SUMMARY"`. Links point at the commit when `GITHUB_SERVER_URL`, `GITHUB_REPOSITORY` and `GITHUB_SHA` are set.
+- The exit code is the same as for text output, and `--format json` is `--json`.
 
 ### Configuring rules
 
@@ -580,9 +606,73 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 
 | Command | Result |
 |---|---|
-| **Export to HTML** / `smd render` | A standalone page (Mermaid and KaTeX from a CDN) you can share with anyone |
+| **Export to HTML** / `smd render` | A standalone page (Mermaid and KaTeX from a CDN) you can share with anyone. It has a print stylesheet |
+| `smd pdf` | A PDF of that page, printed by a headless browser you install (below) |
 | **Export to Plain Markdown** / `smd to-md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Convert Markdown File to .smd** / `smd from-md` | Adds front matter and turns GitHub alerts into callouts |
+| `smd build <dir> --out site` | A static docs site: every document as a page, with navigation, search, backlinks and a dashboard |
+
+### Publish a docs site: `smd build`
+
+```bash
+smd build docs --out site                       # open site/index.html, or serve the folder
+smd build docs --out site --md --title "Handbook" --base /handbook/ --clean
+```
+
+- **Pages:** every `.smd` file under the folder becomes a page in the same place (`docs/guide/setup.smd` → `site/guide/setup.html`); `--md` adds `.md` files. The home page (`index.html`) is the folder's `index.smd`, else its `README.smd`/`README.md`, else a generated index of every document with its summary and status.
+- **Links:** links between documents point at their pages, anchors included (`setup.smd#install` → `setup.html#install`, `.md` too); external links stay as they are. Linked local files such as images are copied with the same relative path (only from inside the folder, never dot folders). Links are relative, so the site works from disk (`file://`) and from any static web server; `--base /docs/` makes them absolute for a fixed deployment path.
+- **Navigation:** a sidebar with the folder tree, documents and folders ordered by title (a folder's `index`/`README` is its overview page), breadcrumbs, and previous/next links in sidebar order. On narrow screens the sidebar opens from a menu button. Pages follow the reader's light or dark theme (or the document's `theme:`).
+- **Search:** a search box on every page searches titles, headings, summaries and an excerpt of every section, in the browser. The index (`_smd/search-index.js`) is built with the site; nothing is sent anywhere.
+- **Backlinks:** each page lists the pages that link to it (links and front matter `related:`).
+- **Dashboard:** `dashboard.html` collects open tasks (overdue first, then by priority and due date), decisions (newest first) and open risks (with the impact × likelihood matrix) from every document, each linked to its section. `--today YYYY-MM-DD` sets the date for overdue tasks.
+- **Offline:** the stylesheet and scripts are written once to `_smd/`. Only pages with Mermaid diagrams or math load Mermaid and the KaTeX stylesheet from a CDN, as `smd render` does.
+- **Safe output:** `--out` (default `site`) must be outside the source folder and must not contain it. An existing folder is only written to when it is empty or a previous build, which `smd build` recognizes by the `.smd-site.json` it writes (the list of files it created). `--clean` first deletes exactly those files, never anything else; without it, files of documents you removed stay until the next `--clean`.
+
+### Use in other tools
+
+Static site generators built on remark/rehype can render `.smd` content with the npm package's plugins. They render the whole file with `renderSmd`, so the HTML is the same as `smd render`'s:
+
+| Import | Use |
+|---|---|
+| `styled-markdown/remark` (`remarkSmd`) | `remarkPlugins` in unified, Astro, Docusaurus or `@next/mdx` |
+| `styled-markdown/rehype` (`rehypeSmd`) | pipelines that only take `rehypePlugins` |
+
+- Use `.md` files: MDX parses `{…}` and `<…>` as JSX before plugins run, so `.mdx` files with `.smd` syntax don't compile. With MDX, use `format: 'detect'` and `rehype-raw`.
+- The page needs `styled-markdown/smd.css`, KaTeX's CSS for math, and Mermaid plus the runtime (`SMD_RUNTIME_JS`) for diagrams and tabs.
+- Front matter works whether the source still has it or the host removed it (Astro's `file.data.astro.frontmatter` is read); `header: false` leaves out the title header when the site layout shows the title.
+
+Configuration for Astro, Docusaurus and Next.js, and which hosts are tested: [npm package README](../npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
+
+**Use in other tools.** Anything that renders Markdown with [markdown-it](https://github.com/markdown-it/markdown-it) can render `.smd` syntax with the npm package's plugin, `md.use(require('styled-markdown/markdown-it'))`, styled by `styled-markdown/smd.css`. It adds rules to the host's own instance and leaves plain Markdown alone; options are in the [package README](../npm/README.md#markdown-it-plugin). Other tools can call `renderSmd()` from the same package or run `smd render`.
+
+### PDF and printing
+
+Pages from `smd render` (and **Export to HTML**) print well from any browser: **Print → Save as PDF** gives a clean PDF with no extra software. The print stylesheet:
+
+- uses 16 mm × 14 mm page margins (the paper size comes from the print dialog) and always the light palette, with block backgrounds kept;
+- leaves out screen-only parts (copy buttons, the tab bar) and **`:::agent` blocks**, which are instructions for AI agents rather than for readers of a printout. `:::human` blocks print;
+- prints every tab of a `:::tabs` block, one under the other with its label, and opens collapsed `:::details` and collapsible callouts while printing;
+- wraps long code lines and shows wide tables and diagrams in full instead of scrolling;
+- keeps headings with what follows them, and avoids breaking callouts, cards, boxes, decisions, risks, API blocks, code blocks, diagrams, images and table rows across pages where they fit on one.
+
+Two utility classes, set with the usual attribute list (no new syntax), control printing:
+
+```text
+## Appendix {.page-break}           the heading starts a new page
+:::box{.page-break}                 any block can start a new page too
+:::card{.no-print} Internal notes   left out of the printout
+```
+
+**`smd pdf plan.smd [-o plan.pdf] [--format A4|Letter] [--landscape]`** renders the document and prints it to `plan.pdf` (by default next to the document) in A4 (the default) or Letter. It drives a headless Chromium from **Playwright** or **Puppeteer**, which smd does not bundle (the npm package keeps zero dependencies), so install one in your project or globally, as for `--tokenizer`:
+
+```bash
+npm install --save-dev playwright && npx playwright install chromium   # or:
+npm install --save-dev puppeteer
+```
+
+smd looks for `playwright`, then `@playwright/test`, then `puppeteer`, in the current folder's `node_modules`, next to smd and in the global npm folder. Without any of them, `smd pdf` exits with code 2 and suggests the browser route above.
+
+It waits until the page has finished rendering: the runtime sets `data-smd-ready` on `<html>` once Mermaid diagrams are drawn and fonts are loaded (after 60 s it prints anyway, with a warning). So **diagrams are in the PDF as vector SVG**, and math as KaTeX text. Mermaid and the KaTeX stylesheet still load from the CDN, so diagrams need a network connection. The page is printed from a temporary file beside the document (removed afterwards), so relative image paths resolve. PDFs always use the light theme.
 
 ## 17. CLI reference
 
@@ -605,17 +695,24 @@ smd index <files|dirs> [-o catalog.json] [--compact] JSON catalog of every docum
 smd decisions <files|dirs> [--status <list>] [--owner @name] [--json] [--md] [-o <file>] [--title "…"]   decision log, ADR index
 smd report <files|dirs> --since <date|git-ref> [-o report.smd] [--title "…"] [--today YYYY-MM-DD]   draft a status report
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
+smd validate <files|dirs> --format github [--summary <file>] [...]   GitHub annotations (section 15); --summary appends a job summary
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
-smd render <file> [-o out.html]
+smd render <file> [-o out.html]                     standalone page, with a print stylesheet
+smd pdf <file> [-o out.pdf] [--format A4|Letter] [--landscape]   PDF; needs Playwright or Puppeteer (section 16)
+smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
+                 static docs site: pages, sidebar, search, backlinks, dashboard (section 16)
 smd to-md <file> [-o out.md]
 smd from-md <file.md> [-o out.smd]
 smd init <file> [--template <name>] [--title "…"]
 smd templates
 smd skills install [--dir <path>] [--global] [--only reader|writer]
 smd mcp [--root <dir>]                               MCP server over stdio (tools below)
+smd lsp [--stdio]                                    language server over stdio for other editors (below); also smd-language-server
 smd skills install --target cursor,copilot,agents [--dir <project>]   rules for other agents + .smd/smd.cjs
 smd --version
 ```
+
+`validate` and `fmt` take any number of files and directories, so Git hooks pass them just the staged files (setups for pre-commit, lint-staged and plain Git hooks are in [INSTALL.md](INSTALL.md#pre-commit-hooks)). After `--`, every argument is a file, even one whose name starts with `-`.
 
 ### Document catalog: `smd index`
 
@@ -680,6 +777,23 @@ claude mcp add smd -- npx -y -p styled-markdown smd mcp
 ```
 
 Cursor, VS Code and Claude Desktop settings: [AGENTS.md](AGENTS.md#mcp-server).
+
+### Language server
+
+`smd lsp --stdio` (also installed by the npm package as `smd-language-server`) brings the extension's editing features to Neovim, Helix, Zed and any other Language Server Protocol client. It needs no dependencies and speaks LSP over stdio:
+
+| Feature | LSP method |
+|---|---|
+| Problems as you type (same rules and config files as `smd validate`, Mermaid syntax errors included) | `textDocument/publishDiagnostics` |
+| Quick fixes (the `fix` of each problem that has one) | `textDocument/codeAction` |
+| Outline: headings as a tree, decisions, risks and APIs in their section | `textDocument/documentSymbol` |
+| Symbol search across the workspace's `.smd` files | `workspace/symbol` |
+| Hover: blocks, inline directives, link and embed previews | `textDocument/hover` |
+| Completion: blocks, attributes, front matter, directives, languages, link paths and anchors | `textDocument/completion` |
+| Go to definition for links and anchors | `textDocument/definition` |
+| Formatting (as `smd fmt`) | `textDocument/formatting` |
+
+Positions are UTF-16 columns, as LSP specifies (UTF-8 or UTF-32 when the client offers only those). Setups for Neovim, Helix and Zed: [EDITORS.md](EDITORS.md).
 
 ### What changed: `smd diff`
 

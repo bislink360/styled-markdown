@@ -54,6 +54,24 @@ jobs:
         working-directory: npm
         run: npm pack --dry-run
 
+  # Dogfoods the GitHub Action in validate/ from this checkout with the committed bundled CLI
+  # (the test job checks that it is up to date), on Linux and on Windows (Git Bash).
+  validate-action:
+    name: smd validate action (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./validate
+        with:
+          paths: |
+            examples
+            docs
+          fail-on: warning
+
   vscode:
     name: VS Code integration tests
     runs-on: ubuntu-latest

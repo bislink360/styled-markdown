@@ -1,6 +1,6 @@
 {
   "name": "styled-markdown",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Styled Markdown (.smd): Markdown for developers, PMs and AI agents. Render, validate, convert and create token-efficient agent views — library + `smd` CLI, zero dependencies.",
   "author": "Roshan Alwis",
   "license": "MIT",
@@ -26,7 +26,15 @@
     "llm",
     "tokens",
     "prd",
-    "adr"
+    "adr",
+    "markdown-it",
+    "markdown-it-plugin",
+    "remark",
+    "rehype",
+    "unified",
+    "remark-plugin",
+    "lsp",
+    "language-server"
   ],
   "type": "commonjs",
   "main": "./dist/index.cjs",
@@ -38,18 +46,42 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     },
+    "./markdown-it": {
+      "types": "./dist/types/markdownIt.d.ts",
+      "import": "./dist/markdown-it.mjs",
+      "require": "./dist/markdown-it.cjs"
+    },
+    "./remark": {
+      "types": "./dist/types/remark.d.ts",
+      "import": "./dist/remark.mjs",
+      "require": "./dist/remark.cjs"
+    },
+    "./rehype": {
+      "types": "./dist/types/rehype.d.ts",
+      "import": "./dist/rehype.mjs",
+      "require": "./dist/rehype.cjs"
+    },
     "./smd.css": "./dist/smd.css",
     "./frontmatter.schema.json": "./dist/frontmatter.schema.json",
     "./package.json": "./package.json"
   },
   "bin": {
-    "smd": "dist/cli.js"
+    "smd": "dist/cli.js",
+    "smd-language-server": "dist/language-server.js"
   },
   "files": [
     "dist",
     "README.md",
     "LICENSE"
   ],
+  "peerDependencies": {
+    "markdown-it": ">=13"
+  },
+  "peerDependenciesMeta": {
+    "markdown-it": {
+      "optional": true
+    }
+  },
   "sideEffects": false,
   "engines": {
     "node": ">=18"

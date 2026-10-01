@@ -131,6 +131,7 @@ History and research. People see it; agents skip it.
 - **Outline, folding** and **35 snippets** (`prd`-style blocks, `decision`, `risk`, `api`, `mermaid`, `gantt`, `task`, `embed`…)
 - **Agent view** (🤖 button), **brief agent view**, **copy for an agent** (whole doc or picked sections), and a **status-bar token counter**
 - **Export** to standalone HTML or plain GitHub Markdown · **Convert** `.md` → `.smd` · **Validate workspace**
+- **Built-in Markdown preview:** `.md` files that use `.smd` syntax (callouts, directives, attribute lists, Mermaid, code titles) render in VS Code's own preview too; turn it off with `smd.markdownPreview.enabled`
 
 </details>
 
@@ -151,12 +152,17 @@ History and research. People see it; agents skip it.
 | `smd report <dir> --since <date\|git-ref> [-o status.smd]` | Draft a status report: tasks done and added since, open tasks (overdue and due this week first), decisions since, high-impact risks, linked to their sections |
 | `smd query "<selector>" <paths> [--json]` | Decisions, risks, APIs, callouts, tasks or headings by type and attributes, e.g. `risk[impact>=high]` |
 | `smd diff <paths> --since <git-ref>` / `smd diff <old> <new>` | Only the sections that changed, in the agent view: catch up on a doc without rereading it |
-| `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->` |
+| `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->`; `--format github` for pull request annotations ([GitHub Action](#github-action)) |
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
 | `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
-| `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect |
+| `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect; `render` pages have a print stylesheet (Print → Save as PDF) |
+| `smd pdf <file> [--format A4\|Letter] [--landscape]` | PDF with diagrams as vectors, if you have installed Playwright or Puppeteer (smd bundles no browser) |
+| `smd build <dir> --out site` | Static docs site: a page per doc, sidebar, breadcrumbs, search, backlinks and a task/decision/risk dashboard |
 | `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
+| `smd lsp --stdio` | Language server for Neovim, Helix, Zed and other LSP editors: diagnostics, quick fixes, outline, hover, completion, go to definition, formatting (also `smd-language-server`; [setup](docs/EDITORS.md)) |
 | `smd skills install [--global] [--target …]` | Install the agent skills, or rules for Cursor, Copilot and `AGENTS.md` |
+
+**Publish a docs site:** `smd build docs --out site` turns a folder of `.smd` files (and `.md` with `--md`) into a static site in the same folder structure, with links between documents rewritten to pages, a sidebar, previous/next links, backlinks, a search box that works offline, and a dashboard of open tasks, decisions and risks. Open `site/index.html` from disk or upload the folder to any static host (`--base /docs/` for absolute links). It only writes to a new, empty or previously built folder, and `--clean` removes only files of the previous build. See the [feature guide](docs/FEATURES.md#publish-a-docs-site-smd-build).
 
 </details>
 
@@ -174,25 +180,25 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-1.4.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+1. Download **`styled-markdown-1.5.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
 2. Install it:
 
    ```bash
-   code --install-extension styled-markdown-1.4.0.vsix
+   code --install-extension styled-markdown-1.5.0.vsix
    ```
 
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
 3. Open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS).
 
-> The VS Code Marketplace and npm listings are coming soon. Until then, every release on GitHub has the `.vsix`, the npm package and the skills.
+> Listings on the VS Code Marketplace, [Open VSX](https://open-vsx.org) (for VSCodium, Cursor, Windsurf and Gitpod) and npm are coming once published. Until they are live, every release on GitHub has the `.vsix`, the npm package and the skills.
 
 ### npm library and `smd` CLI
 
 Install the package straight from the release:
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.4.0/styled-markdown-1.4.0.tgz   # the smd command
-npm install https://github.com/bislink360/styled-markdown/releases/download/v1.4.0/styled-markdown-1.4.0.tgz      # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.5.0/styled-markdown-1.5.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v1.5.0/styled-markdown-1.5.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -201,12 +207,23 @@ import { renderSmd, validateSmd, agentView } from 'styled-markdown';
 
 See the [package README](npm/README.md) for the API.
 
+**Pre-commit hooks:** check staged `.smd` files on every commit with the [pre-commit](https://pre-commit.com) framework (`repo: https://github.com/bislink360/styled-markdown`, hooks `smd-fmt`, `smd-validate`, `smd-fmt-check`), lint-staged and husky, or a plain Git hook: copy-paste setups in [docs/INSTALL.md](docs/INSTALL.md#pre-commit-hooks).
+
+Already render Markdown with markdown-it (a docs site, a static site generator, a chat UI)? Add the syntax to your own instance with the plugin, and style it with `styled-markdown/smd.css`:
+
+```ts
+import smd from 'styled-markdown/markdown-it';
+md.use(smd);
+```
+
+Options and limits: [markdown-it plugin](npm/README.md#markdown-it-plugin).
+
 Full instructions, building from source and troubleshooting: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 ### Agent skills
 
 ```bash
-curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.4.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.5.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs skills install --global
 ```
 
@@ -229,6 +246,52 @@ claude mcp add smd -- npx -y -p styled-markdown smd mcp
 ```
 
 Other clients and options: **[docs/AGENTS.md](docs/AGENTS.md#mcp-server)**.
+
+### Neovim, Helix, Zed and other editors
+
+`smd-language-server` (installed with the [npm package](#npm-library-and-smd-cli), 1.5.0 or later) brings validation with quick fixes, the outline, symbol search, hover, completion, go to definition and formatting to any editor that speaks the Language Server Protocol:
+
+```lua
+-- Neovim 0.11+
+vim.filetype.add({ extension = { smd = 'smd' } })
+vim.lsp.config('smd', { cmd = { 'smd-language-server', '--stdio' }, filetypes = { 'smd' }, root_markers = { '.git' } })
+vim.lsp.enable('smd')
+```
+
+Neovim (also with nvim-lspconfig), Helix and Zed setups: **[docs/EDITORS.md](docs/EDITORS.md)** (written from each editor's documented configuration, not yet tested in those editors).
+
+### GitHub Action
+
+Validate `.smd` files on every pull request, with each problem annotated on its line and a summary on the run page:
+
+```yaml
+# .github/workflows/docs.yml
+name: docs
+on: [pull_request]
+jobs:
+  smd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bislink360/styled-markdown/validate@v1.5.0
+        with:
+          paths: docs        # one per line; default: the whole repository
+          fail-on: warning   # error (default), warning or never
+```
+
+It uses the runner's Node.js (18+) and the CLI bundled in this repository, so nothing is installed. All inputs: **[docs/INSTALL.md](docs/INSTALL.md#github-actions)**. Other CI systems: `smd validate --strict`, or `--format github` / `--json`.
+
+### Static sites: Astro, Docusaurus, Next.js
+
+`styled-markdown/remark` and `styled-markdown/rehype` are unified plugins that render documents exactly as `smd render` does, inside remark/rehype pipelines:
+
+```js
+// astro.config.mjs
+import { remarkSmd } from 'styled-markdown/remark';
+export default { markdown: { remarkPlugins: [remarkSmd] } };
+```
+
+They work with `.md` files (MDX parses `.smd` attribute lists as JSX, so `.mdx` files are not supported). Setup for Astro, Docusaurus and Next.js, and what the page must load: [package README](npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
 
 ## Token-efficient reading for agents
 
@@ -267,6 +330,7 @@ Each has a rendered `.html` version next to it that you can open in a browser. M
 | [docs/INSTALL.md](docs/INSTALL.md) | Installing, updating and building the extension and CLI |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature guide: every construct with syntax, rendering, agent view and plain-Markdown fallback |
 | [docs/SKILLS.md](docs/SKILLS.md) | Importing the agent skills into Claude Code, Claude.ai, the API/Agent SDK and other agents |
+| [docs/EDITORS.md](docs/EDITORS.md) | Using `.smd` in Neovim, Helix, Zed and other editors with the language server |
 | [docs/AGENTS.md](docs/AGENTS.md) | One-page guide to paste into any agent's instructions |
 | [docs/SPEC.md](docs/SPEC.md) | The formal specification (v1) and validation rules |
 
@@ -283,8 +347,11 @@ styled-markdown/
 │   ├── styled-markdown-reader/   agent skill: token-efficient reading
 │   └── styled-markdown-writer/   agent skill: authoring, with templates and references
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
+├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)
-└── docs/                 guides, specification, gallery and screenshots
+├── docs/                 guides, specification, gallery and screenshots
+├── .pre-commit-hooks.yaml    hooks for the pre-commit framework
+└── package.json          lets pre-commit install the bundled CLI (not published)
 ```
 
 ## Development
@@ -295,7 +362,7 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-1.4.0.vsix
+npm run package        # → styled-markdown-1.5.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
 ```
 

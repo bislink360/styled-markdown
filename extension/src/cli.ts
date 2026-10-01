@@ -11,9 +11,12 @@ import {
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
+import { exportPdf, loadPdfEngine, PdfError, pdfOptions, pdfPath } from './pdf';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { runMcpServer } from './mcp';
+import { runLanguageServer } from './lsp';
 import { runIssues, type GhResult, type IssuesOptions } from './issueSync';
+import { runBuild } from './siteBuild';
 import { AGENT_RULES, fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 import {
   parseTargets, rulesBody, SHARED_CLI_COMMAND, SHARED_CLI_PATH, TARGET_FILES, type AgentTarget, type RulesTarget, type TargetFile,
@@ -22,6 +25,9 @@ import {
   collect, decisionLine, decisionSummary, deletedSince, diagnose, existsFrom, git, gitPath, queryRows, querySummary, queryText, read, readerFor,
   reportSummary, taskLine, taskRows, taskSummary, workingPath, type TaskRow,
 } from './workspace';
+import {
+  blobBase, githubAnnotations, validationSummary, type ConfigProblem, type FileReport, type ValidationResult,
+} from './validateFormats';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
 declare const __SMD_PKG_VERSION__: string;
@@ -112,11 +118,30 @@ Checking and converting:
       and silenced inline with <!-- smd-disable-next-line rule/code -->.
       Mermaid diagrams are parsed for syntax errors (--no-mermaid skips it).
       Documents whose "updated" date is over 180 days old are reported as stale (--stale-after 0: off).
+  smd validate <files|dirs...> --format github [--summary <file>] [...]
+      GitHub Actions annotations: one ::error/::warning/::notice workflow command per problem (hints are
+      left out), with paths relative to $GITHUB_WORKSPACE (else the current folder). --format json = --json.
+      --summary  also append a Markdown summary (counts and the first 50 problems) to a file, with any
+                 format, e.g. --summary "$GITHUB_STEP_SUMMARY"
   smd fmt <files|dirs...> [--check] [--stdout]
       Format .smd files in place: container fences, attribute lists, tables and blank lines.
       --check   change nothing; list unformatted files and exit 1 if there are any
       --stdout  print the formatted file instead of writing it (one file)
-  smd render <file.smd> [-o out.html]      Standalone HTML page
+      validate and fmt take any number of files: use them as a pre-commit hook (see docs/INSTALL.md).
+      After --, every argument is a file, even one that starts with "-".
+  smd render <file.smd> [-o out.html]      Standalone HTML page (prints well: it has a print stylesheet)
+  smd pdf <file.smd> [-o out.pdf] [--format A4|Letter] [--landscape]
+      PDF of the rendered page (default: next to the file), with diagrams as vectors. Needs Playwright or
+      Puppeteer in your project or installed globally; smd doesn't bundle a browser. Without one, use
+      smd render -o page.html and the browser's Print → Save as PDF.
+  smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
+      Static docs site: a page per .smd file in the same folders (links between documents rewritten,
+      linked images copied), a sidebar, breadcrumbs, previous/next, backlinks, client-side search and
+      a dashboard of open tasks, decisions and open risks. Opens from disk or any static web server.
+      --out    the site folder (default: site): must be outside <dir>, and new, empty or a previous build
+      --base   deployment path for absolute links, e.g. /docs/ (default: relative links)
+      --md     also publish .md files; the home page is <dir>/index.smd or README, else a generated index
+      --clean  first delete the files of the previous build (only those listed in its .smd-site.json)
   smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
   smd init <file.smd> [--template <name>] [--title "My doc"]
@@ -128,6 +153,12 @@ Agent integration:
       Model Context Protocol server over stdio with the tools outline, section, agent, tasks, validate
       and query. Only .smd files inside --root (default: the current directory) can be read.
       Register it, e.g.: claude mcp add smd -- npx -y -p styled-markdown smd mcp
+
+Editor integration:
+  smd lsp [--stdio]
+      Language server (LSP) over stdio for Neovim, Helix, Zed and other editors: diagnostics with quick
+      fixes, outline, workspace symbols, hover, completion, go to definition and formatting. Also
+      installed as smd-language-server by the npm package. Setup guides: docs/EDITORS.md
 
 Agent skills:
   smd skills install [--dir <skills-dir>] [--global] [--only reader|writer]
@@ -149,7 +180,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
-  '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label',
+  '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary', '--out', '--base',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -157,6 +188,11 @@ function parseArgs(argv: string[]): Args {
   const args: Args = { command, positional: [], flags: new Set(), values: new Map() };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
+    if (a === '--') {
+      // End of options: the rest are files, even ones that start with "-" (as Git hooks may pass them).
+      args.positional.push(...rest.slice(i + 1));
+      break;
+    }
     if (VALUE_OPTIONS.has(a)) {
       const list = args.values.get(a) ?? [];
       list.push(rest[++i] ?? '');
@@ -209,13 +245,17 @@ function main(argv: string[]): number | Promise<number> {
     case 'index':
       return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
-      return validate(positional.length ? positional : ['.'], flags.has('--json'), flags.has('--fix'), flags.has('--strict'), today, value('--config'), !flags.has('--no-mermaid'), staleAfterDays);
+      return validate(positional.length ? positional : ['.'], args, today, staleAfterDays);
     case 'fmt':
       return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
+    case 'build':
+      return build(positional, args);
     case 'render': {
       const file = requireFile(positional[0]);
       return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
     }
+    case 'pdf':
+      return pdf(requireFile(positional[0]), args);
     case 'to-md':
       return write(value('-o'), smdToMarkdown(read(requireFile(positional[0])), { readFile: readerFor(positional[0]) }));
     case 'from-md': {
@@ -239,6 +279,8 @@ function main(argv: string[]): number | Promise<number> {
       return 0;
     case 'mcp':
       return mcp(value('--root'));
+    case 'lsp':
+      return lsp(flags);
     case 'skills':
       return skillsCommand(args);
     case undefined:
@@ -256,49 +298,92 @@ function main(argv: string[]): number | Promise<number> {
   }
 }
 
-async function validate(
-  targets: string[], json: boolean, fix: boolean, strict: boolean, today?: string, configFile?: string, mermaid = true, staleAfterDays?: number,
-): Promise<number> {
+/** `smd validate` output formats: `--json` is short for `--format json`. */
+const VALIDATE_FORMATS = ['text', 'json', 'github'];
+
+interface Validation { files: number; report: FileReport[]; configProblems: ConfigProblem[]; errors: number; warnings: number }
+
+async function validate(targets: string[], args: Args, today?: string, staleAfterDays?: number): Promise<number> {
+  const format = validateFormat(args);
+  if (!format) return fail(`--format needs one of: ${VALIDATE_FORMATS.join(', ')} (--json is --format json).`);
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
-  const report: Array<{ file: string; diagnostics: Diagnostic[]; fixed?: number }> = [];
+  const { report, configProblems } = await checkFiles(files, args, { today, staleAfterDays });
+  const all = report.flatMap((r) => r.diagnostics);
+  const errors = all.filter((d) => d.severity === 'error').length;
+  const warnings = all.filter((d) => d.severity === 'warning').length + configProblems.length;
+  const result: Validation = { files: files.length, report, configProblems, errors, warnings };
+  VALIDATE_PRINTERS[format](result);
+  const summary = args.values.get('--summary')?.[0];
+  if (summary) fs.appendFileSync(summary, validationSummary(ciResult(result), { linkBase: blobBase(process.env) }) + '\n');
+  return errors > 0 || (args.flags.has('--strict') && warnings > 0) ? 1 : 0;
+}
+
+/** The chosen output format, or undefined when it is unknown or conflicts with `--json`. */
+function validateFormat(args: Args): string | undefined {
+  const json = args.flags.has('--json');
+  const format = args.values.get('--format')?.[0] ?? (json ? 'json' : 'text');
+  if (json && format !== 'json') return undefined;
+  return VALIDATE_FORMATS.includes(format) ? format : undefined;
+}
+
+/** Check (and with `--fix`, fix) each file under its nearest rule config; config problems go to stderr once per file. */
+async function checkFiles(
+  files: string[], args: Args, options: { today?: string; staleAfterDays?: number },
+): Promise<{ report: FileReport[]; configProblems: ConfigProblem[] }> {
+  const report: FileReport[] = [];
+  const configProblems: ConfigProblem[] = [];
   const configs = new Map<string, LoadedConfig>();
-  const reported = new Set<string>();
-  let configProblems = 0;
-  const parse = mermaid ? loadMermaidParser() : undefined;
+  const parse = args.flags.has('--no-mermaid') ? undefined : loadMermaidParser();
   for (const file of files) {
-    const config = configFor(file, configFile, configs);
-    if (config.problems.length && !reported.has(config.file!)) {
-      reported.add(config.file!);
-      configProblems += config.problems.length;
-      for (const p of config.problems) console.error(`${config.file}: warning  ${p}`);
-    }
-    const check = (text: string) => diagnose(text, file, { rules: config.rules, today, staleAfterDays, parse });
+    const config = configFor(file, args.values.get('--config')?.[0], configs);
+    reportConfigProblems(config, configProblems);
+    const check = (text: string) => diagnose(text, file, { rules: config.rules, ...options, parse });
     const text = read(file);
-    const result = fix ? await fixUntilStable(text, check) : { text, diagnostics: await check(text), applied: 0 };
+    const result = args.flags.has('--fix') ? await fixUntilStable(text, check) : { text, diagnostics: await check(text), applied: 0 };
     if (result.applied) fs.writeFileSync(file, result.text);
     report.push({ file, diagnostics: result.diagnostics, ...(result.applied ? { fixed: result.applied } : {}) });
   }
+  return { report, configProblems };
+}
 
-  const all = report.flatMap((r) => r.diagnostics);
-  const errors = all.filter((d) => d.severity === 'error').length;
-  const warnings = all.filter((d) => d.severity === 'warning').length + configProblems;
+/** Print a config file's problems to stderr and collect them, the first time the file is seen. */
+function reportConfigProblems(config: LoadedConfig, seen: ConfigProblem[]): void {
+  const file = config.file;
+  if (!file || !config.problems.length || seen.some((p) => p.file === file)) return;
+  for (const p of config.problems) console.error(`${file}: warning  ${p}`);
+  seen.push(...config.problems.map((message) => ({ file, message })));
+}
 
-  if (json) {
-    process.stdout.write(JSON.stringify({ files: report, errors, warnings }, null, 2) + '\n');
-  } else {
-    const color = process.stdout.isTTY;
-    const paint = (code: number, s: string) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
-    const sev = { error: paint(31, 'error'), warning: paint(33, 'warning'), info: paint(36, 'info'), hint: paint(90, 'hint') };
-    for (const r of report) {
-      if (r.fixed) console.log(`${r.file}: applied ${r.fixed} fix(es)`);
-      for (const d of r.diagnostics) {
-        console.log(`${r.file}:${d.line + 1}:${d.column + 1}  ${sev[d.severity]}  ${d.message}  ${paint(90, d.code)}`);
-      }
+const VALIDATE_PRINTERS: Record<string, (result: Validation) => void> = {
+  text: printValidationText,
+  json: ({ report, errors, warnings }) => process.stdout.write(JSON.stringify({ files: report, errors, warnings }, null, 2) + '\n'),
+  github: (result) => {
+    for (const line of githubAnnotations(ciResult(result))) console.log(line);
+  },
+};
+
+function printValidationText({ files, report, errors, warnings }: Validation): void {
+  const color = process.stdout.isTTY;
+  const paint = (code: number, s: string) => (color ? `\x1b[${code}m${s}\x1b[0m` : s);
+  const sev = { error: paint(31, 'error'), warning: paint(33, 'warning'), info: paint(36, 'info'), hint: paint(90, 'hint') };
+  for (const r of report) {
+    if (r.fixed) console.log(`${r.file}: applied ${r.fixed} fix(es)`);
+    for (const d of r.diagnostics) {
+      console.log(`${r.file}:${d.line + 1}:${d.column + 1}  ${sev[d.severity]}  ${d.message}  ${paint(90, d.code)}`);
     }
-    console.log(`\n${files.length} file(s) checked: ${errors} error(s), ${warnings} warning(s).`);
   }
-  return errors > 0 || (strict && warnings > 0) ? 1 : 0;
+  console.log(`\n${files} file(s) checked: ${errors} error(s), ${warnings} warning(s).`);
+}
+
+/** The result with paths relative to the repository root (`GITHUB_WORKSPACE`, else the working directory), as GitHub expects. */
+function ciResult({ report, configProblems }: Validation): ValidationResult {
+  const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const rel = (file: string) => path.relative(root, path.resolve(file)).split(path.sep).join('/');
+  return {
+    files: report.map((r) => ({ ...r, file: rel(r.file) })),
+    configProblems: configProblems.map((p) => ({ ...p, file: rel(p.file) })),
+  };
 }
 
 /** Rounds of `--fix`: one fix can make another possible, e.g. a code block closed before its container. */
@@ -427,6 +512,13 @@ async function mcp(root = '.'): Promise<number> {
   return 0;
 }
 
+/** The language server speaks stdio only; other transports that clients may ask for are refused. */
+async function lsp(flags: Set<string>): Promise<number> {
+  const transport = [...flags].find((f) => /^--(?:socket|pipe|node-ipc)\b/.test(f));
+  if (transport) return fail(`smd lsp supports --stdio only (got ${transport}).`);
+  return runLanguageServer({ version: pkg.version });
+}
+
 function outlineFile(file: string, related: boolean, today?: string, tokenizerName?: string): number {
   return withTokenizer(tokenizerName, (tokenizer) => {
     const text = read(file);
@@ -532,6 +624,22 @@ function index(targets: string[], out: string | undefined, compact: boolean, tod
   const tokens = catalog.documents.reduce((sum, d) => sum + d.tokens.agent, 0);
   console.error(`[smd] ${catalog.documents.length} document(s) indexed, ≈${tokens} tokens in full agent view.`);
   return write(out, json + '\n');
+}
+
+/** `smd build <dir>`: the static site; see siteBuild.ts for what it may write and delete. */
+function build(positional: string[], args: Args): number {
+  if (positional.length !== 1) return fail('Usage: smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean]');
+  const value = (name: string) => args.values.get(name)?.[0];
+  return runBuild({
+    dir: positional[0],
+    out: value('--out') ?? 'site',
+    title: value('--title'),
+    base: value('--base'),
+    today: value('--today'),
+    md: args.flags.has('--md'),
+    clean: args.flags.has('--clean'),
+    generator: `smd ${pkg.version}`,
+  }, { err: (text) => console.error(text) });
 }
 
 /** `smd decisions`: the decision log as text, JSON (`--json`) or an ADR index document (`--md`). */
@@ -773,6 +881,23 @@ function installSkills(dir: string, only?: string): number {
     console.log(`Installed ${skill.name.padEnd(24)} → ${target}  (${skill.summary})`);
   }
   return 0;
+}
+
+/** `smd pdf`: render the page and print it with Playwright or Puppeteer; exit 2 when neither is installed. */
+async function pdf(file: string, args: Args): Promise<number> {
+  try {
+    const options = pdfOptions(args.values.get('--format')?.[0], args.flags.has('--landscape'));
+    const engine = loadPdfEngine();
+    const out = args.values.get('-o')?.[0] ?? pdfPath(file);
+    const html = renderPage(read(file), { readFile: readerFor(file) });
+    await exportPdf(file, html, out, options, { engine, warn: (message) => console.error(message) });
+    console.error(`Wrote ${out} (printed with ${engine.name})`);
+    return 0;
+  } catch (err) {
+    if (err instanceof PdfError) return fail(err.message);
+    console.error(`Printing failed: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
 }
 
 function requireFile(file: string | undefined): string {

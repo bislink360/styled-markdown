@@ -2,7 +2,7 @@
   "name": "styled-markdown",
   "displayName": "Styled Markdown (.smd)",
   "description": "Markdown for humans and AI agents: callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "bislink360",
   "author": {
     "name": "Roshan Alwis"
@@ -106,6 +106,14 @@
         "language": "smd",
         "path": "./snippets/smd.json"
       }
+    ],
+    "markdown.markdownItPlugins": true,
+    "markdown.previewStyles": [
+      "./media/vendor/katex/katex.min.css",
+      "./media/vendor/smd-markdown-preview.css"
+    ],
+    "markdown.previewScripts": [
+      "./media/markdown-preview.js"
     ],
     "commands": [
       {
@@ -383,6 +391,11 @@
           "type": "boolean",
           "default": true,
           "description": "Render raw HTML embedded in .smd files. Scripts never run in the preview."
+        },
+        "smd.markdownPreview.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Render Styled Markdown syntax (:::callouts, :badge[…] directives, {attribute} lists, ==marks==, Mermaid diagrams, code titles and embeds, and math when markdown.math.enabled is off) in VS Code's built-in Markdown preview for .md files. Plain Markdown renders as before. Applies after Developer: Reload Window."
         },
         "smd.validation.enabled": {
           "type": "boolean",
