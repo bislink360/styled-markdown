@@ -5,6 +5,8 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- **Pre-commit hooks:** the repository is now a [pre-commit](https://pre-commit.com) hook repository (`.pre-commit-hooks.yaml`) with `smd-validate` (fails on errors; `args: [--strict]` for warnings too), `smd-fmt` (formats the staged `.smd` files in place) and `smd-fmt-check` (fails on unformatted files without changing them). They use `language: node`: pre-commit installs a new private root `package.json` whose `smd` bin is the bundled single-file CLI, with no dependencies and nothing from the npm registry. `docs/INSTALL.md` ("Pre-commit hooks") also has copy-paste setups for lint-staged with husky and for a plain `.git/hooks/pre-commit`.
+- CLI: `--` ends the options, so every later argument is a file, even one whose name starts with `-` (e.g. `smd validate -- -draft.smd`). Arguments before `--` are read as before.
 
 ### Changed
 

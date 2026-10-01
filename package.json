@@ -1,0 +1,20 @@
+{
+  "name": "styled-markdown-pre-commit-hooks",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Not published. Lets the pre-commit framework (language: node, see .pre-commit-hooks.yaml) install the bundled smd CLI. The npm package is in npm/, the VS Code extension in extension/.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bislink360/styled-markdown.git"
+  },
+  "bin": {
+    "smd": "skills/styled-markdown-reader/scripts/smd.cjs"
+  },
+  "files": [
+    "skills/styled-markdown-reader/scripts/smd.cjs"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

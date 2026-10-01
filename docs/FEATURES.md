@@ -525,6 +525,8 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
 
+To check documents before they are committed, use the `smd-validate`, `smd-fmt` and `smd-fmt-check` hooks for the [pre-commit](https://pre-commit.com) framework, lint-staged, or a plain Git hook: see [INSTALL.md › Pre-commit hooks](INSTALL.md#pre-commit-hooks).
+
 ### What `--fix` changes
 
 A fix is attached only when there is exactly one sensible repair. VS Code offers the same fixes as quick fixes, and `--json` includes them as `fix` for agents. `smd validate --fix` applies them and checks again until nothing is left to fix (a code block is closed before the container around it).
@@ -616,6 +618,8 @@ smd mcp [--root <dir>]                               MCP server over stdio (tool
 smd skills install --target cursor,copilot,agents [--dir <project>]   rules for other agents + .smd/smd.cjs
 smd --version
 ```
+
+`validate` and `fmt` take any number of files and directories, so Git hooks pass them just the staged files (setups for pre-commit, lint-staged and plain Git hooks are in [INSTALL.md](INSTALL.md#pre-commit-hooks)). After `--`, every argument is a file, even one whose name starts with `-`.
 
 ### Document catalog: `smd index`
 
