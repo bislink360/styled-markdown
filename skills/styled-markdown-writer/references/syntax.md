@@ -8,7 +8,7 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 2. Block containers (general rules)
 3. Callouts and collapsibles
 4. Layout: tabs, columns, cards, boxes, steps, timeline
-5. Project blocks: decision, risk
+5. Project blocks: decision, risk, risk-matrix
 6. Developer blocks: api, code fences
 7. Audience blocks: agent, human
 8. Inline: styled text, directives, math
@@ -136,6 +136,9 @@ Why, and the alternatives considered.
 :::risk{impact=high likelihood=medium owner=@payments status=open} Apple Pay verification delays launch
 Mitigation.
 :::
+
+:::risk-matrix Launch risks
+:::
 ```
 
 | Block | Attribute | Values |
@@ -146,6 +149,9 @@ Mitigation.
 | risk | `impact`, `likelihood` | low · medium · high · critical |
 | risk | `status` | open · mitigated · accepted · closed |
 | risk | `owner` | @name |
+| risk-matrix | title after the name | — (no body; draws this document's risks) |
+
+`:::risk-matrix` draws an impact × likelihood grid of the `:::risk` blocks in the same document (closed ones left out), so set `impact` and `likelihood` on every risk: a missing level counts as medium. Leave its body empty. `smd risks DIR` lists the risks of many documents, highest impact × likelihood first.
 
 ## 6. Developer blocks
 

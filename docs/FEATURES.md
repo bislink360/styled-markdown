@@ -188,8 +188,41 @@ Start in week 1; Google Pay can launch alone.
 | `decision` | `status`: proposed · accepted · rejected · superseded · deprecated; `date`; `owner` | `<decision status="accepted" …> title …</decision>` |
 | `risk` | `impact`, `likelihood`: low · medium · high · critical; `owner`; `status`: open · mitigated · accepted · closed | `<risk impact="high" …> title …</risk>` |
 | `timeline` | — (checked items show as done) | the list |
+| `risk-matrix` | title after the name; no body | `[risk matrix: title — …]` pointer (the risks are already `<risk>` blocks) |
 
 Rejected and superseded decisions are struck through in the preview. `smd meta` lists all decisions and risks as JSON.
+
+### Risk register and risk matrix
+
+Each risk is scored **impact × likelihood**, each level ranked `low` 1, `medium` 2, `high` 3, `critical` 4, so a score runs from 1 to 16. A missing or unknown level counts as `medium` (the spec's default impact) and is flagged, and a risk without `status` is `open`.
+
+**`:::risk-matrix`** draws an impact × likelihood grid of the risks in the same document, cells coloured green → red by score and listing their risks (a risk with an `{#id}` links to its block). Closed risks are left out. In plain Markdown (`smd to-md`) it becomes a table, and in the agent view a one-line pointer.
+
+```markdown
+:::risk-matrix Launch risks
+:::
+```
+
+**`smd risks`** is the register across documents: one line per risk, highest score first (then impact, then path and line), followed by a matrix of counts. Closed risks are left out unless `--all`; `--status open,accepted` and `--owner @name` filter, `--json` gives the register for tools, and `--html` a standalone page (light/dark) with the colour-coded matrix linking to the register table (`-o risks.html` writes it to a file).
+
+```bash
+smd risks docs/
+smd risks docs/ --status open --owner @payments
+smd risks docs/ --html -o risks.html
+```
+
+```text
+docs/checkout.smd:145  [6] high×medium  Apple Pay domain verification delays launch  @payments  open  — Risks  → Verification needs the production domain and a certificate from the PSP.
+docs/plan.smd:40  [4] medium?×medium?  Nobody has scored this yet  open  — Launch  → Impact and likelihood are missing.
+
+impact ↓ likelihood →       low    medium      high  critical
+critical                      ·         ·         ·         ·
+high                          ·         1         ·         ·
+medium                        ·         1         ·         ·
+low                           ·         ·         ·         ·
+```
+
+`--json` prints `{ risks: [{ path, line, title, id?, impact, likelihood, score, owner, status, section, summary, defaulted }], matrix: { impact, likelihood, counts }, documents, documentsWithRisks }`; `line` is zero-based and `defaulted` lists the levels that were not set. The summary is a `Mitigation:` line from the body when there is one, else the body's first sentence.
 
 **`smd query`** selects blocks across documents by type and attributes, and prints each one in the agent view (`--titles` for one line per block, `--json` for tools):
 
@@ -381,7 +414,7 @@ People-only content anywhere in the document.
 | Lists on Enter | Enter on `- [x] Ship it @maya` starts `- [ ] ` with the cursor before ` @maya`. Bullets repeat, numbers count up, Enter on an empty item ends the list, and code blocks are left alone (`smd.editor.continueLists`) |
 | Images | Paste an image, or drop image files, to save them in `docs/images/` (`smd.images.folder`) and insert `![alt](relative/path.png)`. Images already in the workspace are linked where they are; name clashes get `-1`, `-2`… |
 | Spell checking | **Set Up Spell Checking (cSpell)** adds an `smd` entry to cSpell's `languageSettings`, so container and directive names, attribute lists, `@mentions`, link targets, front matter and code aren't flagged; titles and link text still are |
-| Snippets (34) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `api` `timeline` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
+| Snippets (35) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
 
 ## 14. VS Code: agent view and token counter
 
@@ -491,6 +524,7 @@ smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd tasks <files|dirs> [--all] [--mine @name] --csv [-o tasks.csv]                 spreadsheet export
 smd tasks <files|dirs> [--all] [--mine @name] --gantt [--smd] [--title "…"] [-o <file>]   Mermaid Gantt chart
+smd risks <files|dirs> [--status <list>] [--owner @name] [--all] [--json] [--html] [-o <file>]   risk register
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
 smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]          sections that changed
 smd diff <files|dirs> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]

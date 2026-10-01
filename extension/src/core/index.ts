@@ -24,6 +24,11 @@ export type { QueryMatch, QueryOptions, Selector, AttributeTest, QueryOperator }
 export { relatedDocs, relatedEntries, summarizeSmd, formatRelated } from './related';
 export type { RelatedDoc, RelatedOptions, SmdSummary } from './related';
 export { indexEntry, smdIndex, INDEX_FORMAT, INDEX_VERSION } from './catalog';
+export {
+  riskRegister, documentRisks, riskScore, riskMatrix, riskSummary, compareRisks, riskLine, riskMatrixText, riskRegisterText,
+  riskRegisterSummary,
+} from './risks';
+export type { RiskOptions, RiskEntry, RiskMatrix, RiskRegister } from './risks';
 export type { IndexOptions, SmdIndex, SmdIndexEntry, SmdIndexSection, SmdIndexCounts } from './catalog';
 export { decisionLog, decisionLogMarkdown, isInactiveDecision, DECISION_STATUS_FILTERS } from './decisions';
 export type { DecisionEntry, DecisionLogOptions, DecisionLogMarkdownOptions } from './decisions';
@@ -32,6 +37,8 @@ export { checkMermaid, mermaidBlocks } from './mermaid';
 export type { MermaidParse, MermaidBlock } from './mermaid';
 export { formatSmd } from './format';
 export { dueState } from './render';
-export { SMD_CSS, SMD_RUNTIME_JS, renderPage } from './assets';
+export { SMD_CSS, SMD_RUNTIME_JS, renderPage, renderRiskPage } from './assets';
+export { riskMatrixHtml, riskRegisterHtml, riskBand } from './riskHtml';
+export type { RiskBand, RiskMatrixHtmlOptions } from './riskHtml';
 export { diffSmd } from './diff';
 export type { DiffOptions, DiffResult, FrontMatterChange, SectionChange } from './diff';
