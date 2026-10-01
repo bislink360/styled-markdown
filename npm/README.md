@@ -31,6 +31,8 @@ smd outline docs/spec.smd             # sections, line ranges and token cost per
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
 smd decisions docs/ --status accepted # decision log across docs, newest first (--md: an ADR index)
+smd tasks docs/ --csv -o tasks.csv    # tasks for a spreadsheet; --gantt [--smd] for a Mermaid Gantt chart
+smd risks docs/ --html -o risks.html  # risk register: impact × likelihood, highest first, colour-coded matrix
 smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
 smd issues docs/                      # GitHub Issues sync plan via gh (a dry run; --apply [--create] [--close] syncs)
 smd render docs/spec.smd -o spec.html # standalone HTML page
@@ -49,6 +51,7 @@ import {
   renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
   smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
   decisionLog, decisionLogMarkdown,
+  riskRegister, riskRegisterText, renderRiskPage,
 } from 'styled-markdown';
 ```
 
@@ -130,6 +133,10 @@ formatSmd(source);                        // the `smd fmt` layout: fence colons,
 const info = getDocumentInfo(source);     // front matter, outline, tasks, decisions, risks, agent blocks, diagnostics
 const open = extractTasks(source).filter((t) => !t.done);
 // [{ text: 'Idempotent order creation', priority: 'P0', assignees: ['@api-team'], due: '2026-10-03', overdue: false, line: 61, section: 'Requirements' }]
+const rows = extractTasks(source).map((t) => ({ ...t, file: 'docs/checkout.smd' }));
+tasksToCsv(rows);   // the `smd tasks --csv` export: header, CRLF, 1-based lines, formula-like cells prefixed with '
+const chart = tasksToGantt(rows, { title: 'Q4' }); // Mermaid gantt: a section per file, a milestone per dated task
+ganttDocument(chart, 'Q4'); // the chart in a .smd document with a mermaid fence (`smd tasks --gantt --smd`)
 
 const risks = querySmd(source, 'risk[impact>=high][status!=closed]'); // the `smd query` selectors
 // [{ type: 'risk', title: 'Apple Pay domain verification delays launch', attrs: { impact: 'high', … }, line: 144, endLine: 146, section: 'Risks', text: '<risk impact="high" …' }]
@@ -142,6 +149,11 @@ const log = decisionLog([{ path: 'docs/adr-0007.smd', text: source }], { status:
 const adrIndex = decisionLogMarkdown(log, { link: (p) => p.replace(/^docs\//, '') }); // `smd decisions --md`: an ADR index to save as docs/decisions.smd
 const changes = diffSmd(oldSource, newSource); // the `smd diff` sections that changed
 // { frontMatter: [{ key: 'status', before: 'draft', after: 'accepted' }], sections: [{ change: 'changed', heading: 'Rollout', level: 3, line: 40, endLine: 46, text: '### Rollout  [L41]\n…' }], text: '…', tokens: 42, fullTokens: 1480 }
+
+const register = riskRegister([{ path: 'docs/checkout.smd', text: source }], { all: false }); // the `smd risks` register
+// { risks: [{ path, line, title, impact: 'high', likelihood: 'medium', score: 6, owner: '@payments', status: 'open', section, summary, defaulted: [] }], matrix: { impact, likelihood, counts }, documents: 1, documentsWithRisks: 1 }
+riskRegisterText(register);               // one line per risk, then a text matrix
+renderRiskPage(register);                 // standalone HTML page: colour-coded matrix + register table (light/dark)
 ```
 
 ### GitHub Issues sync (the `smd issues` logic, without network access)
@@ -157,7 +169,7 @@ checkTaskLine(line);                      // `- [ ]` → `- [x]`, nothing else c
 
 Also: `parseIssueRefs(line)` (every reference, code spans ignored), `taskIssueRef(line)` (the first), `issueKey(ref)` and `stripIssueRefs(text)`. Talking to GitHub (`gh`) and writing files is left to you.
 
-Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
+Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `ganttDate` and `TASK_CSV_COLUMNS` (task export), `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
 
 ## A taste of the format
 

@@ -31,6 +31,7 @@ node <this-skill-dir>/scripts/smd.cjs <command> …    # or `smd` if on PATH; No
 Across many documents:
 - `smd index DIR` (or a committed catalog JSON) lists every document with title, summary, status, owners, tags, token costs (`tokens.agent`), sections (`id`, zero-based `line`/`endLine`, `tokens`) and counts of open tasks, decisions, risks, questions and APIs. Use it to pick which documents to read, then `smd outline` or `smd agent FILE --section "ID"` on those only.
 - `smd tasks DIR` lists open tasks with priority, owner and due date, overdue first (`--mine @name` filters by owner).
+- `smd risks DIR` is the risk register: every `:::risk` with its score (impact × likelihood, 1–16; `medium?` marks a level that was not set), owner, status, location and one-line mitigation, highest first, then an impact × likelihood matrix. Closed risks are left out unless `--all`; filter with `--status open,accepted` or `--owner @name`; `--json` for structured output.
 - `smd query "SELECTOR" DIR` prints only the matching blocks in the agent view: `decision[status=accepted]`, `risk[impact>=high][status!=closed]`, `api[method=POST]`, `question`, `task[owner=@me][done=false]`, `heading[level=2]`. Commas combine selectors. Add `--titles` for one line per block, `--json` for structured output. Exit code 1 means no match.
 - `smd decisions DIR --status accepted` lists the binding decisions across documents, one line each (date, title, owner, file:line, document › section), newest first; superseded and rejected ones are labelled. `--status open` lists decisions still to make, `--json` gives structured output.
 - `smd meta FILE --no-diagnostics` gives JSON (outline, tasks, decisions, risks, agent blocks).
@@ -49,6 +50,7 @@ Catching up on a changed document:
 | `<question>` | Unresolved. Don't pick an answer yourself; use the fallback in the agent instructions, or ask. |
 | `<decision status="accepted">` | Binding. `proposed` isn't decided yet; `rejected`/`superseded` means don't do it. |
 | `<risk impact=… likelihood=…>` | Design around it or test for it |
+| `[risk matrix: …]` | A grid of the document's risks for people; the risks themselves are the `<risk>` blocks |
 | `API POST /v1/x — …` | Endpoint definition; the following lines describe it |
 | front matter `status:` | `approved` is authoritative, `draft`/`review` is tentative, `deprecated`/`archived` is history |
 | `[P1]`, `@name`, `(due …, OVERDUE)` | Task priority, owner, due date |

@@ -100,12 +100,14 @@ Any Markdown content, including other containers.
 
 | `decision` | Decision record (ADR-style); title = the decision | `status` (`proposed` `accepted` `rejected` `superseded` `deprecated`), `date`, `owner` |
 | `risk` | Risk with mitigation in the body | `impact`, `likelihood` (`low` `medium` `high` `critical`), `owner`, `status` (`open` `mitigated` `accepted` `closed`) |
+| `risk-matrix` | Impact × likelihood matrix of the document's `risk` blocks (closed ones left out); cells coloured by score, risks with an `{#id}` linked. Write it with an empty body; a body renders below the matrix as a caption | `title` (or title text after the name) |
 | `api` | API endpoint; body documents params/responses | **`method`** (`GET` `POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS` `WS` `RPC` `EVENT`), **`path`**, `auth` |
 | `timeline` | Renders the list inside as a vertical timeline (tasks inside show done state) | — |
 
 All containers additionally accept the style attributes in §5. Attributes in **bold** are required.
 `tab` must be a direct child of `tabs`; `column` of `columns`.
 Unknown container names render as a plain `box` and produce a warning.
+A `risk` without `impact` has impact `medium`. Risk registers (`smd risks`, `:::risk-matrix`) score a risk as impact × likelihood, each ranked `low` 1, `medium` 2, `high` 3, `critical` 4; a missing or unknown likelihood also counts as `medium`, and a missing `status` means `open`.
 
 ### 3.2 Audience semantics
 
@@ -272,6 +274,7 @@ Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.s
 | `:::details` | `<details><summary>` |
 | `:::card` | blockquote with bold title |
 | `:::tab Title` | **Title** paragraph followed by content |
+| `:::risk-matrix` | **Risk matrix** label and a table: impact rows × likelihood columns, risk titles in the cells |
 | `box`, `columns`, `steps` | content only |
 | `[text]{…}` | `text` (bold/italic/strike preserved from `weight`/`style`) |
 | `:badge[x]` | `` `x` `` |
@@ -296,6 +299,7 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 | Callouts | `<warning title="…">…</warning>` etc. |
 | `decision` / `risk` | `<decision status= date= owner=> title …</decision>` / `<risk impact= likelihood= …>` |
 | `api` | `API POST /v1/x — title (auth: …)` |
+| `risk-matrix` | `[risk matrix: title — impact × likelihood …; each is a <risk> block]` pointer (the risks themselves are already `<risk>` tags) |
 | Tabs / cards | `Tab "name":` / `Title:` label lines; other layout containers vanish |
 | Styling, badges, status, metrics | Plain words: `[Beta]`, `[status: On track (ok)]`, `Activation: 42% (+3%)`, `(due 2026-10-01, OVERDUE)` |
 | Images, HTML comments | `[image: alt]`, removed |

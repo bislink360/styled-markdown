@@ -12,10 +12,18 @@
   - click a task to open it at its line; tick its checkbox to check it off (or uncheck it) in the file, which is saved unless it already had unsaved changes
   - follows unsaved edits, saves and files created or deleted on disk; the view's badge shows the number of overdue tasks
   - new commands: `smd.groupTasksBy`, `smd.showCompletedTasks`, `smd.hideCompletedTasks`, `smd.refreshTasks` and `smd.openTask`; the extension now also activates when the workspace contains `.smd` files
+- `smd tasks --csv` exports tasks for spreadsheets: RFC 4180 with a header row and CRLF line endings, UTF-8 without a byte order mark, columns `file,line,done,text,owners,priority,due,overdue,section` in that order, 1-based lines (as `smd tasks` prints them; `--json` stays zero-based) and owners joined with `;`. Fields that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading `'` so spreadsheets don't run them as formulas; this includes owners (`'@maya`).
+- `smd tasks --gantt` prints a Mermaid `gantt` chart of tasks with a `YYYY-MM-DD` due date: one section per document, one milestone per task on its due date, done tasks (with `--all`) marked `done` and overdue ones `crit`; tasks without a due date are left out and counted on stderr. Characters Mermaid would misread in names become entity codes (`#58;`). `--title` sets the chart title, and `--smd` wraps the chart in a small `.smd` document that `smd render` draws.
+- `smd tasks -o <file>` writes any of its outputs to a file. Without the new flags `smd tasks` prints exactly what it did in 1.3.0; `--json`, `--csv` and `--gantt` together are a usage error (exit code 2).
+- Library: `tasksToCsv(rows)`, `tasksToGantt(rows, { title })`, `ganttDocument(chart, title)`, `ganttDate(due)` and `TASK_CSV_COLUMNS`, with the `TaskExportRow` and `GanttOptions` types.
 
 - **`smd decisions <files|dirs>`**: a decision log across documents (an ADR index). Every `:::decision`, newest date first and undated last, one line each with location, date, status, title, owner and document › section. `--status accepted,proposed` filters by status (`open` = proposed, the default status), `--owner @name` by owner, `--json` prints structured rows.
 - **`smd decisions --md`**: the log as an ADR index document to commit (front matter and a table with status badges, each decision linked to its section, rejected and superseded ones struck through). With `-o docs/decisions.smd` the links are relative to that file, so it passes `smd validate` and `smd fmt --check`; `--title` sets its title.
 - Library: `decisionLog(documents, { status, owner })` and `decisionLogMarkdown(entries, { title, link })`, with `DECISION_STATUS_FILTERS` and `isInactiveDecision`.
+- `smd risks <files|dirs...>`: a risk register of every `:::risk` block across documents, scored impact × likelihood (`low` 1 … `critical` 4, so 1–16) and sorted by score, then impact, then path and line. Each line shows the score, levels, title, owner, status, location, section and a one-line mitigation (a `Mitigation:` line from the body, else its first sentence), followed by an impact × likelihood matrix of counts. A missing or unknown level counts as `medium` and shows as `medium?`; a missing status is `open`. Closed risks are left out unless `--all`; `--status open,mitigated,…` and `--owner @name` filter; `--json` prints the register for tools.
+- `smd risks --html [-o risks.html]`: a standalone, theme-aware (light/dark) page with a colour-coded impact × likelihood matrix (green → red by score) whose cells link to the register table below it. Uses the same stylesheet as `smd render`.
+- `:::risk-matrix [title]` block: draws the impact × likelihood matrix of the risks in the same document (closed ones left out; risks with an `{#id}` are linked). Plain-Markdown export turns it into a table, and the agent view into a one-line `[risk matrix: …]` pointer, since the risks are already `<risk>` blocks. Completion, a `risk-matrix` snippet and validation know it.
+- Library: `riskRegister`, `documentRisks`, `riskScore`, `riskMatrix`, `riskSummary`, `compareRisks`, `riskLine`, `riskMatrixText`, `riskRegisterText`, `riskRegisterSummary`, `riskMatrixHtml`, `riskRegisterHtml`, `riskBand`, `renderRiskPage`, the `RISK_STATUS` list, and their types.
 
 - **`smd issues <files|dirs>`**: sync tasks with GitHub Issues through your own GitHub CLI (`gh`), so no token passes through smd. **A dry run unless `--apply`**: it reads the issues' states, prints the plan and changes nothing.
   - a task is linked by an issue reference on its line, no new syntax: `[#123](https://github.com/owner/repo/issues/123)`, the bare issue URL or `owner/repo#123` (not in code spans; the first one counts)
@@ -26,6 +34,7 @@
 - Library: `issueTasks`, `parseIssueRefs`, `taskIssueRef`, `planIssueSync`, `issueDraft`, `addIssueLink`, `checkTaskLine`, `issueKey` and `stripIssueRefs` (pure, no network access).
 
 ### Changed
+- `smd outline` marks a section `risk` only for `:::risk` blocks: a section that holds just a `:::risk-matrix` (or another container whose name starts with `risk-`) is no longer marked.
 
 ### Deprecated
 

@@ -3,8 +3,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, decisionLog, decisionLogMarkdown, diffSmd, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline,
-  parseSelector, relatedDocs, renderPage, smdIndex, smdToMarkdown, suggest, DECISION_STATUS_FILTERS, SelectorError, SMD_VERSION, type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic,
+  agentView, applyFixes, DECISION_STATUS_FILTERS, decisionLog, decisionLogMarkdown, diffSmd, formatRelated, formatSmd, ganttDate, ganttDocument,
+  getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderPage, renderRiskPage, RISK_STATUS, riskRegister, riskRegisterSummary,
+  riskRegisterText, SelectorError, SMD_VERSION, smdIndex, smdToMarkdown, suggest, tasksToCsv, tasksToGantt, type AgentViewOptions,
+  type AgentViewResult, type BudgetResult, type Diagnostic,
   type DiffResult, type Selector, type Tokenizer,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
@@ -18,6 +20,7 @@ import {
 } from './agentTargets';
 import {
   collect, decisionLine, decisionSummary, diagnose, existsFrom, queryRows, querySummary, queryText, read, readerFor, taskLine, taskRows, taskSummary,
+  type TaskRow,
 } from './workspace';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
@@ -41,8 +44,18 @@ Reading (token-efficient, for agents):
       --tokenizer  exact counts next to the ≈ estimate (also on outline, and used by --max-tokens) for an
                    OpenAI encoding: ${TOKENIZERS.join(', ')}. Approximate for Claude models.
                    Needs the js-tiktoken package in your project or installed globally; smd doesn't bundle it.
-  smd tasks <files|dirs...> [--all] [--mine @name] [--json]
+  smd tasks <files|dirs...> [--all] [--mine @name] [--json | --csv | --gantt [--smd] [--title "…"]] [-o <file>]
       Open tasks across documents with owner, priority and due date (overdue first).
+      --csv     CSV for spreadsheets (1-based lines, owners joined with ";", formula-like cells prefixed with ')
+      --gantt   Mermaid gantt chart: a section per document, a milestone per task with a due date
+                (done tasks "done", overdue ones "crit"); --all includes done tasks
+      --smd     wrap the chart in a .smd document, e.g. smd tasks docs --gantt --smd -o timeline.smd
+  smd risks <files|dirs...> [--status open,mitigated,accepted,closed] [--owner @name] [--all] [--json]
+            [--html] [-o <file>]
+      Risk register: every :::risk block, scored impact × likelihood (low 1, medium 2, high 3, critical 4;
+      a missing level counts as medium and shows as "medium?"), highest score first, then a matrix of
+      counts. Closed risks are left out unless --all or --status asks for them.
+      --html  a standalone, theme-aware page: a colour-coded matrix that links to the register table
   smd query "<selector>" <files|dirs...> [--json] [--titles] [--brief] [--no-lines]
       Blocks selected by type and attributes, each in the agent view. Exit code 1 when nothing matches.
         decision[status=accepted]      risk[impact>=high][status!=closed]      api[method=POST|PUT]
@@ -165,7 +178,9 @@ function main(argv: string[]): number | Promise<number> {
     case 'agent':
       return agentFile(requireFile(positional[0]), args, today);
     case 'tasks':
-      return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
+      return tasks(positional.length ? positional : ['.'], args, today);
+    case 'risks':
+      return risks(positional, args);
     case 'query':
       return query(positional[0], positional.slice(1), { json: flags.has('--json'), titles: flags.has('--titles'), brief: flags.has('--brief'), lineRefs: !flags.has('--no-lines'), today });
     case 'diff':
@@ -330,17 +345,51 @@ ${files.length} file(s) checked: ${changed.length} ${check ? 'need formatting' :
   return check && changed.length ? 1 : 0;
 }
 
-function tasks(targets: string[], all: boolean, mine: string | undefined, json: boolean, today?: string): number {
+const TASK_FORMATS = ['--json', '--csv', '--gantt'];
+
+function tasks(targets: string[], args: Args, today?: string): number {
+  const [format, ...more] = TASK_FORMATS.filter((f) => args.flags.has(f));
+  if (more.length) return fail(`Choose one output format: ${[format, ...more].join(' or ')}.`);
+  if (args.flags.has('--smd') && format !== '--gantt') return fail('--smd wraps the Gantt chart in a document: use it with --gantt.');
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
-  const rows = taskRows(files, { all, mine, today });
-  if (json) {
-    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
-    return 0;
-  }
-  for (const r of rows) console.log(taskLine(r));
+  const all = args.flags.has('--all');
+  const rows = taskRows(files, { all, mine: args.values.get('--mine')?.[0], today });
+  const out = args.values.get('-o')?.[0];
+  if (format === '--json') return write(out, JSON.stringify(rows, null, 2) + '\n');
+  if (format === '--gantt') return taskGantt(rows, args, out);
+  const text = format === '--csv' ? tasksToCsv(rows) : rows.map((r) => taskLine(r) + '\n').join('');
+  const code = write(out, text);
   console.error(`[smd] ${taskSummary(rows, all)}`);
-  return 0;
+  return code;
+}
+
+/** `smd tasks --gantt [--smd] [--title …]`: the chart, or a document with it, and how many tasks it shows. */
+function taskGantt(rows: TaskRow[], args: Args, out?: string): number {
+  const title = args.values.get('--title')?.[0];
+  const chart = tasksToGantt(rows, { title });
+  const code = write(out, args.flags.has('--smd') ? ganttDocument(chart, title) : chart);
+  const charted = rows.filter((r) => ganttDate(r.due)).length;
+  const left = rows.length - charted;
+  const skipped = left ? `, ${left} without a YYYY-MM-DD due date left out` : '';
+  console.error(`[smd] ${charted} task(s) on the chart${skipped}.`);
+  return code;
+}
+
+/** `smd risks`: the register as text, JSON or a standalone HTML page. Closed risks only with --all or --status. */
+function risks(targets: string[], args: Args): number {
+  const status = (args.values.get('--status') ?? []).flatMap((s) => s.split(',')).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const unknown = status.find((s) => !RISK_STATUS.includes(s));
+  if (unknown) return fail(`Unknown risk status "${unknown}". Statuses: ${RISK_STATUS.join(', ')}`);
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const documents = files.map((file) => ({ path: relativePath(file), text: read(file) }));
+  const options = { status, owner: args.values.get('--owner')?.[0], all: args.flags.has('--all') };
+  const register = riskRegister(documents, options);
+  console.error(`[smd] ${riskRegisterSummary(register, options)}`);
+  const out = args.values.get('-o')?.[0];
+  if (args.flags.has('--html')) return write(out, renderRiskPage(register));
+  return write(out, args.flags.has('--json') ? JSON.stringify(register, null, 2) + '\n' : riskRegisterText(register));
 }
 
 interface QueryFlags { json: boolean; titles: boolean; brief: boolean; lineRefs: boolean; today?: string }
