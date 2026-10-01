@@ -4,6 +4,7 @@ import { parseSmd } from './parse';
 import { dueState } from './render';
 import { validateSmd, type Diagnostic, type ValidateOptions } from './validate';
 import { inlineText } from './agentView';
+import { priorityRank } from './util';
 
 export interface TaskInfo {
   text: string;
@@ -77,6 +78,12 @@ export function extractTasks(text: string, today?: string): TaskInfo[] {
     });
   }
   return tasks;
+}
+
+/** Overdue first, then by priority, due date (none last), file and line: the order of `smd tasks` and the tasks view. */
+export function compareTasks(a: TaskInfo & { file: string }, b: TaskInfo & { file: string }): number {
+  return Number(b.overdue ?? false) - Number(a.overdue ?? false) || priorityRank(a.priority) - priorityRank(b.priority)
+    || (a.due ?? '9999').localeCompare(b.due ?? '9999') || a.file.localeCompare(b.file) || a.line - b.line;
 }
 
 export function getDocumentInfo(text: string, options: ValidateOptions = {}): SmdDocumentInfo {

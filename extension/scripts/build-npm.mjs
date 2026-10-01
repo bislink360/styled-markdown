@@ -24,6 +24,8 @@ const common = {
   define: {
     __SMD_CSS__: JSON.stringify(readFileSync(join(root, 'media', 'smd.css'), 'utf8')),
     __SMD_RUNTIME__: JSON.stringify(readFileSync(join(root, 'media', 'runtime.js'), 'utf8')),
+    __SMD_SITE_CSS__: JSON.stringify(readFileSync(join(root, 'media', 'site.css'), 'utf8')),
+    __SMD_SITE_JS__: JSON.stringify(readFileSync(join(root, 'media', 'site.js'), 'utf8')),
   },
   logLevel: 'info',
 };

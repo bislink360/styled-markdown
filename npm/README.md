@@ -38,6 +38,7 @@ smd diff docs/ --since HEAD~3         # only the sections that changed since a c
 smd report docs/ --since 2026-09-01 -o status.smd # draft a status report: tasks done and added since, open, decisions, risks
 smd issues docs/                      # GitHub Issues sync plan via gh (a dry run; --apply [--create] [--close] syncs)
 smd render docs/spec.smd -o spec.html # standalone HTML page
+smd build docs/ --out site            # static docs site: navigation, search, backlinks, task/decision/risk dashboard
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
 smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
@@ -53,7 +54,7 @@ import {
   renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
   smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
   decisionLog, decisionLogMarkdown, statusChanges, statusReportMarkdown, statusReport,
-  riskRegister, riskRegisterText, renderRiskPage,
+  riskRegister, riskRegisterText, renderRiskPage, buildSite,
 } from 'styled-markdown';
 ```
 
@@ -286,6 +287,10 @@ renderRiskPage(register);                 // standalone HTML page: colour-coded 
 const status = statusChanges([{ path: 'docs/plan.smd', text: oldSource }], [{ path: 'docs/plan.smd', text: source }], { today: '2026-09-30' }); // `smd report` (before: null when there's no earlier version)
 // { compared: true, today, done: [task…], added, removed, open, overdue, dueSoon, decisions: [{ decision, before: 'proposed' }], needed, risks, documents }
 const draft = statusReportMarkdown(status, { since: 'HEAD~5', title: 'Checkout squad' }); // a status-report draft that passes `smd validate`
+
+const site = buildSite([{ path: 'index.smd', text: home }, { path: 'guide/setup.smd', text: source }], { title: 'Docs', today: '2026-10-01' }); // `smd build`
+// { files: [{ path: 'guide/setup.html', content }, { path: 'dashboard.html', … }, { path: '_smd/search-index.js', … }, …], assets: ['img/logo.png'], pages, skipped }
+// Write each file under your output folder and copy `assets` (local files the pages link to) from the source folder.
 ```
 
 ### GitHub Issues sync (the `smd issues` logic, without network access)

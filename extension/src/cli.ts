@@ -14,6 +14,7 @@ import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { runMcpServer } from './mcp';
 import { runIssues, type GhResult, type IssuesOptions } from './issueSync';
+import { runBuild } from './siteBuild';
 import { AGENT_RULES, fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 import {
   parseTargets, rulesBody, SHARED_CLI_COMMAND, SHARED_CLI_PATH, TARGET_FILES, type AgentTarget, type RulesTarget, type TargetFile,
@@ -127,6 +128,14 @@ Checking and converting:
       validate and fmt take any number of files: use them as a pre-commit hook (see docs/INSTALL.md).
       After --, every argument is a file, even one that starts with "-".
   smd render <file.smd> [-o out.html]      Standalone HTML page
+  smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
+      Static docs site: a page per .smd file in the same folders (links between documents rewritten,
+      linked images copied), a sidebar, breadcrumbs, previous/next, backlinks, client-side search and
+      a dashboard of open tasks, decisions and open risks. Opens from disk or any static web server.
+      --out    the site folder (default: site): must be outside <dir>, and new, empty or a previous build
+      --base   deployment path for absolute links, e.g. /docs/ (default: relative links)
+      --md     also publish .md files; the home page is <dir>/index.smd or README, else a generated index
+      --clean  first delete the files of the previous build (only those listed in its .smd-site.json)
   smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
   smd init <file.smd> [--template <name>] [--title "My doc"]
@@ -159,7 +168,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
-  '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary',
+  '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary', '--out', '--base',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -227,6 +236,8 @@ function main(argv: string[]): number | Promise<number> {
       return validate(positional.length ? positional : ['.'], args, today, staleAfterDays);
     case 'fmt':
       return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
+    case 'build':
+      return build(positional, args);
     case 'render': {
       const file = requireFile(positional[0]);
       return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
@@ -590,6 +601,22 @@ function index(targets: string[], out: string | undefined, compact: boolean, tod
   const tokens = catalog.documents.reduce((sum, d) => sum + d.tokens.agent, 0);
   console.error(`[smd] ${catalog.documents.length} document(s) indexed, ≈${tokens} tokens in full agent view.`);
   return write(out, json + '\n');
+}
+
+/** `smd build <dir>`: the static site; see siteBuild.ts for what it may write and delete. */
+function build(positional: string[], args: Args): number {
+  if (positional.length !== 1) return fail('Usage: smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean]');
+  const value = (name: string) => args.values.get(name)?.[0];
+  return runBuild({
+    dir: positional[0],
+    out: value('--out') ?? 'site',
+    title: value('--title'),
+    base: value('--base'),
+    today: value('--today'),
+    md: args.flags.has('--md'),
+    clean: args.flags.has('--clean'),
+    generator: `smd ${pkg.version}`,
+  }, { err: (text) => console.error(text) });
 }
 
 /** `smd decisions`: the decision log as text, JSON (`--json`) or an ADR index document (`--md`). */
