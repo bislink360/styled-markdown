@@ -10,6 +10,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 - [Recommended settings](#recommended-settings)
 - [Install the `smd` CLI](#install-the-smd-cli)
 - [Use `smd` in CI](#use-smd-in-ci)
+- [Pre-commit hooks](#pre-commit-hooks)
 - [Update or uninstall](#update-or-uninstall)
 - [Build from source](#build-from-source)
 - [Troubleshooting](#troubleshooting)
@@ -24,7 +25,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 
 ## Install the VS Code extension
 
-> **Visual Studio Marketplace:** coming soon. Until the listing is live, install the `.vsix` from the GitHub release (Option A).
+> **Visual Studio Marketplace and Open VSX:** coming once published. [Open VSX](https://open-vsx.org) is the extension registry of VSCodium, Cursor, Windsurf and Gitpod. Until the listings are live, install the `.vsix` from the GitHub release (Option A).
 
 ### Option A — from the release file (recommended)
 
@@ -45,7 +46,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
    **Drag and drop:** drag the `.vsix` file onto the Extensions view.
 3. If VS Code was already open, run **Developer: Reload Window** from the Command Palette.
 
-> Cursor, VSCodium and Windsurf use the same steps (`cursor --install-extension …`, `codium --install-extension …`).
+> Cursor, VSCodium and Windsurf use the same steps (`cursor --install-extension …`, `codium --install-extension …`). Once the Open VSX listing is live, they can also install **Styled Markdown** from their Extensions view.
 
 ### Option B — build and install from source
 
@@ -122,6 +123,10 @@ smd --version       # smd 1.4.0 (Styled Markdown spec v1)
 
 ## Use `smd` in CI
 
+### GitHub Actions
+
+The `validate` action in this repository checks your `.smd` files, shows each problem as an inline annotation on the pull request's changed lines and writes a job summary (counts and the first 50 problems, linked to the file and line):
+
 ```yaml
 # .github/workflows/docs.yml
 name: docs
@@ -131,13 +136,105 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.4.0/skills/styled-markdown-reader/scripts/smd.cjs
-      - run: node smd.cjs validate docs/ --strict
+      - uses: bislink360/styled-markdown/validate@v1.5.0
+        with:
+          paths: |
+            docs
+            specs/product plan.smd
+          fail-on: warning
 ```
 
-`validate` exits with code **1** on errors (and on warnings with `--strict`). Use `--json` for machine-readable output.
+It runs the `smd` CLI bundled in the repository with the runner's Node.js (18 or later; GitHub-hosted Ubuntu, Windows and macOS runners have it, otherwise add `actions/setup-node` first). Nothing is installed or downloaded.
+
+| Input | Default | Meaning |
+|---|---|---|
+| `paths` | `.` | Files or folders to check, one per line (spaces are fine), relative to the repository root |
+| `fail-on` | `error` | Fail the step on `error`s, on `warning`s too (like `--strict`), or `never` (report only) |
+| `strict` | `false` | `true` is the same as `fail-on: warning` |
+| `config` | | A rule config file for every document (default: the nearest `smd.config.json` / `.smdrc`) |
+| `mermaid` | `true` | `false` skips Mermaid syntax checks |
+| `stale-after` | | Days before a document's `updated` date counts as stale (`0`: off; default 180) |
+| `summary` | `true` | Write the job summary |
+| `cli` | | Run another `smd` CLI, e.g. `node_modules/styled-markdown/dist/cli.js` |
+
+Errors become `::error`, warnings `::warning` and info diagnostics `::notice` annotations; hints are left out. The bundled CLI has no Mermaid parser, so diagram syntax is only checked when `cli` points at the npm package's CLI (installed with `npm ci` in an earlier step).
+
+### Any CI
+
+```bash
+curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.5.0/skills/styled-markdown-reader/scripts/smd.cjs
+node smd.cjs validate docs/ --strict
+```
+
+`validate` exits with code **1** on errors (and on warnings with `--strict`). Use `--json` for machine-readable output, or `--format github` for GitHub workflow commands; `--summary <file>` also appends a Markdown summary to a file (e.g. `"$GITHUB_STEP_SUMMARY"`).
+
+## Pre-commit hooks
+
+Check `.smd` files before they are committed. `smd validate` and `smd fmt` take any number of files, so a hook passes them only the staged ones. Pick the setup your project already uses.
+
+### With the pre-commit framework
+
+[pre-commit](https://pre-commit.com) works in any repository, whatever its language. Add to `.pre-commit-config.yaml`:
+
+```yaml
+repos:
+  - repo: https://github.com/bislink360/styled-markdown
+    rev: v1.5.0
+    hooks:
+      - id: smd-fmt
+      - id: smd-validate
+        args: [--strict]   # optional: fail on warnings too
+```
+
+Then run `pre-commit install` once. The hooks (from v1.5.0):
+
+| Hook id | Runs | Fails the commit when |
+|---|---|---|
+| `smd-validate` | `smd validate <staged .smd files>` | a file has errors (or warnings, with `args: [--strict]`) |
+| `smd-fmt` | `smd fmt <staged .smd files>` | it reformatted a file. pre-commit lists the changed files: review them, `git add` and commit again |
+| `smd-fmt-check` | `smd fmt --check <staged .smd files>` | a file is not formatted (nothing is changed; for CI or if you'd rather format yourself) |
+
+Other `args` are passed to the command, e.g. `[--config, docs/smd.config.json]` or `[--stale-after, '0']` for `smd-validate`.
+
+The hooks use `language: node`: pre-commit installs this repository's root `package.json`, whose only file is the bundled single-file CLI (`skills/styled-markdown-reader/scripts/smd.cjs`), so there are no dependencies and nothing comes from the npm registry. On macOS and Linux pre-commit uses the `node` and `npm` on your PATH; without them, and always on Windows, it downloads a private Node.js once. The single-file CLI doesn't include the Mermaid parser, so the hooks don't report `mermaid/syntax`; run `smd validate` from the npm package in CI for that.
+
+### With lint-staged and husky
+
+For JavaScript projects. The `styled-markdown` package isn't on the npm registry yet, so install it from the release's `.tgz`, which also gives you the Mermaid parser:
+
+```bash
+npm install --save-dev https://github.com/bislink360/styled-markdown/releases/download/v1.5.0/styled-markdown-1.5.0.tgz
+npm install --save-dev lint-staged husky
+npx husky init
+echo "npx lint-staged" > .husky/pre-commit
+```
+
+and in `package.json`:
+
+```json
+{
+  "lint-staged": {
+    "*.smd": ["smd fmt", "smd validate"]
+  }
+}
+```
+
+lint-staged appends the staged files to each command, runs them in order and stages the formatting changes. Add `--strict` to `smd validate` to fail on warnings. To use the single-file CLI instead of the package, download it into the repository (`curl -sSLo tools/smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.5.0/skills/styled-markdown-reader/scripts/smd.cjs`) and use `"node tools/smd.cjs fmt"` and `"node tools/smd.cjs validate"`.
+
+### With a plain Git hook
+
+Without either tool, save this as `.git/hooks/pre-commit` and make it executable (`chmod +x .git/hooks/pre-commit`). It needs `smd` on your PATH; otherwise replace `smd` with `node path/to/smd.cjs`. Git for Windows runs it too.
+
+```sh
+#!/bin/sh
+# Check the staged .smd files: formatting first, then validation.
+staged() { git diff --cached --name-only -z --diff-filter=ACMR -- '*.smd'; }
+git diff --cached --quiet --diff-filter=ACMR -- '*.smd' && exit 0   # no .smd files staged
+staged | xargs -0 smd fmt --check -- || { echo "Run: smd fmt <files>, then git add them."; exit 1; }
+staged | xargs -0 smd validate --
+```
+
+It checks the files as they are in the working tree and doesn't change them; `--` keeps a file name that starts with `-` from being read as an option. The hook lives only in your clone: to share it, commit it (e.g. as `.githooks/pre-commit`) and run `git config core.hooksPath .githooks`.
 
 ## Update or uninstall
 

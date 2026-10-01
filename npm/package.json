@@ -28,7 +28,11 @@
     "prd",
     "adr",
     "markdown-it",
-    "markdown-it-plugin"
+    "markdown-it-plugin",
+    "remark",
+    "rehype",
+    "unified",
+    "remark-plugin"
   ],
   "type": "commonjs",
   "main": "./dist/index.cjs",
@@ -44,6 +48,16 @@
       "types": "./dist/types/markdownIt.d.ts",
       "import": "./dist/markdown-it.mjs",
       "require": "./dist/markdown-it.cjs"
+    },
+    "./remark": {
+      "types": "./dist/types/remark.d.ts",
+      "import": "./dist/remark.mjs",
+      "require": "./dist/remark.cjs"
+    },
+    "./rehype": {
+      "types": "./dist/types/rehype.d.ts",
+      "import": "./dist/rehype.mjs",
+      "require": "./dist/rehype.cjs"
     },
     "./smd.css": "./dist/smd.css",
     "./frontmatter.schema.json": "./dist/frontmatter.schema.json",

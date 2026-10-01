@@ -26,6 +26,7 @@ npx styled-markdown --help         # run without installing
 
 ```bash
 smd validate docs/ --fix              # check files, auto-fix typos; exit code 1 on errors (CI-friendly)
+smd validate docs/ --format github    # GitHub Actions annotations (--summary "$GITHUB_STEP_SUMMARY" adds a job summary)
 smd fmt docs/ --check                 # formatting check for CI; without --check it formats in place
 smd outline docs/spec.smd             # sections, line ranges and token cost per section
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
@@ -105,6 +106,97 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 | `today` | current date | `YYYY-MM-DD` for `:due[]` states |
 
 Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
+
+### remark and rehype plugins (Astro, Docusaurus, Next.js)
+
+`styled-markdown/remark` renders the whole file with `renderSmd` and replaces the Markdown tree with the resulting HTML, so every `.smd` construct looks exactly as it does with `smd render`. `styled-markdown/rehype` does the same for pipelines that only take rehype plugins. Neither imports anything from unified: the package still has zero dependencies.
+
+```js
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkRehype from 'remark-rehype';
+import rehypeStringify from 'rehype-stringify';
+import { remarkSmd } from 'styled-markdown/remark';
+
+const file = await unified()
+  .use(remarkParse)
+  .use(remarkSmd, { header: true })
+  .use(remarkRehype, { allowDangerousHtml: true })   // the plugin emits one raw HTML node
+  .use(rehypeStringify, { allowDangerousHtml: true })
+  .process(source);
+String(file);           // <article class="smd-doc">…</article>
+file.data.smd;          // { frontMatter, headings }
+```
+
+| Option | Default | |
+|---|---|---|
+| `test` | every file | RegExp or `(path) => boolean` on `file.path`, e.g. `/\.smd$/`; files without a path are skipped when set |
+| `header` | `true` | the title/status/owners header from front matter; `false` when the site layout already shows the title |
+| `frontMatter` | see below | `(file) => object`: front matter the host already removed from the source |
+| `readFile` | none | `(relativePath, file) => string \| undefined`, for ```` ```ts file="…" ```` embeds (resolve against `file.path`, sandbox it yourself) |
+| `allowHtml`, `agentBlocks`, `today` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML |
+
+**Front matter.** When the source still starts with `---` (plain unified, with or without remark-frontmatter), the plugin reads it like `renderSmd`. When the host removed it first, the plugin looks for the parsed data in `file.data.astro.frontmatter` (Astro), `file.data.matter` (vfile-matter) or `file.data.frontmatter`, or uses your `frontMatter` option. Front matter nodes (`yaml`, `toml`) and MDX `import`/`export` nodes stay in the tree.
+
+**What the page needs.** The stylesheet (`styled-markdown/smd.css`), KaTeX's CSS when documents have math (rendered at build time), and for Mermaid diagrams, tabs and copy buttons the Mermaid script plus the runtime that `smd render` inlines (`SMD_RUNTIME_JS` from `styled-markdown`). The runtime hydrates the page once on load. Without it, diagrams show their source and tab panes are stacked under their labels.
+
+| Host | Status | Notes |
+|---|---|---|
+| unified (remark-parse → remark-rehype → rehype-stringify) | **Tested** with hand-built trees and files (not yet with unified itself in CI) | needs `allowDangerousHtml: true` in remark-rehype and rehype-stringify, or `rehype-raw` |
+| Astro `.md` pages and content collections | Expected | Astro already passes raw HTML through. Name files `.md` (Astro doesn't know `.smd`); limit the plugin with `test`. `getHeadings()` may be empty, because Astro collects headings before it parses raw HTML: add `rehype-raw` to `rehypePlugins` |
+| Docusaurus 3 `.md` files (`markdown.format: 'detect'`) | Expected | `.md` files are compiled as CommonMark with raw HTML parsed by rehype-raw. Docusaurus builds its table of contents from the original headings: links match for plain headings and `{#id}`, but can differ for headings with attribute lists or runs of punctuation (`A - B`) |
+| MDX (`.mdx`, Astro `@astrojs/mdx`, Next.js `@next/mdx`) | **Not supported** for `.mdx` files | MDX parses `{…}` and `<…>` as JSX *before* any plugin runs, so `.smd` attribute lists such as `:::callout{type=warning}` fail to compile. Use `.md` with MDX's `format: 'detect'` and `rehype-raw` |
+| Next.js | Expected | simplest: `renderSmd` in a Server Component (below); or `@next/mdx` with `.md` files as above |
+
+```js
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+import { remarkSmd } from 'styled-markdown/remark';
+
+export default defineConfig({
+  markdown: { remarkPlugins: [[remarkSmd, { test: /[\\/]docs[\\/]/, header: false }]] },
+});
+// in the layout: import 'styled-markdown/smd.css';
+```
+
+```js
+// docusaurus.config.js
+const { remarkSmd } = require('styled-markdown/remark');
+
+module.exports = {
+  markdown: { format: 'detect' },   // .md = CommonMark, .mdx = MDX
+  presets: [['classic', {
+    docs: { remarkPlugins: [[remarkSmd, { header: false }]] },
+    theme: { customCss: [require.resolve('styled-markdown/smd.css')] },
+  }]],
+};
+```
+
+```tsx
+// Next.js (App Router): app/docs/spec/page.tsx
+import { readFile } from 'node:fs/promises';
+import { renderSmd } from 'styled-markdown';
+import 'styled-markdown/smd.css';
+
+export default async function Page() {
+  const { html } = renderSmd(await readFile('docs/spec.smd', 'utf8'));
+  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+}
+```
+
+```js
+// next.config.mjs, with @next/mdx and rehype-raw installed (pages written as .md)
+import createMDX from '@next/mdx';
+import rehypeRaw from 'rehype-raw';
+import { remarkSmd } from 'styled-markdown/remark';
+
+const withMDX = createMDX({
+  extension: /\.mdx?$/,
+  options: { format: 'detect', remarkPlugins: [remarkSmd], rehypePlugins: [rehypeRaw] },
+});
+export default withMDX({ pageExtensions: ['ts', 'tsx', 'md', 'mdx'] });
+// Turbopack takes plugins by name instead: remarkPlugins: ['styled-markdown/remark'] (default export)
+```
 
 ### Validate and fix
 

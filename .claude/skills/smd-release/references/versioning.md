@@ -24,7 +24,7 @@ The checker computes the **required** bump. A release may bump more than require
 
 ## Pre-releases
 
-For risky changes, publish a pre-release first:
+For risky changes, publish a pre-release first. Pre-releases are published by hand: the Release workflow only accepts plain `vX.Y.Z` tags, and a `vX.Y.Z-beta.N` tag stops in its verify job before anything is published.
 
 - npm: `X.Y.Z-beta.N` with `npm publish --tag next`
 - VS Code: `npx vsce publish --pre-release` (the Marketplace needs a unique version; use an odd minor for pre-release lines if needed)
