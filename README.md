@@ -151,7 +151,7 @@ History and research. People see it; agents skip it.
 | `smd report <dir> --since <date\|git-ref> [-o status.smd]` | Draft a status report: tasks done and added since, open tasks (overdue and due this week first), decisions since, high-impact risks, linked to their sections |
 | `smd query "<selector>" <paths> [--json]` | Decisions, risks, APIs, callouts, tasks or headings by type and attributes, e.g. `risk[impact>=high]` |
 | `smd diff <paths> --since <git-ref>` / `smd diff <old> <new>` | Only the sections that changed, in the agent view: catch up on a doc without rereading it |
-| `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->` |
+| `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->`; `--format github` for pull request annotations ([GitHub Action](#github-action)) |
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
 | `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect |
@@ -232,6 +232,27 @@ claude mcp add smd -- npx -y -p styled-markdown smd mcp
 
 Other clients and options: **[docs/AGENTS.md](docs/AGENTS.md#mcp-server)**.
 
+### GitHub Action
+
+Validate `.smd` files on every pull request, with each problem annotated on its line and a summary on the run page:
+
+```yaml
+# .github/workflows/docs.yml
+name: docs
+on: [pull_request]
+jobs:
+  smd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bislink360/styled-markdown/validate@v1.5.0
+        with:
+          paths: docs        # one per line; default: the whole repository
+          fail-on: warning   # error (default), warning or never
+```
+
+It uses the runner's Node.js (18+) and the CLI bundled in this repository, so nothing is installed. All inputs: **[docs/INSTALL.md](docs/INSTALL.md#github-actions)**. Other CI systems: `smd validate --strict`, or `--format github` / `--json`.
+
 ## Token-efficient reading for agents
 
 Measured on [`examples/checkout-redesign.smd`](examples/checkout-redesign.smd), a realistic ≈2,400-token PRD:
@@ -285,6 +306,7 @@ styled-markdown/
 │   ├── styled-markdown-reader/   agent skill: token-efficient reading
 │   └── styled-markdown-writer/   agent skill: authoring, with templates and references
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
+├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)
 ├── docs/                 guides, specification, gallery and screenshots
 ├── .pre-commit-hooks.yaml    hooks for the pre-commit framework

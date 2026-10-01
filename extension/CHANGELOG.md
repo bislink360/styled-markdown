@@ -5,6 +5,9 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- **GitHub Action** `bislink360/styled-markdown/validate@v1.5.0` (in this repository's `validate/` folder): validates `.smd` files on pull requests, shows each problem as an inline annotation and writes a job summary (counts per severity and the first 50 problems, linked to their lines). It runs the bundled CLI with the runner's Node.js 18+, without installing anything. Inputs: `paths` (one per line, spaces allowed), `fail-on` (`error`, `warning` or `never`), `strict`, `config`, `mermaid`, `stale-after`, `summary` and `cli`.
+- **`smd validate --format github`**: one GitHub workflow command per problem (`::error`/`::warning`/`::notice file=…,line=…,col=…,endColumn=…,title=smd <code>::<message>`; hints are left out), with 1-based positions, paths relative to `$GITHUB_WORKSPACE` (else the current folder) and workflow-command escaping. `--format json` is the same as `--json`; text and `--json` output are unchanged.
+- **`smd validate --summary <file>`** appends a Markdown summary of the run to a file, with any output format, e.g. `--summary "$GITHUB_STEP_SUMMARY"`.
 - **Pre-commit hooks:** the repository is now a [pre-commit](https://pre-commit.com) hook repository (`.pre-commit-hooks.yaml`) with `smd-validate` (fails on errors; `args: [--strict]` for warnings too), `smd-fmt` (formats the staged `.smd` files in place) and `smd-fmt-check` (fails on unformatted files without changing them). They use `language: node`: pre-commit installs a new private root `package.json` whose `smd` bin is the bundled single-file CLI, with no dependencies and nothing from the npm registry. `docs/INSTALL.md` ("Pre-commit hooks") also has copy-paste setups for lint-staged with husky and for a plain `.git/hooks/pre-commit`.
 - CLI: `--` ends the options, so every later argument is a file, even one whose name starts with `-` (e.g. `smd validate -- -draft.smd`). Arguments before `--` are read as before.
 
