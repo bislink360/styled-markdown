@@ -24,7 +24,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 
 ## Install the VS Code extension
 
-> **Visual Studio Marketplace:** coming soon. Until the listing is live, install the `.vsix` from the GitHub release (Option A).
+> **Visual Studio Marketplace and Open VSX:** coming once published. [Open VSX](https://open-vsx.org) is the extension registry of VSCodium, Cursor, Windsurf and Gitpod. Until the listings are live, install the `.vsix` from the GitHub release (Option A).
 
 ### Option A — from the release file (recommended)
 
@@ -45,7 +45,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
    **Drag and drop:** drag the `.vsix` file onto the Extensions view.
 3. If VS Code was already open, run **Developer: Reload Window** from the Command Palette.
 
-> Cursor, VSCodium and Windsurf use the same steps (`cursor --install-extension …`, `codium --install-extension …`).
+> Cursor, VSCodium and Windsurf use the same steps (`cursor --install-extension …`, `codium --install-extension …`). Once the Open VSX listing is live, they can also install **Styled Markdown** from their Extensions view.
 
 ### Option B — build and install from source
 

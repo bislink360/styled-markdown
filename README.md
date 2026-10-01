@@ -184,7 +184,7 @@ History and research. People see it; agents skip it.
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
 3. Open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS).
 
-> The VS Code Marketplace and npm listings are coming soon. Until then, every release on GitHub has the `.vsix`, the npm package and the skills.
+> Listings on the VS Code Marketplace, [Open VSX](https://open-vsx.org) (for VSCodium, Cursor, Windsurf and Gitpod) and npm are coming once published. Until they are live, every release on GitHub has the `.vsix`, the npm package and the skills.
 
 ### npm library and `smd` CLI
 

@@ -78,7 +78,7 @@ On the release branch, once every planned feature is merged or dropped:
 1. Finish `extension/CHANGELOG.md` for the version: every ⚠️ breaking change with a migration note, and empty headings removed.
 2. Run the **full** check, `node .claude/skills/smd-release/scripts/release-check.mjs` (release mode), and the SonarQube gate, `node .claude/skills/sonarqube-scan/scripts/sonar-scan.mjs` (▶ sonarqube-scan, must pass). Get the maintainer's approval of both reports (▶ smd-release §5, mandatory).
 3. Mark the tracking PR ready for review. Its CI runs the release gate as well.
-4. **Tag the release branch head** (the exact commit that ships), then build and publish from the tag (▶ smd-release §6–7):
+4. **Tag the release branch head** (the exact commit that ships). Pushing the tag runs the Release workflow, which builds from the tag, creates the GitHub Release and publishes; then verify each registry (▶ smd-release §6–7):
 
    ```bash
    git tag -a v1.2.0 origin/release/v1.2.0 -m "Styled Markdown 1.2.0" && git push origin v1.2.0
