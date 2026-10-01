@@ -2,6 +2,7 @@ import type MarkdownIt from 'markdown-it';
 import type { Options, Renderer, Token } from 'markdown-it';
 import katex from 'katex';
 import { attrsToStyle, escapeHtml, htmlAttrs, resolveColor, type Attrs } from './attrs';
+import { FigureCounter, type FigureNumber } from './figures';
 import { asStringList } from './frontmatter';
 import { langFromPath, parseFenceInfo, sliceLines, type FenceInfo } from './fence';
 import { CALLOUT_TYPES, STATUS_VALUES } from './spec';
@@ -217,6 +218,22 @@ function riskMatrixOpen(c: ContainerView): string {
   return `<div${htmlAttrs(c.attrs, ['smd-risk-matrix'], c.style)}${c.dataLine}>${title}${grid}<div class="smd-risk-matrix-body">\n`;
 }
 
+/** `:::figure`: the content, then a caption with the figure's number (see numberFigures). */
+function figureOpen(c: ContainerView): string {
+  const figure = c.meta.figure ?? new FigureCounter().next(c.attrs.values.kind);
+  const caption = c.meta.title ? ` ${c.inline(c.meta.title)}` : '';
+  const label = `<span class="smd-figure-label">${figure.label}${caption ? ':' : ''}</span>`;
+  c.meta.close = `<figcaption class="smd-figure-caption">${label}${caption}</figcaption></figure>`;
+  return `<figure${htmlAttrs(c.attrs, ['smd-figure', `smd-figure-${figure.kind}`], c.style)}${c.dataLine}>\n`;
+}
+
+/** `:ref[id]`: the number of the figure with that id, linked to it; an unknown id is shown as written. */
+export function renderRef(id: string, figure: FigureNumber | undefined): string {
+  const safe = escapeHtml(id);
+  if (!figure) return `<span class="smd-ref smd-ref-missing" title="No figure with this id">${safe}</span>`;
+  return `<a class="smd-ref" href="#${safe}">${figure.label}</a>`;
+}
+
 const CONTAINERS = new Map<string, ContainerOpen>([
   ['details', detailsOpen],
   ['card', cardOpen],
@@ -232,6 +249,7 @@ const CONTAINERS = new Map<string, ContainerOpen>([
   ['api', apiOpen],
   ['risk-matrix', riskMatrixOpen],
   ['timeline', divOpen('smd-timeline')],
+  ['figure', figureOpen],
 ]);
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 1. Front matter
 2. Block containers (general rules)
 3. Callouts and collapsibles
-4. Layout: tabs, columns, cards, boxes, steps, timeline
+4. Layout: tabs, columns, cards, boxes, steps, timeline, figures
 5. Project blocks: decision, risk, risk-matrix
 6. Developer blocks: api, code fences
 7. Audience blocks: agent, human
@@ -126,6 +126,30 @@ Collapsed until opened. Attributes: title, open.
 - `card` `accent`: a color.
 - `steps` and `timeline` style the list they wrap. In a timeline, `[x]` items show as done.
 
+### Figures and numbered references
+
+````markdown
+The flow is in :ref[fig-checkout]; limits are in :ref[tbl-limits].
+
+:::figure{#fig-checkout} Checkout flow
+```mermaid
+flowchart LR
+  Cart --> Payment
+```
+:::
+
+:::figure{#tbl-limits kind=table} Rate limits per plan
+| Plan | Requests per minute |
+| ---- | ------------------- |
+| Free | 60                  |
+:::
+````
+
+- `:::figure` wraps one image, diagram, table or code block. The title after the name (or `title="…"`) is the caption.
+- Figures are numbered in document order, one counter per `kind`: `figure` (default) → Figure 1, `table` → Table 1, `listing` (code) → Listing 1.
+- `:ref[id]` renders "Figure 2" as a link to the figure with `{#id}`; it may come before the figure. Give every figure you refer to an `{#id}` (e.g. `fig-…`, `tbl-…`, `lst-…`). An unknown id is a `figure/unknown-ref` warning; two figures with one id are `figure/duplicate-id`.
+- Write `:ref[id]` instead of "the figure below": the numbers stay right when figures move.
+
 ## 5. Project blocks
 
 ```markdown
@@ -207,6 +231,7 @@ Context for people only. Agents skip it.
 | `:progress{value=60 color=green label="6/10"}` | Progress bar (value 0–100) |
 | `:kbd[Ctrl+Shift+P]` | Keyboard keys |
 | `:mention[@team]` | Mention |
+| `:ref[fig-checkout]` | "Figure 2", linked to the `:::figure{#fig-checkout}` (see §4) |
 | `$E=mc^2$` / `$$ … $$` | Math (KaTeX). No space just inside the `$`; `$5 and $10` is not math. |
 
 A directive's `:` must follow whitespace or opening punctuation, so `10:30` is safe.

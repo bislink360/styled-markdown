@@ -1,6 +1,7 @@
 import type { StateBlock, StateCore, StateInline, Token } from 'markdown-it';
-import { emptyAttrs, findAttrsEnd, parseAttrs, attrsToStyle } from './attrs';
+import { emptyAttrs, findAttrsEnd, parseAttrs, attrsToStyle, type Attrs } from './attrs';
 import { ContainerInfo, parseContainerInfo } from './containers';
+import { FigureCounter, figureTargets, type FigureNumber } from './figures';
 import { parseFrontMatter } from './frontmatter';
 import { renderInlineDirective } from './markdownItHtml';
 import { INLINE_DIRECTIVES } from './spec';
@@ -103,6 +104,8 @@ export interface ContainerMeta extends ContainerInfo {
   close: string;
   /** The parsed source, for `:::risk-matrix` when the env doesn't carry the document. */
   source?: string;
+  /** The number of a `:::figure` (see numberFigures). */
+  figure?: FigureNumber;
 }
 
 export function annotateContainers(state: StateCore): void {
@@ -119,6 +122,35 @@ export function annotateContainers(state: StateCore): void {
       token.meta = open?.meta ?? { name: 'box', attrs: emptyAttrs(), title: '', close: '</div>' };
     }
   }
+}
+
+/** Where numbered figures are kept for `:ref[id]`, on the env of one render (a host's env too). */
+export interface FigureEnv {
+  smdFigures?: Map<string, FigureNumber>;
+}
+
+/**
+ * Number the `:::figure` containers of a document in order, one counter per kind, and keep them by id
+ * on the env so references anywhere (container titles too) can show "Figure 2". Runs after
+ * annotateContainers; inline-only parses (titles) keep the document's figures.
+ */
+export function numberFigures(state: StateCore): void {
+  if (state.inlineMode) return;
+  const counter = new FigureCounter();
+  const figures: Array<FigureNumber & { id?: string }> = [];
+  for (const token of state.tokens) {
+    const meta = token.meta as ContainerMeta | null;
+    if (token.type !== 'container_smd_open' || meta?.name !== 'figure') continue;
+    meta.figure = counter.next(meta.attrs.values.kind);
+    figures.push({ ...meta.figure, id: meta.attrs.id });
+  }
+  const env = state.env as FigureEnv | undefined;
+  if (env && typeof env === 'object') env.smdFigures = figureTargets(figures);
+}
+
+/** The figures numbered for the document being rendered (empty outside a render). */
+export function envFigures(env: unknown): ReadonlyMap<string, FigureNumber> {
+  return (env as FigureEnv | undefined)?.smdFigures ?? new Map();
 }
 
 // ---------------------------------------------------------------------------
@@ -181,12 +213,19 @@ export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdCon
     attrs = parsed;
     pos = end + 1;
   }
-  if (!silent) {
-    const token = state.push('html_inline', '', 0);
-    token.content = renderInlineDirective(state.md, name, content, attrs.values, ctx.options(state.env).today);
-  }
+  if (!silent) pushDirective(state, name, content, attrs, ctx);
   state.pos = pos;
   return true;
+}
+
+/** A directive's token: its HTML, or for `:ref[id]` an `smd_ref` token resolved when rendering (the figure may come later). */
+function pushDirective(state: StateInline, name: string, content: string, attrs: Attrs, ctx: SmdContext): void {
+  if (name === 'ref') {
+    state.push('smd_ref', '', 0).meta = { id: content.trim() };
+    return;
+  }
+  const token = state.push('html_inline', '', 0);
+  token.content = renderInlineDirective(state.md, name, content, attrs.values, ctx.options(state.env).today);
 }
 
 /** `==highlighted==` */

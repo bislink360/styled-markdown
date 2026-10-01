@@ -5,6 +5,9 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- **Figures with captions and numbered references** (new syntax, spec v1, additive): `:::figure{#fig-checkout} Caption` around an image, Mermaid diagram, table or code block renders as `<figure class="smd-figure">` with a `<figcaption>` "**Figure 1:** Caption". Figures are numbered in document order with one counter per `kind` (`figure` by default, `table` → *Table 1*, `listing` → *Listing 1*); a table's caption shows above it. The inline directive **`:ref[fig-checkout]`** renders the figure's number as a link (*Figure 1*), before or after the figure and in titles. Agent view: `<figure id="fig-checkout"> Figure 1: Caption` … `</figure>` and `Figure 1 (fig-checkout)` for references. `smd to-md`: an `<a id>` anchor, the content and a `**Figure 1:** Caption` line, with references as `[Figure 1](#fig-checkout)` links. `smd query 'figure[kind=table]'` finds them. Works in `renderSmd`, the markdown-it plugin (`containers` and `directives` options; numbers are kept on the render's `env` as `smdFigures`), the preview, `smd render`/`pdf`/`build` (styles for both themes and print), completion, hover, formatting and snippets (`figure`, `ref`). Older renderers show a figure's content in a plain box without its caption (with a `container/unknown` warning) and `:ref[…]` as written.
+- Validation: **`figure/unknown-ref`** (warning) for a `:ref[id]` that names no figure, with a fix when one figure id is close, and **`figure/duplicate-id`** (warning) when two figures share an id. Both only fire on the new syntax.
+- Library: `parseSmd(text).figures` lists the figures with their kind, number, label, id and line; the `Figure` and `FigureNumber` types are exported. `inlineText` takes the figures by id as an optional fourth argument to resolve `:ref[…]`.
 
 ### Changed
 

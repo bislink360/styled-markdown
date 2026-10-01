@@ -52,6 +52,7 @@ Catching up on a changed document:
 | `<risk impact=… likelihood=…>` | Design around it or test for it |
 | `[risk matrix: …]` | A grid of the document's risks for people; the risks themselves are the `<risk>` blocks |
 | `API POST /v1/x — …` | Endpoint definition; the following lines describe it |
+| `<figure id="fig-x"> Figure 2: caption`, `Figure 2 (fig-x)` | A numbered figure (or Table/Listing) and a reference to it; the id in parentheses names the `<figure>` meant |
 | front matter `status:` | `approved` is authoritative, `draft`/`review` is tentative, `deprecated`/`archived` is history |
 | `[P1]`, `@name`, `(due …, OVERDUE)` | Task priority, owner, due date |
 | `[code: path lines a-b …]` | Real source embedded by the doc. Read that file range if you need it (or rerun with `--embed`). |

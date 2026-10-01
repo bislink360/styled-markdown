@@ -286,6 +286,18 @@ details.smd-callout > summary::-webkit-details-marker { display: none; }
 .smd-diagram svg { max-width: 100%; height: auto; }
 .smd-diagram-pending { box-sizing: border-box; overflow: hidden; }
 .smd-math-block { overflow-x: auto; margin: 0 0 1em; }
+
+/* ---------- Figures and references ---------- */
+.smd-figure { display: flex; flex-direction: column; margin: 0 0 1.2em; }
+.smd-figure > :nth-last-child(2) { margin-bottom: 0; }
+.smd-figure > p:has(> img:only-child) { text-align: center; }
+.smd-figure img { max-width: 100%; height: auto; }
+.smd-figure-caption { margin-top: .6em; font-size: .9em; color: var(--smd-fg-muted); text-align: center; }
+.smd-figure-label { font-weight: 650; color: var(--smd-fg); }
+/* Tables are captioned above, as is usual for tables. */
+.smd-figure-table > .smd-figure-caption { order: -1; margin: 0 0 .6em; }
+.smd-ref { white-space: nowrap; }
+.smd-ref-missing { color: var(--smd-red); text-decoration: underline dotted; }
 .smd-error { color: var(--smd-red); font-family: var(--smd-font-mono); font-size: .85em; white-space: pre-wrap; display: block; text-align: left; }
 
 /* ---------- Utility classes from {.class} ---------- */
@@ -457,7 +469,10 @@ pre.smd-has-hl code { position: relative; }
   .smd-callout-title, .smd-card-title, .smd-tab-label, .smd-code-title { break-after: avoid; page-break-after: avoid; }
   .smd-callout, .smd-card, .smd-box, .smd-details, .smd-human, .smd-decision, .smd-risk, .smd-api, .smd-metric,
   .smd-diagram, .smd-code, .smd-math-block, .smd-doc-header, .smd-doc tr, .smd-doc img, .smd-doc blockquote,
-  .smd-steps > ol > li, .smd-timeline li { break-inside: avoid; page-break-inside: avoid; }
+  .smd-steps > ol > li, .smd-timeline li, .smd-figure { break-inside: avoid; page-break-inside: avoid; }
+  /* A caption stays on the page of what it describes (above a table, below anything else). */
+  .smd-figure-caption { break-before: avoid; page-break-before: avoid; }
+  .smd-figure-table > .smd-figure-caption { break-after: avoid; page-break-after: avoid; }
   .smd-doc p { orphans: 3; widows: 3; }
 
   /* {.page-break} on a heading or block starts it on a new page. */

@@ -80,6 +80,7 @@ const DEFAULTS: Record<string, Record<string, string>> = {
   decision: { status: 'proposed' },
   risk: { impact: 'medium' },
   api: { method: 'GET' },
+  figure: { kind: 'figure' },
 };
 const PRIORITY_RANK: Record<string, number> = { p0: 0, critical: 0, p1: 1, high: 1, p2: 2, medium: 2, p3: 3, low: 3, p4: 4 };
 

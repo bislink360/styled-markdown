@@ -6,6 +6,8 @@ import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS } from './render';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
 import { parseFenceInfo, sliceLines } from './fence';
+import { figureTargets, findRefs, type Figure, type FigureRef } from './figures';
+import { parseSmd } from './parse';
 import { suggest } from './util';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
@@ -177,6 +179,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   }
 
   checkLinks(text, push, options);
+  checkFigures(text, lines, fm.bodyStartLine, push);
 
   let result = applySuppressions(text, diagnostics);
   if (options.rules) result = applyRuleSettings(result, options.rules);
@@ -503,6 +506,34 @@ function missingAnchor(
   push(line, column, end, 'warning', 'link/missing-anchor',
     `No heading or element with id "${anchor}" ${where}${hint ? ` — did you mean "#${hint}"?` : '.'}`,
     fixed ? { line, column, endColumn: end, replacement: fixed, title: `Change to "${fixed}"` } : undefined);
+}
+
+/** Figure ids are unique, and every `:ref[id]` names a figure of this document. */
+function checkFigures(text: string, lines: string[], bodyStart: number, push: Push): void {
+  const figures = parseSmd(text).figures;
+  const targets = figureTargets(figures);
+  for (const f of figures) {
+    const first = f.id ? targets.get(f.id) : undefined;
+    if (first && first !== f) duplicateFigure(f, first, lines[f.line], push);
+  }
+  for (const ref of findRefs(lines, bodyStart)) {
+    if (!targets.has(ref.id)) unknownRef(ref, [...targets.keys()], push);
+  }
+}
+
+function duplicateFigure(figure: Figure, first: Figure, raw: string, push: Push): void {
+  const at = raw.indexOf(`#${figure.id}`);
+  const [column, end] = at < 0 ? [0, raw.length] : [at, at + figure.id!.length + 1];
+  push(figure.line, column, end, 'warning', 'figure/duplicate-id',
+    `The figure on line ${first.line + 1} already has the id "${figure.id}"; :ref[${figure.id}] refers to that one. Give this figure its own id.`);
+}
+
+function unknownRef(ref: FigureRef, ids: string[], push: Push): void {
+  const hint = ref.id ? suggest(ref.id, ids) : undefined;
+  const start = ref.column + ':ref['.length;
+  push(ref.line, ref.column, ref.endColumn, 'warning', 'figure/unknown-ref',
+    `No figure with id "${ref.id}" in this document${hint ? ` — did you mean "${hint}"?` : '.'} Give a :::figure that id with {#${ref.id || 'fig-id'}}.`,
+    hint ? { line: ref.line, column: start, endColumn: ref.endColumn - 1, replacement: hint, title: `Change to ":ref[${hint}]"` } : undefined);
 }
 
 function checkFence(lang: string, content: string[], line: number, push: Push, wholeLine: WholeLine): void {
