@@ -5,7 +5,7 @@ import {
   attrsToStyle, emptyAttrs, escapeHtml, findAttrsEnd, htmlAttrs, parseAttrs, resolveColor,
 } from './attrs';
 import { ContainerInfo, parseContainerInfo } from './containers';
-import { asStringList, parseFrontMatter } from './frontmatter';
+import { asStringList, type FrontMatter, parseFrontMatter } from './frontmatter';
 import { langFromPath, parseFenceInfo, sliceLines } from './fence';
 import { CALLOUT_TYPES, INLINE_DIRECTIVES, STATUS_VALUES } from './spec';
 import { documentRiskMatrixHtml } from './riskHtml';
@@ -141,7 +141,17 @@ export function createMarkdownIt(options: RenderOptions = {}): MarkdownIt {
 
 /** Render a complete .smd document (front matter + body) to an HTML fragment. */
 export function renderSmd(text: string, options: RenderOptions = {}): RenderResult {
-  const fm = parseFrontMatter(text);
+  return renderParsed(text, parseFrontMatter(text), options);
+}
+
+/** The front matter of a document and the body after it, however they were split. */
+export type ParsedDocument = Pick<FrontMatter, 'data' | 'body' | 'bodyStartLine'>;
+
+/**
+ * renderSmd with the front matter already split off, for hosts that remove it before the
+ * remark/rehype plugins run (see unified.ts). `header: false` leaves out the title/status header.
+ */
+export function renderParsed(text: string, fm: ParsedDocument, options: RenderOptions = {}, header = true): RenderResult {
   const opts: ResolvedOptions = {
     allowHtml: options.allowHtml ?? true,
     agentBlocks: options.agentBlocks ?? 'collapsed',
@@ -158,7 +168,7 @@ export function renderSmd(text: string, options: RenderOptions = {}): RenderResu
   const data = fm.data;
   const accent = typeof data.accent === 'string' ? resolveColor(data.accent) : null;
   const style = accent ? ` style="--smd-accent:${escapeHtml(accent)}"` : '';
-  const html = `<article class="smd-doc"${style}>${renderHeader(md, data)}${data.toc === true ? renderToc(env.headings) : ''}${body}</article>`;
+  const html = `<article class="smd-doc"${style}>${header ? renderHeader(md, data) : ''}${data.toc === true ? renderToc(env.headings) : ''}${body}</article>`;
   return { html, frontMatter: data, headings: env.headings };
 }
 
