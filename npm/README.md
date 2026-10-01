@@ -34,6 +34,7 @@ smd decisions docs/ --status accepted # decision log across docs, newest first (
 smd tasks docs/ --csv -o tasks.csv    # tasks for a spreadsheet; --gantt [--smd] for a Mermaid Gantt chart
 smd risks docs/ --html -o risks.html  # risk register: impact × likelihood, highest first, colour-coded matrix
 smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
+smd report docs/ --since 2026-09-01 -o status.smd # draft a status report: tasks done and added since, open, decisions, risks
 smd issues docs/                      # GitHub Issues sync plan via gh (a dry run; --apply [--create] [--close] syncs)
 smd render docs/spec.smd -o spec.html # standalone HTML page
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
@@ -50,7 +51,7 @@ Run `smd --help` for every option.
 import {
   renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
   smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
-  decisionLog, decisionLogMarkdown,
+  decisionLog, decisionLogMarkdown, statusChanges, statusReportMarkdown, statusReport,
   riskRegister, riskRegisterText, renderRiskPage,
 } from 'styled-markdown';
 ```
@@ -154,6 +155,10 @@ const register = riskRegister([{ path: 'docs/checkout.smd', text: source }], { a
 // { risks: [{ path, line, title, impact: 'high', likelihood: 'medium', score: 6, owner: '@payments', status: 'open', section, summary, defaulted: [] }], matrix: { impact, likelihood, counts }, documents: 1, documentsWithRisks: 1 }
 riskRegisterText(register);               // one line per risk, then a text matrix
 renderRiskPage(register);                 // standalone HTML page: colour-coded matrix + register table (light/dark)
+
+const status = statusChanges([{ path: 'docs/plan.smd', text: oldSource }], [{ path: 'docs/plan.smd', text: source }], { today: '2026-09-30' }); // `smd report` (before: null when there's no earlier version)
+// { compared: true, today, done: [task…], added, removed, open, overdue, dueSoon, decisions: [{ decision, before: 'proposed' }], needed, risks, documents }
+const draft = statusReportMarkdown(status, { since: 'HEAD~5', title: 'Checkout squad' }); // a status-report draft that passes `smd validate`
 ```
 
 ### GitHub Issues sync (the `smd issues` logic, without network access)

@@ -72,7 +72,7 @@ export function decisionLog(documents: Array<{ path: string; text: string }>, op
 function documentDecisions(path: string, text: string): DecisionEntry[] {
   const data = parseFrontMatter(text).data;
   const headings = parseSmd(text).headings;
-  const document = typeof data.title === 'string' && data.title.trim() ? data.title.trim() : firstTitle(headings, path);
+  const document = documentTitle(data, headings, path);
   const tagged = asStringList(data.tags).some((t) => t.toLowerCase() === 'adr');
   return querySmd(text, DECISIONS, { lineRefs: false }).map((m, i) => {
     const heading = headingAbove(headings, m.line);
@@ -98,13 +98,18 @@ function entryOf(m: QueryMatch, at: { path: string; document: string; heading?: 
   };
 }
 
-function headingAbove(headings: Heading[], line: number): Heading | undefined {
+export function headingAbove(headings: Heading[], line: number): Heading | undefined {
   let above: Heading | undefined;
   for (const h of headings) {
     if (h.line >= line) break;
     above = h;
   }
   return above;
+}
+
+/** The front matter `title`, else the first `#` heading, else the file name. */
+export function documentTitle(data: Record<string, unknown>, headings: Heading[], path: string): string {
+  return typeof data.title === 'string' && data.title.trim() ? data.title.trim() : firstTitle(headings, path);
 }
 
 function firstTitle(headings: Heading[], path: string): string {
@@ -179,11 +184,11 @@ function decisionTable(entries: DecisionEntry[], link: (path: string) => string)
 }
 
 function tableRow(e: DecisionEntry, href: string): string {
-  const target = e.anchor && !e.adr ? `${href}#${e.anchor}` : href;
+  const target = decisionHref(e, href);
   const decision = `[${escapeInline(e.title)}](${linkTarget(target)})`;
   const cells = [
     e.date ? escapeInline(e.date) : '—',
-    `:badge[${escapeInline(e.status)}]{color=${BADGE_COLORS[e.status] ?? 'gray'}}`,
+    decisionBadge(e.status),
     isInactiveDecision(e.status) ? `~~${decision}~~` : decision,
     e.owner ? escapeInline(e.owner) : '—',
     `[${escapeInline(e.document)}](${linkTarget(href)})`,
@@ -191,16 +196,26 @@ function tableRow(e: DecisionEntry, href: string): string {
   return `| ${cells.join(' | ')} |`;
 }
 
+/** The link to a decision: its section (or own id) in the document at `href`; the document itself for an ADR's own decision. */
+export function decisionHref(e: DecisionEntry, href: string): string {
+  return e.anchor && !e.adr ? `${href}#${e.anchor}` : href;
+}
+
+/** `:badge[accepted]{color=green}` */
+export function decisionBadge(status: string): string {
+  return `:badge[${escapeInline(status)}]{color=${BADGE_COLORS[status] ?? 'gray'}}`;
+}
+
 /** Plain text that stays plain inside a table cell or link text: Markdown, math and directive punctuation escaped. */
-function escapeInline(text: string): string {
+export function escapeInline(text: string): string {
   return text.replace(/[\\`*_[\]|<>$~]/g, (c) => `\\${c}`);
 }
 
 /** A link destination: in `<…>` when it has spaces or parentheses. */
-function linkTarget(target: string): string {
+export function linkTarget(target: string): string {
   return /[\s()<>]/.test(target) ? `<${target.replace(/[<>]/g, encodeURIComponent)}>` : target;
 }
 
-function plural(n: number, word: string): string {
+export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
