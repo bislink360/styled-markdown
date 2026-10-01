@@ -445,7 +445,7 @@ People-only content anywhere in the document.
 
 ## 11. Headings, links and anchors
 
-- `## Title {#custom-id}` sets a stable anchor, and `{.lead}` adds a class.
+- `## Title {#custom-id}` sets a stable anchor, and `{.lead}` adds a class (`{.page-break}` starts a new page when printed: [section 16](#pdf-and-printing)).
 - Headings get automatic ids, so `[see API](#api)` works. Broken anchors and missing relative files are reported.
 - The outline view and folding follow headings and blocks.
 
@@ -606,7 +606,8 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 
 | Command | Result |
 |---|---|
-| **Export to HTML** / `smd render` | A standalone page (Mermaid and KaTeX from a CDN) you can share with anyone |
+| **Export to HTML** / `smd render` | A standalone page (Mermaid and KaTeX from a CDN) you can share with anyone. It has a print stylesheet |
+| `smd pdf` | A PDF of that page, printed by a headless browser you install (below) |
 | **Export to Plain Markdown** / `smd to-md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Convert Markdown File to .smd** / `smd from-md` | Adds front matter and turns GitHub alerts into callouts |
 | `smd build <dir> --out site` | A static docs site: every document as a page, with navigation, search, backlinks and a dashboard |
@@ -644,6 +645,35 @@ Configuration for Astro, Docusaurus and Next.js, and which hosts are tested: [np
 
 **Use in other tools.** Anything that renders Markdown with [markdown-it](https://github.com/markdown-it/markdown-it) can render `.smd` syntax with the npm package's plugin, `md.use(require('styled-markdown/markdown-it'))`, styled by `styled-markdown/smd.css`. It adds rules to the host's own instance and leaves plain Markdown alone; options are in the [package README](../npm/README.md#markdown-it-plugin). Other tools can call `renderSmd()` from the same package or run `smd render`.
 
+### PDF and printing
+
+Pages from `smd render` (and **Export to HTML**) print well from any browser: **Print → Save as PDF** gives a clean PDF with no extra software. The print stylesheet:
+
+- uses 16 mm × 14 mm page margins (the paper size comes from the print dialog) and always the light palette, with block backgrounds kept;
+- leaves out screen-only parts (copy buttons, the tab bar) and **`:::agent` blocks**, which are instructions for AI agents rather than for readers of a printout. `:::human` blocks print;
+- prints every tab of a `:::tabs` block, one under the other with its label, and opens collapsed `:::details` and collapsible callouts while printing;
+- wraps long code lines and shows wide tables and diagrams in full instead of scrolling;
+- keeps headings with what follows them, and avoids breaking callouts, cards, boxes, decisions, risks, API blocks, code blocks, diagrams, images and table rows across pages where they fit on one.
+
+Two utility classes, set with the usual attribute list (no new syntax), control printing:
+
+```text
+## Appendix {.page-break}           the heading starts a new page
+:::box{.page-break}                 any block can start a new page too
+:::card{.no-print} Internal notes   left out of the printout
+```
+
+**`smd pdf plan.smd [-o plan.pdf] [--format A4|Letter] [--landscape]`** renders the document and prints it to `plan.pdf` (by default next to the document) in A4 (the default) or Letter. It drives a headless Chromium from **Playwright** or **Puppeteer**, which smd does not bundle (the npm package keeps zero dependencies), so install one in your project or globally, as for `--tokenizer`:
+
+```bash
+npm install --save-dev playwright && npx playwright install chromium   # or:
+npm install --save-dev puppeteer
+```
+
+smd looks for `playwright`, then `@playwright/test`, then `puppeteer`, in the current folder's `node_modules`, next to smd and in the global npm folder. Without any of them, `smd pdf` exits with code 2 and suggests the browser route above.
+
+It waits until the page has finished rendering: the runtime sets `data-smd-ready` on `<html>` once Mermaid diagrams are drawn and fonts are loaded (after 60 s it prints anyway, with a warning). So **diagrams are in the PDF as vector SVG**, and math as KaTeX text. Mermaid and the KaTeX stylesheet still load from the CDN, so diagrams need a network connection. The page is printed from a temporary file beside the document (removed afterwards), so relative image paths resolve. PDFs always use the light theme.
+
 ## 17. CLI reference
 
 ```text
@@ -667,7 +697,8 @@ smd report <files|dirs> --since <date|git-ref> [-o report.smd] [--title "…"] [
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd validate <files|dirs> --format github [--summary <file>] [...]   GitHub annotations (section 15); --summary appends a job summary
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
-smd render <file> [-o out.html]
+smd render <file> [-o out.html]                     standalone page, with a print stylesheet
+smd pdf <file> [-o out.pdf] [--format A4|Letter] [--landscape]   PDF; needs Playwright or Puppeteer (section 16)
 smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
                  static docs site: pages, sidebar, search, backlinks, dashboard (section 16)
 smd to-md <file> [-o out.md]

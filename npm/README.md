@@ -37,7 +37,8 @@ smd risks docs/ --html -o risks.html  # risk register: impact × likelihood, hig
 smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
 smd report docs/ --since 2026-09-01 -o status.smd # draft a status report: tasks done and added since, open, decisions, risks
 smd issues docs/                      # GitHub Issues sync plan via gh (a dry run; --apply [--create] [--close] syncs)
-smd render docs/spec.smd -o spec.html # standalone HTML page
+smd render docs/spec.smd -o spec.html # standalone HTML page (prints well: Print → Save as PDF)
+smd pdf docs/spec.smd                 # spec.pdf, if Playwright or Puppeteer is installed (not bundled)
 smd build docs/ --out site            # static docs site: navigation, search, backlinks, task/decision/risk dashboard
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
 smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)

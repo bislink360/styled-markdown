@@ -11,6 +11,7 @@ import {
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
+import { exportPdf, loadPdfEngine, PdfError, pdfOptions, pdfPath } from './pdf';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { runMcpServer } from './mcp';
 import { runIssues, type GhResult, type IssuesOptions } from './issueSync';
@@ -127,7 +128,11 @@ Checking and converting:
       --stdout  print the formatted file instead of writing it (one file)
       validate and fmt take any number of files: use them as a pre-commit hook (see docs/INSTALL.md).
       After --, every argument is a file, even one that starts with "-".
-  smd render <file.smd> [-o out.html]      Standalone HTML page
+  smd render <file.smd> [-o out.html]      Standalone HTML page (prints well: it has a print stylesheet)
+  smd pdf <file.smd> [-o out.pdf] [--format A4|Letter] [--landscape]
+      PDF of the rendered page (default: next to the file), with diagrams as vectors. Needs Playwright or
+      Puppeteer in your project or installed globally; smd doesn't bundle a browser. Without one, use
+      smd render -o page.html and the browser's Print → Save as PDF.
   smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
       Static docs site: a page per .smd file in the same folders (links between documents rewritten,
       linked images copied), a sidebar, breadcrumbs, previous/next, backlinks, client-side search and
@@ -242,6 +247,8 @@ function main(argv: string[]): number | Promise<number> {
       const file = requireFile(positional[0]);
       return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
     }
+    case 'pdf':
+      return pdf(requireFile(positional[0]), args);
     case 'to-md':
       return write(value('-o'), smdToMarkdown(read(requireFile(positional[0])), { readFile: readerFor(positional[0]) }));
     case 'from-md': {
@@ -858,6 +865,23 @@ function installSkills(dir: string, only?: string): number {
     console.log(`Installed ${skill.name.padEnd(24)} → ${target}  (${skill.summary})`);
   }
   return 0;
+}
+
+/** `smd pdf`: render the page and print it with Playwright or Puppeteer; exit 2 when neither is installed. */
+async function pdf(file: string, args: Args): Promise<number> {
+  try {
+    const options = pdfOptions(args.values.get('--format')?.[0], args.flags.has('--landscape'));
+    const engine = loadPdfEngine();
+    const out = args.values.get('-o')?.[0] ?? pdfPath(file);
+    const html = renderPage(read(file), { readFile: readerFor(file) });
+    await exportPdf(file, html, out, options, { engine, warn: (message) => console.error(message) });
+    console.error(`Wrote ${out} (printed with ${engine.name})`);
+    return 0;
+  } catch (err) {
+    if (err instanceof PdfError) return fail(err.message);
+    console.error(`Printing failed: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
 }
 
 function requireFile(file: string | undefined): string {
