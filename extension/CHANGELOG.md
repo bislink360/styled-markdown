@@ -5,6 +5,9 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- **GitHub Action** `bislink360/styled-markdown/validate@v1.5.0` (in this repository's `validate/` folder): validates `.smd` files on pull requests, shows each problem as an inline annotation and writes a job summary (counts per severity and the first 50 problems, linked to their lines). It runs the bundled CLI with the runner's Node.js 18+, without installing anything. Inputs: `paths` (one per line, spaces allowed), `fail-on` (`error`, `warning` or `never`), `strict`, `config`, `mermaid`, `stale-after`, `summary` and `cli`.
+- **`smd validate --format github`**: one GitHub workflow command per problem (`::error`/`::warning`/`::notice file=…,line=…,col=…,endColumn=…,title=smd <code>::<message>`; hints are left out), with 1-based positions, paths relative to `$GITHUB_WORKSPACE` (else the current folder) and workflow-command escaping. `--format json` is the same as `--json`; text and `--json` output are unchanged.
+- **`smd validate --summary <file>`** appends a Markdown summary of the run to a file, with any output format, e.g. `--summary "$GITHUB_STEP_SUMMARY"`.
 
 ### Changed
 
