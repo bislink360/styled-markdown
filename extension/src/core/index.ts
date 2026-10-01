@@ -44,3 +44,9 @@ export { diffSmd } from './diff';
 export type { DiffOptions, DiffResult, FrontMatterChange, SectionChange } from './diff';
 export { statusChanges, statusReport, statusReportMarkdown } from './report';
 export type { ReportDecision, ReportDocument, ReportRisk, ReportTask, StatusChanges, StatusReportOptions } from './report';
+export {
+  addIssueLink, checkTaskLine, issueDraft, issueKey, issueTasks, parseIssueRefs, planIssueSync, stripIssueRefs, taskIssueRef,
+} from './issues';
+export type {
+  IssueDraftSource, IssueRef, IssueState, IssueSyncAction, IssueSyncKind, IssueSyncOptions, IssueSyncPlan, IssueTask,
+} from './issues';

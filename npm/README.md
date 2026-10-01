@@ -35,6 +35,7 @@ smd tasks docs/ --csv -o tasks.csv    # tasks for a spreadsheet; --gantt [--smd]
 smd risks docs/ --html -o risks.html  # risk register: impact × likelihood, highest first, colour-coded matrix
 smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
 smd report docs/ --since 2026-09-01 -o status.smd # draft a status report: tasks done and added since, open, decisions, risks
+smd issues docs/                      # GitHub Issues sync plan via gh (a dry run; --apply [--create] [--close] syncs)
 smd render docs/spec.smd -o spec.html # standalone HTML page
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
 smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)
@@ -159,6 +160,19 @@ const status = statusChanges([{ path: 'docs/plan.smd', text: oldSource }], [{ pa
 // { compared: true, today, done: [task…], added, removed, open, overdue, dueSoon, decisions: [{ decision, before: 'proposed' }], needed, risks, documents }
 const draft = statusReportMarkdown(status, { since: 'HEAD~5', title: 'Checkout squad' }); // a status-report draft that passes `smd validate`
 ```
+
+### GitHub Issues sync (the `smd issues` logic, without network access)
+
+```ts
+const tasks = issueTasks(source); // every task with the issue it links to: [#12](https://github.com/o/r/issues/12), the bare URL or o/r#12
+const plan = planIssueSync(tasks, states, { create: true, close: false }); // states: Map<'o/r#12', { state: 'open' | 'closed', reason? }>
+// { actions: [{ kind: 'check' | 'create' | 'close', task, issue, enabled }], inSync: [...], skipped: [{ task, issue, reason }] }
+const { title, body } = issueDraft(task, { path: 'docs/plan.smd' }); // owners in code spans: nobody is @-mentioned
+addIssueLink(line, { number: 12, url: 'https://github.com/o/r/issues/12' }); // appends ` [#12](…)`, nothing else changes
+checkTaskLine(line);                      // `- [ ]` → `- [x]`, nothing else changes
+```
+
+Also: `parseIssueRefs(line)` (every reference, code spans ignored), `taskIssueRef(line)` (the first), `issueKey(ref)` and `stripIssueRefs(text)`. Talking to GitHub (`gh`) and writing files is left to you.
 
 Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `ganttDate` and `TASK_CSV_COLUMNS` (task export), `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
 

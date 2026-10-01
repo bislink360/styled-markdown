@@ -166,6 +166,56 @@ gantt
 
 Characters Mermaid would misread in a name (`:`, `#`, `;`, `%`) become Mermaid entity codes such as `#58;`, which the chart shows as the character itself. So does the first letter of a name that starts with a Gantt keyword (`title`, `click`, `section`…) or a date.
 
+### Sync with GitHub Issues: `smd issues`
+
+`smd issues docs/` keeps tasks and GitHub Issues in step, through your own [GitHub CLI](https://cli.github.com) (`gh`, logged in with `gh auth login`), so no token passes through smd. **It is a dry run unless you add `--apply`:** it reads the issues' states, prints the plan and changes nothing, on GitHub or on disk.
+
+```bash
+smd issues docs/                            # the plan only
+smd issues docs/ --apply                    # check off tasks whose issue was closed
+smd issues docs/ --apply --create --label backlog   # also open an issue for each open task without one
+smd issues docs/ --apply --close            # also close the issue of each done task
+```
+
+A task is linked to an issue by a reference anywhere on its line, no new syntax. The first one counts, and references in code spans don't:
+
+```markdown
+- [ ] Ship the quote endpoint @api [#123](https://github.com/acme/shop/issues/123)
+- [ ] Fix the flaky test https://github.com/acme/shop/issues/124
+- [x] Kickoff with design acme/shop#125
+```
+
+A bare `#123` is not a link (it is too common in prose), and neither are pull request URLs.
+
+| Task | Its issue | With `--apply` |
+|---|---|---|
+| open, no link | — | with `--create`: a new issue in `--repo` (default: the current folder's repository, from `gh repo view`); ` [#N](url)` is appended to the task line |
+| open | closed as completed | the task is checked off (`- [ ]` → `- [x]`) |
+| open | closed as not planned | left alone, listed under "Skipped" |
+| done | open | with `--close`: the issue is closed as completed, with a comment pointing to the task |
+| done, no link | — | left alone |
+
+- **New issues:** the title is the task text without owner, priority, due date or emphasis. The body names the file, line and section, then owners, priority and due date. Owners are in code spans, so nobody is @-mentioned (an owner like `@api-team` may not be a GitHub user). `--label` adds labels (repeatable or comma-separated; they must exist in the repository).
+- **Only the intended lines change:** a check-off changes the box, a new link is appended to the line. A task line that changed since it was read is not touched. Line endings (CRLF) are kept.
+- **Idempotent:** a linked task never gets a second issue, and each issue is closed once, so running it again is safe.
+- **Polite and stoppable:** one `gh` call at a time. The first failure stops the run; what was done, what failed and what was not run is reported. An issue that can't be read is skipped.
+- **Exit codes:** 0 done (or nothing to do), 1 a `gh` call failed or an issue could not be read, 2 usage errors, and when `gh` is missing or not logged in to github.com. `--json` prints the plan or the results as JSON (`actions[]` with `kind`, `status`, `file`, `line`, `text`, `issue`; `skipped[]`; `inSync`).
+
+```text
+Dry run: nothing is changed. Add --apply to sync (--create to open issues, --close to close them).
+
+Check off tasks whose issue was closed (1):
+  docs/plan.smd:5  Fix the flaky test  acme/shop#120
+
+Open issues for tasks without one in acme/shop (1):
+  docs/plan.smd:4  Ship the quote endpoint  (needs --create)
+
+Close issues whose task is done (1):
+  docs/plan.smd:6  Kickoff with design  acme/shop#118  (needs --close)
+
+[smd] dry run, nothing changed: 1 task(s) to check off, 1 issue(s) to create (needs --create), 1 issue(s) to close (needs --close); 1 in sync.
+```
+
 ## 6. Project blocks: decisions, risks, timelines
 
 ![KPI tiles, tasks, decision, risk and timeline](images/02-project-management.png)
@@ -544,6 +594,9 @@ smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd tasks <files|dirs> [--all] [--mine @name] --csv [-o tasks.csv]                 spreadsheet export
 smd tasks <files|dirs> [--all] [--mine @name] --gantt [--smd] [--title "…"] [-o <file>]   Mermaid Gantt chart
 smd risks <files|dirs> [--status <list>] [--owner @name] [--all] [--json] [--html] [-o <file>]   risk register
+smd issues <files|dirs> [--repo owner/name] [--apply] [--create] [--close] [--label <name>]… [--json]
+                 sync tasks with GitHub Issues via gh: a DRY RUN that changes nothing unless --apply
+                 (see "Sync with GitHub Issues" in section 5)
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
 smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]          sections that changed
 smd diff <files|dirs> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]

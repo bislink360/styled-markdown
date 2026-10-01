@@ -135,6 +135,10 @@ smd validate docs/ --fix               # apply safe automatic fixes
 
 Every problem has a stable `code` (e.g. `container/unclosed`, `attrs/value`) and, where safe, a `fix` object `{ line, column, endColumn, replacement }` (0-based).
 
+## Tasks and GitHub Issues
+
+`smd issues docs/` is a dry run: it prints which tasks would get an issue, be checked off or have their issue closed, and changes nothing. Run it to show the user the plan. **Never add `--apply` (or `--create` / `--close`) unless the user asked for that specific change**: it creates and closes issues on GitHub as the user and edits the documents.
+
 ## Need plain Markdown?
 
 `smd to-md file.smd` produces GitHub-compatible Markdown (callouts → GitHub alerts, badges → code spans, etc.).

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -12,6 +13,7 @@ import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { runMcpServer } from './mcp';
+import { runIssues, type GhResult, type IssuesOptions } from './issueSync';
 import { AGENT_RULES, fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 import {
   parseTargets, rulesBody, SHARED_CLI_COMMAND, SHARED_CLI_PATH, TARGET_FILES, type AgentTarget, type RulesTarget, type TargetFile,
@@ -90,6 +92,18 @@ Reading (token-efficient, for agents):
       then run outline or agent --section on them. Paths are relative to the working directory.
       --compact  one line of JSON instead of indented
 
+Syncing with GitHub Issues (a dry run unless --apply):
+  smd issues <files|dirs...> [--repo owner/name] [--apply] [--create] [--close] [--label <name>]... [--json]
+      Sync tasks with GitHub Issues through your GitHub CLI (gh, logged in). Without --apply it only
+      prints the plan and changes nothing: tasks to check off (their issue was closed), open tasks
+      without an issue, and issues whose task is done. A task is linked by an issue reference on its
+      line: [#123](https://github.com/owner/name/issues/123), the bare URL, or owner/name#123.
+      --apply   sync: check off tasks whose issue was closed (not those closed as "not planned")
+      --create  with --apply, also open an issue for each open task without one and add [#N](url) to it
+      --close   with --apply, also close the issue of each done task
+      --repo    repository for new issues (default: the current folder's, from gh repo view)
+      --label   label for new issues (repeatable or comma-separated)
+
 Checking and converting:
   smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
       Check .smd files. Exit code 1 on errors (or warnings with --strict). --fix applies safe fixes.
@@ -135,7 +149,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
-  '--max-tokens', '--tokenizer', '--status', '--owner',
+  '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -190,6 +204,8 @@ function main(argv: string[]): number | Promise<number> {
       return decisions(positional, args);
     case 'report':
       return report(positional, args);
+    case 'issues':
+      return issues(positional, args);
     case 'index':
       return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
@@ -696,6 +712,35 @@ function fileSince(file: string, ref: string, top: string, flags: DiffFlags): Fi
 function deletedFile(topPath: string, ref: string, top: string, flags: DiffFlags): FileDiff {
   const file = workingPath(top, topPath);
   return { file, status: 'deleted', result: diffSmd(git(['show', `${ref}:${topPath}`]) ?? '', '', flags) };
+}
+
+/** Run gh (the GitHub CLI) without a shell, `input` on stdin. Its own login is used: no token passes through smd. */
+function gh(args: string[], input?: string): GhResult {
+  const env = { ...process.env, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
+  try {
+    const stdout = execFileSync('gh', args, { encoding: 'utf8', input, env, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 }); // NOSONAR(typescript:S4036): smd issues runs the user's own gh, found on PATH like git for --since
+    return { ok: true, stdout, stderr: '' };
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    const stderr = err.stderr ? String(err.stderr) : err.message;
+    return { ok: false, missing: err.code === 'ENOENT', stdout: String(err.stdout ?? ''), stderr };
+  }
+}
+
+/** `smd issues`: the sync plan (a dry run), or with --apply the sync itself, through gh. */
+function issues(targets: string[], args: Args): number {
+  const labels = (args.values.get('--label') ?? []).flatMap((l) => l.split(',')).map((l) => l.trim()).filter(Boolean);
+  const options: IssuesOptions = {
+    repo: args.values.get('--repo')?.[0],
+    apply: args.flags.has('--apply'),
+    create: args.flags.has('--create'),
+    close: args.flags.has('--close'),
+    labels,
+    json: args.flags.has('--json'),
+    today: args.values.get('--today')?.[0],
+  };
+  const io = { gh, out: (text: string) => process.stdout.write(text), err: (text: string) => console.error(text) };
+  return runIssues(targets.length ? targets : ['.'], options, io);
 }
 
 function reportDiffs(diffs: FileDiff[], checked: number, base: { since?: string; oldFile?: string }, flags: DiffFlags): number {
