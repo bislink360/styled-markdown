@@ -122,6 +122,10 @@ smd --version       # smd 1.4.0 (Styled Markdown spec v1)
 
 ## Use `smd` in CI
 
+### GitHub Actions
+
+The `validate` action in this repository checks your `.smd` files, shows each problem as an inline annotation on the pull request's changed lines and writes a job summary (counts and the first 50 problems, linked to the file and line):
+
 ```yaml
 # .github/workflows/docs.yml
 name: docs
@@ -131,13 +135,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.4.0/skills/styled-markdown-reader/scripts/smd.cjs
-      - run: node smd.cjs validate docs/ --strict
+      - uses: bislink360/styled-markdown/validate@v1.5.0
+        with:
+          paths: |
+            docs
+            specs/product plan.smd
+          fail-on: warning
 ```
 
-`validate` exits with code **1** on errors (and on warnings with `--strict`). Use `--json` for machine-readable output.
+It runs the `smd` CLI bundled in the repository with the runner's Node.js (18 or later; GitHub-hosted Ubuntu, Windows and macOS runners have it, otherwise add `actions/setup-node` first). Nothing is installed or downloaded.
+
+| Input | Default | Meaning |
+|---|---|---|
+| `paths` | `.` | Files or folders to check, one per line (spaces are fine), relative to the repository root |
+| `fail-on` | `error` | Fail the step on `error`s, on `warning`s too (like `--strict`), or `never` (report only) |
+| `strict` | `false` | `true` is the same as `fail-on: warning` |
+| `config` | | A rule config file for every document (default: the nearest `smd.config.json` / `.smdrc`) |
+| `mermaid` | `true` | `false` skips Mermaid syntax checks |
+| `stale-after` | | Days before a document's `updated` date counts as stale (`0`: off; default 180) |
+| `summary` | `true` | Write the job summary |
+| `cli` | | Run another `smd` CLI, e.g. `node_modules/styled-markdown/dist/cli.js` |
+
+Errors become `::error`, warnings `::warning` and info diagnostics `::notice` annotations; hints are left out. The bundled CLI has no Mermaid parser, so diagram syntax is only checked when `cli` points at the npm package's CLI (installed with `npm ci` in an earlier step).
+
+### Any CI
+
+```bash
+curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.5.0/skills/styled-markdown-reader/scripts/smd.cjs
+node smd.cjs validate docs/ --strict
+```
+
+`validate` exits with code **1** on errors (and on warnings with `--strict`). Use `--json` for machine-readable output, or `--format github` for GitHub workflow commands; `--summary <file>` also appends a Markdown summary to a file (e.g. `"$GITHUB_STEP_SUMMARY"`).
 
 ## Update or uninstall
 
