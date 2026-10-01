@@ -4,6 +4,7 @@ import { escapeHtml, resolveColor } from './attrs';
 import { type FrontMatter, parseFrontMatter } from './frontmatter';
 import { applySmd, smdFeatures, type SmdContext } from './markdownItSetup';
 import { renderHeader } from './markdownItHtml';
+import type { FigureEnv } from './markdownItRules';
 import { documentRiskMatrixHtml } from './riskHtml';
 
 export { HEADING_ATTRS, slugify } from './markdownItRules';
@@ -38,7 +39,7 @@ export interface RenderResult {
 
 export type ResolvedOptions = Required<Omit<RenderOptions, 'readFile'>> & Pick<RenderOptions, 'readFile'>;
 
-export interface Env {
+export interface Env extends FigureEnv {
   lineOffset: number;
   headings: Heading[];
   slugs: Map<string, number>;
@@ -53,7 +54,8 @@ export interface Env {
 /** Every .smd rule, reading its options from the env (renderSmd and parseSmd put them there). */
 const SMD_CONTEXT: SmdContext = {
   options: (env) => (env as Env | undefined)?.options ?? {},
-  title: (text) => titleMarkdown().renderInline(text),
+  // Only the document's figures go along, so `:ref[id]` in a title resolves and nothing else changes.
+  title: (text, env) => titleMarkdown().renderInline(text, { smdFigures: (env as Env | undefined)?.smdFigures }),
   riskMatrix: (source) => documentRiskMatrixHtml(source),
   ownLines: true,
 };

@@ -5,6 +5,7 @@ export { renderSmd, renderStandaloneHtml, slugify } from './render';
 export type { RenderOptions, RenderResult, Heading } from './render';
 export { parseSmd } from './parse';
 export type { ParseResult } from './parse';
+export type { Figure, FigureNumber } from './figures';
 export { validateSmd, applyFixes } from './validate';
 export { suggest } from './util';
 export { RULE_CODES, applyRuleSettings, readRuleConfig } from './rules';

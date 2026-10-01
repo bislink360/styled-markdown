@@ -1,6 +1,8 @@
 import type MarkdownIt from 'markdown-it';
 import type { Token } from 'markdown-it';
+import { FigureCounter, figureTargets, type Figure } from './figures';
 import { parseFrontMatter } from './frontmatter';
+import type { ContainerMeta } from './markdownItRules';
 import { createMarkdownIt, type Env, type Heading, type ResolvedOptions } from './render';
 import { CALLOUT_TYPES } from './spec';
 
@@ -25,7 +27,12 @@ export interface ParseResult {
   /** Every id a `#fragment` can point at: heading slugs, `{#id}` attributes and raw HTML ids/names. */
   ids: ReadonlySet<string>;
   frontMatter: Record<string, unknown>;
+  /** The `:::figure` blocks in document order, numbered as the rendered HTML numbers them. */
+  figures: Figure[];
 }
+
+/** A `:::figure` before numbering, with a body-relative line. */
+interface FigureSource { id?: string; kind?: string; line: number }
 
 /** A reference definition markdown-it accepted, and the line it starts on. */
 interface Definition { line: number; label: string }
@@ -39,6 +46,7 @@ interface Block {
   bases: Array<string | null>;
   /** Ids other than heading ids. */
   ids: string[];
+  figures: FigureSource[];
   /** Definitions after the previous block, up to the end of this one (inside it too). */
   definitions: Definition[];
 }
@@ -58,7 +66,7 @@ const parser = () => (md ??= recordingDefinitions(createMarkdownIt(OPTIONS)));
 /** Container titles render as inline Markdown with raw HTML off (see renderContainer). */
 let titleMd: MarkdownIt | undefined;
 const titleParser = () => (titleMd ??= createMarkdownIt({ allowHtml: false }));
-const TITLED = new Set<string>([...CALLOUT_TYPES, 'details', 'card', 'tab', 'agent', 'human', 'decision', 'risk', 'api']);
+const TITLED = new Set<string>([...CALLOUT_TYPES, 'details', 'card', 'tab', 'agent', 'human', 'decision', 'risk', 'api', 'figure']);
 
 type ParseEnv = Env & { definitions: Definition[] };
 
@@ -127,10 +135,27 @@ export function parseSmd(text: string): ParseResult {
     if (typeof value === 'string') collectIds(parser().parseInline(value, newEnv(0, labelsOf(state))), ids);
   }
 
-  const result: ParseResult = { headings, ids, frontMatter: fm.data };
+  const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine) };
   results.unshift({ text, result });
   results.length = Math.min(results.length, 3);
   return result;
+}
+
+/** A document's figures by the line of their opening fence and by id (the first figure with an id wins). */
+export interface FigureIndex {
+  byLine: ReadonlyMap<number, Figure>;
+  byId: ReadonlyMap<string, Figure>;
+}
+
+export function figureIndex(text: string): FigureIndex {
+  const figures = parseSmd(text).figures;
+  return { byLine: new Map(figures.map((f) => [f.line, f])), byId: figureTargets(figures) };
+}
+
+/** Every block's figures in order, numbered per kind, with lines in the whole document. */
+function numberFigures(blocks: Block[], bodyStart: number): Figure[] {
+  const counter = new FigureCounter();
+  return blocks.flatMap((b) => b.figures).map((f) => ({ ...counter.next(f.kind), ...(f.id ? { id: f.id } : {}), line: f.line + bodyStart }));
 }
 
 const labelsOf = (state: Pick<State, 'blocks' | 'trailing'>): string[] =>
@@ -226,6 +251,7 @@ function shift(block: Block, delta: number): Block {
     start: block.start + delta,
     end: block.end + delta,
     headings: block.headings.map((h) => ({ ...h, line: h.line + delta })),
+    figures: block.figures.map((f) => ({ ...f, line: f.line + delta })),
     definitions: block.definitions.map((d) => ({ ...d, line: d.line + delta })),
   };
 }
@@ -268,7 +294,7 @@ function parseRange(
   let h = 0;
   let d = 0;
   for (const g of groups) {
-    const block: Block = { start: g.start, end: g.end, headings: [], bases: [], ids: [], definitions: [] };
+    const block: Block = { start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), definitions: [] };
     while (h < env.headings.length && env.headings[h].line < g.end) {
       if (env.headings[h].line >= g.start) { block.headings.push(env.headings[h]); block.bases.push(env.bases![h]); }
       h++;
@@ -284,6 +310,16 @@ function newEnv(lineOffset: number, labels: Iterable<string>): ParseEnv {
   const references: Record<string, unknown> = {};
   for (const label of labels) references[label] = { href: '', title: '' };
   return { lineOffset, headings: [], slugs: new Map(), options: OPTIONS, bases: [], references, definitions: [] };
+}
+
+/** The `:::figure` openers among a block's tokens (nested ones too), with body-relative lines. */
+function figuresIn(tokens: Token[], from: number): FigureSource[] {
+  return tokens
+    .filter((t) => t.type === 'container_smd_open' && (t.meta as ContainerMeta | null)?.name === 'figure')
+    .map((t) => {
+      const meta = t.meta as ContainerMeta;
+      return { id: meta.attrs.id, kind: meta.attrs.values.kind, line: from + (t.map?.[0] ?? 0) };
+    });
 }
 
 function collectIds(tokens: Token[], out: Set<string> | string[], skipHeadings = false): void {

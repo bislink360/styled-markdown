@@ -119,6 +119,7 @@ Named colors are theme tokens tuned for light and dark mode. Only whitelisted va
 | `:progress{value color label}` | progress bar | `65%` | `▰▰▰▰▰▰▱▱▱▱ 65%` |
 | `:kbd[Ctrl+S]` | key caps | `Ctrl+S` | `<kbd>Ctrl</kbd>+<kbd>S</kbd>` |
 | `:mention[@x]` | highlighted mention | `@x` | `@x` |
+| `:ref[fig-id]` | the figure's number as a link (see [§9](#figures-and-numbered-references)) | `Figure 2 (fig-id)` | `[Figure 2](#fig-id)` |
 
 ## 5. Tasks with owners, priorities and due dates
 
@@ -421,6 +422,31 @@ $$
 - **Math:** KaTeX, inline and display, with syntax errors reported. `$5 and $10` stays plain text.
 - **Agent view:** diagrams are kept (they're compact); `--brief` turns them into `[diagram: sequenceDiagram, 4 lines — see L10-L15]`.
 
+### Figures and numbered references
+
+````markdown
+Orders move through the states in :ref[fig-states]; the limits are in :ref[tbl-limits].
+
+:::figure{#fig-states} Order states
+```mermaid
+stateDiagram-v2
+  [*] --> Pending --> Paid
+```
+:::
+
+:::figure{#tbl-limits kind=table} Rate limits per plan
+| Plan | Requests per minute |
+| ---- | ------------------- |
+| Free | 60                  |
+:::
+````
+
+- **`:::figure`** puts a caption under an image, diagram, table or code block, numbered in document order: *Figure 1: Order states*. `kind=table` counts *Table 1, 2…* separately (its caption sits above the table) and `kind=listing` *Listing 1, 2…* for code.
+- **`:ref[id]`** shows the figure's number as a link (*Figure 1*), before or after the figure and in titles. Numbers are computed, so they stay right when figures move.
+- The validator warns about a `:ref` to an id no figure has (`figure/unknown-ref`, with a fix for a near miss) about two figures with one id (`figure/duplicate-id`) and about an unknown `kind` (`figure/kind`, with a fix).
+- **Agent view:** `<figure id="fig-states"> Figure 1: Order states` … `</figure>`, and references read `Figure 1 (fig-states)`, so an agent can find the figure by id. **GitHub** (`smd to-md`): an `<a id>` anchor, the content and a `**Figure 1:** Order states` line; references become `[Figure 1](#fig-states)` links.
+- Older `.smd` tools (1.5 and earlier) show a figure's content in a plain box without the caption, with a `container/unknown` warning, and `:ref[…]` as written.
+
 ## 10. Audience: agent, human, agent=skip
 
 ```markdown
@@ -489,7 +515,7 @@ People-only content anywhere in the document.
 | Lists on Enter | Enter on `- [x] Ship it @maya` starts `- [ ] ` with the cursor before ` @maya`. Bullets repeat, numbers count up, Enter on an empty item ends the list, and code blocks are left alone (`smd.editor.continueLists`) |
 | Images | Paste an image, or drop image files, to save them in `docs/images/` (`smd.images.folder`) and insert `![alt](relative/path.png)`. Images already in the workspace are linked where they are; name clashes get `-1`, `-2`… |
 | Spell checking | **Set Up Spell Checking (cSpell)** adds an `smd` entry to cSpell's `languageSettings`, so container and directive names, attribute lists, `@mentions`, link targets, front matter and code aren't flagged; titles and link text still are |
-| Snippets (35) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
+| Snippets (37) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `figure` `ref` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
 
 ## 14. VS Code: agent view and token counter
 
@@ -522,6 +548,9 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[x](#rolout)`, `[x](plan.smd#rolout)` | `link/missing-anchor` | → closest heading id |
 | `[x](gone.md)`, `related: [gone.smd]` | `link/missing-file` | — |
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
+| `:ref[fig-chekout]` | `figure/unknown-ref` | → closest figure id |
+| two `:::figure{#fig-a}` | `figure/duplicate-id` | — |
+| `:::figure{kind=tabel}` | `figure/kind` | → `table` |
 | missing `smd: 1` | `frontmatter/version` | adds it |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
 | `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |

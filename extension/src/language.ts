@@ -278,6 +278,18 @@ function decodePath(p: string): string {
   try { return decodeURIComponent(p); } catch { return p; }
 }
 
+/** What completing an inline directive inserts after the `:`. */
+const DIRECTIVE_SNIPPETS = new Map([
+  ['progress', 'progress{value=${1:50}}'],
+  ['kbd', 'kbd[${1:Ctrl+S}]'],
+  ['mention', 'mention[${1:@team}]'],
+  ['ref', 'ref[${1:fig-id}]'],
+]);
+
+function directiveSnippet(name: string): string {
+  return DIRECTIVE_SNIPPETS.get(name) ?? `${name}[\${1:text}]{color=\${2|${NAMED_COLORS.join(',')}|}}`;
+}
+
 class CompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
@@ -373,13 +385,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
         item.range = range;
         item.detail = spec.example;
         item.documentation = spec.description;
-        const color = `{color=\${2|${NAMED_COLORS.join(',')}|}}`;
-        item.insertText = new vscode.SnippetString(
-          name === 'progress' ? 'progress{value=${1:50}}'
-            : name === 'kbd' ? 'kbd[${1:Ctrl+S}]'
-            : name === 'mention' ? 'mention[${1:@team}]'
-            : `${name}[\${1:text}]${color}`,
-        );
+        item.insertText = new vscode.SnippetString(directiveSnippet(name));
         return item;
       });
     }

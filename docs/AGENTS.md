@@ -101,6 +101,7 @@ Then write normal Markdown, adding Styled Markdown only where it helps the reade
 | Progress | `:progress{value=60}` |
 | Keys | `:kbd[Ctrl+S]` |
 | Diagram | ```` ```mermaid ```` fenced block (`flowchart LR`, `sequenceDiagram`, `gantt`, `pie`, `erDiagram`, …) |
+| Numbered figure | `:::figure{#fig-flow} Caption` around an image, diagram, table (`kind=table`) or code (`kind=listing`) … `:::`; refer to it with `:ref[fig-flow]` ("Figure 2") |
 | Math | `$x^2$` inline, `$$ … $$` block |
 | Tabs | `::::tabs` / `:::tab Name` … `:::` / `::::` |
 | Columns | `::::columns` / `:::column` … `:::` / `::::` |
