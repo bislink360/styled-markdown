@@ -53,3 +53,5 @@ export {
 export type {
   IssueDraftSource, IssueRef, IssueState, IssueSyncAction, IssueSyncKind, IssueSyncOptions, IssueSyncPlan, IssueTask,
 } from './issues';
+export { remarkSmd, rehypeSmd, renderSmdFile } from './unified';
+export type { SmdPluginOptions, SmdFileData, SmdVFile, SmdTree, SmdNode } from './unified';

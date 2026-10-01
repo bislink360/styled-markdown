@@ -73,6 +73,132 @@ const page = renderPage(source);
 
 The front matter JSON Schema is at `styled-markdown/frontmatter.schema.json`, and `FRONTMATTER_SCHEMA` exports the same object. Style fragments with the bundled stylesheet: `import 'styled-markdown/smd.css'`. Diagrams render client-side with [Mermaid](https://mermaid.js.org), and math server-side with KaTeX (include KaTeX's CSS).
 
+### markdown-it plugin
+
+Already render Markdown with [markdown-it](https://github.com/markdown-it/markdown-it) (a docs site, a static site generator, a chat UI)? Add `.smd` syntax to your own instance with the `styled-markdown/markdown-it` plugin. It works with markdown-it 13 and 14, which you provide (an optional peer dependency; the package still has no runtime dependencies):
+
+```ts
+import MarkdownIt from 'markdown-it';
+import smd from 'styled-markdown/markdown-it';   // CommonJS: const smd = require('styled-markdown/markdown-it');
+import 'styled-markdown/smd.css';                 // or <link rel="stylesheet" href="…/styled-markdown/dist/smd.css">
+
+const md = new MarkdownIt({ linkify: true }).use(smd);
+
+md.render(':::warning Heads up\nShips :badge[beta]{color=amber} on :due[2026-11-01].\n:::');
+```
+
+The plugin only adds rules to your instance: your options (including `html`), your other plugins and your code highlighting keep working, and plain Markdown renders exactly as before. Options, all optional:
+
+| Option | Default | What it adds |
+|---|---|---|
+| `containers` | `true` | `:::note`, `:::tabs`, `:::decision`, `:::risk`, `:::api` and the other blocks |
+| `directives` | `true` | `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:priority[…]`, `:metric[…]`, `:status[…]`, `:mention[…]` |
+| `attributes` | `true` | `[text]{color=red .muted}` spans and `## Heading {#id .class}` |
+| `mark` | `true` | `==highlighted==` text |
+| `math` | `true` | `$inline$` and `$$display$$` math with KaTeX (include KaTeX's CSS) |
+| `tasks` | `true` | `- [ ]` / `- [x]` task lists as checkboxes |
+| `fences` | `true` | ```` ```mermaid ```` and ```` ```math ```` blocks, and `title="…"`, `file="…"` and `{2,5-7}` on code blocks; turn it off if your host has its own fence attributes |
+| `codeFrames` | `false` | Frame every code block with a language label, as the `.smd` preview does |
+| `headingIds` | `false` | Heading ids from their text (`#setup`, `#setup-1`), the same slugs as `renderSmd` |
+| `sourceLines` | `false` | `data-line` source line numbers on blocks |
+| `frontMatter` | `false` | Render `---` YAML front matter as the `.smd` document header (leave it off if your host handles front matter) |
+| `agentBlocks` | `'collapsed'` | How `:::agent` blocks show to humans: `collapsed`, `expanded` or `hidden` |
+| `readFile` | none | `(path, env) => string \| undefined` for ```` ```ts file="…" ```` embeds; `env` is what you passed to `md.render` (sandbox it yourself) |
+| `today` | current date | `YYYY-MM-DD` for `:due[]` states |
+
+Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
+
+### remark and rehype plugins (Astro, Docusaurus, Next.js)
+
+`styled-markdown/remark` renders the whole file with `renderSmd` and replaces the Markdown tree with the resulting HTML, so every `.smd` construct looks exactly as it does with `smd render`. `styled-markdown/rehype` does the same for pipelines that only take rehype plugins. Neither imports anything from unified: the package still has zero dependencies.
+
+```js
+import { unified } from 'unified';
+import remarkParse from 'remark-parse';
+import remarkRehype from 'remark-rehype';
+import rehypeStringify from 'rehype-stringify';
+import { remarkSmd } from 'styled-markdown/remark';
+
+const file = await unified()
+  .use(remarkParse)
+  .use(remarkSmd, { header: true })
+  .use(remarkRehype, { allowDangerousHtml: true })   // the plugin emits one raw HTML node
+  .use(rehypeStringify, { allowDangerousHtml: true })
+  .process(source);
+String(file);           // <article class="smd-doc">…</article>
+file.data.smd;          // { frontMatter, headings }
+```
+
+| Option | Default | |
+|---|---|---|
+| `test` | every file | RegExp or `(path) => boolean` on `file.path`, e.g. `/\.smd$/`; files without a path are skipped when set |
+| `header` | `true` | the title/status/owners header from front matter; `false` when the site layout already shows the title |
+| `frontMatter` | see below | `(file) => object`: front matter the host already removed from the source |
+| `readFile` | none | `(relativePath, file) => string \| undefined`, for ```` ```ts file="…" ```` embeds (resolve against `file.path`, sandbox it yourself) |
+| `allowHtml`, `agentBlocks`, `today` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML |
+
+**Front matter.** When the source still starts with `---` (plain unified, with or without remark-frontmatter), the plugin reads it like `renderSmd`. When the host removed it first, the plugin looks for the parsed data in `file.data.astro.frontmatter` (Astro), `file.data.matter` (vfile-matter) or `file.data.frontmatter`, or uses your `frontMatter` option. Front matter nodes (`yaml`, `toml`) and MDX `import`/`export` nodes stay in the tree.
+
+**What the page needs.** The stylesheet (`styled-markdown/smd.css`), KaTeX's CSS when documents have math (rendered at build time), and for Mermaid diagrams, tabs and copy buttons the Mermaid script plus the runtime that `smd render` inlines (`SMD_RUNTIME_JS` from `styled-markdown`). The runtime hydrates the page once on load. Without it, diagrams show their source and tab panes are stacked under their labels.
+
+| Host | Status | Notes |
+|---|---|---|
+| unified (remark-parse → remark-rehype → rehype-stringify) | **Tested** with hand-built trees and files (not yet with unified itself in CI) | needs `allowDangerousHtml: true` in remark-rehype and rehype-stringify, or `rehype-raw` |
+| Astro `.md` pages and content collections | Expected | Astro already passes raw HTML through. Name files `.md` (Astro doesn't know `.smd`); limit the plugin with `test`. `getHeadings()` may be empty, because Astro collects headings before it parses raw HTML: add `rehype-raw` to `rehypePlugins` |
+| Docusaurus 3 `.md` files (`markdown.format: 'detect'`) | Expected | `.md` files are compiled as CommonMark with raw HTML parsed by rehype-raw. Docusaurus builds its table of contents from the original headings: links match for plain headings and `{#id}`, but can differ for headings with attribute lists or runs of punctuation (`A - B`) |
+| MDX (`.mdx`, Astro `@astrojs/mdx`, Next.js `@next/mdx`) | **Not supported** for `.mdx` files | MDX parses `{…}` and `<…>` as JSX *before* any plugin runs, so `.smd` attribute lists such as `:::callout{type=warning}` fail to compile. Use `.md` with MDX's `format: 'detect'` and `rehype-raw` |
+| Next.js | Expected | simplest: `renderSmd` in a Server Component (below); or `@next/mdx` with `.md` files as above |
+
+```js
+// astro.config.mjs
+import { defineConfig } from 'astro/config';
+import { remarkSmd } from 'styled-markdown/remark';
+
+export default defineConfig({
+  markdown: { remarkPlugins: [[remarkSmd, { test: /[\\/]docs[\\/]/, header: false }]] },
+});
+// in the layout: import 'styled-markdown/smd.css';
+```
+
+```js
+// docusaurus.config.js
+const { remarkSmd } = require('styled-markdown/remark');
+
+module.exports = {
+  markdown: { format: 'detect' },   // .md = CommonMark, .mdx = MDX
+  presets: [['classic', {
+    docs: { remarkPlugins: [[remarkSmd, { header: false }]] },
+    theme: { customCss: [require.resolve('styled-markdown/smd.css')] },
+  }]],
+};
+```
+
+```tsx
+// Next.js (App Router): app/docs/spec/page.tsx
+import { readFile } from 'node:fs/promises';
+import { renderSmd } from 'styled-markdown';
+import 'styled-markdown/smd.css';
+
+export default async function Page() {
+  const { html } = renderSmd(await readFile('docs/spec.smd', 'utf8'));
+  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+}
+```
+
+```js
+// next.config.mjs, with @next/mdx and rehype-raw installed (pages written as .md)
+import createMDX from '@next/mdx';
+import rehypeRaw from 'rehype-raw';
+import { remarkSmd } from 'styled-markdown/remark';
+
+const withMDX = createMDX({
+  extension: /\.mdx?$/,
+  options: { format: 'detect', remarkPlugins: [remarkSmd], rehypePlugins: [rehypeRaw] },
+});
+export default withMDX({ pageExtensions: ['ts', 'tsx', 'md', 'mdx'] });
+// Turbopack takes plugins by name instead: remarkPlugins: ['styled-markdown/remark'] (default export)
+```
+
 ### Validate and fix
 
 ```ts

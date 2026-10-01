@@ -26,7 +26,13 @@
     "llm",
     "tokens",
     "prd",
-    "adr"
+    "adr",
+    "markdown-it",
+    "markdown-it-plugin",
+    "remark",
+    "rehype",
+    "unified",
+    "remark-plugin"
   ],
   "type": "commonjs",
   "main": "./dist/index.cjs",
@@ -37,6 +43,21 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
+    },
+    "./markdown-it": {
+      "types": "./dist/types/markdownIt.d.ts",
+      "import": "./dist/markdown-it.mjs",
+      "require": "./dist/markdown-it.cjs"
+    },
+    "./remark": {
+      "types": "./dist/types/remark.d.ts",
+      "import": "./dist/remark.mjs",
+      "require": "./dist/remark.cjs"
+    },
+    "./rehype": {
+      "types": "./dist/types/rehype.d.ts",
+      "import": "./dist/rehype.mjs",
+      "require": "./dist/rehype.cjs"
     },
     "./smd.css": "./dist/smd.css",
     "./frontmatter.schema.json": "./dist/frontmatter.schema.json",
@@ -50,6 +71,14 @@
     "README.md",
     "LICENSE"
   ],
+  "peerDependencies": {
+    "markdown-it": ">=13"
+  },
+  "peerDependenciesMeta": {
+    "markdown-it": {
+      "optional": true
+    }
+  },
   "sideEffects": false,
   "engines": {
     "node": ">=18"

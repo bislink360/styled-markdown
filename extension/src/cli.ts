@@ -125,6 +125,8 @@ Checking and converting:
       Format .smd files in place: container fences, attribute lists, tables and blank lines.
       --check   change nothing; list unformatted files and exit 1 if there are any
       --stdout  print the formatted file instead of writing it (one file)
+      validate and fmt take any number of files: use them as a pre-commit hook (see docs/INSTALL.md).
+      After --, every argument is a file, even one that starts with "-".
   smd render <file.smd> [-o out.html]      Standalone HTML page
   smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
       Static docs site: a page per .smd file in the same folders (links between documents rewritten,
@@ -174,6 +176,11 @@ function parseArgs(argv: string[]): Args {
   const args: Args = { command, positional: [], flags: new Set(), values: new Map() };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
+    if (a === '--') {
+      // End of options: the rest are files, even ones that start with "-" (as Git hooks may pass them).
+      args.positional.push(...rest.slice(i + 1));
+      break;
+    }
     if (VALUE_OPTIONS.has(a)) {
       const list = args.values.get(a) ?? [];
       list.push(rest[++i] ?? '');

@@ -131,6 +131,7 @@ History and research. People see it; agents skip it.
 - **Outline, folding** and **35 snippets** (`prd`-style blocks, `decision`, `risk`, `api`, `mermaid`, `gantt`, `task`, `embed`…)
 - **Agent view** (🤖 button), **brief agent view**, **copy for an agent** (whole doc or picked sections), and a **status-bar token counter**
 - **Export** to standalone HTML or plain GitHub Markdown · **Convert** `.md` → `.smd` · **Validate workspace**
+- **Built-in Markdown preview:** `.md` files that use `.smd` syntax (callouts, directives, attribute lists, Mermaid, code titles) render in VS Code's own preview too; turn it off with `smd.markdownPreview.enabled`
 
 </details>
 
@@ -187,7 +188,7 @@ History and research. People see it; agents skip it.
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
 3. Open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS).
 
-> The VS Code Marketplace and npm listings are coming soon. Until then, every release on GitHub has the `.vsix`, the npm package and the skills.
+> Listings on the VS Code Marketplace, [Open VSX](https://open-vsx.org) (for VSCodium, Cursor, Windsurf and Gitpod) and npm are coming once published. Until they are live, every release on GitHub has the `.vsix`, the npm package and the skills.
 
 ### npm library and `smd` CLI
 
@@ -203,6 +204,17 @@ import { renderSmd, validateSmd, agentView } from 'styled-markdown';
 ```
 
 See the [package README](npm/README.md) for the API.
+
+**Pre-commit hooks:** check staged `.smd` files on every commit with the [pre-commit](https://pre-commit.com) framework (`repo: https://github.com/bislink360/styled-markdown`, hooks `smd-fmt`, `smd-validate`, `smd-fmt-check`), lint-staged and husky, or a plain Git hook: copy-paste setups in [docs/INSTALL.md](docs/INSTALL.md#pre-commit-hooks).
+
+Already render Markdown with markdown-it (a docs site, a static site generator, a chat UI)? Add the syntax to your own instance with the plugin, and style it with `styled-markdown/smd.css`:
+
+```ts
+import smd from 'styled-markdown/markdown-it';
+md.use(smd);
+```
+
+Options and limits: [markdown-it plugin](npm/README.md#markdown-it-plugin).
 
 Full instructions, building from source and troubleshooting: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
@@ -253,6 +265,18 @@ jobs:
 ```
 
 It uses the runner's Node.js (18+) and the CLI bundled in this repository, so nothing is installed. All inputs: **[docs/INSTALL.md](docs/INSTALL.md#github-actions)**. Other CI systems: `smd validate --strict`, or `--format github` / `--json`.
+
+### Static sites: Astro, Docusaurus, Next.js
+
+`styled-markdown/remark` and `styled-markdown/rehype` are unified plugins that render documents exactly as `smd render` does, inside remark/rehype pipelines:
+
+```js
+// astro.config.mjs
+import { remarkSmd } from 'styled-markdown/remark';
+export default { markdown: { remarkPlugins: [remarkSmd] } };
+```
+
+They work with `.md` files (MDX parses `.smd` attribute lists as JSX, so `.mdx` files are not supported). Setup for Astro, Docusaurus and Next.js, and what the page must load: [package README](npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
 
 ## Token-efficient reading for agents
 
@@ -309,7 +333,9 @@ styled-markdown/
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
 ├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)
-└── docs/                 guides, specification, gallery and screenshots
+├── docs/                 guides, specification, gallery and screenshots
+├── .pre-commit-hooks.yaml    hooks for the pre-commit framework
+└── package.json          lets pre-commit install the bundled CLI (not published)
 ```
 
 ## Development

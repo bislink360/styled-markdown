@@ -1,0 +1,35 @@
+# Hooks for the pre-commit framework (https://pre-commit.com). Use them from your repository's
+# .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/bislink360/styled-markdown
+#       rev: v1.5.0
+#       hooks:
+#         - id: smd-fmt
+#         - id: smd-validate
+#           args: [--strict]   # optional: fail on warnings too
+#
+# language: node installs the root package.json, whose only file is the bundled CLI
+# (skills/styled-markdown-reader/scripts/smd.cjs): no dependencies, nothing from the npm registry.
+# See docs/INSTALL.md, "Pre-commit hooks".
+
+- id: smd-validate
+  name: smd validate
+  description: Check staged Styled Markdown (.smd) files. Fails on errors; add args [--strict] to fail on warnings too.
+  entry: smd validate
+  language: node
+  files: '\.smd$'
+
+- id: smd-fmt
+  name: smd fmt
+  description: Format staged .smd files in place; pre-commit fails the commit and lists the files it changed.
+  entry: smd fmt
+  language: node
+  files: '\.smd$'
+
+- id: smd-fmt-check
+  name: smd fmt --check
+  description: Fail when a staged .smd file is not formatted, without changing it (for CI or read-only checks).
+  entry: smd fmt --check
+  language: node
+  files: '\.smd$'
