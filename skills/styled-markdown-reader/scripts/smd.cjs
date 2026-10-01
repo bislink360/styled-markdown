@@ -2149,7 +2149,7 @@ Before and after, for visible changes.
 `)?`\r
 `:`
 `,r=Rx(t).split(`
-`).join(n);if(!e?.trim())return r+n;let i=e.indexOf(ec),s=e.indexOf(Qo);if(i<0&&s<0)return Dx(e,r,n);if(i<0||s<i)throw new Error(`AGENTS.md has a broken styled-markdown section: it needs ${ec} followed by ${Qo}. Fix or remove the markers, then re-run.`);return e.slice(0,i)+r+e.slice(s+Qo.length)}function Dx(e,t,n){return e.replace(/\s+$/,"")+n+n+t+n}var ic={version:"1.4.0"},w2=`smd \u2014 Styled Markdown tool (spec v${1})
+`).join(n);if(!e?.trim())return r+n;let i=e.indexOf(ec),s=e.indexOf(Qo);if(i<0&&s<0)return Dx(e,r,n);if(i<0||s<i)throw new Error(`AGENTS.md has a broken styled-markdown section: it needs ${ec} followed by ${Qo}. Fix or remove the markers, then re-run.`);return e.slice(0,i)+r+e.slice(s+Qo.length)}function Dx(e,t,n){return e.replace(/\s+$/,"")+n+n+t+n}var ic={version:"1.5.0"},w2=`smd \u2014 Styled Markdown tool (spec v${1})
 
 Reading (token-efficient, for agents):
   smd outline <file.smd> [--related] [--tokenizer <name>]

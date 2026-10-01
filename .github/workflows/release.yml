@@ -1,0 +1,302 @@
+# Release: a pushed vX.Y.Z tag builds the artifacts from the tag, creates the GitHub Release
+# and publishes to the VS Code Marketplace, Open VSX and npm (smd-release skill, §6–7).
+#
+# - Run it by hand (Actions → Release → Run workflow) with a tag to rebuild, finish a release
+#   that failed half-way, or rehearse it: `dry_run` (default on) builds and verifies everything
+#   but creates no release and publishes nothing.
+# - Each publish job skips with a notice while its secret (VSCE_PAT, OVSX_PAT, NPM_TOKEN) is
+#   missing, so the workflow is safe before the registries are set up.
+# - Publishing a version that a registry already lists is skipped, so re-running is safe.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish (vX.Y.Z)
+        required: true
+        type: string
+      dry_run:
+        description: Dry run (build and verify only; no GitHub Release, nothing published)
+        required: true
+        default: true
+        type: boolean
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+  NODE_VERSION: 20
+  # Publishing tools, pinned. Keep VSCE_VERSION in step with @vscode/vsce in extension/package-lock.json.
+  VSCE_VERSION: 3.9.2
+  OVSX_VERSION: 1.2.0
+
+jobs:
+  verify:
+    name: Verify the tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.versions.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0   # the branch check needs every remote branch
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - name: Tag matches the versions, the changelog and a release branch
+        id: versions
+        run: node extension/scripts/release/check-versions.mjs "$TAG" --branches --output "$GITHUB_OUTPUT"
+      - name: Install
+        working-directory: extension
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        working-directory: extension
+        run: npm run typecheck
+      - name: Unit tests
+        working-directory: extension
+        run: npm test
+
+  build:
+    name: Build the artifacts
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - name: Install
+        working-directory: extension
+        run: npm ci --no-audit --no-fund
+      - name: Package the extension (.vsix)
+        working-directory: extension
+        run: |
+          mkdir -p ../release-assets
+          npm run package -- --out "../release-assets/styled-markdown-$VERSION.vsix"
+      - name: Build and pack the npm package (.tgz)
+        run: |
+          (cd extension && npm run build:npm)
+          (cd npm && npm pack --pack-destination ../release-assets)
+      - name: Bundled skill CLIs match the tag
+        run: |
+          if ! git diff --quiet -- skills; then
+            echo "::error::skills/*/scripts/smd.cjs at $TAG differs from a fresh build. Rebuild and commit it, then tag again."
+            git diff --stat -- skills
+            exit 1
+          fi
+      - name: Zip the agent skills
+        working-directory: skills
+        run: |
+          for skill in styled-markdown-reader styled-markdown-writer; do
+            zip -r -q -X "../release-assets/$skill.zip" "$skill"
+          done
+      - name: Check the artifacts
+        working-directory: release-assets
+        run: |
+          set -euo pipefail   # grep without -q below, so pipefail never sees an early-closed pipe
+          ls -l
+          vsix="styled-markdown-$VERSION.vsix"
+          tgz="styled-markdown-$VERSION.tgz"
+          for zip in "$vsix" styled-markdown-reader.zip styled-markdown-writer.zip; do
+            unzip -tq "$zip"   # a real zip archive, not a tar named .zip
+          done
+          unzip -l "$vsix" | grep -E ' extension/LICENSE(\.txt)?$' > /dev/null || { echo "::error::$vsix has no LICENSE (Open VSX and the Marketplace show it)"; exit 1; }
+          unzip -p "$vsix" extension/package.json | node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8')); if (p.version!==process.env.VERSION) { console.error('::error::.vsix version '+p.version); process.exit(1); }"
+          tar -tzf "$tgz" | grep -x 'package/LICENSE' > /dev/null || { echo "::error::$tgz has no LICENSE"; exit 1; }
+          tar -xOzf "$tgz" package/package.json | node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8')); if (p.version!==process.env.VERSION) { console.error('::error::.tgz version '+p.version); process.exit(1); }"
+          unzip -l styled-markdown-reader.zip | grep ' styled-markdown-reader/SKILL.md$' > /dev/null
+          unzip -l styled-markdown-writer.zip | grep ' styled-markdown-writer/SKILL.md$' > /dev/null
+          sha256sum -- *
+      - name: Release notes from the changelog
+        run: node extension/scripts/release/changelog-excerpt.mjs "$VERSION" --downloads -o release-assets/release-notes.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-assets
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 30
+
+  github-release:
+    name: GitHub Release
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the release and upload its assets
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Create the release, or attach missing assets to an existing one
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          assets=("styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip)
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "::notice title=GitHub Release::Dry run: would create $TAG with ${assets[*]} (notes in the job summary)."
+            exit 0
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "::notice title=GitHub Release::$TAG already exists; its notes are left as they are, missing assets are attached."
+            existing=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+            for asset in "${assets[@]}"; do
+              if grep -qxF -- "$asset" <<< "$existing"; then echo "$asset is already attached."; else gh release upload "$TAG" "$asset"; fi
+            done
+          else
+            gh release create "$TAG" --verify-tag --title "Styled Markdown $VERSION" --notes-file release-notes.md "${assets[@]}"
+          fi
+      - name: Verify the release lists every asset
+        if: env.DRY_RUN != 'true'
+        run: |
+          set -euo pipefail
+          names=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          for asset in "styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip; do
+            grep -qxF -- "$asset" <<< "$names" || { echo "::error::Release $TAG has no $asset"; exit 1; }
+          done
+          echo "Release $TAG lists all four assets."
+
+  # The publish jobs check out only the release scripts (no dependencies are installed) and
+  # publish the exact files attached to the GitHub Release. The `release` environment is
+  # created on first use; add required reviewers to it to approve each publish by hand.
+  publish-marketplace:
+    name: Publish to the VS Code Marketplace
+    needs: [verify, github-release]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          sparse-checkout: extension/scripts/release
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Ready to publish?
+        id: gate
+        env:
+          TOKEN: ${{ secrets.VSCE_PAT }}
+        run: node extension/scripts/release/publish-gate.mjs marketplace "$VERSION" VSCE_PAT --output "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          name: release-assets
+          path: release-assets
+      - name: vsce publish
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes "@vscode/vsce@$VSCE_VERSION" publish --packagePath "release-assets/styled-markdown-$VERSION.vsix"
+      - name: Verify the Marketplace lists the version
+        if: steps.gate.outputs.ready == 'true'
+        run: node extension/scripts/release/wait-for-version.mjs marketplace "$VERSION" --attempts 20 --delay 30
+
+  publish-openvsx:
+    name: Publish to Open VSX
+    needs: [verify, github-release]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          sparse-checkout: extension/scripts/release
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22   # ovsx 1.x needs Node 22 or newer
+      - name: Ready to publish?
+        id: gate
+        env:
+          TOKEN: ${{ secrets.OVSX_PAT }}
+        run: node extension/scripts/release/publish-gate.mjs openvsx "$VERSION" OVSX_PAT --output "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          name: release-assets
+          path: release-assets
+      - name: ovsx publish
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx --yes "ovsx@$OVSX_VERSION" publish "release-assets/styled-markdown-$VERSION.vsix"
+      - name: Verify Open VSX lists the version
+        if: steps.gate.outputs.ready == 'true'
+        run: node extension/scripts/release/wait-for-version.mjs openvsx "$VERSION" --attempts 20 --delay 15
+
+  publish-npm:
+    name: Publish to npm
+    needs: [verify, github-release]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write   # npm provenance: links the package to this workflow run
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          sparse-checkout: extension/scripts/release
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+      - name: Ready to publish?
+        id: gate
+        env:
+          TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node extension/scripts/release/publish-gate.mjs npm "$VERSION" NPM_TOKEN --output "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          name: release-assets
+          path: release-assets
+      - name: npm publish
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish "./release-assets/styled-markdown-$VERSION.tgz" --provenance --access public
+      - name: Verify npm lists the version
+        if: steps.gate.outputs.ready == 'true'
+        run: |
+          node extension/scripts/release/wait-for-version.mjs npm "$VERSION" --attempts 20 --delay 15
+          npm view "styled-markdown@$VERSION" version
