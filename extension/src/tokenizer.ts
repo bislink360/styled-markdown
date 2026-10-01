@@ -1,5 +1,5 @@
-import * as path from 'node:path';
 import type { Tokenizer } from './core';
+import { requireOptional, searchPaths } from './optionalPackage';
 
 /**
  * Exact token counts for `--tokenizer`, from the js-tiktoken package when the user has installed it.
@@ -34,7 +34,7 @@ export function loadTokenizer(name: string, options: LoadTokenizerOptions = {}):
   if (!TOKENIZERS.includes(name)) {
     throw new TokenizerError(`Unknown tokenizer "${name}". Available: ${TOKENIZERS.join(', ')}.`);
   }
-  const lib = requireFrom(options.paths ?? searchPaths());
+  const lib = requireOptional(PACKAGE, options.paths ?? searchPaths()) as TiktokenModule | undefined;
   if (!lib) {
     throw new TokenizerError(
       `The "${name}" tokenizer needs the ${PACKAGE} package, which smd does not bundle. Install it in your project `
@@ -44,32 +44,4 @@ export function loadTokenizer(name: string, options: LoadTokenizerOptions = {}):
   const encoding = lib.getEncoding(name);
   // Special tokens such as <|endoftext|> in a document count as plain text.
   return { name, count: (text) => encoding.encode(text, [], []).length };
-}
-
-function requireFrom(paths: string[]): TiktokenModule | undefined {
-  let file: string;
-  try {
-    file = require.resolve(PACKAGE, { paths });
-  } catch {
-    return undefined;
-  }
-  // A runtime require of a resolved path, which esbuild leaves alone.
-  return require(file) as TiktokenModule;
-}
-
-function searchPaths(): string[] {
-  return [process.cwd(), __dirname, ...globalFolders()];
-}
-
-/** NODE_PATH and the global node_modules folder of npm. */
-function globalFolders(): string[] {
-  const folders = (process.env.NODE_PATH ?? '').split(path.delimiter).filter(Boolean);
-  const prefix = process.env.npm_config_prefix ?? defaultPrefix();
-  folders.push(process.platform === 'win32' ? path.join(prefix, 'node_modules') : path.join(prefix, 'lib', 'node_modules'));
-  return folders;
-}
-
-function defaultPrefix(): string {
-  if (process.platform !== 'win32') return path.dirname(path.dirname(process.execPath));
-  return process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : path.dirname(process.execPath);
 }

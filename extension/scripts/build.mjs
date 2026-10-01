@@ -1,6 +1,6 @@
 // Bundles the extension and CLI with esbuild and copies browser vendor files into media/vendor.
 import * as esbuild from 'esbuild';
-import { cpSync, mkdirSync, readFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,6 +14,12 @@ cpSync(join(root, 'node_modules', 'mermaid', 'dist', 'mermaid.min.js'), join(ven
 cpSync(join(root, 'node_modules', 'katex', 'dist', 'katex.min.css'), join(vendor, 'katex', 'katex.min.css'));
 cpSync(join(root, 'node_modules', 'katex', 'dist', 'fonts'), join(vendor, 'katex', 'fonts'), { recursive: true });
 
+// Stylesheet for VS Code's built-in Markdown preview (.md files): smd.css with its code colors limited
+// to .smd code frames, so plain code blocks keep the preview's own highlighting.
+const previewCss = readFileSync(join(root, 'media', 'smd.css'), 'utf8')
+  .replace(/^(\.hljs[^{]*)\{/gm, (_, selectors) => selectors.split(',').map((s) => '.smd-code ' + s.trim()).join(', ') + ' {');
+writeFileSync(join(vendor, 'smd-markdown-preview.css'), previewCss);
+
 const common = {
   bundle: true,
   platform: 'node',
@@ -25,6 +31,8 @@ const common = {
     __SMD_PKG_VERSION__: JSON.stringify(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version),
     __SMD_CSS__: JSON.stringify(readFileSync(join(root, 'media', 'smd.css'), 'utf8')),
     __SMD_RUNTIME__: JSON.stringify(readFileSync(join(root, 'media', 'runtime.js'), 'utf8')),
+    __SMD_SITE_CSS__: JSON.stringify(readFileSync(join(root, 'media', 'site.css'), 'utf8')),
+    __SMD_SITE_JS__: JSON.stringify(readFileSync(join(root, 'media', 'site.js'), 'utf8')),
   },
   minify: !watch,
   logLevel: 'info',

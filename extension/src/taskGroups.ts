@@ -1,5 +1,5 @@
 import { dueState, type TaskInfo } from './core';
-import { priorityRank } from './core/util';
+import { compareTasks } from './core/meta';
 
 /**
  * Grouping and ordering for the tasks view, without VS Code dependencies so it can be unit tested.
@@ -19,13 +19,8 @@ export interface TaskGroup<T extends FileTask = FileTask> {
   tasks: T[];
 }
 
-const rank = priorityRank;
-
-/** Overdue first, then by priority, due date (none last), file and line. */
-export function compareTasks(a: FileTask, b: FileTask): number {
-  return Number(b.overdue ?? false) - Number(a.overdue ?? false) || rank(a.priority) - rank(b.priority)
-    || (a.due ?? '9999').localeCompare(b.due ?? '9999') || a.file.localeCompare(b.file) || a.line - b.line;
-}
+/** Overdue first, then by priority, due date (none last), file and line. Lives in the core so `smd build` shares it. */
+export { compareTasks };
 
 export const isTaskGrouping = (value: unknown): value is TaskGrouping => TASK_GROUPINGS.includes(value as TaskGrouping);
 

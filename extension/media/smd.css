@@ -49,6 +49,9 @@
   --smd-pink-soft: color-mix(in srgb, var(--smd-pink) var(--smd-soft), transparent);
   --smd-gray-soft: color-mix(in srgb, var(--smd-gray) var(--smd-soft), transparent);
   --smd-muted-soft: var(--smd-surface);
+  /* .smd-doc sets these again; here for blocks rendered outside it (the markdown-it plugin). */
+  --smd-accent: var(--smd-accent-default);
+  --smd-accent-soft: color-mix(in srgb, var(--smd-accent) var(--smd-soft), transparent);
 }
 
 html, body.smd-body {
@@ -413,3 +416,50 @@ pre.smd-has-hl code { position: relative; }
 }
 .smd-timeline li.smd-task-done::before { background: var(--smd-green); border-color: var(--smd-green); }
 .smd-timeline li.smd-task .smd-task-box { margin-left: 0; }
+
+/* ---------- Print (the browser's Print and smd pdf) ---------- */
+/* Paper size comes from the print dialog (or smd pdf --format); these are the margins. */
+@page { margin: 16mm 14mm; }
+
+@media print {
+  /* Always the light palette: dark pages waste toner and lose contrast on paper. */
+  :root, :root[data-smd-theme="dark"] {
+    --smd-bg: #ffffff;
+    --smd-fg: #1f2328;
+    --smd-fg-muted: #59636e;
+    --smd-surface: #f6f8fa;
+    --smd-border: #d1d9e0;
+    --smd-code-bg: #f3f4f6;
+    --smd-red: #dc2626; --smd-orange: #ea580c; --smd-amber: #d97706; --smd-yellow: #ca8a04;
+    --smd-green: #16a34a; --smd-teal: #0d9488; --smd-cyan: #0891b2; --smd-blue: #2563eb;
+    --smd-indigo: #4f46e5; --smd-purple: #9333ea; --smd-pink: #db2777; --smd-gray: #6b7280;
+    --smd-soft: 13%;
+  }
+  html, body.smd-body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.smd-body { padding: 0; font-size: 11pt; }
+  .smd-doc { max-width: none; padding: 0; }
+
+  /* No screen-only UI; agent instructions are for agents, not readers of the printout. */
+  .smd-copy, .smd-tabbar, .smd-agent, .smd-u-no-print { display: none !important; }
+
+  /* Tabs print as stacked panes, each under its label. */
+  .smd-tabs.smd-js .smd-tab:not(.smd-active), .smd-tabs.smd-js .smd-tab-label { display: block; }
+  .smd-tab + .smd-tab { border-top: 1px solid var(--smd-border); }
+
+  /* Nothing scrolls on paper: wrap long code lines, let wide blocks show in full. */
+  .smd-code pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
+  .smd-table-wrap, .smd-diagram, .smd-math-block, .smd-risk-matrix-wrap { overflow: visible; }
+  .smd-doc table { max-width: 100%; }
+  .smd-doc thead { display: table-header-group; }
+
+  /* Page breaks: keep headings with what follows, and blocks in one piece where they fit. */
+  .smd-doc h1, .smd-doc h2, .smd-doc h3, .smd-doc h4, .smd-doc h5, .smd-doc h6,
+  .smd-callout-title, .smd-card-title, .smd-tab-label, .smd-code-title { break-after: avoid; page-break-after: avoid; }
+  .smd-callout, .smd-card, .smd-box, .smd-details, .smd-human, .smd-decision, .smd-risk, .smd-api, .smd-metric,
+  .smd-diagram, .smd-code, .smd-math-block, .smd-doc-header, .smd-doc tr, .smd-doc img, .smd-doc blockquote,
+  .smd-steps > ol > li, .smd-timeline li { break-inside: avoid; page-break-inside: avoid; }
+  .smd-doc p { orphans: 3; widows: 3; }
+
+  /* {.page-break} on a heading or block starts it on a new page. */
+  .smd-u-page-break { break-before: page; page-break-before: always; }
+}

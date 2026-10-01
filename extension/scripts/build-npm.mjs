@@ -1,9 +1,10 @@
 // Builds the `styled-markdown` npm package into ../npm/dist:
-//   index.cjs / index.mjs  the library (engine only, browser-safe, zero runtime dependencies)
-//   remark.* / rehype.*    the remark and rehype plugins (import the library bundle)
-//   cli.js                 the `smd` command (same bundle as the extension's CLI)
-//   language-server.js     the `smd-language-server` command: `smd lsp` under its own name, for editors
-//   types/                 TypeScript declarations (emitted by tsc -p tsconfig.npm.json)
+//   index.cjs / index.mjs             the library (engine only, browser-safe, zero runtime dependencies)
+//   markdown-it.cjs / markdown-it.mjs the markdown-it plugin (`styled-markdown/markdown-it`; markdown-it is the host's)
+//   remark.* / rehype.*               the remark and rehype plugins (import the library bundle)
+//   cli.js                            the `smd` command (same bundle as the extension's CLI)
+//   language-server.js                the `smd-language-server` command: `smd lsp` under its own name, for editors
+//   types/                            TypeScript declarations (emitted by tsc -p tsconfig.npm.json)
 import * as esbuild from 'esbuild';
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -24,12 +25,28 @@ const common = {
   define: {
     __SMD_CSS__: JSON.stringify(readFileSync(join(root, 'media', 'smd.css'), 'utf8')),
     __SMD_RUNTIME__: JSON.stringify(readFileSync(join(root, 'media', 'runtime.js'), 'utf8')),
+    __SMD_SITE_CSS__: JSON.stringify(readFileSync(join(root, 'media', 'site.css'), 'utf8')),
+    __SMD_SITE_JS__: JSON.stringify(readFileSync(join(root, 'media', 'site.js'), 'utf8')),
   },
   logLevel: 'info',
 };
 
 await esbuild.build({ ...common, platform: 'node', format: 'cjs', outfile: join(out, 'index.cjs') });
 await esbuild.build({ ...common, platform: 'neutral', mainFields: ['module', 'main'], format: 'esm', outfile: join(out, 'index.mjs') });
+
+// The markdown-it plugin (`styled-markdown/markdown-it`). The host provides markdown-it; the plugin
+// only imports its types, and `external` keeps it out of the bundle should that ever change.
+const plugin = { ...common, entryPoints: [join(root, 'src', 'core', 'markdownIt.ts')], external: ['markdown-it'] };
+await esbuild.build({
+  ...plugin,
+  platform: 'node',
+  format: 'cjs',
+  outfile: join(out, 'markdown-it.cjs'),
+  // require('styled-markdown/markdown-it') is the plugin function itself, as markdown-it plugins usually are;
+  // its `default` and `markdownItSmd` properties are the same function.
+  footer: { js: 'module.exports=Object.assign(module.exports.default,module.exports);' },
+});
+await esbuild.build({ ...plugin, platform: 'neutral', mainFields: ['module', 'main'], format: 'esm', outfile: join(out, 'markdown-it.mjs') });
 
 // styled-markdown/remark and styled-markdown/rehype: thin entries that import the main bundle.
 const useMainBundle = (file) => ({
