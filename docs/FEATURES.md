@@ -128,8 +128,9 @@ Named colors are theme tokens tuned for light and dark mode. Only whitelisted va
 ```
 
 - **Preview:** checkboxes are clickable and update the source. Overdue dates turn red.
+- **SMD Tasks view** (VS Code Explorer): open tasks from every `.smd` file in the workspace, grouped by owner, due date or document; see [section 13](#13-vs-code-editing-assistance).
 - **Problems panel:** open tasks past their due date show a `task/overdue` notice.
-- **`smd tasks docs/`** lists open tasks across every document, overdue first, then by priority. `--mine @api-team` filters by owner, `--json` gives machine-readable output.
+- **`smd tasks docs/`** lists open tasks across every document, overdue first, then by priority. `--mine @api-team` filters by owner, `--json` gives machine-readable output, `--csv` and `--gantt` export (below).
 
 ```text
 docs/checkout.smd:61  [ ] [P1] Server-side validation returns all field errors @api-team (due 2026-09-25, OVERDUE)  — Requirements
@@ -137,6 +138,32 @@ docs/checkout.smd:62  [ ] [P0] Idempotent order creation @api-team (due 2026-10-
 ```
 
 - **`smd report docs/ --since 2026-09-01`** drafts a status report from what happened to these tasks since a date or Git revision (see [§6](#6-project-blocks-decisions-risks-timelines)).
+
+### Export: CSV and a Gantt chart
+
+`smd tasks` takes the same filters (`--all`, `--mine`) with one export format, printed or written with `-o <file>`:
+
+- **`--csv`** for spreadsheets. RFC 4180: a header row, then one record per task with CRLF line endings, UTF-8 without a byte order mark (in Excel, open it with *Data → From Text/CSV*). Columns, always in this order: `file,line,done,text,owners,priority,due,overdue,section`. `line` is 1-based, as `smd tasks` prints it (`--json` and the library use zero-based lines). `done` and `overdue` are `true`/`false`, owners are joined with `;`. Fields with a comma, a quote or a line break are quoted, with quotes doubled.
+  - **Formula guard:** a field that starts with `=`, `+`, `-`, `@`, a tab or a carriage return gets a leading `'`, so a spreadsheet shows it as text instead of running it as a formula. This includes owners: Excel reads `@maya` as a formula, so the cell is `'@maya;@li`. Use `--json` when a program, not a person, reads the export.
+- **`--gantt`** prints a Mermaid `gantt` chart: `dateFormat YYYY-MM-DD`, one `section` per document, and one milestone per task on its due date, named by its text and owners. Done tasks (with `--all`) are marked `done`, overdue ones `crit`. Tasks without a real `YYYY-MM-DD` due date are left out; stderr says how many. `--title "…"` sets the chart title (default `Tasks`).
+- **`--gantt --smd`** wraps the chart in a small `.smd` document with a `mermaid` fence, so `smd render` or the preview draws it.
+
+```text
+smd tasks docs/ --csv -o tasks.csv
+smd tasks docs/ --all --gantt --smd --title "Q4 plan" -o timeline.smd
+smd render timeline.smd -o timeline.html
+```
+
+```text
+gantt
+  title Q4 plan
+  dateFormat YYYY-MM-DD
+  section docs/checkout.smd
+    Server-side validation returns all field errors @api-team :crit, milestone, 2026-09-25, 0d
+    Idempotent order creation @api-team :milestone, 2026-10-03, 0d
+```
+
+Characters Mermaid would misread in a name (`:`, `#`, `;`, `%`) become Mermaid entity codes such as `#58;`, which the chart shows as the character itself. So does the first letter of a name that starts with a Gantt keyword (`title`, `click`, `section`…) or a date.
 
 ## 6. Project blocks: decisions, risks, timelines
 
@@ -365,6 +392,7 @@ People-only content anywhere in the document.
 | Find references | `Shift+F12` on a heading, or on the `#anchor` of a link, lists the heading and every link to it in the workspace's `.smd` and `.md` files |
 | Rename heading | `F2` on a heading renames it and updates every `#anchor` and `other.smd#anchor` link to it across the workspace, including the numbered anchors of later headings with the same text. Headings with an explicit `{#id}` keep their anchor, so links are left alone |
 | Refactorings | `Ctrl+.` with a selection wraps it in `:::note`, `:::tip`, `:::warning`, `:::danger`, `:::card`, `:::details`, `:::agent` or `:::human` (a selection that splits a code block or container isn't offered). On a callout's opening line: convert it to another callout type. In a blockquote that starts with `[!NOTE]`-style alerts or a bold label (`**Warning:**`, `**Tip**:`…): convert it to the matching callout |
+| SMD Tasks view | In the Explorer of any workspace with `.smd` files: the open tasks of every `.smd` file. **Group Tasks By…** in the view's title bar switches between owner (Unassigned last), due date (Overdue, Today, This week, Later, No due date) and document, and is remembered per workspace. Inside each group: overdue first, then priority, then due date. Each task shows its priority, due date and owners; hover for its section and file. Click to open it at its line; tick the checkbox to check it off in the file (saved unless it had unsaved changes). The eye button shows completed tasks too; the badge counts overdue tasks. Updates as you type, save, and create or delete files |
 | Workspace symbols | `Ctrl+T` searches every `.smd` in the workspace: headings, `:::decision` and `:::risk` titles, and `:::api` endpoints by method and path (`post orders` finds `POST /v1/orders — Create an order`) |
 | Hover previews | Hover a link's text or target: `#anchor` and `other.smd#anchor` show the start of that section, `other.smd` shows its title, status, summary and sections. Hover a ```` ```ts file="…" lines="…" ```` line to see the embedded code |
 | Lists on Enter | Enter on `- [x] Ship it @maya` starts `- [ ] ` with the cursor before ` @maya`. Bullets repeat, numbers count up, Enter on an empty item ends the list, and code blocks are left alone (`smd.editor.continueLists`) |
@@ -478,6 +506,8 @@ smd outline <file> [--related] [--tokenizer <name>]  sections, line ranges, toke
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
                  [--max-tokens <n>] [--tokenizer <name>]   fit the view into n tokens; exact counts
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
+smd tasks <files|dirs> [--all] [--mine @name] --csv [-o tasks.csv]                 spreadsheet export
+smd tasks <files|dirs> [--all] [--mine @name] --gantt [--smd] [--title "…"] [-o <file>]   Mermaid Gantt chart
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
 smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]          sections that changed
 smd diff <files|dirs> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]

@@ -31,6 +31,7 @@ smd outline docs/spec.smd             # sections, line ranges and token cost per
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
 smd decisions docs/ --status accepted # decision log across docs, newest first (--md: an ADR index)
+smd tasks docs/ --csv -o tasks.csv    # tasks for a spreadsheet; --gantt [--smd] for a Mermaid Gantt chart
 smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
 smd report docs/ --since 2026-09-01 -o status.smd # draft a status report: tasks done and added since, open, decisions, risks
 smd render docs/spec.smd -o spec.html # standalone HTML page
@@ -130,6 +131,10 @@ formatSmd(source);                        // the `smd fmt` layout: fence colons,
 const info = getDocumentInfo(source);     // front matter, outline, tasks, decisions, risks, agent blocks, diagnostics
 const open = extractTasks(source).filter((t) => !t.done);
 // [{ text: 'Idempotent order creation', priority: 'P0', assignees: ['@api-team'], due: '2026-10-03', overdue: false, line: 61, section: 'Requirements' }]
+const rows = extractTasks(source).map((t) => ({ ...t, file: 'docs/checkout.smd' }));
+tasksToCsv(rows);   // the `smd tasks --csv` export: header, CRLF, 1-based lines, formula-like cells prefixed with '
+const chart = tasksToGantt(rows, { title: 'Q4' }); // Mermaid gantt: a section per file, a milestone per dated task
+ganttDocument(chart, 'Q4'); // the chart in a .smd document with a mermaid fence (`smd tasks --gantt --smd`)
 
 const risks = querySmd(source, 'risk[impact>=high][status!=closed]'); // the `smd query` selectors
 // [{ type: 'risk', title: 'Apple Pay domain verification delays launch', attrs: { impact: 'high', … }, line: 144, endLine: 146, section: 'Risks', text: '<risk impact="high" …' }]
@@ -147,7 +152,7 @@ const status = statusChanges([{ path: 'docs/plan.smd', text: oldSource }], [{ pa
 const draft = statusReportMarkdown(status, { since: 'HEAD~5', title: 'Checkout squad' }); // a status-report draft that passes `smd validate`
 ```
 
-Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
+Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `ganttDate` and `TASK_CSV_COLUMNS` (task export), `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
 
 ## A taste of the format
 

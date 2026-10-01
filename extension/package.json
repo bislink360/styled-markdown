@@ -47,7 +47,9 @@
   "bin": {
     "smd": "./dist/cli.js"
   },
-  "activationEvents": [],
+  "activationEvents": [
+    "workspaceContains:**/*.smd"
+  ],
   "contributes": {
     "languages": [
       {
@@ -169,9 +171,70 @@
         "command": "smd.copyAgentSections",
         "title": "Copy Sections for an Agent…",
         "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.groupTasksBy",
+        "title": "Group Tasks By…",
+        "category": "Styled Markdown",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "smd.showCompletedTasks",
+        "title": "Show Completed Tasks",
+        "category": "Styled Markdown",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "smd.hideCompletedTasks",
+        "title": "Hide Completed Tasks",
+        "category": "Styled Markdown",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "smd.refreshTasks",
+        "title": "Refresh Tasks",
+        "category": "Styled Markdown",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "smd.openTask",
+        "title": "Open Task",
+        "category": "Styled Markdown"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "smd.tasks",
+          "name": "SMD Tasks",
+          "contextualTitle": "Styled Markdown",
+          "when": "smd.workspaceHasSmd"
+        }
+      ]
+    },
     "menus": {
+      "view/title": [
+        {
+          "command": "smd.groupTasksBy",
+          "when": "view == smd.tasks",
+          "group": "navigation@1"
+        },
+        {
+          "command": "smd.showCompletedTasks",
+          "when": "view == smd.tasks && !smd.tasks.showCompleted",
+          "group": "navigation@2"
+        },
+        {
+          "command": "smd.hideCompletedTasks",
+          "when": "view == smd.tasks && smd.tasks.showCompleted",
+          "group": "navigation@2"
+        },
+        {
+          "command": "smd.refreshTasks",
+          "when": "view == smd.tasks",
+          "group": "navigation@3"
+        }
+      ],
       "editor/title": [
         {
           "command": "smd.openPreviewToSide",
@@ -241,6 +304,26 @@
         {
           "command": "smd.copyAgentSections",
           "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.groupTasksBy",
+          "when": "smd.workspaceHasSmd"
+        },
+        {
+          "command": "smd.showCompletedTasks",
+          "when": "smd.workspaceHasSmd && !smd.tasks.showCompleted"
+        },
+        {
+          "command": "smd.hideCompletedTasks",
+          "when": "smd.workspaceHasSmd && smd.tasks.showCompleted"
+        },
+        {
+          "command": "smd.refreshTasks",
+          "when": "smd.workspaceHasSmd"
+        },
+        {
+          "command": "smd.openTask",
+          "when": "false"
         }
       ]
     },

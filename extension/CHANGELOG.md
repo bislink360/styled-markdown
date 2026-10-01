@@ -5,6 +5,17 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- VS Code: an **SMD Tasks** view in the Explorer (shown in workspaces with `.smd` files) lists the tasks of every `.smd` file in the workspace:
+  - **Group Tasks By…** (view title bar) switches between owner (Unassigned last; a task with two owners is under both), due date (Overdue, Today, This week, Later, No due date) and document; the choice is remembered per workspace
+  - inside every group: overdue first, then by priority and due date, as in `smd tasks`
+  - open tasks only, or all with **Show Completed Tasks**; each task shows its priority, due date (and "overdue") and owners, with the section and file in the tooltip
+  - click a task to open it at its line; tick its checkbox to check it off (or uncheck it) in the file, which is saved unless it already had unsaved changes
+  - follows unsaved edits, saves and files created or deleted on disk; the view's badge shows the number of overdue tasks
+  - new commands: `smd.groupTasksBy`, `smd.showCompletedTasks`, `smd.hideCompletedTasks`, `smd.refreshTasks` and `smd.openTask`; the extension now also activates when the workspace contains `.smd` files
+- `smd tasks --csv` exports tasks for spreadsheets: RFC 4180 with a header row and CRLF line endings, UTF-8 without a byte order mark, columns `file,line,done,text,owners,priority,due,overdue,section` in that order, 1-based lines (as `smd tasks` prints them; `--json` stays zero-based) and owners joined with `;`. Fields that start with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading `'` so spreadsheets don't run them as formulas; this includes owners (`'@maya`).
+- `smd tasks --gantt` prints a Mermaid `gantt` chart of tasks with a `YYYY-MM-DD` due date: one section per document, one milestone per task on its due date, done tasks (with `--all`) marked `done` and overdue ones `crit`; tasks without a due date are left out and counted on stderr. Characters Mermaid would misread in names become entity codes (`#58;`). `--title` sets the chart title, and `--smd` wraps the chart in a small `.smd` document that `smd render` draws.
+- `smd tasks -o <file>` writes any of its outputs to a file. Without the new flags `smd tasks` prints exactly what it did in 1.3.0; `--json`, `--csv` and `--gantt` together are a usage error (exit code 2).
+- Library: `tasksToCsv(rows)`, `tasksToGantt(rows, { title })`, `ganttDocument(chart, title)`, `ganttDate(due)` and `TASK_CSV_COLUMNS`, with the `TaskExportRow` and `GanttOptions` types.
 
 - **`smd decisions <files|dirs>`**: a decision log across documents (an ADR index). Every `:::decision`, newest date first and undated last, one line each with location, date, status, title, owner and document › section. `--status accepted,proposed` filters by status (`open` = proposed, the default status), `--owner @name` by owner, `--json` prints structured rows.
 - **`smd decisions --md`**: the log as an ADR index document to commit (front matter and a table with status badges, each decision linked to its section, rejected and superseded ones struck through). With `-o docs/decisions.smd` the links are relative to that file, so it passes `smd validate` and `smd fmt --check`; `--title` sets its title.

@@ -5,7 +5,7 @@ import {
   checkMermaid, extractTasks, querySmd, validateSmd, type DecisionEntry, type Diagnostic, type MermaidParse, type QueryMatch,
   type QueryOptions, type RuleSettings, type Selector, type StatusChanges, type TaskInfo,
 } from './core';
-import { priorityRank } from './core/util';
+import { compareTasks } from './taskGroups';
 
 /** Reading .smd files from disk, shared by the CLI and the MCP server. */
 
@@ -84,8 +84,6 @@ export async function diagnose(text: string, file: string, options: DiagnoseOpti
 
 export interface TaskFilter { all: boolean; mine?: string; today?: string }
 
-const rank = priorityRank;
-
 /** Tasks in `files` (open ones unless `all`), overdue first, then by priority and due date. `name` labels each file. */
 export function taskRows(files: string[], filter: TaskFilter, name = (file: string) => file): TaskRow[] {
   const { all, mine, today } = filter;
@@ -97,8 +95,7 @@ export function taskRows(files: string[], filter: TaskFilter, name = (file: stri
       rows.push({ ...t, file: name(file) });
     }
   }
-  return rows.sort((a, b) => Number(b.overdue ?? false) - Number(a.overdue ?? false) || rank(a.priority) - rank(b.priority)
-    || (a.due ?? '9999').localeCompare(b.due ?? '9999') || a.file.localeCompare(b.file) || a.line - b.line);
+  return rows.sort(compareTasks);
 }
 
 /** `docs/plan.smd:12  [ ] [P0] Ship it @maya (due 2026-10-01)  — Section` */

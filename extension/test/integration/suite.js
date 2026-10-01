@@ -401,6 +401,101 @@ const checks = {
     assert.equal(await vscode.commands.executeCommand('smd.setupSpellCheck'), false);
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
+
+  async 'the SMD Tasks view groups workspace tasks, follows edits and file events, and checks tasks off'() {
+    // The view covers the open folder (examples/), so the fixture lives there briefly.
+    const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const dir = fs.mkdtempSync(path.join(root, 'zz-tasks-'));
+    const today = new Date().toISOString().slice(0, 10);
+    const a = path.join(dir, 'a.smd');
+    const b = path.join(dir, 'b.smd');
+    const inDir = (file) => file.toLowerCase().startsWith(dir.toLowerCase());
+    const tree = async (by) => {
+      await vscode.commands.executeCommand('smd.groupTasksBy', by);
+      return vscode.commands.executeCommand('smd._tasksTree');
+    };
+    // The fixture's groups (label → task labels), in tree order.
+    const ours = (snapshot) => snapshot.groups
+      .map((g) => [g.label, g.tasks.filter((t) => inDir(t.file)).map((t) => t.label)])
+      .filter(([, tasks]) => tasks.length);
+    const until = (by, test, what) => waitFor(async () => {
+      const s = await tree(by);
+      return test(s) ? s : undefined;
+    }, what);
+    try {
+      fs.writeFileSync(a, [
+        '# Plan', '', '## Launch', '',
+        '- [ ] Zz overdue :priority[P2] @zz-ann :due[2000-01-01]',
+        `- [ ] Zz today :priority[P1] @zz-ann :due[${today}]`,
+        '- [ ] Zz later :priority[P0] @zz-ann @zz-bob :due[2999-01-01]',
+        '- [x] Zz done @zz-bob', '',
+      ].join('\n'));
+      fs.writeFileSync(b, '- [ ] Zz unowned\n');
+      const all = await vscode.commands.getCommands(true);
+      for (const c of ['smd.groupTasksBy', 'smd.showCompletedTasks', 'smd.hideCompletedTasks', 'smd.refreshTasks', 'smd.openTask']) {
+        assert.ok(all.includes(c), `missing command ${c}`);
+      }
+      await vscode.commands.executeCommand('smd.tasks.focus');
+
+      const byOwner = await until('owner', (s) => ours(s).length === 3, 'the fixture tasks grouped by owner');
+      assert.equal(byOwner.groupBy, 'owner');
+      assert.deepEqual(ours(byOwner), [
+        ['@zz-ann', ['Zz overdue', 'Zz later', 'Zz today']],
+        ['@zz-bob', ['Zz later']],
+        ['Unassigned', ['Zz unowned']],
+      ], JSON.stringify(ours(byOwner)));
+      assert.equal(byOwner.groups.at(-1).label, 'Unassigned', 'unassigned last');
+      const overdue = byOwner.groups.flatMap((g) => g.tasks).find((t) => t.label === 'Zz overdue');
+      assert.equal(overdue.description, 'P2 · due 2000-01-01 (overdue) · @zz-ann');
+      assert.ok(byOwner.overdue >= 1);
+
+      const byDue = await tree('due');
+      assert.deepEqual(ours(byDue), [
+        ['Overdue', ['Zz overdue']], ['Today', ['Zz today']], ['Later', ['Zz later']], ['No due date', ['Zz unowned']],
+      ], JSON.stringify(ours(byDue)));
+      assert.equal(byDue.groups[0].label, 'Overdue', 'overdue first');
+
+      const byDocument = await tree('document');
+      assert.deepEqual(ours(byDocument).map(([, tasks]) => tasks), [['Zz overdue', 'Zz later', 'Zz today'], ['Zz unowned']]);
+      assert.match(ours(byDocument)[0][0], /zz-tasks-.*\/a\.smd$/);
+
+      // Unsaved edits show up.
+      const docB = await vscode.workspace.openTextDocument(b);
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(docB.uri, new vscode.Position(1, 0), '- [ ] Zz added @zz-cat\n');
+      await vscode.workspace.applyEdit(edit);
+      await until('owner', (s) => ours(s).some(([label]) => label === '@zz-cat'), 'a task typed into an open document');
+      await docB.save();
+
+      // Checking a task off writes the file, and the task leaves the open list.
+      const todayTask = byOwner.groups.flatMap((g) => g.tasks).find((t) => t.label === 'Zz today');
+      assert.equal(await vscode.commands.executeCommand('smd._checkTask', todayTask.file, todayTask.line, true), true);
+      assert.match(fs.readFileSync(a, 'utf8'), /^- \[x\] Zz today/m);
+      await until('owner', (s) => !ours(s).flatMap(([, t]) => t).includes('Zz today'), 'the checked task to leave the list');
+
+      await vscode.commands.executeCommand('smd.showCompletedTasks');
+      const withDone = await until('document', (s) => ours(s).flatMap(([, t]) => t).includes('Zz done'), 'completed tasks');
+      const checked = withDone.groups.flatMap((g) => g.tasks).find((t) => t.label === 'Zz today');
+      assert.equal(checked.done, true);
+      assert.equal(await vscode.commands.executeCommand('smd._checkTask', checked.file, checked.line, false), true);
+      assert.match(fs.readFileSync(a, 'utf8'), /^- \[ \] Zz today/m);
+      await vscode.commands.executeCommand('smd.hideCompletedTasks');
+
+      // Files created and deleted on disk.
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      fs.rmSync(b);
+      fs.writeFileSync(path.join(dir, 'c.smd'), '- [ ] Zz new file @zz-dan\n');
+      await until('owner', (s) => {
+        const labels = ours(s).map(([label]) => label);
+        return labels.includes('@zz-dan') && !labels.includes('@zz-cat') && !labels.includes('Unassigned');
+      }, 'the created file in and the deleted one out');
+    } finally {
+      await vscode.commands.executeCommand('smd.hideCompletedTasks');
+      await vscode.commands.executeCommand('smd.groupTasksBy', 'due');
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
 };
 
 async function run() {
