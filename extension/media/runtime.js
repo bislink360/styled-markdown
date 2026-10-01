@@ -467,7 +467,24 @@
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (applyTheme()) rerenderDiagrams(); });
   }
 
+  // ---- Printing -------------------------------------------------------------
+  // Closed <details> can't be opened on paper, so open them for printing and close them again after.
+  // `smd pdf` dispatches beforeprint itself, because headless printing doesn't.
+  let openedForPrint = [];
+  window.addEventListener('beforeprint', () => {
+    openedForPrint = Array.from(document.querySelectorAll('details:not([open])'));
+    openedForPrint.forEach((d) => { d.open = true; });
+  });
+  window.addEventListener('afterprint', () => {
+    openedForPrint.forEach((d) => { d.open = false; });
+    openedForPrint = [];
+  });
+
   const rendering = hydrate(document);
+  // data-smd-ready: diagrams rendered and fonts loaded, so the page can be printed (smd pdf waits for it).
+  Promise.all([rendering, document.fonts ? document.fonts.ready : null])
+    .catch(() => undefined)
+    .finally(() => html.setAttribute('data-smd-ready', 'true'));
   if (vscode) {
     // Coming back after the panel was hidden: restore the saved position, adjusted for edits
     // made while it was away (the extension embeds those in the page).
