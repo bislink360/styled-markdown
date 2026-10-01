@@ -1,0 +1,42 @@
+---
+smd: 1
+title: Risk register and matrix
+summary: Exercises the 1.4 risk additions (risk-matrix, scoring defaults) so later releases are compared against them.
+status: draft
+updated: 2026-09-30
+---
+
+## Launch risks
+
+:::risk{#data-loss impact=critical likelihood=high owner=@ops status=open} Data loss during the migration
+Mitigation: snapshot each batch before it runs; restore drill on Friday.
+:::
+
+:::risk{impact=low likelihood=critical owner="@maya @li" status=accepted} Flaky end-to-end tests | retries
+Retries are cheap. We accept the noise until Q4.
+:::
+
+:::risk Nobody has scored this yet
+- Impact and likelihood are missing, so both count as medium.
+:::
+
+::::risk{impact=high likelihood=medium owner=@payments status=mitigated} Payment provider rate limits
+:::warning Pre-warm
+Ask the provider for a temporary quota increase.
+:::
+::::
+
+:::risk{impact=high likelihood=high status=closed} Vendor lock-in
+Closed after the contract change.
+:::
+
+## Matrix
+
+:::risk-matrix Launch risks
+:::
+
+A matrix with a caption:
+
+:::risk-matrix
+Closed risks are left out. Run `smd risks` for the register across documents.
+:::

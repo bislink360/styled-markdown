@@ -1,4 +1,6 @@
-import { renderStandaloneHtml, type RenderOptions } from './render';
+import { pageHtml, renderStandaloneHtml, type RenderOptions } from './render';
+import { riskRegisterHtml } from './riskHtml';
+import type { RiskRegister } from './risks';
 
 // Injected at build time (see scripts/build.mjs) so the library and CLI can render full
 // pages without shipping or locating separate files. Empty when running from source.
@@ -17,4 +19,14 @@ export const SMD_RUNTIME_JS: string = typeof __SMD_RUNTIME__ === 'string' ? __SM
  */
 export function renderPage(text: string, options: RenderOptions = {}): string {
   return renderStandaloneHtml(text, SMD_CSS, SMD_RUNTIME_JS, options);
+}
+
+/**
+ * A risk register (from `riskRegister`) as a complete, self-contained HTML page: an impact × likelihood
+ * matrix whose cells link to the register table below it. Follows the reader's light/dark theme.
+ */
+export function renderRiskPage(register: RiskRegister, options: { title?: string; theme?: 'light' | 'dark' | 'auto' } = {}): string {
+  const title = options.title ?? 'Risk register';
+  const body = riskRegisterHtml(register, title);
+  return pageHtml({ title, theme: options.theme ?? 'auto', body, css: SMD_CSS, runtimeJs: SMD_RUNTIME_JS, cdn: false });
 }

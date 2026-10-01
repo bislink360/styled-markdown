@@ -61,7 +61,13 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-const TAGS: Record<string, string> = { ...Object.fromEntries(CALLOUT_TYPES.map((c) => [c, c])) };
+/** `:::risk-matrix` in the agent view: a pointer, since every risk it shows is already a `<risk>` block. */
+function riskMatrixPointer(title: string): string {
+  const label = title ? `risk matrix: ${title}` : 'risk matrix';
+  return `[${label} — impact × likelihood of this document's risks except closed ones; each is a <risk> block]`;
+}
+
+const TAGS: Record<string, string> ={ ...Object.fromEntries(CALLOUT_TYPES.map((c) => [c, c])) };
 const NOISE_KEYS = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
 
 interface Section { heading: Heading; start: number; end: number }
@@ -339,6 +345,8 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
       } else if (info.name === 'risk') {
         emit(`<risk${attr(['impact', 'likelihood', 'owner', 'status'])}>${title ? ` ${title}` : ''}`, i);
         frame.close = '</risk>';
+      } else if (info.name === 'risk-matrix') {
+        emit(riskMatrixPointer(title), i);
       } else if (info.name === 'api') {
         emit(`API ${(v.method ?? 'GET').toUpperCase()} ${v.path ?? ''}${title ? ` — ${title}` : ''}${v.auth ? ` (auth: ${v.auth})` : ''}`, i);
       } else if (info.name === 'details' || info.name === 'human') {
@@ -537,7 +545,7 @@ export function outline(text: string, options: AgentViewOptions = {}): string {
       sectionText.some((l) => /^\s*:{3,}\s*agent\b/.test(l)) ? 'AGENT INSTRUCTIONS' : '',
       sectionText.some((l) => /^\s*:{3,}\s*api\b/.test(l)) ? 'API' : '',
       sectionText.some((l) => /^\s*:{3,}\s*(decision)\b/.test(l)) ? 'decision' : '',
-      sectionText.some((l) => /^\s*:{3,}\s*(risk)\b/.test(l)) ? 'risk' : '',
+      sectionText.some((l) => /^\s*:{3,}\s*(risk)(?![\w-])/.test(l)) ? 'risk' : '',
       sectionText.some((l) => /^\s*:{3,}\s*(question)\b/.test(l)) ? 'open question' : '',
       s.heading.agent === 'skip' ? 'skipped for agents' : '',
     ].filter(Boolean).join(', ');

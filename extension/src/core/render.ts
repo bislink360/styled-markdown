@@ -8,6 +8,7 @@ import { ContainerInfo, parseContainerInfo } from './containers';
 import { asStringList, parseFrontMatter } from './frontmatter';
 import { langFromPath, parseFenceInfo, sliceLines } from './fence';
 import { CALLOUT_TYPES, INLINE_DIRECTIVES, STATUS_VALUES } from './spec';
+import { documentRiskMatrixHtml } from './riskHtml';
 
 export interface RenderOptions {
   /** Allow raw HTML in the source (scripts are still blocked by the host CSP). */
@@ -46,6 +47,8 @@ export interface Env {
   /** Per heading, the slug before de-duplication, or null for an explicit {#id} (see parse.ts). */
   bases?: Array<string | null>;
   references?: Record<string, unknown>;
+  /** The whole document, for blocks that summarize it (`:::risk-matrix`). */
+  source?: string;
 }
 
 const CALLOUT_ICONS: Record<string, string> = {
@@ -146,7 +149,7 @@ export function renderSmd(text: string, options: RenderOptions = {}): RenderResu
     today: options.today ?? new Date().toISOString().slice(0, 10),
   };
   const md = createMarkdownIt(opts);
-  const env: Env = { lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts };
+  const env: Env = { lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts, source: text };
   // markdown-it treats a lone \r as a line break, but every other tool here splits lines on \r?\n.
   // A space keeps heading lines and data-line (preview scroll sync) in step with the editor.
   const tokens = md.parse(fm.body.replace(/\r(?!\n)/g, ' '), env);
@@ -384,6 +387,11 @@ function renderContainer(tokens: Token[], idx: number, _opts: unknown, env: Env)
         `<div class="smd-api-head"><span class="smd-api-method smd-api-${method.toLowerCase()}">${escapeHtml(method)}</span>` +
         `<code class="smd-api-path">${escapeHtml(attrs.values.path ?? '/')}</code>${meta.title ? `<span class="smd-api-title">${inline(meta.title)}</span>` : ''}${auth}</div>` +
         `<div class="smd-api-body">\n`;
+    }
+    case 'risk-matrix': {
+      meta.close = '</div></div>';
+      const title = meta.title ? `<div class="smd-risk-matrix-title">${inline(meta.title)}</div>` : '';
+      return `<div${htmlAttrs(attrs, ['smd-risk-matrix'], style)}${dataLine}>${title}${documentRiskMatrixHtml(env.source ?? '')}<div class="smd-risk-matrix-body">\n`;
     }
     case 'timeline':
       meta.close = '</div>';
@@ -712,26 +720,42 @@ export function renderStandaloneHtml(text: string, css: string, runtimeJs: strin
   const result = renderSmd(text, options);
   const title = typeof result.frontMatter.title === 'string' ? result.frontMatter.title : result.headings[0]?.text ?? 'Document';
   const theme = ['light', 'dark'].includes(String(result.frontMatter.theme)) ? String(result.frontMatter.theme) : 'auto';
+  return pageHtml({ title, theme, body: result.html, css, runtimeJs, cdn: true });
+}
+
+export interface PageParts {
+  title: string;
+  /** `light`, `dark` or `auto` (follow the reader's system). */
+  theme: string;
+  /** HTML inside `<main>`. */
+  body: string;
+  css: string;
+  runtimeJs: string;
+  /** Load the KaTeX stylesheet and Mermaid from a CDN (for documents with math or diagrams). */
+  cdn: boolean;
+}
+
+/** The standalone page around rendered HTML: stylesheet, theme preference and runtime inlined. */
+export function pageHtml(page: PageParts): string {
+  const katex = page.cdn ? '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">\n' : '';
+  const mermaid = page.cdn ? '<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>\n' : '';
   return `<!DOCTYPE html>
-<html lang="en" data-smd-theme-pref="${theme}">
+<html lang="en" data-smd-theme-pref="${page.theme}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="Styled Markdown">
-<title>${escapeHtml(title)}</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<style>
-${css}
+<title>${escapeHtml(page.title)}</title>
+${katex}<style>
+${page.css}
 </style>
 </head>
 <body class="smd-body">
-<main id="smd-root">${result.html}</main>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-<script>
-${runtimeJs}
+<main id="smd-root">${page.body}</main>
+${mermaid}<script>
+${page.runtimeJs}
 </script>
 </body>
 </html>
 `;
 }
-
