@@ -30,6 +30,7 @@ smd fmt docs/ --check                 # formatting check for CI; without --check
 smd outline docs/spec.smd             # sections, line ranges and token cost per section
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
+smd decisions docs/ --status accepted # decision log across docs, newest first (--md: an ADR index)
 smd risks docs/ --html -o risks.html  # risk register: impact × likelihood, highest first, colour-coded matrix
 smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
 smd render docs/spec.smd -o spec.html # standalone HTML page
@@ -47,6 +48,7 @@ Run `smd --help` for every option.
 import {
   renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
   smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
+  decisionLog, decisionLogMarkdown,
   riskRegister, riskRegisterText, renderRiskPage,
 } from 'styled-markdown';
 ```
@@ -136,6 +138,9 @@ const risks = querySmd(source, 'risk[impact>=high][status!=closed]'); // the `sm
 const entry = indexEntry(source, 'docs/checkout.smd'); // one `smd index` catalog entry
 // { path, title, summary, status, owners, tags, audience, updated, related, tokens: { file, agent }, counts: { openTasks, … }, sections: [{ level, text, id, line, endLine, tokens }] }
 const catalog = smdIndex([{ path: 'docs/checkout.smd', text: source }]); // { format: 'smd-index', version: 1, smd: 1, documents: [entry, …] }, sorted by path
+const log = decisionLog([{ path: 'docs/adr-0007.smd', text: source }], { status: ['accepted'] }); // the `smd decisions` log, newest first
+// [{ title, status: 'accepted', date: '2026-09-18', owner: '@platform', path, line, endLine, section, anchor, document, adr: true }]
+const adrIndex = decisionLogMarkdown(log, { link: (p) => p.replace(/^docs\//, '') }); // `smd decisions --md`: an ADR index to save as docs/decisions.smd
 const changes = diffSmd(oldSource, newSource); // the `smd diff` sections that changed
 // { frontMatter: [{ key: 'status', before: 'draft', after: 'accepted' }], sections: [{ change: 'changed', heading: 'Rollout', level: 3, line: 40, endLine: 46, text: '### Rollout  [L41]\n…' }], text: '…', tokens: 42, fullTokens: 1480 }
 

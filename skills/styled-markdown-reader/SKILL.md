@@ -33,6 +33,7 @@ Across many documents:
 - `smd tasks DIR` lists open tasks with priority, owner and due date, overdue first (`--mine @name` filters by owner).
 - `smd risks DIR` is the risk register: every `:::risk` with its score (impact × likelihood, 1–16; `medium?` marks a level that was not set), owner, status, location and one-line mitigation, highest first, then an impact × likelihood matrix. Closed risks are left out unless `--all`; filter with `--status open,accepted` or `--owner @name`; `--json` for structured output.
 - `smd query "SELECTOR" DIR` prints only the matching blocks in the agent view: `decision[status=accepted]`, `risk[impact>=high][status!=closed]`, `api[method=POST]`, `question`, `task[owner=@me][done=false]`, `heading[level=2]`. Commas combine selectors. Add `--titles` for one line per block, `--json` for structured output. Exit code 1 means no match.
+- `smd decisions DIR --status accepted` lists the binding decisions across documents, one line each (date, title, owner, file:line, document › section), newest first; superseded and rejected ones are labelled. `--status open` lists decisions still to make, `--json` gives structured output.
 - `smd meta FILE --no-diagnostics` gives JSON (outline, tasks, decisions, risks, agent blocks).
 
 **MCP tools available?** If the `smd` MCP server is registered (tools `outline`, `section`, `agent`, `tasks`, `query`, `validate`), follow the same workflow with the tools instead of the shell: `outline` first, then `section` with the headings you need. Paths are relative to the server's root folder.

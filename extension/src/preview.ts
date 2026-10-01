@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { renderSmd, type RenderOptions } from './core';
+import { taskCheckbox } from './editing';
 import { readerFor } from './files';
 
 /** Live preview webviews, one per .smd document. */
@@ -238,12 +239,11 @@ class Preview {
 
 async function toggleTask(document: vscode.TextDocument, line: number): Promise<void> {
   if (line < 0 || line >= document.lineCount) return;
-  const text = document.lineAt(line).text;
-  const m = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\])/.exec(text);
-  if (!m) return;
+  const box = taskCheckbox(document.lineAt(line).text);
+  if (!box) return;
   const edit = new vscode.WorkspaceEdit();
-  const pos = new vscode.Position(line, m[1].length);
-  edit.replace(document.uri, new vscode.Range(pos, pos.translate(0, 1)), m[2] === ' ' ? 'x' : ' ');
+  const pos = new vscode.Position(line, box.column);
+  edit.replace(document.uri, new vscode.Range(pos, pos.translate(0, 1)), box.done ? ' ' : 'x');
   await vscode.workspace.applyEdit(edit);
 }
 
