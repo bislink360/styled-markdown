@@ -25,6 +25,8 @@ export { relatedDocs, relatedEntries, summarizeSmd, formatRelated } from './rela
 export type { RelatedDoc, RelatedOptions, SmdSummary } from './related';
 export { indexEntry, smdIndex, INDEX_FORMAT, INDEX_VERSION } from './catalog';
 export type { IndexOptions, SmdIndex, SmdIndexEntry, SmdIndexSection, SmdIndexCounts } from './catalog';
+export { decisionLog, decisionLogMarkdown, isInactiveDecision, DECISION_STATUS_FILTERS } from './decisions';
+export type { DecisionEntry, DecisionLogOptions, DecisionLogMarkdownOptions } from './decisions';
 export { parseFenceInfo } from './fence';
 export { checkMermaid, mermaidBlocks } from './mermaid';
 export type { MermaidParse, MermaidBlock } from './mermaid';
