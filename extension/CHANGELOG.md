@@ -13,6 +13,10 @@
   - follows unsaved edits, saves and files created or deleted on disk; the view's badge shows the number of overdue tasks
   - new commands: `smd.groupTasksBy`, `smd.showCompletedTasks`, `smd.hideCompletedTasks`, `smd.refreshTasks` and `smd.openTask`; the extension now also activates when the workspace contains `.smd` files
 
+- **`smd decisions <files|dirs>`**: a decision log across documents (an ADR index). Every `:::decision`, newest date first and undated last, one line each with location, date, status, title, owner and document › section. `--status accepted,proposed` filters by status (`open` = proposed, the default status), `--owner @name` by owner, `--json` prints structured rows.
+- **`smd decisions --md`**: the log as an ADR index document to commit (front matter and a table with status badges, each decision linked to its section, rejected and superseded ones struck through). With `-o docs/decisions.smd` the links are relative to that file, so it passes `smd validate` and `smd fmt --check`; `--title` sets its title.
+- Library: `decisionLog(documents, { status, owner })` and `decisionLogMarkdown(entries, { title, link })`, with `DECISION_STATUS_FILTERS` and `isInactiveDecision`.
+
 ### Changed
 
 ### Deprecated

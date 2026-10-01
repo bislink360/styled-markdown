@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  checkMermaid, extractTasks, querySmd, validateSmd, type Diagnostic, type MermaidParse, type QueryMatch, type QueryOptions,
-  type RuleSettings, type Selector, type TaskInfo,
+  checkMermaid, extractTasks, querySmd, validateSmd, type DecisionEntry, type Diagnostic, type MermaidParse, type QueryMatch,
+  type QueryOptions, type RuleSettings, type Selector, type TaskInfo,
 } from './core';
 import { compareTasks } from './taskGroups';
 
@@ -145,4 +145,21 @@ function titleLine(r: QueryRow): string {
   const attrs = Object.entries(r.attrs).map(([k, v]) => `${k}=${[v].flat().join(',')}`).join(' ');
   const parts = [`${r.file}:${r.line + 1}${end}`, r.type, r.title, attrs && `{${attrs}}`, r.section && `— ${r.section}`];
   return parts.filter(Boolean).join('  ');
+}
+
+/** `docs/adr-7.smd:12  2026-09-18  [accepted]  Use EventBridge  @platform  — ADR-0007 › Context` */
+export function decisionLine(d: DecisionEntry): string {
+  const where = d.section && !d.adr ? `${d.document} › ${d.section}` : d.document;
+  const bits = [(d.date ?? 'undated').padEnd(10), `[${d.status}]`, d.title, d.owner ?? '', `— ${where}`];
+  return `${d.path}:${d.line + 1}  ${bits.filter(Boolean).join('  ')}`;
+}
+
+/** `8 decision(s) in 3 of 12 file(s): 5 accepted, 1 proposed, 2 superseded.` */
+export function decisionSummary(rows: DecisionEntry[], fileCount: number): string {
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
+  const byStatus = [...counts].map(([status, n]) => `${n} ${status}`).join(', ');
+  const files = new Set(rows.map((r) => r.path)).size;
+  const head = `${rows.length} decision(s) in ${files} of ${fileCount} file(s)`;
+  return byStatus ? `${head}: ${byStatus}.` : `${head}.`;
 }
