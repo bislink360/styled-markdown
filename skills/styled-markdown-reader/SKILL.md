@@ -55,6 +55,8 @@ Catching up on a changed document:
 | front matter `status:` | `approved` is authoritative, `draft`/`review` is tentative, `deprecated`/`archived` is history |
 | `[P1]`, `@name`, `(due …, OVERDUE)` | Task priority, owner, due date |
 | `[code: path lines a-b …]` | Real source embedded by the doc. Read that file range if you need it (or rerun with `--embed`). |
+| `<included file="shared/terms.smd" section="…">…</included>` | Text included from another document, part of this one. `[L…]` refs inside point into that file, so edit it there. |
+| `[include: shared/terms.smd § Pricing — …]` | An include that wasn't expanded (`--no-includes`, or it can't be read). Run `smd agent shared/terms.smd --section "Pricing"` if you need it. |
 | `[diagram: …]`, `[details: … omitted]` | Condensed by `--brief`. Read the given lines if you need them. |
 | `[section omitted: ## X, L90-L128, ≈231 tokens — smd agent …]` | Left out by `--max-tokens`. Run the given command if the question needs that section. |
 

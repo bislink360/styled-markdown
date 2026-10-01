@@ -25,7 +25,7 @@ export interface SiteOptions {
   base?: string;
   /** YYYY-MM-DD for due dates and overdue tasks; defaults to the current date. */
   today?: string;
-  /** The file reader for a document's code embeds (```lang file="…"```). */
+  /** The file reader for a document's code embeds (```lang file="…"```) and `:::include` blocks. */
   readFile?: (source: string) => ((relativePath: string) => string | undefined) | undefined;
   /** Stylesheets and scripts to write to `_smd/` (default: the bundled ones). */
   assets?: Partial<SiteAssets>;

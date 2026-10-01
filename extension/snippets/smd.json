@@ -332,6 +332,18 @@
       "```"
     ]
   },
+  "Include another document": {
+    "prefix": [
+      "transclude",
+      "include-doc"
+    ],
+    "body": [
+      ":::include{file=\"${1:shared/terms.smd}\" section=\"${2:Pricing}\"}",
+      "See [${2:Pricing}](${1:shared/terms.smd}).",
+      ":::",
+      "$0"
+    ]
+  },
   "Section hidden from agents": {
     "prefix": "skip",
     "body": [

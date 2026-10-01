@@ -1,5 +1,6 @@
 import type MarkdownIt from 'markdown-it';
 import { fenceRule, renderContainer, renderHeader, renderMath, type RenderRule } from './markdownItHtml';
+import { expandIncludes, includedLinks } from './markdownItInclude';
 import {
   annotateContainers, containerBlock, frontMatterBlock, headingAttrs, headingIds, inlineDirective, mark, mathBlock,
   mathInline, sourceLines, styledSpan, taskLists,
@@ -86,6 +87,9 @@ function addContainers(md: MarkdownIt, ctx: SmdContext): void {
   md.renderer.rules.container_smd_open = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx);
   md.renderer.rules.container_smd_close = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx);
   md.core.ruler.after('block', 'smd_container_meta', annotateContainers);
+  // :::include splices in the included blocks before inline parsing; their links are rebased at the end.
+  md.core.ruler.after('smd_container_meta', 'smd_include', (state) => expandIncludes(state, ctx));
+  md.core.ruler.push('smd_include_links', includedLinks);
 }
 
 function addMath(md: MarkdownIt): void {

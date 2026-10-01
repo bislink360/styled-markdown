@@ -21,9 +21,10 @@ export class PreviewManager implements vscode.Disposable {
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('smd.preview')) this.previews.forEach((p) => p.update());
       }),
-      // Embedded source files (```ts file="…") may have changed.
+      // Embedded source files (```ts file="…") or included documents (:::include) may have changed.
       vscode.workspace.onDidSaveTextDocument((d) => {
-        if (d.languageId !== 'smd') this.previews.forEach((p) => p.scheduleUpdate());
+        const saved = d.uri.toString();
+        this.previews.forEach((p, key) => { if (key !== saved) p.scheduleUpdate(); });
       }),
     );
   }

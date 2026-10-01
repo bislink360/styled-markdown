@@ -4,6 +4,9 @@ import katex from 'katex';
 import { attrsToStyle, escapeHtml, htmlAttrs, resolveColor, type Attrs } from './attrs';
 import { asStringList } from './frontmatter';
 import { langFromPath, parseFenceInfo, sliceLines, type FenceInfo } from './fence';
+import {
+  includeHref, includeLabel, includeProblemText, includeRequest, type IncludeRequest, type IncludeResult,
+} from './include';
 import { CALLOUT_TYPES, STATUS_VALUES } from './spec';
 import type { SmdContext } from './markdownItSetup';
 import type { ContainerMeta } from './markdownItRules';
@@ -217,7 +220,31 @@ function riskMatrixOpen(c: ContainerView): string {
   return `<div${htmlAttrs(c.attrs, ['smd-risk-matrix'], c.style)}${c.dataLine}>${title}${grid}<div class="smd-risk-matrix-body">\n`;
 }
 
+/** `:::include`: the included content (spliced in by markdownItInclude.ts), or a note with a link, then the fallback body. */
+function includeOpen(c: ContainerView): string {
+  c.meta.close = '</div>';
+  const result = c.meta.include;
+  const request = includeRequest(c.attrs.values);
+  if (result?.ok) {
+    const from = includeLabel(result.include.path, request?.section);
+    return `<div${htmlAttrs(c.attrs, ['smd-include'], c.style)}${c.dataLine} data-include="${escapeHtml(from)}">\n`;
+  }
+  return `<div${htmlAttrs(c.attrs, ['smd-include', 'smd-include-missing'], c.style)}${c.dataLine}>${includeNote(result, request)}\n`;
+}
+
+function includeNote(result: IncludeResult | undefined, request: IncludeRequest | undefined): string {
+  if (!request) return '<div class="smd-include-note">:::include needs a file, e.g. file="shared/terms.smd"</div>';
+  const failure = result && !result.ok ? result : undefined;
+  const path = failure?.path ?? request.file;
+  const text = failure ? includeProblemText(failure) : 'Include not available here';
+  const label = escapeHtml(includeLabel(path, request.section));
+  const href = includeHref(path, request.section);
+  const target = href === undefined ? `<code>${label}</code>` : `<a href="${escapeHtml(href)}">${label}</a>`;
+  return `<div class="smd-include-note">${escapeHtml(text)}: ${target}</div>`;
+}
+
 const CONTAINERS = new Map<string, ContainerOpen>([
+  ['include', includeOpen],
   ['details', detailsOpen],
   ['card', cardOpen],
   ['tabs', divOpen('smd-tabs')],

@@ -1,0 +1,27 @@
+---
+smd: 1
+title: Transclusion
+summary: Exercises the 1.6 :::include block (a section moved to another level, a whole file, a missing file with a fallback body) so later releases are compared against them.
+status: draft
+updated: 2026-10-01
+---
+
+## Pricing
+
+The shared pricing terms, as the third level under this heading:
+
+:::include{file="include-terms.smd" section="Pricing" level=3}
+See [Pricing](include-terms.smd#pricing) in the shared terms.
+:::
+
+## All terms
+
+:::include{file="include-terms.smd"}
+:::
+
+## Glossary
+
+<!-- smd-disable-next-line include/missing-file -->
+:::include{file="shared/glossary.smd"}
+The shared glossary is not written yet.
+:::

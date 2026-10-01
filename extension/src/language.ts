@@ -10,7 +10,7 @@ import {
   checkMermaid, formatSmd, FRONTMATTER_SCHEMA, frontMatterValues, parseFrontMatter, parseSmd, renderSmd, validateSmd, type Diagnostic,
 } from './core';
 import {
-  anchorLine, anchorTargets, findLinks, isDocumentPath, linkAt, linkCompletionContext, splitTarget, type LinkCompletionContext,
+  anchorLine, anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext,
 } from './core/links';
 import { encodeAnchor, headingAt, linksToAnchor, renameHeading } from './core/anchors';
 import { blockquoteToCallout, containerAt, isCallout, wrapLines, type LineEdit } from './core/refactors';
@@ -281,7 +281,7 @@ function decodePath(p: string): string {
 class CompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
-    const link = linkCompletionContext(document.getText(), position.line, position.character);
+    const link = pathCompletionContext(document.getText(), position.line, position.character);
     if (link) return linkCompletions(document, position, link);
     const fm = parseFrontMatter(document.getText());
 

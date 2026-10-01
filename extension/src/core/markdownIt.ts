@@ -41,9 +41,10 @@ export interface MarkdownItSmdOptions {
   /** How `:::agent` blocks are shown to human readers. Default `collapsed`. */
   agentBlocks?: 'collapsed' | 'expanded' | 'hidden';
   /**
-   * Read a file for ```` ```lang file="…" ```` embeds, relative to the document being rendered (`env` is the
-   * env passed to `md.render`). Return undefined when the file is missing or not allowed. Without it, embeds
-   * show "Cannot read".
+   * Read a file for ```` ```lang file="…" ```` embeds and `:::include` blocks, relative to the document being
+   * rendered (`env` is the env passed to `md.render`; nested includes ask for paths relative to that document too).
+   * Return undefined when the file is missing or not allowed. Without it, embeds show "Cannot read" and includes
+   * their fallback body under an "Include not available here" note.
    */
   readFile?: (relativePath: string, env: unknown) => string | undefined;
   /** "Today" as YYYY-MM-DD, for `:due[]` states. Defaults to the current date. */

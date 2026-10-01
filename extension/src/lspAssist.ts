@@ -8,7 +8,7 @@ import {
   TEXT_STYLE_VALUES, WEIGHT_VALUES, frontMatterValues, parseFrontMatter,
 } from './core';
 import { frontMatterProperty } from './core/frontmatterSchema';
-import { anchorTargets, findLinks, isDocumentPath, linkAt, linkCompletionContext, splitTarget, type LinkCompletionContext } from './core/links';
+import { anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext } from './core/links';
 import { documentPreview, embedPreview, sectionExcerpt } from './core/symbols';
 
 /** LSP CompletionItemKind values used here. */
@@ -88,9 +88,9 @@ export function completionsAt(text: string, line: number, column: number, env: A
   return undefined;
 }
 
-/** Paths and `#anchors` for links, `related:` entries and `file="…"` embeds. */
+/** Paths and `#anchors` for links, `related:` entries, `file="…"` embeds and `:::include` files. */
 function linkCompletion(cursor: Cursor, env: AssistEnv): Completion | undefined {
-  const ctx = linkCompletionContext(cursor.text, cursor.line, cursor.column);
+  const ctx = pathCompletionContext(cursor.text, cursor.line, cursor.column);
   if (!ctx) return undefined;
   const hash = ctx.kind === 'embed' ? -1 : ctx.target.indexOf('#');
   if (hash >= 0) {

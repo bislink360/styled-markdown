@@ -62,6 +62,12 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
     attrs: ['title', 'priority'],
   },
   human: { description: 'Content addressed only to human readers. Agents may skip it.', title: true, attrs: ['title'] },
+  include: {
+    description: 'Transclusion: the body of another .smd file, or one section of it, in place of this block. ' +
+      'file="…" is relative to this document; section="…" is a heading\'s text or id; level=N makes its top heading level N. ' +
+      'The block\'s own body is fallback text (e.g. a link to the file) for renderers that cannot include.',
+    attrs: ['file', 'section', 'level'],
+  },
 
   // Product / project management
   decision: {

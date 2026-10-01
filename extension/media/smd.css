@@ -242,6 +242,18 @@ details.smd-callout > summary::-webkit-details-marker { display: none; }
 .smd-card-body > :last-child, .smd-box > :last-child, .smd-column > :last-child { margin-bottom: 0; }
 .smd-box { margin: 0 0 1.2em; padding: 14px 18px; border-radius: 10px; }
 
+/* ---------- Includes (:::include) ---------- */
+/* Included text reads as part of the document; on hover, a faint rule in the margin shows how far it goes. */
+.smd-include { position: relative; }
+.smd-include::before {
+  content: ""; position: absolute; left: -12px; top: 0; bottom: 0; width: 2px; border-radius: 1px;
+  background: var(--smd-border); opacity: 0; transition: opacity .15s;
+}
+.smd-include:hover::before { opacity: 1; }
+.smd-include-missing { margin: 0 0 1.2em; padding: 10px 14px; border: 1px dashed var(--smd-border); border-radius: 10px; }
+.smd-include-missing > :last-child { margin-bottom: 0; }
+.smd-include-note { color: var(--smd-fg-muted); font-size: .85em; margin-bottom: 6px; }
+
 /* ---------- Columns ---------- */
 .smd-columns { display: flex; gap: 20px; margin: 0 0 1.2em; flex-wrap: wrap; }
 .smd-column { flex: 1 1 0; min-width: 220px; }
@@ -441,6 +453,8 @@ pre.smd-has-hl code { position: relative; }
 
   /* No screen-only UI; agent instructions are for agents, not readers of the printout. */
   .smd-copy, .smd-tabbar, .smd-agent, .smd-u-no-print { display: none !important; }
+  /* Included text prints as part of the page, without the hover rule. */
+  .smd-include::before { display: none; }
 
   /* Tabs print as stacked panes, each under its label. */
   .smd-tabs.smd-js .smd-tab:not(.smd-active), .smd-tabs.smd-js .smd-tab-label { display: block; }
@@ -455,7 +469,7 @@ pre.smd-has-hl code { position: relative; }
   /* Page breaks: keep headings with what follows, and blocks in one piece where they fit. */
   .smd-doc h1, .smd-doc h2, .smd-doc h3, .smd-doc h4, .smd-doc h5, .smd-doc h6,
   .smd-callout-title, .smd-card-title, .smd-tab-label, .smd-code-title { break-after: avoid; page-break-after: avoid; }
-  .smd-callout, .smd-card, .smd-box, .smd-details, .smd-human, .smd-decision, .smd-risk, .smd-api, .smd-metric,
+  .smd-callout, .smd-card, .smd-box, .smd-include-missing, .smd-details, .smd-human, .smd-decision, .smd-risk, .smd-api, .smd-metric,
   .smd-diagram, .smd-code, .smd-math-block, .smd-doc-header, .smd-doc tr, .smd-doc img, .smd-doc blockquote,
   .smd-steps > ol > li, .smd-timeline li { break-inside: avoid; page-break-inside: avoid; }
   .smd-doc p { orphans: 3; widows: 3; }

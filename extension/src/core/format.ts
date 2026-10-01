@@ -260,8 +260,8 @@ export function formatAttrs(src: string, order: readonly string[]): string | nul
   ].join(' ');
 }
 
-/** Keys whose values are prose, always quoted so they can grow into several words. */
-const TEXT_KEYS = ['title', 'label'];
+/** Keys whose values are prose or paths (`:::include`), always quoted so they can grow into several words. */
+const TEXT_KEYS = ['title', 'label', 'file', 'section'];
 
 /** Keywords, numbers, dates, sizes and @owners stay bare (`status=accepted width=50%`); the rest is quoted. */
 function quote(key: string, value: string): string {

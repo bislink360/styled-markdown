@@ -1,12 +1,16 @@
 import { parseFrontMatter } from './frontmatter';
+import { findIncludes } from './include';
 import { parseSmd } from './parse';
 
-/** A link target found in a document. Positions are zero-based; `column` is where `target` starts. */
+/**
+ * A link target found in a document. Positions are zero-based; `column` is where `target` starts.
+ * `include` is the `file="…"` of an `:::include` block.
+ */
 export interface LinkTarget {
   target: string;
   line: number;
   column: number;
-  kind: 'inline' | 'definition' | 'html' | 'related';
+  kind: 'inline' | 'definition' | 'html' | 'related' | 'include';
 }
 
 /** A full or collapsed reference link, `[text][label]` or `[label][]`. */
@@ -53,6 +57,7 @@ export function findLinks(text: string): DocumentLinks {
   };
 
   if (fm.present && !fm.error) addRelated(fm.data.related, lines, fm.bodyStartLine, add);
+  addIncludes(lines, fm.bodyStartLine, add);
 
   let fence: { char: string; len: number } | null = null;
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
@@ -84,6 +89,18 @@ export function findLinks(text: string): DocumentLinks {
     }
   }
   return { links, references, definitions };
+}
+
+/** The `file="…"` of every `:::include` (outside code), at the column it starts. */
+function addIncludes(
+  lines: string[], from: number,
+  add: (target: string, line: number, column: number, kind: LinkTarget['kind']) => unknown,
+): void {
+  for (const { line, info } of findIncludes(lines, from)) {
+    const file = info.attrs.values.file;
+    const column = file ? lines[line].indexOf(file, lines[line].indexOf('file')) : -1;
+    if (file && column >= 0) add(file, line, column, 'include');
+  }
 }
 
 function addRelated(
@@ -165,7 +182,7 @@ export function anchorLine(text: string, id: string): number | undefined {
  * What is being typed at a cursor, for path and anchor completion. `target` is the partial link
  * target before the cursor and `column` where it starts. Kinds:
  * - `link`: an inline link or image `](…`, or a reference definition `[label]: …`
- * - `related`: a front matter `related:` entry (documents only)
+ * - `related`: a front matter `related:` entry, or (from pathCompletionContext) the `file="…"` of an `:::include` (documents only)
  * - `embed`: a code fence `file="…"` (any file, no anchors)
  */
 export interface LinkCompletionContext {
@@ -209,6 +226,28 @@ export function linkCompletionContext(text: string, line: number, character: num
   const definition = /^\s{0,3}\[[^\]\n]+\]:\s*<?([^\s<>]*)$/.exec(prefix);
   if (definition) return at('link', definition[1]);
   return undefined;
+}
+
+/**
+ * linkCompletionContext, and also the `file="…"` of an `:::include` being typed (kind `related`: documents and
+ * folders, as for `related:` entries).
+ */
+export function pathCompletionContext(text: string, line: number, character: number): LinkCompletionContext | undefined {
+  return includeCompletionContext(text, line, character) ?? linkCompletionContext(text, line, character);
+}
+
+function includeCompletionContext(text: string, line: number, character: number): LinkCompletionContext | undefined {
+  const lines = text.split(/\r?\n/);
+  const typed = includeFileTyped((lines[line] ?? '').slice(0, character));
+  const bodyStart = parseFrontMatter(text).bodyStartLine;
+  if (typed === undefined || line < bodyStart || codeFenceAt(lines, line, bodyStart)) return undefined;
+  return { kind: 'related', target: typed, column: character - typed.length };
+}
+
+/** The partial path typed in `file="…` on an `:::include` line, if the cursor is there. */
+function includeFileTyped(prefix: string): string | undefined {
+  if (!/^\s{0,3}:{3,}\s*include\s*\{/.test(prefix)) return undefined;
+  return /\bfile\s*=\s*["']([^"']*)$/.exec(prefix)?.[1];
 }
 
 /** Whether `line` opens a code fence, is inside one, or neither. */

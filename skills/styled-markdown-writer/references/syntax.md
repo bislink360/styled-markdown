@@ -9,7 +9,7 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 3. Callouts and collapsibles
 4. Layout: tabs, columns, cards, boxes, steps, timeline
 5. Project blocks: decision, risk, risk-matrix
-6. Developer blocks: api, code fences
+6. Developer blocks: api, code fences, include
 7. Audience blocks: agent, human
 8. Inline: styled text, directives, math
 9. Tasks
@@ -178,6 +178,26 @@ Code fence info string:
 | ```` ```ts file="../src/app.ts" lines="10-24" ```` | Embed real source (the body must be empty). Paths are relative to the document and must stay inside the workspace. With `lines`, highlight numbers refer to file lines. |
 | ```` ```mermaid ```` | Diagram |
 | ```` ```math ```` | Display math |
+
+### Include another document (1.6+)
+
+```markdown
+:::include{file="shared/terms.smd" section="Pricing" level=3}
+See [Pricing](shared/terms.smd#pricing) in the shared terms.
+:::
+```
+
+| Attribute | Meaning |
+|---|---|
+| `file` (needed) | The `.smd` document to include, relative to this one. Its body is used, without its front matter. |
+| `section` | Only one section and its subsections: a heading's text or id, as `smd agent --section` matches it. |
+| `level` | 1–6: the level the included top heading becomes, so it nests under the current heading (here `###` under a `##`). |
+
+- Write shared text (terms, glossary, setup steps) once and include it instead of copying it.
+- The body is **fallback text**, shown only where the file can't be included and by tools older than 1.6. Put a link to the file there.
+- Paths inside the included file (links, images, code embeds, nested includes) stay relative to that file.
+- Links in this document may point at included headings by id. An included heading whose id this document already uses is numbered (`#pricing-1`).
+- Don't make include chains loop (`a.smd` → `b.smd` → `a.smd`); `smd validate` warns (`include/*`).
 
 ## 7. Audience blocks
 

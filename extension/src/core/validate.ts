@@ -5,6 +5,7 @@ import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './container
 import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS } from './render';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
+import { checkIncludes, documentIds } from './includeCheck';
 import { parseFenceInfo, sliceLines } from './fence';
 import { suggest } from './util';
 import {
@@ -44,7 +45,7 @@ export interface Fix {
 export interface ValidateOptions {
   /** Return true when a path (relative to the document) exists. Omit to skip link checks. */
   fileExists?: (relativePath: string) => boolean;
-  /** Read a file relative to the document, for checking `file="…" lines="…"` embeds. */
+  /** Read a file relative to the document, for checking `file="…" lines="…"` embeds and `:::include` blocks. */
   readFile?: (relativePath: string) => string | undefined;
   /** "Today" as YYYY-MM-DD for overdue and stale checks. Defaults to the current date. */
   today?: string;
@@ -177,6 +178,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   }
 
   checkLinks(text, push, options);
+  checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
 
   let result = applySuppressions(text, diagnostics);
   if (options.rules) result = applyRuleSettings(result, options.rules);
@@ -459,14 +461,15 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
     return otherIds.get(path);
   };
 
-  for (const link of links) {
+  // `:::include` files have their own checks (includeCheck.ts).
+  for (const link of links.filter((l) => l.kind !== 'include')) {
     const parts = splitTarget(link.target);
     if (!parts) continue;
     const { line, column } = link;
     const end = column + link.target.length;
     if (!parts.path) {
       if (!parts.anchor) continue;
-      ownIds ??= anchorIds(text);
+      ownIds ??= documentIds(text, options.readFile);
       if (!ownIds.has(parts.anchor)) {
         missingAnchor(parts.anchor, ownIds, 'in this document', link.target, line, column, end, push);
       }

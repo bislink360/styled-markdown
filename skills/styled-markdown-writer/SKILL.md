@@ -55,7 +55,7 @@ These are the rules the validator and renderers depend on. `references/syntax.md
 1. **Front matter first:** `smd: 1`, `title`, a precise one- or two-sentence `summary`, `status` (`draft` · `review` · `approved` · `deprecated` · `archived`), `owners`, and `updated` (`YYYY-MM-DD`). Don't repeat the title as a `# H1`; start the body at `##`.
 2. **Blocks** are `:::name{attrs} Title` … `:::`. Attributes go directly after the name with no space. A bare `:::` closes the innermost block. Write outer containers with more colons (`::::tabs`) for readability.
 3. **Only known names:**
-   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `decision` `risk` `risk-matrix` `api` `agent` `human`.
+   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `decision` `risk` `risk-matrix` `api` `agent` `human` `include`.
    - Inline: `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention`.
 4. **Enumerated values exactly as specified:**
    - decision `status`: proposed, accepted, rejected, superseded, deprecated
@@ -65,7 +65,7 @@ These are the rules the validator and renderers depend on. `references/syntax.md
    - dates: `YYYY-MM-DD`
 5. **Named colors only** (red orange amber yellow green teal cyan blue indigo purple pink gray muted accent) unless a brand hex is required.
 6. **Tasks:** `- [ ] Verb-first task :priority[P1] @owner :due[2026-10-15]`. One owner per task where possible.
-7. **Code:** always give fences a language. Use `title="path"` for file names, `{2,5-7}` to highlight lines, and `file="../src/x.ts" lines="10-24"` (empty body) to embed real source instead of pasting it.
+7. **Code:** always give fences a language. Use `title="path"` for file names, `{2,5-7}` to highlight lines, and `file="../src/x.ts" lines="10-24"` (empty body) to embed real source instead of pasting it. Text shared by several documents goes in one `.smd` file, included with `:::include{file="shared/terms.smd" section="Pricing"}` and a link to the file as the body (fallback for older tools) before the closing `:::`.
 8. **Diagrams:** ```` ```mermaid ```` with a valid first line (`flowchart LR`, `sequenceDiagram`, `gantt`, …).
 
 ## Writing for both audiences
