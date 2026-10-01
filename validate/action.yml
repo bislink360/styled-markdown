@@ -1,0 +1,58 @@
+name: smd validate
+description: Validate Styled Markdown (.smd) files, annotate problems inline on pull requests and write a job summary.
+author: Bislink360
+branding:
+  icon: check-circle
+  color: purple
+
+# Runs the smd CLI bundled in this repository (skills/styled-markdown-reader/scripts/smd.cjs) with the
+# runner's Node.js (18+; GitHub-hosted runners have it). Nothing is installed or downloaded.
+inputs:
+  paths:
+    description: "Files or folders to check, one per line (paths may contain spaces). Relative to the repository root."
+    required: false
+    default: .
+  fail-on:
+    description: "When the step fails: error (on errors), warning (on errors or warnings, like --strict) or never (report only)."
+    required: false
+    default: error
+  strict:
+    description: "true: fail on warnings too (the same as fail-on: warning)."
+    required: false
+    default: "false"
+  config:
+    description: "Rule config file for every document. Default: the nearest smd.config.json or .smdrc of each file."
+    required: false
+    default: ""
+  mermaid:
+    description: "false: skip Mermaid syntax checks. The bundled CLI has no Mermaid parser; set cli to the npm package's CLI to check diagrams."
+    required: false
+    default: "true"
+  stale-after:
+    description: "Days after the front matter \"updated\" date before a document is reported as stale (0 turns it off; default 180)."
+    required: false
+    default: ""
+  summary:
+    description: "true: write counts and the first 50 problems to the job summary."
+    required: false
+    default: "true"
+  cli:
+    description: "Path to another smd CLI to run, e.g. node_modules/styled-markdown/dist/cli.js (which includes the Mermaid parser). Default: the bundled one."
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: smd validate
+      shell: bash
+      env:
+        SMD_PATHS: ${{ inputs.paths }}
+        SMD_FAIL_ON: ${{ inputs.fail-on }}
+        SMD_STRICT: ${{ inputs.strict }}
+        SMD_CONFIG: ${{ inputs.config }}
+        SMD_MERMAID: ${{ inputs.mermaid }}
+        SMD_STALE_AFTER: ${{ inputs.stale-after }}
+        SMD_SUMMARY: ${{ inputs.summary }}
+        SMD_CLI: ${{ inputs.cli }}
+      run: bash "$GITHUB_ACTION_PATH/validate.sh"

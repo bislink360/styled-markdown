@@ -1,6 +1,6 @@
 ---
 name: smd-release
-description: Branch, version, verify and publish Styled Markdown releases (VS Code extension, npm package `styled-markdown`, agent skills, GitHub release) without breaking existing users. Use this skill for any change destined for the public bislink360/styled-markdown repository — starting a feature or fix branch, preparing or reviewing a pull request, bumping versions, writing the changelog, checking backward compatibility, tagging, or publishing to the VS Code Marketplace, npm or GitHub Releases — even if the user just says "ship it", "release this", "bump the version", "merge this" or "publish".
+description: Branch, version, verify and publish Styled Markdown releases (VS Code extension, npm package `styled-markdown`, agent skills, GitHub release) without breaking existing users. Use this skill for any change destined for the public bislink360/styled-markdown repository — starting a feature or fix branch, preparing or reviewing a pull request, bumping versions, writing the changelog, checking backward compatibility, tagging, or publishing to the VS Code Marketplace, Open VSX, npm or GitHub Releases (the tag-triggered Release workflow) — even if the user just says "ship it", "release this", "bump the version", "merge this" or "publish".
 ---
 
 # Releasing Styled Markdown
@@ -9,7 +9,7 @@ One repository ships four artifacts that must stay in lockstep:
 
 | Artifact | Where | Version source |
 |---|---|---|
-| VS Code extension `bislink360.styled-markdown` | Marketplace + `.vsix` on GitHub Releases | `extension/package.json` |
+| VS Code extension `bislink360.styled-markdown` | VS Code Marketplace, Open VSX + `.vsix` on GitHub Releases | `extension/package.json` |
 | npm package `styled-markdown` (library + `smd` CLI) | npmjs.com | `npm/package.json` (same version) |
 | Agent skills `styled-markdown-reader` / `-writer` | `skills/`, zips on GitHub Releases | bundle the CLI, so they follow the same version |
 | Format spec | `smd: 1` in documents | `SMD_VERSION` in `extension/src/core/spec.ts`; changes only for format-breaking releases |
@@ -93,29 +93,58 @@ Before tagging, show the human the checker report and a short summary:
 
 Don't proceed until the human approves in chat. For a major release, get approval for each breaking change individually.
 
-### 6. Tag the release branch, build artifacts
+### 6. Tag the release branch; the Release workflow builds, releases and publishes
 
-1. Tag the head of the release branch (the exact commit that ships) and push the tag:
+1. Tag the head of the release branch (the exact commit that ships) and push the tag. **Pushing the tag publishes**, so do it only after the human's approval in §5:
 
    ```bash
    git tag -a vX.Y.Z origin/release/vX.Y.Z -m "Styled Markdown X.Y.Z" && git push origin vX.Y.Z
    ```
 
-2. Build the artifacts from that exact commit, in a separate worktree: `npm run package` (→ `.vsix`), `npm run build:npm`, and skill zips created with `tar -a -c -f <name>.zip <folder>` from `skills/` (forward-slash paths; don't use PowerShell `Compress-Archive`).
+2. The tag starts `.github/workflows/release.yml`. Its logic lives in small tested scripts in `extension/scripts/release/`:
 
-### 7. Publish (the human holds the credentials)
+   | Job | What it does |
+   |---|---|
+   | verify | `check-versions.mjs`: the tag equals the version in `extension/package.json`, `package-lock.json` and `npm/package.json`; the CHANGELOG has a non-empty `## X.Y.Z` section; the tagged commit is on `main` or a `release/*` branch. Then typecheck and unit tests. |
+   | build | `.vsix` (`npm run package`), npm `.tgz` (`npm run build:npm`, `npm pack`) and skill zips (`zip -r`). Checks they are real zips with the LICENSE and the right version, and that `skills/*/scripts/smd.cjs` match a fresh build. Notes: `changelog-excerpt.mjs --downloads` (downloads table + the changelog section). All uploaded as the `release-assets` workflow artifact. |
+   | github-release | Creates the GitHub Release with those notes and the four assets. If the release already exists, it keeps its notes and attaches only missing assets. Verifies the release lists all four. |
+   | publish-marketplace, publish-openvsx, publish-npm | Publish the exact `.vsix` / `.tgz` attached to the release (`vsce publish --packagePath`, `ovsx publish`, `npm publish --provenance`), then poll the registry until it lists X.Y.Z (`wait-for-version.mjs`). |
 
-Publish in this order. Only publish with credentials that are already present on the machine. **Never ask for, type, paste or store tokens yourself.** If a step needs a login, stop and give the human the exact command to run.
+   Each publish job **skips with a notice** (a green job, not a failure) on a dry run, while its secret is missing, or when the registry already lists the version (`publish-gate.mjs`). So re-running is safe: **Actions → Release → Run workflow** with the tag and **dry run** unticked finishes only what is missing, e.g. after adding a secret or when a registry was slow.
+3. To rehearse, run the workflow by hand with an existing tag and **dry run** ticked (the default): it verifies, builds and checks every artifact and shows the release notes in the job summary, but creates no release and publishes nothing. A manual run uses the scripts at the tag, so it works for tags from v1.5.0 on.
+4. Watch it with `gh run watch` (or `gh run list --workflow release.yml`) and read the notices of the publish jobs.
 
-| Step | Command | Verify (don't trust the output alone) |
-|---|---|---|
-| GitHub release | `gh release create vX.Y.Z --title "Styled Markdown X.Y.Z" --notes-file <changelog excerpt> <vsix> <skill zips>` | `gh release view vX.Y.Z` lists 3 assets |
-| VS Code Marketplace | `cd extension && npx vsce publish --packagePath styled-markdown-X.Y.Z.vsix` | `npx vsce show bislink360.styled-markdown` shows X.Y.Z (allow a few minutes for verification) |
-| npm | `cd npm && npm publish` | `npm view styled-markdown version` returns X.Y.Z |
+### 7. Verify each registry (the human holds the credentials)
 
-Check authentication first: `npx vsce ls-publishers` must list `bislink360`, and `npm whoami` must succeed. If either fails, hand the step to the human.
+**Never ask for, type, paste or store tokens yourself.** **Only report something as published after the registry itself shows the new version.** If a listing isn't live (its job skipped or failed), say so plainly and don't update docs to point at it.
 
-**Only report something as published after the registry itself shows the new version.** If a listing isn't live, say so plainly and don't update docs to point at it.
+| Where | Verify (don't trust the workflow's output alone) |
+|---|---|
+| GitHub release | `gh release view vX.Y.Z` lists 4 assets (`.vsix`, `.tgz`, two skill zips) |
+| VS Code Marketplace | `npx vsce show bislink360.styled-markdown` shows X.Y.Z (verification can take a few minutes) |
+| Open VSX | `curl -s https://open-vsx.org/api/bislink360/styled-markdown/X.Y.Z` returns that version |
+| npm | `npm view styled-markdown@X.Y.Z version` returns X.Y.Z |
+
+**One-time setup, done by the maintainer.** Until a secret exists its publish job skips, and releases stay GitHub-only as before. Add each one in GitHub → **Settings → Secrets and variables → Actions → New repository secret**, or with `gh secret set NAME` (it prompts for the value, so the token never lands in shell history):
+
+| Secret | How to create it |
+|---|---|
+| `VSCE_PAT` | Sign in to [dev.azure.com](https://dev.azure.com) with the account that owns the `bislink360` publisher ([marketplace.visualstudio.com/manage](https://marketplace.visualstudio.com/manage)) → User settings → Personal access tokens → New token: Organization **All accessible organizations**, scope **Marketplace → Manage**, an expiry you track. |
+| `OVSX_PAT` | Sign in to [open-vsx.org](https://open-vsx.org) with GitHub, link an Eclipse account and sign the Publisher Agreement (profile page), then Settings → Access Tokens → Generate. Create the `bislink360` namespace once from your own shell: `npx ovsx create-namespace bislink360` (reads the token from `OVSX_PAT`). Optionally claim the namespace (EclipseFdn/open-vsx.org issue) for the verified badge. |
+| `NPM_TOKEN` | On [npmjs.com](https://www.npmjs.com), as the account that will own `styled-markdown` (with 2FA) → Access Tokens → Generate New Token → **Granular**: read and write, packages `styled-markdown` (the very first publish needs "all packages" until the package exists; narrow it afterwards), bypass 2FA for automation, an expiry you track. |
+
+The publish jobs run in the `release` GitHub environment (created on first use). Add required reviewers to it to approve every publish, and store the secrets as environment secrets there if you want them scoped to publishing. An expired token fails its job: update the secret and re-run the workflow for the tag.
+
+**Manual fallback** (the workflow is unavailable). Build from the tag in a separate worktree: `npm run package` (→ `.vsix`), `npm run build:npm` then `npm pack` in `npm/` (→ `.tgz`), and skill zips from `skills/` — on Windows with `C:\Windows\System32\tar.exe -a -c -f <name>.zip <folder>` (Git Bash's `tar` writes a tar file named `.zip`; check with `file *.zip`), elsewhere with `zip -r`. Notes: `node extension/scripts/release/changelog-excerpt.mjs X.Y.Z --downloads -o notes.md`. Publish in this order, only with credentials already present on the machine (`npx vsce ls-publishers` lists `bislink360`, `npm whoami` succeeds); otherwise stop and give the human the exact command:
+
+| Step | Command |
+|---|---|
+| GitHub release | `gh release create vX.Y.Z --verify-tag --title "Styled Markdown X.Y.Z" --notes-file notes.md <vsix> <tgz> <skill zips>` |
+| VS Code Marketplace | `cd extension && npx vsce publish --packagePath styled-markdown-X.Y.Z.vsix` |
+| Open VSX | `npx ovsx publish styled-markdown-X.Y.Z.vsix` (token from `OVSX_PAT`) |
+| npm | `cd npm && npm publish` |
+
+Then verify each one as in the table above.
 
 ### 8. After publishing
 

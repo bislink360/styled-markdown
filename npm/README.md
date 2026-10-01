@@ -26,6 +26,7 @@ npx styled-markdown --help         # run without installing
 
 ```bash
 smd validate docs/ --fix              # check files, auto-fix typos; exit code 1 on errors (CI-friendly)
+smd validate docs/ --format github    # GitHub Actions annotations (--summary "$GITHUB_STEP_SUMMARY" adds a job summary)
 smd fmt docs/ --check                 # formatting check for CI; without --check it formats in place
 smd outline docs/spec.smd             # sections, line ranges and token cost per section
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
