@@ -5,6 +5,13 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- VS Code: an **SMD Tasks** view in the Explorer (shown in workspaces with `.smd` files) lists the tasks of every `.smd` file in the workspace:
+  - **Group Tasks By…** (view title bar) switches between owner (Unassigned last; a task with two owners is under both), due date (Overdue, Today, This week, Later, No due date) and document; the choice is remembered per workspace
+  - inside every group: overdue first, then by priority and due date, as in `smd tasks`
+  - open tasks only, or all with **Show Completed Tasks**; each task shows its priority, due date (and "overdue") and owners, with the section and file in the tooltip
+  - click a task to open it at its line; tick its checkbox to check it off (or uncheck it) in the file, which is saved unless it already had unsaved changes
+  - follows unsaved edits, saves and files created or deleted on disk; the view's badge shows the number of overdue tasks
+  - new commands: `smd.groupTasksBy`, `smd.showCompletedTasks`, `smd.hideCompletedTasks`, `smd.refreshTasks` and `smd.openTask`; the extension now also activates when the workspace contains `.smd` files
 
 - **`smd decisions <files|dirs>`**: a decision log across documents (an ADR index). Every `:::decision`, newest date first and undated last, one line each with location, date, status, title, owner and document › section. `--status accepted,proposed` filters by status (`open` = proposed, the default status), `--owner @name` by owner, `--json` prints structured rows.
 - **`smd decisions --md`**: the log as an ADR index document to commit (front matter and a table with status badges, each decision linked to its section, rejected and superseded ones struck through). With `-o docs/decisions.smd` the links are relative to that file, so it passes `smd validate` and `smd fmt --check`; `--title` sets its title.
