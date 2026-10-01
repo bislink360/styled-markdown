@@ -5,8 +5,13 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- `smd risks <files|dirs...>`: a risk register of every `:::risk` block across documents, scored impact × likelihood (`low` 1 … `critical` 4, so 1–16) and sorted by score, then impact, then path and line. Each line shows the score, levels, title, owner, status, location, section and a one-line mitigation (a `Mitigation:` line from the body, else its first sentence), followed by an impact × likelihood matrix of counts. A missing or unknown level counts as `medium` and shows as `medium?`; a missing status is `open`. Closed risks are left out unless `--all`; `--status open,mitigated,…` and `--owner @name` filter; `--json` prints the register for tools.
+- `smd risks --html [-o risks.html]`: a standalone, theme-aware (light/dark) page with a colour-coded impact × likelihood matrix (green → red by score) whose cells link to the register table below it. Uses the same stylesheet as `smd render`.
+- `:::risk-matrix [title]` block: draws the impact × likelihood matrix of the risks in the same document (closed ones left out; risks with an `{#id}` are linked). Plain-Markdown export turns it into a table, and the agent view into a one-line `[risk matrix: …]` pointer, since the risks are already `<risk>` blocks. Completion, a `risk-matrix` snippet and validation know it.
+- Library: `riskRegister`, `documentRisks`, `riskScore`, `riskMatrix`, `riskSummary`, `compareRisks`, `riskLine`, `riskMatrixText`, `riskRegisterText`, `riskRegisterSummary`, `riskMatrixHtml`, `riskRegisterHtml`, `riskBand`, `renderRiskPage`, the `RISK_STATUS` list, and their types.
 
 ### Changed
+- `smd outline` marks a section `risk` only for `:::risk` blocks: a section that holds just a `:::risk-matrix` (or another container whose name starts with `risk-`) is no longer marked.
 
 ### Deprecated
 

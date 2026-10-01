@@ -2,6 +2,7 @@ import { parseAttrs } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { HEADING_ATTRS } from './render';
+import { riskMatrixMarkdown } from './risks';
 
 export interface ToMarkdownOptions {
   /** Read files for file="…" code embeds; without it the embed becomes a link only. */
@@ -124,6 +125,9 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       } else if (info.name === 'card') {
         stack.push({ len, prefix: '> ' });
         if (title) { emit(`**${title}**`); emit(''); }
+      } else if (info.name === 'risk-matrix') {
+        for (const l of riskMatrixMarkdown(text, title)) emit(l);
+        stack.push({ len, prefix: '' });
       } else if (info.name === 'tab') {
         emit(`**${title || 'Tab'}**`);
         emit('');

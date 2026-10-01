@@ -4,7 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   agentView, applyFixes, diffSmd, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderPage,
-  smdIndex, smdToMarkdown, SelectorError, SMD_VERSION, type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic,
+  riskRegister, riskRegisterSummary, riskRegisterText, renderRiskPage, RISK_STATUS, smdIndex, smdToMarkdown, SelectorError, SMD_VERSION,
+  type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic,
   type DiffResult, type Selector, type Tokenizer,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
@@ -40,6 +41,12 @@ Reading (token-efficient, for agents):
                    Needs the js-tiktoken package in your project or installed globally; smd doesn't bundle it.
   smd tasks <files|dirs...> [--all] [--mine @name] [--json]
       Open tasks across documents with owner, priority and due date (overdue first).
+  smd risks <files|dirs...> [--status open,mitigated,accepted,closed] [--owner @name] [--all] [--json]
+            [--html] [-o <file>]
+      Risk register: every :::risk block, scored impact × likelihood (low 1, medium 2, high 3, critical 4;
+      a missing level counts as medium and shows as "medium?"), highest score first, then a matrix of
+      counts. Closed risks are left out unless --all or --status asks for them.
+      --html  a standalone, theme-aware page: a colour-coded matrix that links to the register table
   smd query "<selector>" <files|dirs...> [--json] [--titles] [--brief] [--no-lines]
       Blocks selected by type and attributes, each in the agent view. Exit code 1 when nothing matches.
         decision[status=accepted]      risk[impact>=high][status!=closed]      api[method=POST|PUT]
@@ -107,7 +114,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
-  '--max-tokens', '--tokenizer',
+  '--max-tokens', '--tokenizer', '--status', '--owner',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -144,6 +151,8 @@ function main(argv: string[]): number | Promise<number> {
       return agentFile(requireFile(positional[0]), args, today);
     case 'tasks':
       return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
+    case 'risks':
+      return risks(positional, args);
     case 'query':
       return query(positional[0], positional.slice(1), { json: flags.has('--json'), titles: flags.has('--titles'), brief: flags.has('--brief'), lineRefs: !flags.has('--no-lines'), today });
     case 'diff':
@@ -315,6 +324,22 @@ function tasks(targets: string[], all: boolean, mine: string | undefined, json: 
   for (const r of rows) console.log(taskLine(r));
   console.error(`[smd] ${taskSummary(rows, all)}`);
   return 0;
+}
+
+/** `smd risks`: the register as text, JSON or a standalone HTML page. Closed risks only with --all or --status. */
+function risks(targets: string[], args: Args): number {
+  const status = (args.values.get('--status') ?? []).flatMap((s) => s.split(',')).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const unknown = status.find((s) => !RISK_STATUS.includes(s));
+  if (unknown) return fail(`Unknown risk status "${unknown}". Statuses: ${RISK_STATUS.join(', ')}`);
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const documents = files.map((file) => ({ path: relativePath(file), text: read(file) }));
+  const options = { status, owner: args.values.get('--owner')?.[0], all: args.flags.has('--all') };
+  const register = riskRegister(documents, options);
+  console.error(`[smd] ${riskRegisterSummary(register, options)}`);
+  const out = args.values.get('-o')?.[0];
+  if (args.flags.has('--html')) return write(out, renderRiskPage(register));
+  return write(out, args.flags.has('--json') ? JSON.stringify(register, null, 2) + '\n' : riskRegisterText(register));
 }
 
 interface QueryFlags { json: boolean; titles: boolean; brief: boolean; lineRefs: boolean; today?: string }

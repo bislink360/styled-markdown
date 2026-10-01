@@ -30,6 +30,7 @@ smd fmt docs/ --check                 # formatting check for CI; without --check
 smd outline docs/spec.smd             # sections, line ranges and token cost per section
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
+smd risks docs/ --html -o risks.html  # risk register: impact × likelihood, highest first, colour-coded matrix
 smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
 smd render docs/spec.smd -o spec.html # standalone HTML page
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
@@ -46,6 +47,7 @@ Run `smd --help` for every option.
 import {
   renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
   smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
+  riskRegister, riskRegisterText, renderRiskPage,
 } from 'styled-markdown';
 ```
 
@@ -136,6 +138,11 @@ const entry = indexEntry(source, 'docs/checkout.smd'); // one `smd index` catalo
 const catalog = smdIndex([{ path: 'docs/checkout.smd', text: source }]); // { format: 'smd-index', version: 1, smd: 1, documents: [entry, …] }, sorted by path
 const changes = diffSmd(oldSource, newSource); // the `smd diff` sections that changed
 // { frontMatter: [{ key: 'status', before: 'draft', after: 'accepted' }], sections: [{ change: 'changed', heading: 'Rollout', level: 3, line: 40, endLine: 46, text: '### Rollout  [L41]\n…' }], text: '…', tokens: 42, fullTokens: 1480 }
+
+const register = riskRegister([{ path: 'docs/checkout.smd', text: source }], { all: false }); // the `smd risks` register
+// { risks: [{ path, line, title, impact: 'high', likelihood: 'medium', score: 6, owner: '@payments', status: 'open', section, summary, defaulted: [] }], matrix: { impact, likelihood, counts }, documents: 1, documentsWithRisks: 1 }
+riskRegisterText(register);               // one line per risk, then a text matrix
+renderRiskPage(register);                 // standalone HTML page: colour-coded matrix + register table (light/dark)
 ```
 
 Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.

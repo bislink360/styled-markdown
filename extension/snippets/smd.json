@@ -257,6 +257,17 @@
       ":::"
     ]
   },
+  "Risk matrix": {
+    "prefix": [
+      "risk-matrix",
+      "riskmatrix"
+    ],
+    "description": "Impact × likelihood matrix of the risks in this document",
+    "body": [
+      ":::risk-matrix ${1:Risks}",
+      ":::"
+    ]
+  },
   "API endpoint": {
     "prefix": [
       "api",
