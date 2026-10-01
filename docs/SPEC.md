@@ -229,7 +229,7 @@ GFM task lists (`- [ ]`, `- [x]`). Renderers connected to an editor MAY make the
 
 `red` `orange` `amber` `yellow` `green` `teal` `cyan` `blue` `indigo` `purple` `pink` `gray` `muted` `accent`
 
-Named colors are theme tokens: renderers choose values with adequate contrast for light and dark backgrounds. `accent` follows the document's `accent` front matter. **Prefer named colors**; use hex only for brand colors.
+Named colors are theme tokens: renderers choose values with adequate contrast for light and dark backgrounds (WCAG 2.2 AA: at least 4.5:1 for text, 3:1 for graphics such as status dots), and SHOULD NOT convey meaning by color alone. `accent` follows the document's `accent` front matter. **Prefer named colors**; use hex only for brand colors.
 
 Any value outside these lists is a validation error and is dropped by the renderer.
 

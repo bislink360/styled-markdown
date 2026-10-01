@@ -61,7 +61,7 @@ test('figures: :ref[id] shows the number as a link, before or after the figure; 
 test('figures: references in captions and other container titles resolve too', () => {
   const html = renderSmd(':::figure{#a} Like :ref[b]\nx\n:::\n\n:::figure{#b}\ny\n:::\n\n:::note See :ref[a]\nz\n:::\n').html;
   assert.match(html, /Figure 1:<\/span> Like <a class="smd-ref" href="#b">Figure 2<\/a>/);
-  assert.match(html, /<span>See <a class="smd-ref" href="#a">Figure 1<\/a><\/span>/);
+  assert.match(html, /<span>(?:<span class="smd-sr-only">Note: <\/span>)?See <a class="smd-ref" href="#a">Figure 1<\/a><\/span>/);
 });
 
 test('figures: the first figure with an id wins; style and class attributes apply', () => {
@@ -108,8 +108,8 @@ test('figures: findRefs skips code and reports the columns of each directive', (
 test('figures: markdown-it plugin renders figures and references like renderSmd', () => {
   const md = new MarkdownIt({ html: true, linkify: true, typographer: true }).use(smd, { codeFrames: true, headingIds: true, sourceLines: true });
   const env: { smdFigures?: Map<string, unknown> } = {};
-  // renderSmd's own instance also wraps tables in a scrolling div.
-  const expected = renderSmd(doc).html.replace('<div class="smd-table-wrap">', '').replace('</table>\n</div>', '</table>\n');
+  // renderSmd's own instance also wraps tables in a scrolling div and gives header cells scope="col".
+  const expected = renderSmd(doc).html.replace('<div class="smd-table-wrap">', '').replace('</table>\n</div>', '</table>\n').replaceAll(' scope="col"', '');
   assert.equal(`<article class="smd-doc">${md.render(doc, env)}</article>`, expected);
   assert.deepEqual([...env.smdFigures!.keys()], ['fig-a', 'tbl-a', 'fig-b']);
   const plain = new MarkdownIt().use(smd).render(':::figure{#f} Cap\nx\n:::\n\n:ref[f]\n');

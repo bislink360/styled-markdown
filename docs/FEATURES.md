@@ -703,6 +703,16 @@ smd looks for `playwright`, then `@playwright/test`, then `puppeteer`, in the cu
 
 It waits until the page has finished rendering: the runtime sets `data-smd-ready` on `<html>` once Mermaid diagrams are drawn and fonts are loaded (after 60 s it prints anyway, with a warning). So **diagrams are in the PDF as vector SVG**, and math as KaTeX text. Mermaid and the KaTeX stylesheet still load from the CDN, so diagrams need a network connection. The page is printed from a temporary file beside the document (removed afterwards), so relative image paths resolve. PDFs always use the light theme.
 
+### Accessibility
+
+Rendered pages (the preview, `smd render`, `smd build` sites and `smd risks --html`) aim at WCAG 2.2 AA:
+
+- **Contrast:** text has at least 4.5:1 against its background, and focus rings and status dots 3:1, in the light and the dark theme. Named colors, badges, pills, callouts, due dates and risk matrix bands are checked by a test that reads the colors from `smd.css`.
+- **Keyboard:** every control has a visible focus ring. Tabs follow the WAI-ARIA tabs pattern: Tab enters the tab list, **←/→** move between tabs (wrapping), **Home/End** jump to the first and last, and the panel is next in the Tab order. Collapsibles (`:::details`, collapsible callouts, `:::agent`) are native `<details>` and open with **Enter** or **Space**. Copy buttons appear on keyboard focus and announce "Code copied". Code blocks, tables and diagrams that scroll sideways can be focused and scrolled with the arrow keys. Sites have a "Skip to content" link, and **Escape** closes the sidebar menu (back to its button) and the search results.
+- **Screen readers:** pages declare `lang="en"` and use `main`, `header` and named `nav` landmarks. Task checkboxes are named by their text, table header cells have `scope`, progress bars have a name and value, and status dots are hidden behind their text. Meaning carried by color also comes in words: a callout with its own title starts with its type ("Warning:"), overdue dates say "overdue" (and due-soon dates "due soon" to screen readers), and metric deltas say "up, good". Search announces the number of results.
+- **Images and diagrams:** `![alt](…)` becomes the image's alt text; an empty alt marks a decorative image. Name a Mermaid diagram with `accTitle:` and `accDescr:` lines, which Mermaid turns into the SVG's title and description. Math is rendered with MathML for screen readers.
+- **Motion:** with the system's "reduce motion" setting, transitions and smooth scrolling are turned off.
+
 ## 17. CLI reference
 
 ```text

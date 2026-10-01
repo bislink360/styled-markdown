@@ -82,6 +82,11 @@ export function createMarkdownIt(options: RenderOptions = {}): MarkdownIt {
   md.renderer.rules.table_open = (tokens, idx, opts, _env, self) =>
     `<div class="smd-table-wrap">${self.renderToken(tokens, idx, opts)}`;
   md.renderer.rules.table_close = (tokens, idx, opts, _env, self) => `${self.renderToken(tokens, idx, opts)}</div>`;
+  // Markdown tables have one header row: each header cell heads its column.
+  md.renderer.rules.th_open = (tokens, idx, opts, _env, self) => {
+    tokens[idx].attrSet('scope', 'col');
+    return self.renderToken(tokens, idx, opts);
+  };
   return md;
 }
 
@@ -133,7 +138,7 @@ export function renderParsed(text: string, fm: ParsedDocument, options: RenderOp
 function renderToc(headings: Heading[]): string {
   const items = headings.filter((h) => h.level >= 2 && h.level <= 3);
   if (!items.length) return '';
-  return `<nav class="smd-toc"><div class="smd-toc-title">Contents</div><ul>${items
+  return `<nav class="smd-toc" aria-label="Contents"><div class="smd-toc-title">Contents</div><ul>${items
     .map((h) => `<li class="smd-toc-l${h.level}"><a href="#${h.slug}">${escapeHtml(h.text)}</a></li>`)
     .join('')}</ul></nav>`;
 }

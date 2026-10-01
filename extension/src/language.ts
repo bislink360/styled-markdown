@@ -546,9 +546,10 @@ class WorkspaceSymbolProvider implements vscode.WorkspaceSymbolProvider {
 // Color swatches for color=… / bg=… / accent: …
 // ---------------------------------------------------------------------------
 
+/** The light theme's named colors in smd.css (contrast.test.ts checks they match). */
 const LIGHT_HEX: Record<string, string> = {
-  red: '#dc2626', orange: '#ea580c', amber: '#d97706', yellow: '#ca8a04', green: '#16a34a', teal: '#0d9488',
-  cyan: '#0891b2', blue: '#2563eb', indigo: '#4f46e5', purple: '#9333ea', pink: '#db2777', gray: '#6b7280',
+  red: '#d52424', orange: '#c4420c', amber: '#b45309', yellow: '#a16207', green: '#15803d', teal: '#0f7c73',
+  cyan: '#0d7895', blue: '#2563eb', indigo: '#4f46e5', purple: '#9333ea', pink: '#cf216d', gray: '#686f7d',
 };
 
 function hexToColor(hex: string): vscode.Color | undefined {
