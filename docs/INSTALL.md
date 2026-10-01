@@ -29,13 +29,13 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 
 ### Option A — from the release file (recommended)
 
-1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-1.4.0.vsix`**.
+1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-1.5.0.vsix`**.
 2. Install it with **one** of these methods.
 
    **From the terminal:**
 
    ```bash
-   code --install-extension styled-markdown-1.4.0.vsix
+   code --install-extension styled-markdown-1.5.0.vsix
    ```
 
    **From VS Code:**
@@ -55,7 +55,7 @@ git clone https://github.com/bislink360/styled-markdown.git
 cd styled-markdown/extension
 npm install
 npm run package
-code --install-extension styled-markdown-1.4.0.vsix
+code --install-extension styled-markdown-1.5.0.vsix
 ```
 
 ## Verify the installation
@@ -96,11 +96,11 @@ The CLI is a **single self-contained file** with no dependencies. Pick one metho
 **From the release's npm package (recommended):** npm installs straight from the tarball attached to the release. The npm registry listing is coming soon.
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.4.0/styled-markdown-1.4.0.tgz
-smd --version       # smd 1.4.0 (Styled Markdown spec v1)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.5.0/styled-markdown-1.5.0.tgz
+smd --version       # smd 1.5.0 (Styled Markdown spec v1)
 ```
 
-The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v1.4.0/styled-markdown-1.4.0.tgz`); see [npm/README.md](../npm/README.md).
+The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v1.5.0/styled-markdown-1.5.0.tgz`); see [npm/README.md](../npm/README.md).
 
 **Use the copy bundled with the skills (no build needed):**
 
@@ -115,7 +115,7 @@ node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs --version
 cd styled-markdown/extension
 npm install && npm run build
 npm link            # now `smd` works everywhere
-smd --version       # smd 1.4.0 (Styled Markdown spec v1)
+smd --version       # smd 1.5.0 (Styled Markdown spec v1)
 ```
 
 **Without linking:** `node extension/dist/cli.js <command>`.
@@ -251,7 +251,7 @@ npm run build          # esbuild bundles dist/extension.js and dist/cli.js, copi
                        # and refreshes skills/*/scripts/smd.cjs
 npm test               # unit tests
 npm run test:vscode    # integration tests in a real VS Code (uses your installed VS Code, isolated profile)
-npm run package        # styled-markdown-1.4.0.vsix
+npm run package        # styled-markdown-1.5.0.vsix
 ```
 
 Press **F5** with the `extension/` folder open to start an Extension Development Host with the examples loaded.
