@@ -32,6 +32,7 @@ smd agent docs/spec.smd --section api # compact agent view of one section (+ age
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
 smd decisions docs/ --status accepted # decision log across docs, newest first (--md: an ADR index)
 smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
+smd issues docs/                      # GitHub Issues sync plan via gh (a dry run; --apply [--create] [--close] syncs)
 smd render docs/spec.smd -o spec.html # standalone HTML page
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
 smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)
@@ -142,6 +143,19 @@ const adrIndex = decisionLogMarkdown(log, { link: (p) => p.replace(/^docs\//, ''
 const changes = diffSmd(oldSource, newSource); // the `smd diff` sections that changed
 // { frontMatter: [{ key: 'status', before: 'draft', after: 'accepted' }], sections: [{ change: 'changed', heading: 'Rollout', level: 3, line: 40, endLine: 46, text: '### Rollout  [L41]\n…' }], text: '…', tokens: 42, fullTokens: 1480 }
 ```
+
+### GitHub Issues sync (the `smd issues` logic, without network access)
+
+```ts
+const tasks = issueTasks(source); // every task with the issue it links to: [#12](https://github.com/o/r/issues/12), the bare URL or o/r#12
+const plan = planIssueSync(tasks, states, { create: true, close: false }); // states: Map<'o/r#12', { state: 'open' | 'closed', reason? }>
+// { actions: [{ kind: 'check' | 'create' | 'close', task, issue, enabled }], inSync: [...], skipped: [{ task, issue, reason }] }
+const { title, body } = issueDraft(task, { path: 'docs/plan.smd' }); // owners in code spans: nobody is @-mentioned
+addIssueLink(line, { number: 12, url: 'https://github.com/o/r/issues/12' }); // appends ` [#12](…)`, nothing else changes
+checkTaskLine(line);                      // `- [ ]` → `- [x]`, nothing else changes
+```
+
+Also: `parseIssueRefs(line)` (every reference, code spans ignored), `taskIssueRef(line)` (the first), `issueKey(ref)` and `stripIssueRefs(text)`. Talking to GitHub (`gh`) and writing files is left to you.
 
 Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
 

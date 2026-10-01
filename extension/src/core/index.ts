@@ -33,3 +33,9 @@ export { dueState } from './render';
 export { SMD_CSS, SMD_RUNTIME_JS, renderPage } from './assets';
 export { diffSmd } from './diff';
 export type { DiffOptions, DiffResult, FrontMatterChange, SectionChange } from './diff';
+export {
+  addIssueLink, checkTaskLine, issueDraft, issueKey, issueTasks, parseIssueRefs, planIssueSync, stripIssueRefs, taskIssueRef,
+} from './issues';
+export type {
+  IssueDraftSource, IssueRef, IssueState, IssueSyncAction, IssueSyncKind, IssueSyncOptions, IssueSyncPlan, IssueTask,
+} from './issues';

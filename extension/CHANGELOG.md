@@ -17,6 +17,14 @@
 - **`smd decisions --md`**: the log as an ADR index document to commit (front matter and a table with status badges, each decision linked to its section, rejected and superseded ones struck through). With `-o docs/decisions.smd` the links are relative to that file, so it passes `smd validate` and `smd fmt --check`; `--title` sets its title.
 - Library: `decisionLog(documents, { status, owner })` and `decisionLogMarkdown(entries, { title, link })`, with `DECISION_STATUS_FILTERS` and `isInactiveDecision`.
 
+- **`smd issues <files|dirs>`**: sync tasks with GitHub Issues through your own GitHub CLI (`gh`), so no token passes through smd. **A dry run unless `--apply`**: it reads the issues' states, prints the plan and changes nothing.
+  - a task is linked by an issue reference on its line, no new syntax: `[#123](https://github.com/owner/repo/issues/123)`, the bare issue URL or `owner/repo#123` (not in code spans; the first one counts)
+  - `--apply` checks off open tasks whose issue was closed as completed (not those closed as not planned); `--apply --create` opens an issue for each open task without one (in `--repo`, default the current folder's repository) and appends ` [#N](url)` to the task line; `--apply --close` closes the issue of each done task
+  - new issues: the task text as title; the body names the file, line and section, owners (in code spans, so nobody is @-mentioned), priority and due date; `--label` adds labels
+  - only the intended lines change (the box, or the appended link), line endings are kept, and a line edited since it was read is left alone; re-running never opens a second issue for a task
+  - one `gh` call at a time, stopping at the first failure with a report of what was done; `--json` for scripts; exit code 2 when `gh` is missing or not logged in
+- Library: `issueTasks`, `parseIssueRefs`, `taskIssueRef`, `planIssueSync`, `issueDraft`, `addIssueLink`, `checkTaskLine`, `issueKey` and `stripIssueRefs` (pure, no network access).
+
 ### Changed
 
 ### Deprecated
