@@ -462,6 +462,12 @@ People-only content anywhere in the document.
 | Theme | Follows VS Code light/dark/high contrast. Override with `smd.preview.theme` or front matter `theme:`. |
 | Security | A strict Content Security Policy: scripts in documents never run |
 
+**`.md` files in VS Code's built-in preview.** A `.md` file that uses `.smd` syntax renders in VS Code's own Markdown preview too (`Ctrl+Shift+V` on a `.md` file): containers, inline directives, attribute lists, `==marks==`, Mermaid diagrams (drawn in the preview's theme), and code titles, line highlights and `file="…"` embeds. Plain Markdown looks as before, and code blocks without `.smd` attributes keep VS Code's highlighting. Compared with the `.smd` preview:
+
+- math is VS Code's own while `markdown.math.enabled` is on (the default); with it off, the `.smd` math rules apply
+- task lists, the front matter header and the table of contents are left to VS Code, and tabs show one after another
+- `smd.markdownPreview.enabled` (default on) turns it off; settings apply after **Developer: Reload Window**
+
 ## 13. VS Code: editing assistance
 
 | Feature | How |
@@ -604,6 +610,40 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 | `smd pdf` | A PDF of that page, printed by a headless browser you install (below) |
 | **Export to Plain Markdown** / `smd to-md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Convert Markdown File to .smd** / `smd from-md` | Adds front matter and turns GitHub alerts into callouts |
+| `smd build <dir> --out site` | A static docs site: every document as a page, with navigation, search, backlinks and a dashboard |
+
+### Publish a docs site: `smd build`
+
+```bash
+smd build docs --out site                       # open site/index.html, or serve the folder
+smd build docs --out site --md --title "Handbook" --base /handbook/ --clean
+```
+
+- **Pages:** every `.smd` file under the folder becomes a page in the same place (`docs/guide/setup.smd` → `site/guide/setup.html`); `--md` adds `.md` files. The home page (`index.html`) is the folder's `index.smd`, else its `README.smd`/`README.md`, else a generated index of every document with its summary and status.
+- **Links:** links between documents point at their pages, anchors included (`setup.smd#install` → `setup.html#install`, `.md` too); external links stay as they are. Linked local files such as images are copied with the same relative path (only from inside the folder, never dot folders). Links are relative, so the site works from disk (`file://`) and from any static web server; `--base /docs/` makes them absolute for a fixed deployment path.
+- **Navigation:** a sidebar with the folder tree, documents and folders ordered by title (a folder's `index`/`README` is its overview page), breadcrumbs, and previous/next links in sidebar order. On narrow screens the sidebar opens from a menu button. Pages follow the reader's light or dark theme (or the document's `theme:`).
+- **Search:** a search box on every page searches titles, headings, summaries and an excerpt of every section, in the browser. The index (`_smd/search-index.js`) is built with the site; nothing is sent anywhere.
+- **Backlinks:** each page lists the pages that link to it (links and front matter `related:`).
+- **Dashboard:** `dashboard.html` collects open tasks (overdue first, then by priority and due date), decisions (newest first) and open risks (with the impact × likelihood matrix) from every document, each linked to its section. `--today YYYY-MM-DD` sets the date for overdue tasks.
+- **Offline:** the stylesheet and scripts are written once to `_smd/`. Only pages with Mermaid diagrams or math load Mermaid and the KaTeX stylesheet from a CDN, as `smd render` does.
+- **Safe output:** `--out` (default `site`) must be outside the source folder and must not contain it. An existing folder is only written to when it is empty or a previous build, which `smd build` recognizes by the `.smd-site.json` it writes (the list of files it created). `--clean` first deletes exactly those files, never anything else; without it, files of documents you removed stay until the next `--clean`.
+
+### Use in other tools
+
+Static site generators built on remark/rehype can render `.smd` content with the npm package's plugins. They render the whole file with `renderSmd`, so the HTML is the same as `smd render`'s:
+
+| Import | Use |
+|---|---|
+| `styled-markdown/remark` (`remarkSmd`) | `remarkPlugins` in unified, Astro, Docusaurus or `@next/mdx` |
+| `styled-markdown/rehype` (`rehypeSmd`) | pipelines that only take `rehypePlugins` |
+
+- Use `.md` files: MDX parses `{…}` and `<…>` as JSX before plugins run, so `.mdx` files with `.smd` syntax don't compile. With MDX, use `format: 'detect'` and `rehype-raw`.
+- The page needs `styled-markdown/smd.css`, KaTeX's CSS for math, and Mermaid plus the runtime (`SMD_RUNTIME_JS`) for diagrams and tabs.
+- Front matter works whether the source still has it or the host removed it (Astro's `file.data.astro.frontmatter` is read); `header: false` leaves out the title header when the site layout shows the title.
+
+Configuration for Astro, Docusaurus and Next.js, and which hosts are tested: [npm package README](../npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
+
+**Use in other tools.** Anything that renders Markdown with [markdown-it](https://github.com/markdown-it/markdown-it) can render `.smd` syntax with the npm package's plugin, `md.use(require('styled-markdown/markdown-it'))`, styled by `styled-markdown/smd.css`. It adds rules to the host's own instance and leaves plain Markdown alone; options are in the [package README](../npm/README.md#markdown-it-plugin). Other tools can call `renderSmd()` from the same package or run `smd render`.
 
 ### PDF and printing
 
@@ -659,6 +699,8 @@ smd validate <files|dirs> --format github [--summary <file>] [...]   GitHub anno
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]                     standalone page, with a print stylesheet
 smd pdf <file> [-o out.pdf] [--format A4|Letter] [--landscape]   PDF; needs Playwright or Puppeteer (section 16)
+smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
+                 static docs site: pages, sidebar, search, backlinks, dashboard (section 16)
 smd to-md <file> [-o out.md]
 smd from-md <file.md> [-o out.smd]
 smd init <file> [--template <name>] [--title "…"]

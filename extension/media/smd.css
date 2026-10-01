@@ -49,6 +49,9 @@
   --smd-pink-soft: color-mix(in srgb, var(--smd-pink) var(--smd-soft), transparent);
   --smd-gray-soft: color-mix(in srgb, var(--smd-gray) var(--smd-soft), transparent);
   --smd-muted-soft: var(--smd-surface);
+  /* .smd-doc sets these again; here for blocks rendered outside it (the markdown-it plugin). */
+  --smd-accent: var(--smd-accent-default);
+  --smd-accent-soft: color-mix(in srgb, var(--smd-accent) var(--smd-soft), transparent);
 }
 
 html, body.smd-body {
