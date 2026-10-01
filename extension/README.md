@@ -11,6 +11,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 - **Live preview** (`Ctrl+K V`): themed to match VS Code, scroll sync, double-click to jump to source, clickable tasks, Mermaid diagrams, KaTeX math, tabs and columns. Edits keep your scroll position, diagrams, selected tabs and open collapsibles.
 - **Project blocks:** `:::decision`, `:::risk`, `:::timeline`, KPI tiles (`:metric`), priorities, and due dates that turn red when overdue. Tasks carry owners.
 - **SMD Tasks view** in the Explorer: open tasks from every `.smd` file in the workspace, grouped by owner, due date (Overdue, Today, This week, Later) or document, overdue first, then by priority. Tick a checkbox to check the task off in its file, click a task to open it, and see the overdue count as a badge.
+- **Document status workflow:** the status bar shows the front matter `status` of the active document (or **No status**, or a warning for an unknown value). Click it to pick the next step, `draft` → `review` → `approved`, or `deprecated` / `archived`: only the `status:` value changes (quotes and comments kept), `updated:` is set to today, and Undo takes it back.
 - **Developer blocks:** `:::api` endpoint cards, code line highlights `{2,5-7}`, and live source embeds `file="…" lines="…"` so docs never drift from code.
 - **Refactorings** (`Ctrl+.`): wrap the selection in a callout, card, `:::details`, `:::agent` or `:::human` block; change a callout's type; turn a `> **Warning:**` or `> [!WARNING]` blockquote into a `:::warning` callout.
 - **Validation with quick fixes** as you type (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`), including Mermaid syntax errors on the exact line before the diagram renders. Turn rules off or change their severity in `smd.config.json` / `.smdrc`, which get completion from a schema, or silence one line with `<!-- smd-disable-next-line rule/code -->`.
@@ -33,6 +34,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | Styled Markdown: Convert Markdown File to .smd | Explorer context menu |
 | Styled Markdown: Validate All .smd Files in Workspace | — |
 | Styled Markdown: Set Up Spell Checking (cSpell) | — |
+| Styled Markdown: Set Document Status… | Click the status in the status bar |
 | Styled Markdown: Group Tasks By… / Show Completed Tasks / Refresh Tasks | SMD Tasks view title bar |
 
 ## Settings
@@ -48,6 +50,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | `smd.validation.staleAfterDays` | `180` | Flag a document as stale when `updated` is older than this and its status isn't archived or deprecated (`0`: off) |
 | `smd.editor.continueLists` | `true` | Enter continues task lists (unchecked, keeping `@owner`), bullets and numbered lists; Enter on an empty item ends the list |
 | `smd.images.folder` | `docs/images` | Where pasted and dropped images are saved, relative to the workspace folder |
+| `smd.status.updateDate` | `true` | Set Document Status also sets the front matter `updated` date to today, when the document has that key |
 
 ## Syntax at a glance
 

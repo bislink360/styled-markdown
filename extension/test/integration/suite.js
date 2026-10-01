@@ -496,6 +496,53 @@ const checks = {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   },
+
+  async 'the status bar shows the document status and Set Document Status edits the front matter'() {
+    const bar = () => vscode.commands.executeCommand('smd._statusBar');
+    const until = (test, what) => waitFor(async () => {
+      const s = await bar();
+      return test(s) ? s : undefined;
+    }, what);
+    assert.ok((await vscode.commands.getCommands(true)).includes('smd.setStatus'), 'missing command smd.setStatus');
+
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'smd',
+      content: '---\r\nsmd: 1\r\ntitle: Plan\r\nstatus: "draft" # keep quotes\r\nupdated: 2020-01-01\r\n---\r\n\r\nBody\r\n',
+    });
+    await vscode.window.showTextDocument(doc);
+    const draft = await until((s) => s.visible && s.text === '$(edit) Draft', 'the draft status in the status bar');
+    assert.equal(draft.tooltip, 'Document status: draft — click to change');
+
+    const today = new Date().toISOString().slice(0, 10);
+    assert.equal(await vscode.commands.executeCommand('smd.setStatus', 'review'), true);
+    assert.equal(doc.getText(), `---\r\nsmd: 1\r\ntitle: Plan\r\nstatus: "review" # keep quotes\r\nupdated: ${today}\r\n---\r\n\r\nBody\r\n`);
+    assert.ok(doc.isDirty, 'the edit is not saved');
+    await until((s) => s.text === '$(eye) Review', 'the review status in the status bar');
+
+    // Undo restores the old status in one step.
+    await vscode.commands.executeCommand('undo');
+    await until((s) => s.text === '$(edit) Draft', 'the status after undo');
+
+    // An unknown status argument is refused without editing.
+    assert.equal(await vscode.commands.executeCommand('smd.setStatus', 'final'), false);
+    assert.match(doc.getText(), /status: "draft"/);
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+
+    // Without front matter: "No status", then a minimal front matter is created.
+    const plain = await vscode.workspace.openTextDocument({ language: 'smd', content: '# Notes\n' });
+    await vscode.window.showTextDocument(plain);
+    await until((s) => s.visible && s.text === '$(circle-large-outline) No status', 'no status in the status bar');
+    assert.equal(await vscode.commands.executeCommand('smd.setStatus', 'approved', plain.uri), true);
+    assert.equal(plain.getText(), '---\nsmd: 1\nstatus: approved\n---\n\n# Notes\n');
+    await until((s) => s.text === '$(verified) Approved', 'the approved status in the status bar');
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+
+    // Hidden for other languages.
+    const other = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'status: draft\n' });
+    await vscode.window.showTextDocument(other);
+    await until((s) => !s.visible, 'the status bar item to hide');
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+  },
 };
 
 async function run() {

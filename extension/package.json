@@ -200,6 +200,12 @@
         "command": "smd.openTask",
         "title": "Open Task",
         "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.setStatus",
+        "title": "Set Document Status…",
+        "category": "Styled Markdown",
+        "icon": "$(tag)"
       }
     ],
     "views": {
@@ -324,6 +330,10 @@
         {
           "command": "smd.openTask",
           "when": "false"
+        },
+        {
+          "command": "smd.setStatus",
+          "when": "editorLangId == smd"
         }
       ]
     },
@@ -404,6 +414,11 @@
           "type": "string",
           "default": "docs/images",
           "description": "Folder, relative to the workspace folder, where pasted and dropped images are saved. Documents outside a workspace use this folder next to the document."
+        },
+        "smd.status.updateDate": {
+          "type": "boolean",
+          "default": true,
+          "description": "When the document status is changed from the status bar (Set Document Status), also set the front matter \"updated\" date to today. Only documents that already have an \"updated\" key are changed."
         }
       }
     }
