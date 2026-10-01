@@ -59,6 +59,16 @@ export function inCodeBlock(lines: readonly string[], line: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Task checkboxes
+// ---------------------------------------------------------------------------
+
+/** The checkbox of a task line: the column of its `x` or space, and whether it is checked. */
+export function taskCheckbox(line: string): { column: number; done: boolean } | undefined {
+  const m = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])\]/.exec(line);
+  return m ? { column: m[1].length, done: m[2] !== ' ' } : undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Images: paste and drop
 // ---------------------------------------------------------------------------
 
