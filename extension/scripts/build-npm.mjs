@@ -1,5 +1,6 @@
 // Builds the `styled-markdown` npm package into ../npm/dist:
 //   index.cjs / index.mjs  the library (engine only, browser-safe, zero runtime dependencies)
+//   remark.* / rehype.*    the remark and rehype plugins (import the library bundle)
 //   cli.js                 the `smd` command (same bundle as the extension's CLI)
 //   types/                 TypeScript declarations (emitted by tsc -p tsconfig.npm.json)
 import * as esbuild from 'esbuild';
@@ -28,6 +29,19 @@ const common = {
 
 await esbuild.build({ ...common, platform: 'node', format: 'cjs', outfile: join(out, 'index.cjs') });
 await esbuild.build({ ...common, platform: 'neutral', mainFields: ['module', 'main'], format: 'esm', outfile: join(out, 'index.mjs') });
+
+// styled-markdown/remark and styled-markdown/rehype: thin entries that import the main bundle.
+const useMainBundle = (file) => ({
+  name: 'use-main-bundle',
+  setup(build) {
+    build.onResolve({ filter: /^\.\/index$/ }, () => ({ path: `./${file}`, external: true }));
+  },
+});
+for (const name of ['remark', 'rehype']) {
+  const entry = { entryPoints: [join(root, 'src', 'core', `${name}.ts`)], bundle: true, target: 'es2020', logLevel: 'info' };
+  await esbuild.build({ ...entry, platform: 'node', format: 'cjs', outfile: join(out, `${name}.cjs`), plugins: [useMainBundle('index.cjs')] });
+  await esbuild.build({ ...entry, platform: 'neutral', format: 'esm', outfile: join(out, `${name}.mjs`), plugins: [useMainBundle('index.mjs')] });
+}
 
 // Stylesheet for users who render fragments with renderSmd().
 copyFileSync(join(root, 'media', 'smd.css'), join(out, 'smd.css'));

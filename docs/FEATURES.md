@@ -584,6 +584,21 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 | **Export to Plain Markdown** / `smd to-md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Convert Markdown File to .smd** / `smd from-md` | Adds front matter and turns GitHub alerts into callouts |
 
+### Use in other tools
+
+Static site generators built on remark/rehype can render `.smd` content with the npm package's plugins. They render the whole file with `renderSmd`, so the HTML is the same as `smd render`'s:
+
+| Import | Use |
+|---|---|
+| `styled-markdown/remark` (`remarkSmd`) | `remarkPlugins` in unified, Astro, Docusaurus or `@next/mdx` |
+| `styled-markdown/rehype` (`rehypeSmd`) | pipelines that only take `rehypePlugins` |
+
+- Use `.md` files: MDX parses `{…}` and `<…>` as JSX before plugins run, so `.mdx` files with `.smd` syntax don't compile. With MDX, use `format: 'detect'` and `rehype-raw`.
+- The page needs `styled-markdown/smd.css`, KaTeX's CSS for math, and Mermaid plus the runtime (`SMD_RUNTIME_JS`) for diagrams and tabs.
+- Front matter works whether the source still has it or the host removed it (Astro's `file.data.astro.frontmatter` is read); `header: false` leaves out the title header when the site layout shows the title.
+
+Configuration for Astro, Docusaurus and Next.js, and which hosts are tested: [npm package README](../npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
+
 ## 17. CLI reference
 
 ```text

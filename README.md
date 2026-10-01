@@ -230,6 +230,18 @@ claude mcp add smd -- npx -y -p styled-markdown smd mcp
 
 Other clients and options: **[docs/AGENTS.md](docs/AGENTS.md#mcp-server)**.
 
+### Static sites: Astro, Docusaurus, Next.js
+
+`styled-markdown/remark` and `styled-markdown/rehype` are unified plugins that render documents exactly as `smd render` does, inside remark/rehype pipelines:
+
+```js
+// astro.config.mjs
+import { remarkSmd } from 'styled-markdown/remark';
+export default { markdown: { remarkPlugins: [remarkSmd] } };
+```
+
+They work with `.md` files (MDX parses `.smd` attribute lists as JSX, so `.mdx` files are not supported). Setup for Astro, Docusaurus and Next.js, and what the page must load: [package README](npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
+
 ## Token-efficient reading for agents
 
 Measured on [`examples/checkout-redesign.smd`](examples/checkout-redesign.smd), a realistic ≈2,400-token PRD:

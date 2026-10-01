@@ -26,7 +26,11 @@
     "llm",
     "tokens",
     "prd",
-    "adr"
+    "adr",
+    "remark",
+    "rehype",
+    "unified",
+    "remark-plugin"
   ],
   "type": "commonjs",
   "main": "./dist/index.cjs",
@@ -37,6 +41,16 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
+    },
+    "./remark": {
+      "types": "./dist/types/remark.d.ts",
+      "import": "./dist/remark.mjs",
+      "require": "./dist/remark.cjs"
+    },
+    "./rehype": {
+      "types": "./dist/types/rehype.d.ts",
+      "import": "./dist/rehype.mjs",
+      "require": "./dist/rehype.cjs"
     },
     "./smd.css": "./dist/smd.css",
     "./frontmatter.schema.json": "./dist/frontmatter.schema.json",

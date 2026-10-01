@@ -5,6 +5,7 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- npm: **remark and rehype plugins** for Astro, Docusaurus, Next.js and other unified pipelines: `import { remarkSmd } from 'styled-markdown/remark'` (or `rehypeSmd` from `styled-markdown/rehype`). They render the whole file with `renderSmd` into one raw HTML node, so the output matches `smd render`; the page loads `styled-markdown/smd.css`. Options: `test` (which files), `header: false` (no title header), `frontMatter` (front matter the host already removed; Astro's is found automatically), `readFile` (embeds, with the file), plus `allowHtml`, `agentBlocks`, `today`. `file.data.smd` holds the front matter and headings. Works with `.md` files; `.mdx` files can't hold `.smd` syntax, because MDX parses `{…}` as JSX first. No new dependencies. Also exported from the main entry, with `renderSmdFile(file, options)`.
 
 ### Changed
 
