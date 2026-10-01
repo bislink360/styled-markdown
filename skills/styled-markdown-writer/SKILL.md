@@ -31,6 +31,8 @@ Tool (Node 18+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (
 
    `smd init docs/name.smd --template prd --title "Saved searches"` creates the file with today's date filled in. The raw templates are in `assets/templates/`. For anything else, start from front matter + headings.
 
+   For a status report on work tracked in `.smd` docs, start from a draft instead: `smd report docs/ --since 2026-09-01 -o docs/status-2026-09-30.smd --title "Checkout squad"` (or `--since <git-ref>`) lists the tasks done and added since then, open tasks with overdue and due-this-week first, decisions since, decisions needed and high-impact risks, each linked to its section. Then write the summary (and the front matter `summary`), check the status, and cut what doesn't matter.
+
 2. **Fill it with real content.** Delete template sections that don't apply, and never leave placeholder text such as `—`, `@owner` or `YYYY-MM-DD` in a finished document. If you don't know a value (an owner, a date), ask, or leave a `:::question` that says what's missing.
 
 3. **Format, validate and fix:**

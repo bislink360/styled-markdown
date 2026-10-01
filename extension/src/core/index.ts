@@ -33,3 +33,5 @@ export { dueState } from './render';
 export { SMD_CSS, SMD_RUNTIME_JS, renderPage } from './assets';
 export { diffSmd } from './diff';
 export type { DiffOptions, DiffResult, FrontMatterChange, SectionChange } from './diff';
+export { statusChanges, statusReport, statusReportMarkdown } from './report';
+export type { ReportDecision, ReportDocument, ReportRisk, ReportTask, StatusChanges, StatusReportOptions } from './report';
