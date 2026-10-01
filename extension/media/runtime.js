@@ -69,9 +69,80 @@
 
   const diagramKey = (theme, src) => theme + '\u0000' + src;
 
+  // ---- Tabs (WAI-ARIA tabs pattern) ------------------------------------------
+  // Built through the `doc` passed in, so tests can drive them with a small stand-in for the DOM.
+
+  /** The tab a key moves focus to from `index` of `count`: arrows wrap, Home and End jump; -1 for other keys. */
+  function tabKeyTarget(key, index, count) {
+    if (key === 'ArrowRight') return (index + 1) % count;
+    if (key === 'ArrowLeft') return (index - 1 + count) % count;
+    if (key === 'Home') return 0;
+    if (key === 'End') return count - 1;
+    return -1;
+  }
+
+  /** An id not used in the document yet (panes rendered by older versions have none). */
+  function freshId(doc, prefix) {
+    let n = 1;
+    while (doc.getElementById(prefix + n)) n++;
+    return prefix + n;
+  }
+
+  /** The tab button for a pane, which becomes the tab panel it controls. */
+  function tabFor(doc, pane, i) {
+    if (!pane.id) pane.id = freshId(doc, 'smd-tab-');
+    const btn = doc.createElement('button');
+    btn.type = 'button';
+    btn.id = pane.id + '-tab';
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', pane.id);
+    btn.textContent = pane.getAttribute('data-title') || 'Tab ' + (i + 1);
+    pane.setAttribute('role', 'tabpanel');
+    pane.setAttribute('aria-labelledby', btn.id);
+    pane.setAttribute('tabindex', '0');
+    return btn;
+  }
+
+  /**
+   * Put a tab bar in front of a group's panes: role=tablist of role=tab buttons with aria-selected and a roving
+   * tabindex; arrow keys, Home and End move between them. Returns select(index, focus); `onChoose` hears the reader's choices.
+   */
+  function buildTabs(doc, tabs, panes, onChoose) {
+    const bar = doc.createElement('div');
+    bar.className = 'smd-tabbar';
+    bar.setAttribute('role', 'tablist');
+    const buttons = panes.map((pane, i) => tabFor(doc, pane, i));
+    const select = (index, focus) => {
+      panes.forEach((p, j) => p.classList.toggle('smd-active', index === j));
+      buttons.forEach((b, j) => {
+        b.setAttribute('aria-selected', String(index === j));
+        b.setAttribute('tabindex', index === j ? '0' : '-1');
+      });
+      if (focus) buttons[index].focus();
+    };
+    const choose = (index, focus) => {
+      select(index, focus);
+      onChoose(index);
+    };
+    buttons.forEach((btn, i) => {
+      btn.addEventListener('click', () => choose(i, false));
+      bar.appendChild(btn);
+    });
+    bar.addEventListener('keydown', (e) => {
+      const from = buttons.indexOf(e.target);
+      const to = from < 0 ? -1 : tabKeyTarget(e.key, from, buttons.length);
+      if (to < 0) return;
+      e.preventDefault();
+      choose(to, true);
+    });
+    tabs.insertBefore(bar, tabs.firstChild);
+    tabs.classList.add('smd-js');
+    return select;
+  }
+
   if (typeof document === 'undefined') {
     if (typeof module === 'object' && module.exports) {
-      module.exports = { mapLine, pickAnchor, findLine, stableKeys, lruCache, diagramKey };
+      module.exports = { mapLine, pickAnchor, findLine, stableKeys, lruCache, diagramKey, tabKeyTarget, buildTabs };
     }
     return;
   }
@@ -128,24 +199,11 @@
       const panes = panesOf(tabs);
       if (!panes.length) return;
       const key = keys[groupIndex];
-      const bar = document.createElement('div');
-      bar.className = 'smd-tabbar';
-      bar.setAttribute('role', 'tablist');
-      const select = (i, user) => {
-        if (user) { ui.tabs[key] = i; saveState(); }
-        panes.forEach((p, j) => p.classList.toggle('smd-active', i === j));
-        bar.querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-selected', String(i === j)));
-      };
-      panes.forEach((pane, i) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.setAttribute('role', 'tab');
-        btn.textContent = pane.getAttribute('data-title') || 'Tab ' + (i + 1);
-        btn.addEventListener('click', () => select(i, true));
-        bar.appendChild(btn);
+      const select = buildTabs(document, tabs, panes, (i) => {
+        ui.tabs[key] = i;
+        saveState();
+        refreshScrollers();
       });
-      tabs.insertBefore(bar, tabs.firstChild);
-      tabs.classList.add('smd-js');
       select(Math.min(ui.tabs[key] || 0, panes.length - 1));
     });
   }
@@ -180,27 +238,64 @@
     if (d.open === dflt) delete ui.open[key];
     else ui.open[key] = [dflt, d.open];
     saveState();
+    refreshScrollers();
   }, true);
 
   // ---- Copy buttons -------------------------------------------------------
+  let liveRegion = null;
+
+  /** Tell screen readers something without moving focus (a polite live region, created before it is needed). */
+  function announce(text) {
+    if (!liveRegion) return;
+    liveRegion.textContent = '';
+    setTimeout(() => { liveRegion.textContent = text; }, 50);
+  }
+
   function addCopyButtons(scope) {
-    scope.querySelectorAll('.smd-code').forEach((block) => {
+    const blocks = scope.querySelectorAll('.smd-code');
+    if (blocks.length && !liveRegion) {
+      liveRegion = document.createElement('div');
+      liveRegion.className = 'smd-sr-only';
+      liveRegion.setAttribute('role', 'status');
+      document.body.appendChild(liveRegion);
+    }
+    blocks.forEach((block) => {
       if (block.querySelector('.smd-copy')) return;
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'smd-copy';
       btn.textContent = 'Copy';
+      btn.setAttribute('aria-label', 'Copy code');
       btn.addEventListener('click', () => {
         const code = block.querySelector('code');
         if (!code || !navigator.clipboard) return;
         navigator.clipboard.writeText(code.textContent || '').then(() => {
           btn.textContent = 'Copied';
+          announce('Code copied');
           setTimeout(() => (btn.textContent = 'Copy'), 1200);
         });
       });
       block.appendChild(btn);
     });
   }
+
+  // ---- Keyboard access to wide blocks -------------------------------------
+  // Code, tables, diagrams and math wider than the page scroll sideways; a keyboard can scroll them once focused.
+  const SCROLLERS = '.smd-code pre, .smd-table-wrap, .smd-diagram, .smd-math-block, .smd-risk-matrix-wrap';
+  let scrollersTimer;
+
+  function refreshScrollers() {
+    clearTimeout(scrollersTimer);
+    scrollersTimer = setTimeout(() => {
+      document.querySelectorAll(SCROLLERS).forEach((el) => {
+        if (el.scrollWidth > el.clientWidth + 1) el.setAttribute('tabindex', '0');
+        else if (el.getAttribute('tabindex') === '0') el.removeAttribute('tabindex');
+      });
+    }, 100);
+  }
+  window.addEventListener('resize', refreshScrollers);
+
+  const reducedMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   // ---- Mermaid diagrams ---------------------------------------------------
   function cssVar(name) {
@@ -345,7 +440,9 @@
     initTabs(scope);
     initDetails(scope);
     addCopyButtons(scope);
+    refreshScrollers();
     await renderDiagrams(scope, heights);
+    refreshScrollers();
     if (vscode) {
       // Lets the extension (and its tests) know what actually rendered.
       vscode.postMessage({
@@ -426,7 +523,11 @@
     if (href.startsWith('#')) {
       e.preventDefault();
       const el = document.getElementById(decodeURIComponent(href.slice(1)));
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!el) return;
+      el.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+      // Move focus too, as following the link would, so Tab continues from the target.
+      if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+      el.focus({ preventScroll: true });
       return;
     }
     if (vscode) {

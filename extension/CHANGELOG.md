@@ -5,12 +5,18 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- **Accessibility (WCAG 2.2 AA)** of rendered pages: the preview, `smd render`, `smd build` sites and `smd risks --html`. Tabs follow the WAI-ARIA tabs pattern (`role="tablist"`/`tab`/`tabpanel`, `aria-selected`, `aria-controls`, a roving `tabindex`, ←/→/Home/End) with ids unique in the page; panes still read in order without scripts and in print. Every control has a visible `:focus-visible` ring (`--smd-focus`); copy buttons show on keyboard focus, are named "Copy code" and announce the copy; code, tables and diagrams that scroll sideways become focusable; in-page links move focus to their target. Task checkboxes are named by the task text, Markdown table headers get `scope="col"`, progress bars an `aria-label`, the contents `aria-label="Contents"`. Status dots are `aria-hidden` (or named by their color without text); a callout with its own title starts with its type for screen readers ("Warning: …"); metric deltas say their trend ("up, good"). Sites: `<main tabindex="-1">` for the skip link, Escape returns focus from the sidebar to the menu button, and search announces the number of results. `prefers-reduced-motion` turns off transitions and smooth scrolling. See "Accessibility" in `docs/FEATURES.md`.
+- `smd.css`: `--smd-ink` (how much badge and pill text leans on its colour) and `--smd-focus` (the focus ring colour), and an `.smd-sr-only` class for screen-reader text.
 
 ### Changed
+- **Light theme colours** darkened slightly so text meets 4.5:1 (also in print): `--smd-red` `#dc2626`→`#d52424`, `--smd-orange` `#ea580c`→`#c4420c`, `--smd-amber` `#d97706`→`#b45309`, `--smd-yellow` `#ca8a04`→`#a16207`, `--smd-green` `#16a34a`→`#15803d`, `--smd-teal` `#0d9488`→`#0f7c73`, `--smd-cyan` `#0891b2`→`#0d7895`, `--smd-pink` `#db2777`→`#cf216d`, `--smd-gray` `#6b7280`→`#686f7d`. Blue, indigo and purple, and the dark theme, are unchanged. Text on a tint of its own colour (badges, document status, decision status, risk scores and matrix counts, due dates) mixes in 20% of the text colour; links in risk matrix cells use the text colour, underlined. A test checks every text/background pair in both themes.
+- Rendered HTML gains attributes and screen-reader text, with the same classes: `aria-label` on task checkboxes, progress bars and the contents `nav`; `aria-hidden`/`role="img"` on status dots; `scope="col"` on Markdown table headers; `<span class="smd-sr-only">` type prefixes in callouts with a custom title and trend words in metric deltas; `<span aria-hidden="true">` around metric arrows; `<span class="smd-due-note">` after overdue (visible "· overdue") and due-soon (screen readers only) dates, also on the site dashboard, hidden on done tasks. The runtime adds tab roles, ids and `tabindex` when it builds the tab bar.
 
 ### Deprecated
 
 ### Fixed
+- The copy button of code blocks was invisible when focused with the keyboard, and search results in `smd build` sites had no focus ring.
+- Badges, pills, callout titles, code highlighting and risk matrix cells in the light theme, and risk matrix links in the dark theme, were below WCAG AA contrast (as low as 2.4:1).
 
 ## 1.5.0 — 2026-10-01
 

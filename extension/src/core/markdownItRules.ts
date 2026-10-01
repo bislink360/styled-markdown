@@ -1,8 +1,8 @@
 import type { StateBlock, StateCore, StateInline, Token } from 'markdown-it';
-import { emptyAttrs, findAttrsEnd, parseAttrs, attrsToStyle } from './attrs';
+import { emptyAttrs, escapeHtml, findAttrsEnd, parseAttrs, attrsToStyle } from './attrs';
 import { ContainerInfo, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
-import { renderInlineDirective } from './markdownItHtml';
+import { renderInlineDirective, withoutDueNotes } from './markdownItHtml';
 import { INLINE_DIRECTIVES } from './spec';
 import type { SmdContext } from './markdownItSetup';
 import type { Env } from './render';
@@ -315,10 +315,39 @@ function markTask(state: StateCore, i: number, checked: boolean): void {
   const item = tokens[i - 2];
   const line = (item.map?.[0] ?? 0) + ((state.env as Env | undefined)?.lineOffset ?? 0);
   const box = new state.Token('html_inline', '', 0);
-  box.content = `<input type="checkbox" class="smd-task-box" data-task-line="${line}"${checked ? ' checked' : ''}>`;
+  // The task's text names its checkbox (no id: ids in the HTML are the document's anchors).
+  const label = taskLabel(inline.children!, checked);
+  box.content = `<input type="checkbox" class="smd-task-box" data-task-line="${line}"${checked ? ' checked' : ''}${label ? ` aria-label="${escapeHtml(label)}"` : ''}>`;
   inline.children!.unshift(box);
   item.attrJoin('class', `smd-task${checked ? ' smd-task-done' : ''}`);
   markTaskList(tokens, i - 2);
+}
+
+/** The plain text of a task's inline tokens: text, code, and the text of inline HTML such as directives. */
+function taskLabel(children: Token[], done: boolean): string {
+  return children.map((c) => {
+    if (c.type === 'text' || c.type === 'code_inline') return c.content;
+    if (c.type === 'html_inline') return htmlText(done ? withoutDueNotes(c.content) : c.content);
+    if (c.type === 'image') return taskLabel(c.children ?? [], done);
+    return c.type === 'softbreak' || c.type === 'hardbreak' ? ' ' : '';
+  }).join('').replace(/\s+/g, ' ').trim();
+}
+
+const ENTITIES = new Map([['&amp;', '&'], ['&lt;', '<'], ['&gt;', '>'], ['&quot;', '"'], ['&#39;', "'"]]);
+
+/** The text of an HTML fragment: tags dropped, the entities escapeHtml writes decoded. */
+function htmlText(html: string): string {
+  let text = '';
+  let pos = 0;
+  while (pos < html.length) {
+    const open = html.indexOf('<', pos);
+    const close = open < 0 ? -1 : html.indexOf('>', open);
+    if (close < 0) break;
+    text += html.slice(pos, open);
+    pos = close + 1;
+  }
+  text += html.slice(pos);
+  return text.replace(/&(?:amp|lt|gt|quot|#39);/g, (e) => ENTITIES.get(e) ?? e);
 }
 
 /** Add `smd-task-list` to the list that directly contains the item at index `item`. */

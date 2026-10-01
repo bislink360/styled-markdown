@@ -12,12 +12,16 @@
   --smd-border: #d1d9e0;
   --smd-code-bg: #f3f4f6;
 
-  --smd-red: #dc2626; --smd-orange: #ea580c; --smd-amber: #d97706; --smd-yellow: #ca8a04;
-  --smd-green: #16a34a; --smd-teal: #0d9488; --smd-cyan: #0891b2; --smd-blue: #2563eb;
-  --smd-indigo: #4f46e5; --smd-purple: #9333ea; --smd-pink: #db2777; --smd-gray: #6b7280;
+  --smd-red: #d52424; --smd-orange: #c4420c; --smd-amber: #b45309; --smd-yellow: #a16207;
+  --smd-green: #15803d; --smd-teal: #0f7c73; --smd-cyan: #0d7895; --smd-blue: #2563eb;
+  --smd-indigo: #4f46e5; --smd-purple: #9333ea; --smd-pink: #cf216d; --smd-gray: #686f7d;
   --smd-muted: var(--smd-fg-muted);
   --smd-accent-default: var(--smd-indigo);
   --smd-soft: 13%;
+  /* Coloured text on a tint of its own colour (badges, pills) leans this much on the colour, the rest on --smd-fg. */
+  --smd-ink: 80%;
+  /* Keyboard focus ring: at least 3:1 against every background in both themes. */
+  --smd-focus: var(--smd-accent-default);
 }
 
 :root[data-smd-theme="dark"] {
@@ -130,7 +134,8 @@ body.smd-body {
   font: 12px var(--smd-font-sans); padding: 3px 8px; border-radius: 5px; cursor: pointer;
   border: 1px solid var(--smd-border); background: var(--smd-bg); color: var(--smd-fg-muted);
 }
-.smd-code:hover .smd-copy { opacity: 1; }
+.smd-code:hover .smd-copy, .smd-code:focus-within .smd-copy { opacity: 1; }
+@media (hover: none) { .smd-copy { opacity: 1; } }
 
 /* highlight.js tokens */
 .hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-meta .hljs-keyword { color: var(--smd-purple); }
@@ -172,12 +177,14 @@ body.smd-body {
 .smd-doc-meta-label { color: var(--smd-fg-muted); text-transform: uppercase; letter-spacing: .06em; font-size: .78em; margin-right: 2px; }
 .smd-doc-status {
   text-transform: uppercase; letter-spacing: .06em; font-weight: 700; font-size: .85em;
-  padding: 2px 8px; border-radius: 999px; background: var(--smd-gray-soft); color: var(--smd-gray);
+  --c: var(--smd-gray);
+  padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--c) var(--smd-soft), transparent);
+  color: color-mix(in srgb, var(--c) var(--smd-ink), var(--smd-fg));
 }
-.smd-doc-status-draft { background: var(--smd-amber-soft); color: var(--smd-amber); }
-.smd-doc-status-review { background: var(--smd-blue-soft); color: var(--smd-blue); }
-.smd-doc-status-approved { background: var(--smd-green-soft); color: var(--smd-green); }
-.smd-doc-status-deprecated { background: var(--smd-red-soft); color: var(--smd-red); }
+.smd-doc-status-draft { --c: var(--smd-amber); }
+.smd-doc-status-review { --c: var(--smd-blue); }
+.smd-doc-status-approved { --c: var(--smd-green); }
+.smd-doc-status-deprecated { --c: var(--smd-red); }
 .smd-tag { padding: 1px 8px; border-radius: 999px; border: 1px solid var(--smd-border); font-size: .92em; }
 
 /* ---------- TOC ---------- */
@@ -192,7 +199,8 @@ body.smd-body {
   --smd-badge: var(--smd-accent);
   display: inline-block; font-size: .78em; font-weight: 650; line-height: 1.5; padding: 0 .6em;
   border-radius: 999px; vertical-align: .08em; white-space: nowrap;
-  color: var(--smd-badge); background: color-mix(in srgb, var(--smd-badge) var(--smd-soft), transparent);
+  color: color-mix(in srgb, var(--smd-badge) var(--smd-ink), var(--smd-fg));
+  background: color-mix(in srgb, var(--smd-badge) var(--smd-soft), transparent);
   border: 1px solid color-mix(in srgb, var(--smd-badge) 35%, transparent);
 }
 .smd-status { display: inline-flex; align-items: center; gap: .4em; font-weight: 550; }
@@ -222,7 +230,8 @@ body.smd-body {
 .smd-callout-title + .smd-callout-body { margin-top: 4px; }
 .smd-callout-body > :last-child { margin-bottom: 0; }
 details.smd-callout > summary { cursor: pointer; list-style: none; }
-details.smd-callout > summary::after { content: "▸"; margin-left: auto; transition: transform .15s; }
+/* The marker is decoration: the empty alternative text keeps screen readers from announcing it. */
+details.smd-callout > summary::after { content: "▸"; content: "▸" / ""; margin-left: auto; transition: transform .15s; }
 details.smd-callout[open] > summary::after { transform: rotate(90deg); }
 details.smd-callout > summary::-webkit-details-marker { display: none; }
 .smd-callout-icon { width: 1.2em; text-align: center; }
@@ -326,9 +335,10 @@ pre.smd-has-hl code { position: relative; }
   display: inline-block; font-size: .8em; line-height: 1.5; padding: 0 .5em; border-radius: 999px; white-space: nowrap;
   border: 1px solid var(--smd-border); color: var(--smd-fg-muted); vertical-align: .05em;
 }
-.smd-due-soon { color: var(--smd-amber); border-color: color-mix(in srgb, var(--smd-amber) 45%, transparent); background: var(--smd-amber-soft); }
-.smd-due-overdue { color: var(--smd-red); border-color: color-mix(in srgb, var(--smd-red) 45%, transparent); background: var(--smd-red-soft); font-weight: 650; }
+.smd-due-soon { color: color-mix(in srgb, var(--smd-amber) var(--smd-ink), var(--smd-fg)); border-color: color-mix(in srgb, var(--smd-amber) 45%, transparent); background: var(--smd-amber-soft); }
+.smd-due-overdue { color: color-mix(in srgb, var(--smd-red) var(--smd-ink), var(--smd-fg)); border-color: color-mix(in srgb, var(--smd-red) 45%, transparent); background: var(--smd-red-soft); font-weight: 650; }
 .smd-task-done .smd-due { color: var(--smd-fg-muted); background: none; border-color: var(--smd-border); font-weight: 400; }
+.smd-task-done .smd-due-note { display: none; }
 
 /* ---------- Metric tiles ---------- */
 .smd-metric {
@@ -355,7 +365,7 @@ pre.smd-has-hl code { position: relative; }
 .smd-decision-superseded, .smd-decision-deprecated { --c: var(--smd-gray); }
 .smd-decision-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .8em; }
 .smd-decision-label { font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--smd-fg-muted); }
-.smd-decision-status { font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 0 .6em; border-radius: 999px; color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); }
+.smd-decision-status { font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 0 .6em; border-radius: 999px; color: color-mix(in srgb, var(--c) var(--smd-ink), var(--smd-fg)); background: color-mix(in srgb, var(--c) 15%, transparent); }
 .smd-decision-facts { color: var(--smd-fg-muted); display: inline-flex; gap: 6px; }
 .smd-decision-title { font-weight: 650; font-size: 1.05em; margin: 6px 0 4px; }
 .smd-decision-superseded .smd-decision-title, .smd-decision-rejected .smd-decision-title { text-decoration: line-through; opacity: .75; }
@@ -386,12 +396,14 @@ pre.smd-has-hl code { position: relative; }
 .smd-doc .smd-risk-matrix-grid th.smd-risk-matrix-corner { text-align: left; font-weight: 500; font-size: .9em; }
 .smd-doc .smd-risk-cell { vertical-align: top; height: 3.4em; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); border-radius: 8px; padding: 6px 8px; background: color-mix(in srgb, var(--c) 22%, transparent); }
 .smd-doc .smd-risk-cell-empty { background: color-mix(in srgb, var(--c) 10%, transparent); border-color: color-mix(in srgb, var(--c) 20%, transparent); }
-.smd-risk-cell-count { float: right; font-weight: 700; color: var(--c); margin-left: 4px; }
+.smd-risk-cell-count { float: right; font-weight: 700; color: color-mix(in srgb, var(--c) var(--smd-ink), var(--smd-fg)); margin-left: 4px; }
 .smd-doc .smd-risk-cell-list { list-style: none; margin: 0; padding: 0; }
 .smd-doc .smd-risk-cell-list li { margin: 0 0 3px; line-height: 1.3; }
+/* The band colour behind them is too strong for accent-coloured links. */
+.smd-doc .smd-risk-cell-list a { color: var(--smd-fg); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--smd-fg) 45%, transparent); }
 .smd-risk-matrix-body > :last-child { margin-bottom: 0; }
 .smd-risk-register-summary { color: var(--smd-fg-muted); }
-.smd-risk-score { display: inline-block; min-width: 2em; text-align: center; font-weight: 700; border-radius: 999px; padding: 0 .5em; color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
+.smd-risk-score { display: inline-block; min-width: 2em; text-align: center; font-weight: 700; border-radius: 999px; padding: 0 .5em; color: color-mix(in srgb, var(--c) var(--smd-ink), var(--smd-fg)); background: color-mix(in srgb, var(--c) 18%, transparent); }
 .smd-risk-where { color: var(--smd-fg-muted); font-size: .9em; }
 .smd-doc .smd-risk-table td { vertical-align: top; }
 .smd-doc .smd-risk-table tr:target td { background: var(--smd-accent-soft); }
@@ -417,6 +429,21 @@ pre.smd-has-hl code { position: relative; }
 .smd-timeline li.smd-task-done::before { background: var(--smd-green); border-color: var(--smd-green); }
 .smd-timeline li.smd-task .smd-task-box { margin-left: 0; }
 
+/* ---------- Keyboard focus, screen-reader text, motion ---------- */
+.smd-doc :focus-visible { outline: 2px solid var(--smd-focus); outline-offset: 2px; }
+/* Inside boxes that clip their overflow, the ring is drawn inside. */
+.smd-tabbar button:focus-visible, .smd-tab:focus-visible, .smd-code :focus-visible, .smd-table-wrap:focus-visible,
+.smd-diagram:focus-visible, .smd-math-block:focus-visible, .smd-risk-matrix-wrap:focus-visible { outline-offset: -2px; }
+.smd-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .smd-body *, .smd-body *::before, .smd-body *::after, .smd-doc *, .smd-doc *::before, .smd-doc *::after {
+    transition-duration: 0s !important; animation-duration: 0s !important; scroll-behavior: auto !important;
+  }
+}
+
 /* ---------- Print (the browser's Print and smd pdf) ---------- */
 /* Paper size comes from the print dialog (or smd pdf --format); these are the margins. */
 @page { margin: 16mm 14mm; }
@@ -430,9 +457,9 @@ pre.smd-has-hl code { position: relative; }
     --smd-surface: #f6f8fa;
     --smd-border: #d1d9e0;
     --smd-code-bg: #f3f4f6;
-    --smd-red: #dc2626; --smd-orange: #ea580c; --smd-amber: #d97706; --smd-yellow: #ca8a04;
-    --smd-green: #16a34a; --smd-teal: #0d9488; --smd-cyan: #0891b2; --smd-blue: #2563eb;
-    --smd-indigo: #4f46e5; --smd-purple: #9333ea; --smd-pink: #db2777; --smd-gray: #6b7280;
+    --smd-red: #d52424; --smd-orange: #c4420c; --smd-amber: #b45309; --smd-yellow: #a16207;
+    --smd-green: #15803d; --smd-teal: #0f7c73; --smd-cyan: #0d7895; --smd-blue: #2563eb;
+    --smd-indigo: #4f46e5; --smd-purple: #9333ea; --smd-pink: #cf216d; --smd-gray: #686f7d;
     --smd-soft: 13%;
   }
   html, body.smd-body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
