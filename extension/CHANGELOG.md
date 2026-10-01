@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.5.0 — 2026-10-01
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 1.4.0 — 2026-09-30
 
 No breaking changes. Documents, CLI commands and flags, diagnostic codes and messages, library exports, extension commands and settings from 1.3.0 all keep working, and every document that passed `smd validate` still passes: there are no new rules. New: four commands (`smd decisions`, `smd risks`, `smd report`, `smd issues`), export flags on `smd tasks`, one block (`:::risk-matrix`), and two VS Code features (the SMD Tasks view and the status bar picker). `smd issues` is the first command that can write to an external service: it is a dry run unless you add `--apply`.
