@@ -570,15 +570,12 @@ smd outline <file> [--related] [--tokenizer <name>]  sections, line ranges, toke
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
                  [--max-tokens <n>] [--tokenizer <name>]   fit the view into n tokens; exact counts
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
-<<<<<<< HEAD
-smd issues <files|dirs> [--repo owner/name] [--apply] [--create] [--close] [--label <name>]… [--json]
-                 sync tasks with GitHub Issues via gh: a DRY RUN that changes nothing unless --apply
-                 (see "Sync with GitHub Issues" in section 5)
-=======
 smd tasks <files|dirs> [--all] [--mine @name] --csv [-o tasks.csv]                 spreadsheet export
 smd tasks <files|dirs> [--all] [--mine @name] --gantt [--smd] [--title "…"] [-o <file>]   Mermaid Gantt chart
 smd risks <files|dirs> [--status <list>] [--owner @name] [--all] [--json] [--html] [-o <file>]   risk register
->>>>>>> origin/release/v1.4.0
+smd issues <files|dirs> [--repo owner/name] [--apply] [--create] [--close] [--label <name>]… [--json]
+                 sync tasks with GitHub Issues via gh: a DRY RUN that changes nothing unless --apply
+                 (see "Sync with GitHub Issues" in section 5)
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
 smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]          sections that changed
 smd diff <files|dirs> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]
