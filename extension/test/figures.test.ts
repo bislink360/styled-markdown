@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import MarkdownIt from 'markdown-it';
 import smd from '../src/core/markdownIt';
@@ -162,10 +164,28 @@ test('figures: validation reports duplicate ids and unknown references, with a f
   assert.match(applyFixes(src, diagnostics).text, /See :ref\[fig-checkout\] and :ref\[other\]/);
 });
 
-test('figures: kind is checked like other enumerated attributes; unknown attributes warn', () => {
-  assert.deepEqual(codes(validateSmd(':::figure{kind=tabel}\nx\n:::\n')), ['0:attrs/value:error']);
-  assert.match(applyFixes(':::figure{kind=tabel}\nx\n:::\n', validateSmd(':::figure{kind=tabel}\nx\n:::\n')).text, /kind=table/);
+test('figures: an unknown kind is a figure/kind warning with a fix; other containers keep attrs/value errors', () => {
+  const src = ':::figure{kind=tabel}\nx\n:::\n';
+  const [kind] = validateSmd(src);
+  assert.deepEqual(codes(validateSmd(src)), ['0:figure/kind:warning']);
+  assert.match(kind.message, /Invalid kind "tabel" on ":::figure" — did you mean "table"\?/);
+  assert.match(applyFixes(src, validateSmd(src)).text, /kind=table/);
+  assert.deepEqual(codes(validateSmd(':::risk{impact=hgh}\nx\n:::\n')), ['0:attrs/value:error']);
   assert.deepEqual(codes(validateSmd(':::figure{caption=x}\nx\n:::\n')), ['0:attrs/unknown:warning']);
+});
+
+// Requires `npm run build`.
+const cli = join(__dirname, '..', 'dist', 'cli.js');
+test('figures: smd validate still exits 0 on a 1.5-era document with an unknown figure kind', { skip: !existsSync(cli) && 'run npm run build first' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'smd-fig-'));
+  try {
+    writeFileSync(join(dir, 'old.smd'), '---\nsmd: 1\n---\n\n:::figure{kind=tabel} Limits\n| a |\n| - |\n| 1 |\n:::\n');
+    const run = spawnSync(process.execPath, [cli, 'validate', 'old.smd', '--no-mermaid'], { cwd: dir, encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stdout + run.stderr);
+    assert.match(run.stdout, /warning .*figure\/kind/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('figures: the compatibility corpus document is valid and formatted', () => {

@@ -39,6 +39,7 @@ export const RULE_CODES: Record<string, string> = {
   'link/undefined-reference': 'Reference link with no `[label]: …` definition',
   'figure/duplicate-id': 'Two `:::figure` blocks share an `{#id}`; references go to the first',
   'figure/unknown-ref': '`:ref[id]` names no `:::figure` in this document',
+  'figure/kind': 'Invalid `kind` on a `:::figure` (it counts as `figure`)',
   'task/overdue': 'Open task past its `:due[…]` date',
   'rules/unknown': 'Suppression comment or rule setting names an unknown rule code',
 };

@@ -490,6 +490,16 @@
           ],
           "description": ":ref[id] names no :::figure in this document"
         },
+        "figure/kind": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Invalid kind on a :::figure (it counts as figure)"
+        },
         "task/overdue": {
           "enum": [
             "off",

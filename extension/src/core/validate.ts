@@ -315,6 +315,19 @@ function dueDate(content: string): string | undefined {
   return date && dueState(date) !== 'invalid' ? date : undefined;
 }
 
+/**
+ * Enumerated container attributes whose invalid values are reported under their own rule. `:::figure{kind}`
+ * is a warning: before 1.6 such a document only had a `container/unknown` warning and passed validation.
+ */
+const ENUM_VALUE_RULES = new Map<string, { severity: Severity; code: string }>([
+  ['figure.kind', { severity: 'warning', code: 'figure/kind' }],
+]);
+
+/** The rule for an invalid value of an enumerated container attribute: `attrs/value` (error) unless listed above. */
+function enumValueRule(container: string, key: string): { severity: Severity; code: string } {
+  return ENUM_VALUE_RULES.get(`${container}.${key}`) ?? { severity: 'error', code: 'attrs/value' };
+}
+
 function checkContainer(
   info: NonNullable<ReturnType<typeof parseContainerInfo>>,
   line: number, nameStart: number, nameEnd: number, parent: string | undefined, push: Push, raw: string,
@@ -347,7 +360,8 @@ function checkContainer(
     const v = info.attrs.values[key];
     if (v !== undefined && !allowed.some((a) => a.toLowerCase() === v.toLowerCase())) {
       const hint = suggest(v, allowed);
-      push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
+      const rule = enumValueRule(info.name, key);
+      push(line, nameStart, nameEnd, rule.severity, rule.code, `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
         attrValueFix(line, raw, nameEnd, raw.length, key, v, uniqueSuggestion(v, allowed)));
     }
   }

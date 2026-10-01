@@ -279,6 +279,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `link/undefined-reference` | warning | `[text][label]` or `[label][]` with no `[label]: …` definition |
 | `figure/unknown-ref` | warning | `:ref[id]` names no `figure` in the document (fix: closest figure id) |
 | `figure/duplicate-id` | warning | Two `figure` blocks share an `{#id}`; references go to the first |
+| `figure/kind` | warning | `kind` on a `figure` is not `figure`, `table` or `listing`; it counts as `figure` (fix: closest value). A warning rather than `attrs/value`, so documents that passed before 1.6 keep passing |
 | `attrs/required` | error / warning | Required attribute missing (`:::api` needs `method` and `path`; `:metric` should have `label`) |
 | `fence/embed-missing` · `fence/range` · `fence/embed-body` · `fence/lines-without-file` | error / warning | Embedded file missing or outside the workspace, bad line range, non-empty embed body, `lines` without `file` |
 | `task/overdue` | info | Open task past its `:due[…]` date |
