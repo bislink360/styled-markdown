@@ -131,6 +131,7 @@ History and research. People see it; agents skip it.
 - **Outline, folding** and **35 snippets** (`prd`-style blocks, `decision`, `risk`, `api`, `mermaid`, `gantt`, `task`, `embed`…)
 - **Agent view** (🤖 button), **brief agent view**, **copy for an agent** (whole doc or picked sections), and a **status-bar token counter**
 - **Export** to standalone HTML or plain GitHub Markdown · **Convert** `.md` → `.smd` · **Validate workspace**
+- **Built-in Markdown preview:** `.md` files that use `.smd` syntax (callouts, directives, attribute lists, Mermaid, code titles) render in VS Code's own preview too; turn it off with `smd.markdownPreview.enabled`
 
 </details>
 
@@ -202,6 +203,15 @@ import { renderSmd, validateSmd, agentView } from 'styled-markdown';
 See the [package README](npm/README.md) for the API.
 
 **Pre-commit hooks:** check staged `.smd` files on every commit with the [pre-commit](https://pre-commit.com) framework (`repo: https://github.com/bislink360/styled-markdown`, hooks `smd-fmt`, `smd-validate`, `smd-fmt-check`), lint-staged and husky, or a plain Git hook: copy-paste setups in [docs/INSTALL.md](docs/INSTALL.md#pre-commit-hooks).
+
+Already render Markdown with markdown-it (a docs site, a static site generator, a chat UI)? Add the syntax to your own instance with the plugin, and style it with `styled-markdown/smd.css`:
+
+```ts
+import smd from 'styled-markdown/markdown-it';
+md.use(smd);
+```
+
+Options and limits: [markdown-it plugin](npm/README.md#markdown-it-plugin).
 
 Full instructions, building from source and troubleshooting: **[docs/INSTALL.md](docs/INSTALL.md)**.
 

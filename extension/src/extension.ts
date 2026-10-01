@@ -6,11 +6,17 @@ import { registerLanguageFeatures } from './language';
 import { readerFor } from './files';
 import { registerAgentView } from './agentViewUi';
 import { registerEditorFeatures } from './editorFeatures';
+import { extendMarkdownIt } from './markdownPreview';
 import { PreviewManager, renderOptions } from './preview';
 import { registerStatusWorkflow } from './statusWorkflow';
 import { registerTasksView } from './tasksView';
 
-export function activate(context: vscode.ExtensionContext): void {
+/** The API VS Code's built-in Markdown preview uses (see markdownPreview.ts). */
+export interface SmdExtensionApi {
+  extendMarkdownIt: typeof extendMarkdownIt;
+}
+
+export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
   const previews = new PreviewManager(context);
   const diagnostics = registerLanguageFeatures(context);
   registerAgentView(context);
@@ -100,6 +106,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
   );
+
+  return { extendMarkdownIt };
 }
 
 export function deactivate(): void {}

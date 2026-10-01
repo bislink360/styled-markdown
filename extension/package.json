@@ -107,6 +107,14 @@
         "path": "./snippets/smd.json"
       }
     ],
+    "markdown.markdownItPlugins": true,
+    "markdown.previewStyles": [
+      "./media/vendor/katex/katex.min.css",
+      "./media/vendor/smd-markdown-preview.css"
+    ],
+    "markdown.previewScripts": [
+      "./media/markdown-preview.js"
+    ],
     "commands": [
       {
         "command": "smd.setupSpellCheck",
@@ -383,6 +391,11 @@
           "type": "boolean",
           "default": true,
           "description": "Render raw HTML embedded in .smd files. Scripts never run in the preview."
+        },
+        "smd.markdownPreview.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Render Styled Markdown syntax (:::callouts, :badge[…] directives, {attribute} lists, ==marks==, Mermaid diagrams, code titles and embeds, and math when markdown.math.enabled is off) in VS Code's built-in Markdown preview for .md files. Plain Markdown renders as before. Applies after Developer: Reload Window."
         },
         "smd.validation.enabled": {
           "type": "boolean",

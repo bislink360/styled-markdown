@@ -27,6 +27,8 @@
     "tokens",
     "prd",
     "adr",
+    "markdown-it",
+    "markdown-it-plugin",
     "remark",
     "rehype",
     "unified",
@@ -41,6 +43,11 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
+    },
+    "./markdown-it": {
+      "types": "./dist/types/markdownIt.d.ts",
+      "import": "./dist/markdown-it.mjs",
+      "require": "./dist/markdown-it.cjs"
     },
     "./remark": {
       "types": "./dist/types/remark.d.ts",
@@ -64,6 +71,14 @@
     "README.md",
     "LICENSE"
   ],
+  "peerDependencies": {
+    "markdown-it": ">=13"
+  },
+  "peerDependenciesMeta": {
+    "markdown-it": {
+      "optional": true
+    }
+  },
   "sideEffects": false,
   "engines": {
     "node": ">=18"

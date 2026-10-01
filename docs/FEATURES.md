@@ -462,6 +462,12 @@ People-only content anywhere in the document.
 | Theme | Follows VS Code light/dark/high contrast. Override with `smd.preview.theme` or front matter `theme:`. |
 | Security | A strict Content Security Policy: scripts in documents never run |
 
+**`.md` files in VS Code's built-in preview.** A `.md` file that uses `.smd` syntax renders in VS Code's own Markdown preview too (`Ctrl+Shift+V` on a `.md` file): containers, inline directives, attribute lists, `==marks==`, Mermaid diagrams (drawn in the preview's theme), and code titles, line highlights and `file="…"` embeds. Plain Markdown looks as before, and code blocks without `.smd` attributes keep VS Code's highlighting. Compared with the `.smd` preview:
+
+- math is VS Code's own while `markdown.math.enabled` is on (the default); with it off, the `.smd` math rules apply
+- task lists, the front matter header and the table of contents are left to VS Code, and tabs show one after another
+- `smd.markdownPreview.enabled` (default on) turns it off; settings apply after **Developer: Reload Window**
+
 ## 13. VS Code: editing assistance
 
 | Feature | How |
@@ -618,6 +624,8 @@ Static site generators built on remark/rehype can render `.smd` content with the
 - Front matter works whether the source still has it or the host removed it (Astro's `file.data.astro.frontmatter` is read); `header: false` leaves out the title header when the site layout shows the title.
 
 Configuration for Astro, Docusaurus and Next.js, and which hosts are tested: [npm package README](../npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
+
+**Use in other tools.** Anything that renders Markdown with [markdown-it](https://github.com/markdown-it/markdown-it) can render `.smd` syntax with the npm package's plugin, `md.use(require('styled-markdown/markdown-it'))`, styled by `styled-markdown/smd.css`. It adds rules to the host's own instance and leaves plain Markdown alone; options are in the [package README](../npm/README.md#markdown-it-plugin). Other tools can call `renderSmd()` from the same package or run `smd render`.
 
 ## 17. CLI reference
 
