@@ -401,6 +401,148 @@ const checks = {
     assert.equal(await vscode.commands.executeCommand('smd.setupSpellCheck'), false);
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
+
+  async 'the SMD Tasks view groups workspace tasks, follows edits and file events, and checks tasks off'() {
+    // The view covers the open folder (examples/), so the fixture lives there briefly.
+    const root = vscode.workspace.workspaceFolders[0].uri.fsPath;
+    const dir = fs.mkdtempSync(path.join(root, 'zz-tasks-'));
+    const today = new Date().toISOString().slice(0, 10);
+    const a = path.join(dir, 'a.smd');
+    const b = path.join(dir, 'b.smd');
+    const inDir = (file) => file.toLowerCase().startsWith(dir.toLowerCase());
+    const tree = async (by) => {
+      await vscode.commands.executeCommand('smd.groupTasksBy', by);
+      return vscode.commands.executeCommand('smd._tasksTree');
+    };
+    // The fixture's groups (label → task labels), in tree order.
+    const ours = (snapshot) => snapshot.groups
+      .map((g) => [g.label, g.tasks.filter((t) => inDir(t.file)).map((t) => t.label)])
+      .filter(([, tasks]) => tasks.length);
+    const until = (by, test, what) => waitFor(async () => {
+      const s = await tree(by);
+      return test(s) ? s : undefined;
+    }, what);
+    try {
+      fs.writeFileSync(a, [
+        '# Plan', '', '## Launch', '',
+        '- [ ] Zz overdue :priority[P2] @zz-ann :due[2000-01-01]',
+        `- [ ] Zz today :priority[P1] @zz-ann :due[${today}]`,
+        '- [ ] Zz later :priority[P0] @zz-ann @zz-bob :due[2999-01-01]',
+        '- [x] Zz done @zz-bob', '',
+      ].join('\n'));
+      fs.writeFileSync(b, '- [ ] Zz unowned\n');
+      const all = await vscode.commands.getCommands(true);
+      for (const c of ['smd.groupTasksBy', 'smd.showCompletedTasks', 'smd.hideCompletedTasks', 'smd.refreshTasks', 'smd.openTask']) {
+        assert.ok(all.includes(c), `missing command ${c}`);
+      }
+      await vscode.commands.executeCommand('smd.tasks.focus');
+
+      const byOwner = await until('owner', (s) => ours(s).length === 3, 'the fixture tasks grouped by owner');
+      assert.equal(byOwner.groupBy, 'owner');
+      assert.deepEqual(ours(byOwner), [
+        ['@zz-ann', ['Zz overdue', 'Zz later', 'Zz today']],
+        ['@zz-bob', ['Zz later']],
+        ['Unassigned', ['Zz unowned']],
+      ], JSON.stringify(ours(byOwner)));
+      assert.equal(byOwner.groups.at(-1).label, 'Unassigned', 'unassigned last');
+      const overdue = byOwner.groups.flatMap((g) => g.tasks).find((t) => t.label === 'Zz overdue');
+      assert.equal(overdue.description, 'P2 · due 2000-01-01 (overdue) · @zz-ann');
+      assert.ok(byOwner.overdue >= 1);
+
+      const byDue = await tree('due');
+      assert.deepEqual(ours(byDue), [
+        ['Overdue', ['Zz overdue']], ['Today', ['Zz today']], ['Later', ['Zz later']], ['No due date', ['Zz unowned']],
+      ], JSON.stringify(ours(byDue)));
+      assert.equal(byDue.groups[0].label, 'Overdue', 'overdue first');
+
+      const byDocument = await tree('document');
+      assert.deepEqual(ours(byDocument).map(([, tasks]) => tasks), [['Zz overdue', 'Zz later', 'Zz today'], ['Zz unowned']]);
+      assert.match(ours(byDocument)[0][0], /zz-tasks-.*\/a\.smd$/);
+
+      // Unsaved edits show up.
+      const docB = await vscode.workspace.openTextDocument(b);
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(docB.uri, new vscode.Position(1, 0), '- [ ] Zz added @zz-cat\n');
+      await vscode.workspace.applyEdit(edit);
+      await until('owner', (s) => ours(s).some(([label]) => label === '@zz-cat'), 'a task typed into an open document');
+      await docB.save();
+
+      // Checking a task off writes the file, and the task leaves the open list.
+      const todayTask = byOwner.groups.flatMap((g) => g.tasks).find((t) => t.label === 'Zz today');
+      assert.equal(await vscode.commands.executeCommand('smd._checkTask', todayTask.file, todayTask.line, true), true);
+      assert.match(fs.readFileSync(a, 'utf8'), /^- \[x\] Zz today/m);
+      await until('owner', (s) => !ours(s).flatMap(([, t]) => t).includes('Zz today'), 'the checked task to leave the list');
+
+      await vscode.commands.executeCommand('smd.showCompletedTasks');
+      const withDone = await until('document', (s) => ours(s).flatMap(([, t]) => t).includes('Zz done'), 'completed tasks');
+      const checked = withDone.groups.flatMap((g) => g.tasks).find((t) => t.label === 'Zz today');
+      assert.equal(checked.done, true);
+      assert.equal(await vscode.commands.executeCommand('smd._checkTask', checked.file, checked.line, false), true);
+      assert.match(fs.readFileSync(a, 'utf8'), /^- \[ \] Zz today/m);
+      await vscode.commands.executeCommand('smd.hideCompletedTasks');
+
+      // Files created and deleted on disk.
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      fs.rmSync(b);
+      fs.writeFileSync(path.join(dir, 'c.smd'), '- [ ] Zz new file @zz-dan\n');
+      await until('owner', (s) => {
+        const labels = ours(s).map(([label]) => label);
+        return labels.includes('@zz-dan') && !labels.includes('@zz-cat') && !labels.includes('Unassigned');
+      }, 'the created file in and the deleted one out');
+    } finally {
+      await vscode.commands.executeCommand('smd.hideCompletedTasks');
+      await vscode.commands.executeCommand('smd.groupTasksBy', 'due');
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+
+  async 'the status bar shows the document status and Set Document Status edits the front matter'() {
+    const bar = () => vscode.commands.executeCommand('smd._statusBar');
+    const until = (test, what) => waitFor(async () => {
+      const s = await bar();
+      return test(s) ? s : undefined;
+    }, what);
+    assert.ok((await vscode.commands.getCommands(true)).includes('smd.setStatus'), 'missing command smd.setStatus');
+
+    const doc = await vscode.workspace.openTextDocument({
+      language: 'smd',
+      content: '---\r\nsmd: 1\r\ntitle: Plan\r\nstatus: "draft" # keep quotes\r\nupdated: 2020-01-01\r\n---\r\n\r\nBody\r\n',
+    });
+    await vscode.window.showTextDocument(doc);
+    const draft = await until((s) => s.visible && s.text === '$(edit) Draft', 'the draft status in the status bar');
+    assert.equal(draft.tooltip, 'Document status: draft — click to change');
+
+    const today = new Date().toISOString().slice(0, 10);
+    assert.equal(await vscode.commands.executeCommand('smd.setStatus', 'review'), true);
+    assert.equal(doc.getText(), `---\r\nsmd: 1\r\ntitle: Plan\r\nstatus: "review" # keep quotes\r\nupdated: ${today}\r\n---\r\n\r\nBody\r\n`);
+    assert.ok(doc.isDirty, 'the edit is not saved');
+    await until((s) => s.text === '$(eye) Review', 'the review status in the status bar');
+
+    // Undo restores the old status in one step.
+    await vscode.commands.executeCommand('undo');
+    await until((s) => s.text === '$(edit) Draft', 'the status after undo');
+
+    // An unknown status argument is refused without editing.
+    assert.equal(await vscode.commands.executeCommand('smd.setStatus', 'final'), false);
+    assert.match(doc.getText(), /status: "draft"/);
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+
+    // Without front matter: "No status", then a minimal front matter is created.
+    const plain = await vscode.workspace.openTextDocument({ language: 'smd', content: '# Notes\n' });
+    await vscode.window.showTextDocument(plain);
+    await until((s) => s.visible && s.text === '$(circle-large-outline) No status', 'no status in the status bar');
+    assert.equal(await vscode.commands.executeCommand('smd.setStatus', 'approved', plain.uri), true);
+    assert.equal(plain.getText(), '---\nsmd: 1\nstatus: approved\n---\n\n# Notes\n');
+    await until((s) => s.text === '$(verified) Approved', 'the approved status in the status bar');
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+
+    // Hidden for other languages.
+    const other = await vscode.workspace.openTextDocument({ language: 'plaintext', content: 'status: draft\n' });
+    await vscode.window.showTextDocument(other);
+    await until((s) => !s.visible, 'the status bar item to hide');
+    await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+  },
 };
 
 async function run() {

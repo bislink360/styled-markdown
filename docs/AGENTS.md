@@ -10,7 +10,7 @@ Don't read `.smd` files whole with cat/Read. Use the CLI (`smd` on PATH, or `nod
 2. If the full agent view is small (≲ 2,000 tokens), read it once with `smd agent <file>`. Otherwise read only what you need with `smd agent <file> --section "<heading>"` (repeatable). `:::agent` instructions from other sections are always included. `--brief` condenses diagrams, long code, details and completed tasks. When you need an overview within a fixed budget, `smd agent <file> --max-tokens 2000` condenses the view and leaves out the least important sections; each one becomes a `[section omitted: …]` line with the `--section` command that reads it.
 3. If the front matter lists `related:` documents, `smd outline <file> --related` adds each one's title, status, summary and token cost. Open a related document only when the question needs it.
 4. Headings in the agent view carry `[L42]` line refs. Open raw lines only when you edit, and only that range.
-5. Across documents: `smd tasks docs/` lists open tasks (priority, owner, due date, overdue first). `smd query "<selector>" docs/` pulls just the blocks you need, e.g. `decision[status=accepted]`, `risk[impact>=high]`, `api[method=POST]` or `question` (`--titles` for a one-line list).
+5. Across documents: `smd tasks docs/` lists open tasks (priority, owner, due date, overdue first). `smd query "<selector>" docs/` pulls just the blocks you need, e.g. `decision[status=accepted]`, `risk[impact>=high]`, `api[method=POST]` or `question` (`--titles` for a one-line list). `smd decisions docs/ --status accepted` lists the binding decisions across documents, newest first (`--status open` for the ones still to decide). `smd risks docs/` is the risk register: every risk scored impact × likelihood, highest first, with owner, status and a one-line mitigation (`--json` for tools).
 6. Many documents and you don't know which one matters: read the catalog (`smd index docs/`, or a committed `catalog.json`). Each entry has the path, title, summary, status, owners, tags, token costs, sections with ids, and counts of open tasks, decisions, risks, questions and APIs. Pick documents by summary, status and tags, then `smd outline` them or read `smd agent <file> --section "<id>"`.
 7. With the [MCP server](#mcp-server) registered, the same steps are the tools `outline`, `section`, `agent`, `tasks`, `query` and `validate`.
 8. Catching up on a document you've read before: `smd diff <file> --since <git-ref>` (e.g. `HEAD~3`, `main` or the commit you last saw) prints only the sections that changed, in the agent view, plus front-matter changes and removed headings.
@@ -110,6 +110,7 @@ Then write normal Markdown, adding Styled Markdown only where it helps the reade
 | Embed real source | ```` ```ts file="../src/app.ts" lines="10-24" ```` with an empty body |
 | Decision | `:::decision{status=accepted date=2026-09-01 owner=@a} Title` … `:::` |
 | Risk | `:::risk{impact=high likelihood=medium owner=@b status=open} Title` … `:::` |
+| Risk matrix | `:::risk-matrix Title` then `:::` (draws the document's risks; leave the body empty) |
 | API endpoint | `:::api{method=POST path="/v1/items" auth=token} Title` … `:::` |
 | Milestones | `:::timeline` around a list of `- **2026-10-01** — Beta` |
 | Task metadata | `- [ ] Task :priority[P1] @owner :due[2026-10-15]` |
@@ -133,6 +134,10 @@ smd validate docs/ --fix               # apply safe automatic fixes
 ```
 
 Every problem has a stable `code` (e.g. `container/unclosed`, `attrs/value`) and, where safe, a `fix` object `{ line, column, endColumn, replacement }` (0-based).
+
+## Tasks and GitHub Issues
+
+`smd issues docs/` is a dry run: it prints which tasks would get an issue, be checked off or have their issue closed, and changes nothing. Run it to show the user the plan. **Never add `--apply` (or `--create` / `--close`) unless the user asked for that specific change**: it creates and closes issues on GitHub as the user and edits the documents.
 
 ## Need plain Markdown?
 

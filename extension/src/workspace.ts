@@ -1,9 +1,11 @@
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  checkMermaid, extractTasks, querySmd, validateSmd, type Diagnostic, type MermaidParse, type QueryMatch, type QueryOptions,
-  type RuleSettings, type Selector, type TaskInfo,
+  checkMermaid, extractTasks, querySmd, validateSmd, type DecisionEntry, type Diagnostic, type MermaidParse, type QueryMatch,
+  type QueryOptions, type RuleSettings, type Selector, type StatusChanges, type TaskInfo,
 } from './core';
+import { compareTasks } from './taskGroups';
 
 /** Reading .smd files from disk, shared by the CLI and the MCP server. */
 
@@ -82,9 +84,6 @@ export async function diagnose(text: string, file: string, options: DiagnoseOpti
 
 export interface TaskFilter { all: boolean; mine?: string; today?: string }
 
-const PRIORITY_RANK: Record<string, number> = { p0: 0, critical: 0, p1: 1, high: 1, p2: 2, medium: 2, p3: 3, low: 3, p4: 4 };
-const rank = (p?: string) => PRIORITY_RANK[(p ?? '').toLowerCase()] ?? 5;
-
 /** Tasks in `files` (open ones unless `all`), overdue first, then by priority and due date. `name` labels each file. */
 export function taskRows(files: string[], filter: TaskFilter, name = (file: string) => file): TaskRow[] {
   const { all, mine, today } = filter;
@@ -96,8 +95,7 @@ export function taskRows(files: string[], filter: TaskFilter, name = (file: stri
       rows.push({ ...t, file: name(file) });
     }
   }
-  return rows.sort((a, b) => Number(b.overdue ?? false) - Number(a.overdue ?? false) || rank(a.priority) - rank(b.priority)
-    || (a.due ?? '9999').localeCompare(b.due ?? '9999') || a.file.localeCompare(b.file) || a.line - b.line);
+  return rows.sort(compareTasks);
 }
 
 /** `docs/plan.smd:12  [ ] [P0] Ship it @maya (due 2026-10-01)  — Section` */
@@ -148,4 +146,69 @@ function titleLine(r: QueryRow): string {
   const attrs = Object.entries(r.attrs).map(([k, v]) => `${k}=${[v].flat().join(',')}`).join(' ');
   const parts = [`${r.file}:${r.line + 1}${end}`, r.type, r.title, attrs && `{${attrs}}`, r.section && `— ${r.section}`];
   return parts.filter(Boolean).join('  ');
+}
+
+/** `docs/adr-7.smd:12  2026-09-18  [accepted]  Use EventBridge  @platform  — ADR-0007 › Context` */
+export function decisionLine(d: DecisionEntry): string {
+  const where = d.section && !d.adr ? `${d.document} › ${d.section}` : d.document;
+  const bits = [(d.date ?? 'undated').padEnd(10), `[${d.status}]`, d.title, d.owner ?? '', `— ${where}`];
+  return `${d.path}:${d.line + 1}  ${bits.filter(Boolean).join('  ')}`;
+}
+
+/** `8 decision(s) in 3 of 12 file(s): 5 accepted, 1 proposed, 2 superseded.` */
+export function decisionSummary(rows: DecisionEntry[], fileCount: number): string {
+  const counts = new Map<string, number>();
+  for (const r of rows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
+  const byStatus = [...counts].map(([status, n]) => `${n} ${status}`).join(', ');
+  const files = new Set(rows.map((r) => r.path)).size;
+  const head = `${rows.length} decision(s) in ${files} of ${fileCount} file(s)`;
+  return byStatus ? `${head}: ${byStatus}.` : `${head}.`;
+}
+
+/** `Status report since HEAD~1 (abc1234) from 3 file(s): 2 done, 1 new, 0 removed; 5 open, 1 overdue, 2 due soon; …` */
+export function reportSummary(changes: StatusChanges, fileCount: number, since: string, revision?: string): string {
+  const at = revision ? ` (${revision})` : '';
+  const head = `Status report since ${since}${at} from ${fileCount} file(s)`;
+  const open = `${changes.open.length} open, ${changes.overdue.length} overdue, ${changes.dueSoon.length} due soon`;
+  const rest = `${changes.decisions.length} decision change(s), ${changes.risks.length} high-impact risk(s)`;
+  if (!changes.compared) return `${head}: no Git history to compare with, current state only; ${open}; ${rest}.`;
+  return `${head}: ${changes.done.length} done, ${changes.added.length} new, ${changes.removed.length} removed; ${open}; ${rest}.`;
+}
+
+// Git, for --since (smd diff, smd report).
+
+/** .smd files under the targets that exist at the revision but not in the working tree (paths from the top level). */
+export function deletedSince(ref: string, targets: string[], top: string): string[] {
+  const pathspecs = targets.map((t) => gitPath(top, t) || '.');
+  const out = git(['-C', top, 'diff', '--name-only', '--diff-filter=D', '-z', ref, '--', ...pathspecs]) ?? '';
+  const hidden = (p: string) => p.split('/').some((seg) => seg === 'node_modules' || seg.startsWith('.'));
+  return out.split('\0').filter((p) => p.endsWith('.smd') && !hidden(p));
+}
+
+/** A path in the working tree, relative to the working directory, for a path relative to the Git top level. */
+export function workingPath(top: string, topPath: string): string {
+  return path.relative(realPath(process.cwd()), path.join(realPath(top), topPath));
+}
+
+/** A path relative to the Git top level, with forward slashes. */
+export function gitPath(top: string, file: string): string {
+  return path.relative(realPath(top), realPath(file)).split(path.sep).join('/');
+}
+
+/** The canonical path: links resolved and Windows short names (RUNNER~1) expanded, as Git reports them. */
+export function realPath(p: string): string {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
+/** Run git without a shell; undefined when it fails. */
+export function git(args: string[]): string | undefined {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }); // NOSONAR(typescript:S4036): --since runs the user's own git, found on PATH like any git-aware CLI
+  } catch {
+    return undefined;
+  }
 }

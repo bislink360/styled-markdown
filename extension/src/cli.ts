@@ -3,19 +3,25 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, diffSmd, formatRelated, formatSmd, getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderPage,
-  smdIndex, smdToMarkdown, SelectorError, SMD_VERSION, type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic,
-  type DiffResult, type Selector, type Tokenizer,
+  agentView, applyFixes, DECISION_STATUS_FILTERS, decisionLog, decisionLogMarkdown, diffSmd, formatRelated, formatSmd, ganttDate, ganttDocument,
+  getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderPage, renderRiskPage, RISK_STATUS, riskRegister, riskRegisterSummary,
+  riskRegisterText, SelectorError, SMD_VERSION, smdIndex, smdToMarkdown, statusChanges, statusReportMarkdown, suggest, tasksToCsv, tasksToGantt,
+  type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic, type DiffResult, type ReportDocument, type Selector,
+  type Tokenizer,
 } from './core';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { runMcpServer } from './mcp';
+import { runIssues, type GhResult, type IssuesOptions } from './issueSync';
 import { AGENT_RULES, fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 import {
   parseTargets, rulesBody, SHARED_CLI_COMMAND, SHARED_CLI_PATH, TARGET_FILES, type AgentTarget, type RulesTarget, type TargetFile,
 } from './agentTargets';
-import { collect, diagnose, existsFrom, queryRows, querySummary, queryText, read, readerFor, taskLine, taskRows, taskSummary } from './workspace';
+import {
+  collect, decisionLine, decisionSummary, deletedSince, diagnose, existsFrom, git, gitPath, queryRows, querySummary, queryText, read, readerFor,
+  reportSummary, taskLine, taskRows, taskSummary, workingPath, type TaskRow,
+} from './workspace';
 // Injected by scripts/build.mjs. package.json itself stays out of the bundle, so editing its
 // scripts or dependencies doesn't change the CLI's bytes (and the copies bundled in skills/).
 declare const __SMD_PKG_VERSION__: string;
@@ -38,8 +44,18 @@ Reading (token-efficient, for agents):
       --tokenizer  exact counts next to the ≈ estimate (also on outline, and used by --max-tokens) for an
                    OpenAI encoding: ${TOKENIZERS.join(', ')}. Approximate for Claude models.
                    Needs the js-tiktoken package in your project or installed globally; smd doesn't bundle it.
-  smd tasks <files|dirs...> [--all] [--mine @name] [--json]
+  smd tasks <files|dirs...> [--all] [--mine @name] [--json | --csv | --gantt [--smd] [--title "…"]] [-o <file>]
       Open tasks across documents with owner, priority and due date (overdue first).
+      --csv     CSV for spreadsheets (1-based lines, owners joined with ";", formula-like cells prefixed with ')
+      --gantt   Mermaid gantt chart: a section per document, a milestone per task with a due date
+                (done tasks "done", overdue ones "crit"); --all includes done tasks
+      --smd     wrap the chart in a .smd document, e.g. smd tasks docs --gantt --smd -o timeline.smd
+  smd risks <files|dirs...> [--status open,mitigated,accepted,closed] [--owner @name] [--all] [--json]
+            [--html] [-o <file>]
+      Risk register: every :::risk block, scored impact × likelihood (low 1, medium 2, high 3, critical 4;
+      a missing level counts as medium and shows as "medium?"), highest score first, then a matrix of
+      counts. Closed risks are left out unless --all or --status asks for them.
+      --html  a standalone, theme-aware page: a colour-coded matrix that links to the register table
   smd query "<selector>" <files|dirs...> [--json] [--titles] [--brief] [--no-lines]
       Blocks selected by type and attributes, each in the agent view. Exit code 1 when nothing matches.
         decision[status=accepted]      risk[impact>=high][status!=closed]      api[method=POST|PUT]
@@ -56,11 +72,37 @@ Reading (token-efficient, for agents):
       --exit-code  exit 1 when something changed (like git diff); the default is 0
   smd meta <file.smd> [--no-diagnostics]
       Full JSON summary: front matter, outline, tasks, decisions, risks, agent blocks.
+  smd decisions <files|dirs...> [--status <list>] [--owner @name] [--json] [--md] [-o <file>] [--title "…"]
+      Decision log (ADR index): every :::decision across documents, newest first and undated last, with
+      date, status, title, owner, file:line and document › section.
+      --status  only these statuses, comma-separated: ${DECISION_STATUS_FILTERS.join(', ')} (open = proposed)
+      --owner   only decisions owned by @name
+      --md      an ADR index to commit: front matter and a table linking each decision (--title sets its title).
+                Links are relative to the -o file: smd decisions docs/ --md -o docs/decisions.smd
+  smd report <files|dirs...> --since <date|git-ref> [-o report.smd] [--title "…"] [--today YYYY-MM-DD]
+      Draft a status report (the status-report template) from how tasks and decisions changed since a Git
+      commit, branch or tag, or a date (the last commit before it): done and new tasks, open tasks with
+      overdue and due in the next 7 days, decisions since and still needed, open high-impact risks, and
+      links to each source section. Tasks are matched by document and text, so a reworded task counts
+      as removed and added. Without Git history, a date reports the current state only.
+      -o        write the draft there (never over an existing file); links are relative to it
   smd index <files|dirs...> [-o catalog.json] [--compact]
       JSON catalog of every document: title, summary, status, owners, tags, token costs, sections
       and counts (open tasks, decisions, risks, questions, APIs). Agents read it to pick documents,
       then run outline or agent --section on them. Paths are relative to the working directory.
       --compact  one line of JSON instead of indented
+
+Syncing with GitHub Issues (a dry run unless --apply):
+  smd issues <files|dirs...> [--repo owner/name] [--apply] [--create] [--close] [--label <name>]... [--json]
+      Sync tasks with GitHub Issues through your GitHub CLI (gh, logged in). Without --apply it only
+      prints the plan and changes nothing: tasks to check off (their issue was closed), open tasks
+      without an issue, and issues whose task is done. A task is linked by an issue reference on its
+      line: [#123](https://github.com/owner/name/issues/123), the bare URL, or owner/name#123.
+      --apply   sync: check off tasks whose issue was closed (not those closed as "not planned")
+      --create  with --apply, also open an issue for each open task without one and add [#N](url) to it
+      --close   with --apply, also close the issue of each done task
+      --repo    repository for new issues (default: the current folder's, from gh repo view)
+      --label   label for new issues (repeatable or comma-separated)
 
 Checking and converting:
   smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
@@ -107,7 +149,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
-  '--max-tokens', '--tokenizer',
+  '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -143,7 +185,9 @@ function main(argv: string[]): number | Promise<number> {
     case 'agent':
       return agentFile(requireFile(positional[0]), args, today);
     case 'tasks':
-      return tasks(positional.length ? positional : ['.'], flags.has('--all'), value('--mine'), flags.has('--json'), today);
+      return tasks(positional.length ? positional : ['.'], args, today);
+    case 'risks':
+      return risks(positional, args);
     case 'query':
       return query(positional[0], positional.slice(1), { json: flags.has('--json'), titles: flags.has('--titles'), brief: flags.has('--brief'), lineRefs: !flags.has('--no-lines'), today });
     case 'diff':
@@ -156,6 +200,12 @@ function main(argv: string[]): number | Promise<number> {
       process.stdout.write(JSON.stringify(info, null, 2) + '\n');
       return 0;
     }
+    case 'decisions':
+      return decisions(positional, args);
+    case 'report':
+      return report(positional, args);
+    case 'issues':
+      return issues(positional, args);
     case 'index':
       return index(positional, value('-o'), flags.has('--compact'), today);
     case 'validate':
@@ -304,17 +354,51 @@ ${files.length} file(s) checked: ${changed.length} ${check ? 'need formatting' :
   return check && changed.length ? 1 : 0;
 }
 
-function tasks(targets: string[], all: boolean, mine: string | undefined, json: boolean, today?: string): number {
+const TASK_FORMATS = ['--json', '--csv', '--gantt'];
+
+function tasks(targets: string[], args: Args, today?: string): number {
+  const [format, ...more] = TASK_FORMATS.filter((f) => args.flags.has(f));
+  if (more.length) return fail(`Choose one output format: ${[format, ...more].join(' or ')}.`);
+  if (args.flags.has('--smd') && format !== '--gantt') return fail('--smd wraps the Gantt chart in a document: use it with --gantt.');
   const files = targets.flatMap((t) => collect(t));
   if (!files.length) return fail('No .smd files found.');
-  const rows = taskRows(files, { all, mine, today });
-  if (json) {
-    process.stdout.write(JSON.stringify(rows, null, 2) + '\n');
-    return 0;
-  }
-  for (const r of rows) console.log(taskLine(r));
+  const all = args.flags.has('--all');
+  const rows = taskRows(files, { all, mine: args.values.get('--mine')?.[0], today });
+  const out = args.values.get('-o')?.[0];
+  if (format === '--json') return write(out, JSON.stringify(rows, null, 2) + '\n');
+  if (format === '--gantt') return taskGantt(rows, args, out);
+  const text = format === '--csv' ? tasksToCsv(rows) : rows.map((r) => taskLine(r) + '\n').join('');
+  const code = write(out, text);
   console.error(`[smd] ${taskSummary(rows, all)}`);
-  return 0;
+  return code;
+}
+
+/** `smd tasks --gantt [--smd] [--title …]`: the chart, or a document with it, and how many tasks it shows. */
+function taskGantt(rows: TaskRow[], args: Args, out?: string): number {
+  const title = args.values.get('--title')?.[0];
+  const chart = tasksToGantt(rows, { title });
+  const code = write(out, args.flags.has('--smd') ? ganttDocument(chart, title) : chart);
+  const charted = rows.filter((r) => ganttDate(r.due)).length;
+  const left = rows.length - charted;
+  const skipped = left ? `, ${left} without a YYYY-MM-DD due date left out` : '';
+  console.error(`[smd] ${charted} task(s) on the chart${skipped}.`);
+  return code;
+}
+
+/** `smd risks`: the register as text, JSON or a standalone HTML page. Closed risks only with --all or --status. */
+function risks(targets: string[], args: Args): number {
+  const status = (args.values.get('--status') ?? []).flatMap((s) => s.split(',')).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const unknown = status.find((s) => !RISK_STATUS.includes(s));
+  if (unknown) return fail(`Unknown risk status "${unknown}". Statuses: ${RISK_STATUS.join(', ')}`);
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const documents = files.map((file) => ({ path: relativePath(file), text: read(file) }));
+  const options = { status, owner: args.values.get('--owner')?.[0], all: args.flags.has('--all') };
+  const register = riskRegister(documents, options);
+  console.error(`[smd] ${riskRegisterSummary(register, options)}`);
+  const out = args.values.get('-o')?.[0];
+  if (args.flags.has('--html')) return write(out, renderRiskPage(register));
+  return write(out, args.flags.has('--json') ? JSON.stringify(register, null, 2) + '\n' : riskRegisterText(register));
 }
 
 interface QueryFlags { json: boolean; titles: boolean; brief: boolean; lineRefs: boolean; today?: string }
@@ -450,6 +534,81 @@ function index(targets: string[], out: string | undefined, compact: boolean, tod
   return write(out, json + '\n');
 }
 
+/** `smd decisions`: the decision log as text, JSON (`--json`) or an ADR index document (`--md`). */
+function decisions(targets: string[], args: Args): number {
+  const status = statusFilter(args.values.get('--status'));
+  if (typeof status === 'string') return fail(status);
+  const files = (targets.length ? targets : ['.']).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const documents = files.map((file) => ({ path: relativePath(file), text: read(file) }));
+  const rows = decisionLog(documents, { status, owner: args.values.get('--owner')?.[0] });
+  const out = args.values.get('-o')?.[0];
+  console.error(`[smd] ${decisionSummary(rows, files.length)}`);
+  if (args.flags.has('--json')) return write(out, JSON.stringify(rows, null, 2) + '\n');
+  if (!args.flags.has('--md')) return write(out, rows.map((r) => decisionLine(r) + '\n').join(''));
+  const base = out ? path.dirname(path.resolve(out)) : process.cwd();
+  const link = (p: string) => path.relative(base, path.resolve(p)).split(path.sep).join('/');
+  return write(out, decisionLogMarkdown(rows, { title: args.values.get('--title')?.[0], link }));
+}
+
+/** `smd report`: a draft status report comparing the documents with their version at --since. */
+function report(positional: string[], args: Args): number {
+  const since = args.values.get('--since')?.[0];
+  if (!since || since.startsWith('-')) return fail('report needs --since <date|git-ref>, e.g. smd report docs/ --since 2026-09-01 -o status.smd');
+  const out = args.values.get('-o')?.[0];
+  if (out && fs.existsSync(out)) return fail(`${out} already exists. The report is a draft to edit: choose another -o file or remove it first.`);
+  const targets = positional.length ? positional : ['.'];
+  const files = targets.filter((t) => fs.existsSync(t)).flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const base = baseline(since, targets, files);
+  if (typeof base === 'string') return fail(base);
+  const options = { since, revision: base.revision, today: args.values.get('--today')?.[0], title: args.values.get('--title')?.[0] };
+  const changes = statusChanges(base.before, files.map((file) => ({ path: relativePath(file), text: read(file) })), options);
+  console.error(`[smd] ${reportSummary(changes, files.length, since, base.revision)}`);
+  const dir = out ? path.dirname(path.resolve(out)) : process.cwd();
+  const link = (p: string) => path.relative(dir, path.resolve(p)).split(path.sep).join('/');
+  return write(out, statusReportMarkdown(changes, { ...options, link }));
+}
+
+interface Baseline { before: ReportDocument[] | null; revision?: string }
+
+/** The documents at --since: a Git revision, or the last commit before a date. Null without history; a message on error. */
+function baseline(since: string, targets: string[], files: string[]): Baseline | string {
+  const isDate = /^\d{4}-\d{2}-\d{2}$/.test(since);
+  const top = git(['rev-parse', '--show-toplevel'])?.trim();
+  if (!top) return isDate ? { before: null } : `--since ${since} needs a Git repository; outside one, give a date (YYYY-MM-DD) to report the current state.`;
+  const commit = isDate ? git(['rev-list', '-1', `--before=${since}T00:00:00`, 'HEAD']) : git(['rev-parse', '--verify', '--quiet', `${since}^{commit}`]);
+  if (commit === undefined) return isDate ? { before: null } : `Unknown Git revision "${since}".`;
+  // No commit before the date: the documents didn't exist yet, so every task is new.
+  if (!commit.trim()) return { before: [], revision: 'before the first commit' };
+  return { before: versionAt(commit.trim(), top, targets, files), revision: commit.trim().slice(0, 7) };
+}
+
+/** The documents as they were at a commit, including ones deleted since, labelled with their working-tree paths. */
+function versionAt(commit: string, top: string, targets: string[], files: string[]): ReportDocument[] {
+  const at = (topPath: string, file: string): ReportDocument[] => {
+    const text = git(['show', `${commit}:${topPath}`]);
+    return text === undefined ? [] : [{ path: relativePath(file), text }];
+  };
+  return [
+    ...files.flatMap((file) => at(gitPath(top, file), file)),
+    ...deletedSince(commit, targets, top).flatMap((p) => at(p, workingPath(top, p))),
+  ];
+}
+
+/** `--status accepted,open` (repeatable) as a list; a message when a status is unknown. */
+function statusFilter(values: string[] | undefined): string[] | string | undefined {
+  if (!values) return undefined;
+  const list = values.flatMap((v) => v.split(',')).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const known = `Statuses: ${DECISION_STATUS_FILTERS.join(', ')} (open = proposed).`;
+  if (!list.length) return `--status needs one or more decision statuses. ${known}`;
+  const unknown = list.find((s) => !DECISION_STATUS_FILTERS.includes(s));
+  if (unknown === undefined) return list;
+  const hint = suggest(unknown, DECISION_STATUS_FILTERS);
+  const didYouMean = hint ? ` Did you mean "${hint}"?` : '';
+  return `Unknown decision status "${unknown}".${didYouMean} ${known}`;
+}
+
 /** `docs/plan.smd`: relative to the working directory, with forward slashes on every platform. */
 function relativePath(file: string): string {
   return path.relative(process.cwd(), path.resolve(file)).split(path.sep).join('/');
@@ -551,39 +710,37 @@ function fileSince(file: string, ref: string, top: string, flags: DiffFlags): Fi
 }
 
 function deletedFile(topPath: string, ref: string, top: string, flags: DiffFlags): FileDiff {
-  const file = path.relative(realPath(process.cwd()), path.join(realPath(top), topPath));
+  const file = workingPath(top, topPath);
   return { file, status: 'deleted', result: diffSmd(git(['show', `${ref}:${topPath}`]) ?? '', '', flags) };
 }
 
-/** .smd files under the targets that exist at the revision but not in the working tree (paths from the top level). */
-function deletedSince(ref: string, targets: string[], top: string): string[] {
-  const pathspecs = targets.map((t) => gitPath(top, t) || '.');
-  const out = git(['-C', top, 'diff', '--name-only', '--diff-filter=D', '-z', ref, '--', ...pathspecs]) ?? '';
-  const hidden = (p: string) => p.split('/').some((seg) => seg === 'node_modules' || seg.startsWith('.'));
-  return out.split('\0').filter((p) => p.endsWith('.smd') && !hidden(p));
-}
-
-/** A path relative to the Git top level, with forward slashes. */
-function gitPath(top: string, file: string): string {
-  return path.relative(realPath(top), realPath(file)).split(path.sep).join('/');
-}
-
-/** The canonical path: links resolved and Windows short names (RUNNER~1) expanded, as Git reports them. */
-function realPath(p: string): string {
+/** Run gh (the GitHub CLI) without a shell, `input` on stdin. Its own login is used: no token passes through smd. */
+function gh(args: string[], input?: string): GhResult {
+  const env = { ...process.env, GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
   try {
-    return fs.realpathSync.native(p);
-  } catch {
-    return path.resolve(p);
+    const stdout = execFileSync('gh', args, { encoding: 'utf8', input, env, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 }); // NOSONAR(typescript:S4036): smd issues runs the user's own gh, found on PATH like git for --since
+    return { ok: true, stdout, stderr: '' };
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    const stderr = err.stderr ? String(err.stderr) : err.message;
+    return { ok: false, missing: err.code === 'ENOENT', stdout: String(err.stdout ?? ''), stderr };
   }
 }
 
-/** Run git without a shell; undefined when it fails. */
-function git(args: string[]): string | undefined {
-  try {
-    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 }); // NOSONAR(typescript:S4036): --since runs the user's own git, found on PATH like any git-aware CLI
-  } catch {
-    return undefined;
-  }
+/** `smd issues`: the sync plan (a dry run), or with --apply the sync itself, through gh. */
+function issues(targets: string[], args: Args): number {
+  const labels = (args.values.get('--label') ?? []).flatMap((l) => l.split(',')).map((l) => l.trim()).filter(Boolean);
+  const options: IssuesOptions = {
+    repo: args.values.get('--repo')?.[0],
+    apply: args.flags.has('--apply'),
+    create: args.flags.has('--create'),
+    close: args.flags.has('--close'),
+    labels,
+    json: args.flags.has('--json'),
+    today: args.values.get('--today')?.[0],
+  };
+  const io = { gh, out: (text: string) => process.stdout.write(text), err: (text: string) => console.error(text) };
+  return runIssues(targets.length ? targets : ['.'], options, io);
 }
 
 function reportDiffs(diffs: FileDiff[], checked: number, base: { since?: string; oldFile?: string }, flags: DiffFlags): number {
