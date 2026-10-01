@@ -143,10 +143,10 @@ function documentTasks(doc: ReportDocument, today: string): ReportTask[] {
 function taskChanges(before: ReportTask[], after: ReportTask[]): Pick<StatusChanges, 'done' | 'added' | 'removed'> {
   const pool = new Map<string, ReportTask[]>();
   for (const t of before) pool.set(taskKey(t), [...(pool.get(taskKey(t)) ?? []), t]);
-  const pairs = after.map((t) => ({ now: t, then: pool.get(taskKey(t))?.shift() }));
+  const pairs = after.map((t) => ({ now: t, before: pool.get(taskKey(t))?.shift() }));
   return {
-    done: pairs.filter((p) => p.now.done && !p.then?.done).map((p) => p.now),
-    added: pairs.filter((p) => !p.then).map((p) => p.now),
+    done: pairs.filter((p) => p.now.done && !p.before?.done).map((p) => p.now),
+    added: pairs.filter((p) => !p.before).map((p) => p.now),
     removed: [...pool.values()].flat().sort(compareLocation),
   };
 }
