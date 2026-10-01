@@ -2,9 +2,10 @@
 //   index.cjs / index.mjs  the library (engine only, browser-safe, zero runtime dependencies)
 //   remark.* / rehype.*    the remark and rehype plugins (import the library bundle)
 //   cli.js                 the `smd` command (same bundle as the extension's CLI)
+//   language-server.js     the `smd-language-server` command: `smd lsp` under its own name, for editors
 //   types/                 TypeScript declarations (emitted by tsc -p tsconfig.npm.json)
 import * as esbuild from 'esbuild';
-import { copyFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,5 +52,13 @@ copyFileSync(join(root, 'schemas', 'smd-frontmatter.schema.json'), join(out, 'fr
 
 // The CLI is built by scripts/build.mjs; ship the identical file.
 copyFileSync(join(root, 'dist', 'cli.js'), join(out, 'cli.js'));
+// `smd-language-server` for editors that launch a server by name: runs the CLI as `smd lsp`.
+writeFileSync(join(out, 'language-server.js'), [
+  '#!/usr/bin/env node',
+  '// smd-language-server: the same as `smd lsp` (the Styled Markdown language server over stdio).',
+  "process.argv.splice(2, 0, 'lsp');",
+  "require('./cli.js');",
+  '',
+].join('\n'));
 // Mermaid's parser, loaded by the CLI on demand for mermaid/syntax diagnostics.
 copyFileSync(join(root, 'dist', 'mermaid-parse.js'), join(out, 'mermaid-parse.js'));

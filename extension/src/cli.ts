@@ -13,6 +13,7 @@ import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { runMcpServer } from './mcp';
+import { runLanguageServer } from './lsp';
 import { runIssues, type GhResult, type IssuesOptions } from './issueSync';
 import { AGENT_RULES, fillTemplate, SKILLS, TEMPLATES } from './skillsBundle';
 import {
@@ -139,6 +140,12 @@ Agent integration:
       and query. Only .smd files inside --root (default: the current directory) can be read.
       Register it, e.g.: claude mcp add smd -- npx -y -p styled-markdown smd mcp
 
+Editor integration:
+  smd lsp [--stdio]
+      Language server (LSP) over stdio for Neovim, Helix, Zed and other editors: diagnostics with quick
+      fixes, outline, workspace symbols, hover, completion, go to definition and formatting. Also
+      installed as smd-language-server by the npm package. Setup guides: docs/EDITORS.md
+
 Agent skills:
   smd skills install [--dir <skills-dir>] [--global] [--only reader|writer]
       Install the agent skills (each with this CLI bundled) into .claude/skills (default),
@@ -254,6 +261,8 @@ function main(argv: string[]): number | Promise<number> {
       return 0;
     case 'mcp':
       return mcp(value('--root'));
+    case 'lsp':
+      return lsp(flags);
     case 'skills':
       return skillsCommand(args);
     case undefined:
@@ -483,6 +492,13 @@ async function mcp(root = '.'): Promise<number> {
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return fail(`--root must be a folder: ${root}`);
   await runMcpServer({ root, version: pkg.version });
   return 0;
+}
+
+/** The language server speaks stdio only; other transports that clients may ask for are refused. */
+async function lsp(flags: Set<string>): Promise<number> {
+  const transport = [...flags].find((f) => /^--(?:socket|pipe|node-ipc)\b/.test(f));
+  if (transport) return fail(`smd lsp supports --stdio only (got ${transport}).`);
+  return runLanguageServer({ version: pkg.version });
 }
 
 function outlineFile(file: string, related: boolean, today?: string, tokenizerName?: string): number {

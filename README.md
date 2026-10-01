@@ -156,6 +156,7 @@ History and research. People see it; agents skip it.
 | `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect |
 | `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
+| `smd lsp --stdio` | Language server for Neovim, Helix, Zed and other LSP editors: diagnostics, quick fixes, outline, hover, completion, go to definition, formatting (also `smd-language-server`; [setup](docs/EDITORS.md)) |
 | `smd skills install [--global] [--target …]` | Install the agent skills, or rules for Cursor, Copilot and `AGENTS.md` |
 
 </details>
@@ -232,6 +233,19 @@ claude mcp add smd -- npx -y -p styled-markdown smd mcp
 
 Other clients and options: **[docs/AGENTS.md](docs/AGENTS.md#mcp-server)**.
 
+### Neovim, Helix, Zed and other editors
+
+`smd-language-server` (installed with the [npm package](#npm-library-and-smd-cli), 1.5.0 or later) brings validation with quick fixes, the outline, symbol search, hover, completion, go to definition and formatting to any editor that speaks the Language Server Protocol:
+
+```lua
+-- Neovim 0.11+
+vim.filetype.add({ extension = { smd = 'smd' } })
+vim.lsp.config('smd', { cmd = { 'smd-language-server', '--stdio' }, filetypes = { 'smd' }, root_markers = { '.git' } })
+vim.lsp.enable('smd')
+```
+
+Neovim (also with nvim-lspconfig), Helix and Zed setups: **[docs/EDITORS.md](docs/EDITORS.md)** (written from each editor's documented configuration, not yet tested in those editors).
+
 ### GitHub Action
 
 Validate `.smd` files on every pull request, with each problem annotated on its line and a summary on the run page:
@@ -302,6 +316,7 @@ Each has a rendered `.html` version next to it that you can open in a browser. M
 | [docs/INSTALL.md](docs/INSTALL.md) | Installing, updating and building the extension and CLI |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature guide: every construct with syntax, rendering, agent view and plain-Markdown fallback |
 | [docs/SKILLS.md](docs/SKILLS.md) | Importing the agent skills into Claude Code, Claude.ai, the API/Agent SDK and other agents |
+| [docs/EDITORS.md](docs/EDITORS.md) | Using `.smd` in Neovim, Helix, Zed and other editors with the language server |
 | [docs/AGENTS.md](docs/AGENTS.md) | One-page guide to paste into any agent's instructions |
 | [docs/SPEC.md](docs/SPEC.md) | The formal specification (v1) and validation rules |
 
