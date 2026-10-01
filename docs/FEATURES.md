@@ -601,6 +601,23 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 | **Export to HTML** / `smd render` | A standalone page (Mermaid and KaTeX from a CDN) you can share with anyone |
 | **Export to Plain Markdown** / `smd to-md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Convert Markdown File to .smd** / `smd from-md` | Adds front matter and turns GitHub alerts into callouts |
+| `smd build <dir> --out site` | A static docs site: every document as a page, with navigation, search, backlinks and a dashboard |
+
+### Publish a docs site: `smd build`
+
+```bash
+smd build docs --out site                       # open site/index.html, or serve the folder
+smd build docs --out site --md --title "Handbook" --base /handbook/ --clean
+```
+
+- **Pages:** every `.smd` file under the folder becomes a page in the same place (`docs/guide/setup.smd` → `site/guide/setup.html`); `--md` adds `.md` files. The home page (`index.html`) is the folder's `index.smd`, else its `README.smd`/`README.md`, else a generated index of every document with its summary and status.
+- **Links:** links between documents point at their pages, anchors included (`setup.smd#install` → `setup.html#install`, `.md` too); external links stay as they are. Linked local files such as images are copied with the same relative path (only from inside the folder, never dot folders). Links are relative, so the site works from disk (`file://`) and from any static web server; `--base /docs/` makes them absolute for a fixed deployment path.
+- **Navigation:** a sidebar with the folder tree, documents and folders ordered by title (a folder's `index`/`README` is its overview page), breadcrumbs, and previous/next links in sidebar order. On narrow screens the sidebar opens from a menu button. Pages follow the reader's light or dark theme (or the document's `theme:`).
+- **Search:** a search box on every page searches titles, headings, summaries and an excerpt of every section, in the browser. The index (`_smd/search-index.js`) is built with the site; nothing is sent anywhere.
+- **Backlinks:** each page lists the pages that link to it (links and front matter `related:`).
+- **Dashboard:** `dashboard.html` collects open tasks (overdue first, then by priority and due date), decisions (newest first) and open risks (with the impact × likelihood matrix) from every document, each linked to its section. `--today YYYY-MM-DD` sets the date for overdue tasks.
+- **Offline:** the stylesheet and scripts are written once to `_smd/`. Only pages with Mermaid diagrams or math load Mermaid and the KaTeX stylesheet from a CDN, as `smd render` does.
+- **Safe output:** `--out` (default `site`) must be outside the source folder and must not contain it. An existing folder is only written to when it is empty or a previous build, which `smd build` recognizes by the `.smd-site.json` it writes (the list of files it created). `--clean` first deletes exactly those files, never anything else; without it, files of documents you removed stay until the next `--clean`.
 
 ## 17. CLI reference
 
@@ -626,6 +643,8 @@ smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-me
 smd validate <files|dirs> --format github [--summary <file>] [...]   GitHub annotations (section 15); --summary appends a job summary
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]
+smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
+                 static docs site: pages, sidebar, search, backlinks, dashboard (section 16)
 smd to-md <file> [-o out.md]
 smd from-md <file.md> [-o out.smd]
 smd init <file> [--template <name>] [--title "…"]
