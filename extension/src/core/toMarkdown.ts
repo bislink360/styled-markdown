@@ -9,6 +9,7 @@ import { includedLines, includeSource } from './includeText';
 import { figureIndex } from './parse';
 import { HEADING_ATTRS } from './render';
 import { riskMatrixMarkdown } from './risks';
+import { documentVariables, substituteLine, type Variables } from './variables';
 
 export interface ToMarkdownOptions {
   /**
@@ -30,6 +31,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
   const lines = text.split(/\r?\n/);
   const out: string[] = [];
   const figures = figureIndex(text);
+  const variables = variablesOf(options, lines);
   interface Frame { len: number; prefix: string; close?: string }
   const stack: Frame[] = [];
   const prefix = () => stack.map((f) => f.prefix).join('');
@@ -99,20 +101,24 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
         i = includeMarkdown(info, { lines, open: i, options, emit, keepBody: () => stack.push({ len, prefix: '' }) });
         continue;
       }
-      const title = info.title ? convertInline(info.title, figures.byId) : '';
+      const title = info.title ? convertInline(substituteLine(info.title, variables), figures.byId) : '';
       const head = containerMarkdown({ name: info.name, title, values: info.attrs.values, id: info.attrs.id, figure: figures.byLine.get(i), text });
       for (const l of head.before ?? []) emit(l);
       stack.push({ len: open[2].length, prefix: head.prefix, ...(head.close === undefined ? {} : { close: head.close }) });
       for (const l of head.inside ?? []) emit(l);
       continue;
     }
-    emit(convertInline(/^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line, figures.byId));
+    const content = /^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line;
+    emit(convertInline(substituteLine(content, variables), figures.byId));
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
 /** The include scope of the converted text, for included documents (the root document has none). */
 const includeScopes = new WeakMap<ToMarkdownOptions, IncludeScope>();
+/** The front matter variables of the including document, for included documents. */
+const includeVariables = new WeakMap<ToMarkdownOptions, Variables>();
+const variablesOf = (options: ToMarkdownOptions, lines: string[]) => includeVariables.get(options) ?? documentVariables(lines);
 
 interface IncludeAt {
   lines: string[];
@@ -139,6 +145,8 @@ function includeMarkdown(info: ContainerInfo, at: IncludeAt): number {
     const inc = result.include;
     const child: ToMarkdownOptions = { readFile: options.readFile };
     includeScopes.set(child, innerScope(scope, inc));
+    // Included text uses this document's front matter variables, as the rendered HTML does.
+    includeVariables.set(child, variablesOf(options, lines));
     // A leading blank line, so a body that starts with `---` is not taken for front matter.
     const text = ['', ...includedLines(inc).slice(inc.start, inc.end + 1)].join('\n');
     at.emit(`<!-- included from ${includeLabel(inc.path, request?.section)} -->`);

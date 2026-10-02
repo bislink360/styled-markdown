@@ -54,6 +54,7 @@ theme: auto               # auto | light | dark
 - **Tip:** the `summary` is the first thing every agent reads. Make it self-contained.
 - **Schema:** keys and values are completed and checked from one JSON Schema, published as [`smd-frontmatter.schema.json`](../extension/schemas/smd-frontmatter.schema.json) and as `styled-markdown/frontmatter.schema.json` on npm for YAML tooling and pipelines. Typing `updated: ` suggests today's date.
 - **Status workflow:** in VS Code the status bar shows `status` and changes it, bumping `updated`; see [section 13](#13-vs-code-editing-assistance).
+- **Variables:** any key can be shown in the text with `{{key}}`, e.g. `Version {{version}}`; see [Front matter variables](#front-matter-variables).
 - **Staleness:** a live document whose `updated` date is more than 180 days old gets a `frontmatter/stale` hint. Bump `updated` after a review, or set `status: archived`. The threshold is set with `smd.validation.staleAfterDays` or `smd validate --stale-after <days>`, where `0` turns it off.
 
 ## 2. Callouts and collapsibles
@@ -132,6 +133,28 @@ Retries are capped at five[^retries], as the SRE review asked[^SRE].
 ```
 
 GitHub-compatible footnotes (since 1.6). Labels are numbers or words, matched case-insensitively. The preview numbers footnotes by their first reference and lists them in a section at the end, each with a back link (↩︎) to every reference; hovering `[^retries]` in the editor shows the footnote, and typing `[^` completes the labels. As on GitHub, a definition nothing references is not shown and a reference without a definition stays plain text: the validator reports both (`footnote/unused`, `footnote/undefined`), plus repeated labels (`footnote/duplicate`). **Agent view:** as written, `[^1]` in the text and the definitions where they are; `smd agent --section` adds the definitions a section references but doesn't contain. **GitHub:** unchanged (GitHub renders footnotes).
+
+### Front matter variables
+
+```markdown
+---
+version: "2.10"
+release:
+  date: 2026-10-20
+---
+
+## What's new in {{version}}
+
+Version {{version}} ships on {{release.date}}. :badge[v{{version}}]{color=indigo}
+```
+
+`{{name}}` shows the value of a front matter key (since 1.6): *Version 2.10 ships on 2026-10-20*. Dots reach nested keys (`{{release.date}}`) and list items (`{{owners.0}}`); a whole list shows as `a, b`. Use it for the version, product name, dates or owners you'd otherwise repeat and forget to update. Quote versions (`version: "2.10"`), or YAML reads `2.10` as the number 2.1.
+
+- **Where:** text, headings, lists, tables, link text, image alt text, block titles and directive content (`:badge[v{{version}}]`, `:due[{{release.date}}]`). Code, math, URLs, raw HTML and attribute lists keep `{{…}}` as written, and so does the front matter (the header shows the title as written).
+- **Literal braces:** a name the front matter doesn't define stays as written, so Handlebars or Jinja examples render as before; `\{{name}}` or a code span keeps the braces even when it is defined. The validator notes undefined names (`variable/undefined`, info, with a fix for a near miss such as `{{verison}}`) and warns about a name that is a mapping (`variable/not-text`).
+- **Heading ids** come from the heading as written (`#whats-new-in-version`), so links keep working when the value changes.
+- **Editor:** typing `{{` completes the front matter names with their values, and hovering a variable shows its value (VS Code and the language server).
+- **Agent view** and **GitHub** (`smd to-md`): the values, so agents and readers see `2.10`. Older `.smd` tools and plain Markdown show `{{version}}` as written.
 
 ## 5. Tasks with owners, priorities and due dates
 
@@ -557,8 +580,8 @@ People-only content anywhere in the document.
 | Feature | How |
 |---|---|
 | Syntax highlighting | Blocks, attributes, directives, math and front matter |
-| Completions | After `:::` (blocks, with snippets for tabs/columns), `:` (directives), `{` (attributes), `=` (allowed values: colors, statuses, HTTP methods…), front matter keys and values, Mermaid types. In links (`](…`, `[label]: …`), `related:` entries, `file="…"` embeds and `:::include{file="…"}`: relative files and folders, then after `#` the headings and ids of this or the linked document |
-| Hover | Documentation for blocks and directives; the definition of a glossary term |
+| Completions | After `:::` (blocks, with snippets for tabs/columns), `:` (directives), `{` (attributes), `=` (allowed values: colors, statuses, HTTP methods…), front matter keys and values, Mermaid types, front matter names with their values after `{{`. In links (`](…`, `[label]: …`), `related:` entries, `file="…"` embeds and `:::include{file="…"}`: relative files and folders, then after `#` the headings and ids of this or the linked document |
+| Hover | Documentation for blocks and directives; the definition of a glossary term; the value of a `{{variable}}` |
 | Color picker | Swatches next to `color=`, `bg=`, `border=`, `accent:` |
 | Outline & folding | Headings in the Outline view; fold blocks, code and front matter |
 | Go to definition | `F12` or `Ctrl+Click` on `#anchor`, `other.smd#anchor`, a relative file, a `related:` entry or a `[text][label]` reference jumps to the heading, `{#id}` block, file or definition |
@@ -615,6 +638,8 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `- API: …` in a `:::glossary` | `glossary/entry` | — (write `- **API**: …`) |
 | two `- **API**: …` entries | `glossary/duplicate` | — |
 | a term no text uses | `glossary/unused` (info) | — |
+| `{{verison}}` with `version:` in the front matter | `variable/undefined` (info) | → `{{version}}` |
+| `{{owner}}` where `owner:` is a mapping | `variable/not-text` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
 | `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |
@@ -644,6 +669,7 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 | `attrs/value` | exactly one allowed value is close (block and directive values, named colors, `size`, `weight`, `font`, `align`, `:priority[…]`, heading `agent=skip`), or a `date`/`:due[…]` is year-first, e.g. `2026/10/5` → `2026-10-05` |
 | `link/missing-anchor` | a heading id is close |
 | `footnote/undefined` | exactly one defined footnote label is close, e.g. `[^retires]` → `[^retries]` |
+| `variable/undefined` | a front matter key is close, e.g. `{{verison}}` → `{{version}}` |
 
 Everything else needs a decision only the author can make (which file was meant, where a block should end inside a list, what a missing attribute should be), so it has no fix. Fixes never touch values with several equally close matches, dates like `09/05/2026` whose day/month order is unclear, or `style=…`, which takes several words.
 

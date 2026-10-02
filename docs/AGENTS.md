@@ -104,6 +104,7 @@ Then write normal Markdown, adding Styled Markdown only where it helps the reade
 | Glossary | `:::glossary` with `- **API**: Application Programming Interface` items … `:::`; the first use of each term per section shows its definition on hover |
 | Numbered figure | `:::figure{#fig-flow} Caption` around an image, diagram, table (`kind=table`) or code (`kind=listing`) … `:::`; refer to it with `:ref[fig-flow]` ("Figure 2") |
 | Math | `$x^2$` inline, `$$ … $$` block |
+| Front matter value in text | `{{version}}` with `version: "2.10"` in the front matter (`{{owner.name}}` for nested keys; `\{{x}}` keeps the braces) |
 | Tabs | `::::tabs` / `:::tab Name` … `:::` / `::::` |
 | Columns | `::::columns` / `:::column` … `:::` / `::::` |
 | Card | `:::card{accent=green} Title` … `:::` |

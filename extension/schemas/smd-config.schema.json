@@ -140,6 +140,16 @@
           ],
           "description": "Every glossary/… rule. Exact codes win."
         },
+        "variable/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every variable/… rule. Exact codes win."
+        },
         "task/*": {
           "enum": [
             "off",
@@ -649,6 +659,26 @@
             "hint"
           ],
           "description": "A :::glossary term is never used in the text"
+        },
+        "variable/undefined": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "{{name}} names no front matter key; it is shown as written"
+        },
+        "variable/not-text": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "{{name}} names a front matter mapping or empty value, which has no text"
         },
         "task/overdue": {
           "enum": [

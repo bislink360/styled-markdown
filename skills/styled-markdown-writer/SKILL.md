@@ -69,6 +69,7 @@ These are the rules the validator and renderers depend on. `references/syntax.md
 6. **Tasks:** `- [ ] Verb-first task :priority[P1] @owner :due[2026-10-15]`. One owner per task where possible.
 7. **Code:** always give fences a language. Use `title="path"` for file names, `{2,5-7}` to highlight lines, and `file="../src/x.ts" lines="10-24"` (empty body) to embed real source instead of pasting it. Text shared by several documents goes in one `.smd` file, included with `:::include{file="shared/terms.smd" section="Pricing"}` and a link to the file as the body (fallback for older tools) before the closing `:::`.
 8. **Diagrams:** ```` ```mermaid ```` with a valid first line (`flowchart LR`, `sequenceDiagram`, `gantt`, …).
+9. **Facts that repeat** (version, product name, release date) go in the front matter once and appear in the text as `{{version}}` (nested keys: `{{release.date}}`). Quote versions (`version: "2.10"`). Only defined keys are replaced; write `\{{name}}` or a code span for literal braces.
 
 ## Writing for both audiences
 

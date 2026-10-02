@@ -15,6 +15,7 @@ import { figureIndex, parseSmd, type FigureIndex } from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { CALLOUT_TYPES } from './spec';
+import { documentVariables, substituteVariables, type Variables } from './variables';
 
 /**
  * Agent view: a compact, meaning-preserving rendering of an .smd document for LLMs.
@@ -320,6 +321,8 @@ interface TransformOptions extends AgentViewOptions {
   onlyAgentBlocks?: boolean;
   /** The document's figures, when `lines` are not the whole document (see agentViewOfRange). */
   figures?: FigureIndex;
+  /** The document's front matter, for `{{name}}`; read from `lines` when left out. */
+  variables?: Variables;
   /** Receives every emitted line with the source line it came from. */
   collect?: Array<[at: number, line: string]>;
   /** Inside an included document: where its own includes resolve. */
@@ -330,7 +333,8 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
   const figures = options.figures ?? figureIndex(lines.join('\n'));
-  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId);
+  const variables = options.variables ?? documentVariables(lines);
+  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, variables);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
   const dropping = () => stack.some((f) => f.drop);
@@ -452,7 +456,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
-  return transform(lines.slice(0, end + 1), start, () => true, { ...options, figures: figureIndex(lines.join('\n')) }).trim();
+  return transform(lines.slice(0, end + 1), start, () => true, { ...options, figures: figureIndex(lines.join('\n')), variables: documentVariables(lines) }).trim();
 }
 
 /**
@@ -472,7 +476,8 @@ function includeView(info: ContainerInfo, lines: string[], options: TransformOpt
     return [`[include: ${label} — ${reason}]`];
   }
   const inc = result.include;
-  const inner = { ...options, collect: undefined, includeScope: innerScope(scope, inc) };
+  // Included text uses this document's front matter variables, as the rendered HTML does.
+  const inner = { ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines) };
   const body = transform(includedLines(inc).slice(0, inc.end + 1), inc.start, () => true, inner);
   const section = request.section ? ` section="${request.section}"` : '';
   return [`<included file="${inc.path}"${section}>`, ...withoutBlankEnds(body.split('\n')), '</included>'];
@@ -520,12 +525,15 @@ const STATUS_WORDS: Record<string, string> = { green: 'ok', teal: 'ok', red: 'ba
 
 /**
  * Strip styling syntax from one line, keeping the words. Code spans are left untouched. With the
- * document's figures by id, `:ref[id]` becomes `Figure 2 (id)`.
+ * document's figures by id, `:ref[id]` becomes `Figure 2 (id)`; with its front matter, `{{name}}`
+ * becomes the value of `name`.
  */
-export function inlineText(line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>): string {
+export function inlineText(
+  line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables,
+): string {
   return line
     .split(/(`+[^`]*`+)/)
-    .map((part, idx) => (idx % 2 === 1 ? part : plain(part, today, openTask, figures)))
+    .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, variables), today, openTask, figures)))
     .join('');
 }
 
@@ -574,7 +582,7 @@ function plain(s: string, today: string | undefined, openTask: boolean, figures?
  * size. Brief views count completed tasks per scope, so they are transformed per range.
  */
 function sectionViews(lines: string[], from: number, documentOptions: TransformOptions): (start: number, end: number) => string {
-  const options = { ...documentOptions, figures: figureIndex(lines.join('\n')) };
+  const options = { ...documentOptions, figures: figureIndex(lines.join('\n')), variables: documentVariables(lines) };
   if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);
   const emitted: Array<[number, string]> = [];
   transform(lines, from, () => true, { ...options, collect: emitted });

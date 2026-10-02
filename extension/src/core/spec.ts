@@ -175,6 +175,15 @@ export const INLINE_DIRECTIVES: Record<string, InlineDirectiveSpec> = {
   },
 };
 
+/**
+ * Front matter variables (spec §4.7): `{{name}}` in text shows the value of the front matter key `name`.
+ * Only names the front matter defines are replaced; `\{{name}}` and code keep the braces.
+ */
+export const VARIABLE_SYNTAX = {
+  description: 'Front matter variable: shows the value of this front matter key (nested keys with dots, e.g. {{owner.name}}). Names the front matter does not define stay as written.',
+  example: 'Version {{version}}',
+} as const;
+
 /** Known front-matter keys. Unknown keys are allowed but reported as hints. */
 export const FRONTMATTER_KEYS: Record<string, string> = {
   smd: 'Styled Markdown spec version (currently 1)',
