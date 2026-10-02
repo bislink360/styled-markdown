@@ -105,6 +105,7 @@ Any Markdown content, including other containers.
 | `timeline` | Renders the list inside as a vertical timeline (tasks inside show done state) | — |
 | `figure` | Numbered figure around an image, diagram, table or code block; title = the caption (§3.3) | `title`, `kind` (`figure` `table` `listing`) |
 | `include` | Transclusion: another document's body, or one section of it, in place of the block (§3.4). The body is fallback text | `file` (needed), `section`, `level` (`1`–`6`) |
+| `glossary` | Glossary: a `**Term**: definition` list, rendered as a definition list; the first use of each term per section shows its definition (§3.5) | `title` (or title text after the name) |
 
 All containers additionally accept the style attributes in §5. Attributes in **bold** are required.
 `tab` must be a direct child of `tabs`; `column` of `columns`.
@@ -158,6 +159,30 @@ See [Pricing](shared/terms.smd#pricing) in the shared terms.
 - **Limits.** An include chain that leads back to a document being included (`a.smd → b.smd → a.smd`, or a document that includes itself) stops there with a note instead of repeating. Includes nest at most 8 deep, and one document includes at most 200 times and 2,000,000 characters.
 - **What includes, what doesn't.** Rendered output (preview, HTML, PDF, `smd build`), the agent view (§8a) and `smd to-md` (§8) include. `smd outline` lists the including document's own headings and line ranges, and an include adds to the token cost of the section it is in, as `smd agent --section` would show it. `smd query`, `smd tasks`, `smd decisions`, `smd risks`, `smd index` and `smd diff` read each document as written, an include being a one-line pointer there; the included document is read on its own.
 - **Figures (§3.3) in included text** are numbered with the including document's figures in rendered output, and `:ref[id]` there can name them; `smd validate` accepts such references when it can read the include. The agent view and `smd to-md` number an included document's figures within that document, and leave a `:ref` from the including document to one of them as written (`:ref[fig-b]`; the `<figure id="fig-b">` is in the `<included>` block).
+
+### 3.5 Glossaries and defined terms
+
+```text
+Every API call counts against the SLO; the error budget is what is left.
+
+:::glossary Glossary
+- **API**: Application Programming Interface
+- **SLO**: Service level objective
+- **Error budget**: How much unreliability the SLO allows in a period.
+:::
+```
+
+- **Entries:** the bullet list directly inside a `glossary` holds its entries. Each item starts with a bold term and a colon, `**Term**: definition` (or `**Term:** definition`); the rest of the item is the definition, and may have inline Markdown, more paragraphs and nested lists. A list renders as a glossary only when every item is an entry; otherwise it stays a plain list and defines nothing (`glossary/entry`). Other content in the block, such as an introduction, renders as usual. A document may have several glossaries; they share one set of terms.
+- **Rendering:** `<div class="smd-glossary">`, the title if any (`<div class="smd-glossary-title">`), then `<dl class="smd-glossary-list">` with `<dt id="term-{slug}"><dfn>Term</dfn></dt><dd>definition</dd>` for each entry. When a term is defined twice, the first definition wins and only its `<dt>` has the id (`glossary/duplicate`).
+- **Uses:** elsewhere in the document, the first use of each term in each section (the text between two headings of any level) links to its definition, with the definition's plain text as a tooltip: `<a class="smd-term" href="#term-api"><abbr title="Application Programming Interface">API</abbr></a>` for an abbreviation, `<a class="smd-term" href="#term-error-budget" title="How much …">error budget</a>` for any other term. Later uses in the same section stay plain text.
+- **Matching:** a use is a whole word: no letter, digit or `_` on either side, no `.` `/` `@` `#` `-` just before it and no `.` `/` `@` `-` followed by a letter or digit just after it, so `API.md`, `/api`, `#API` and `API-first` are not uses. An *abbreviation* (a term with capital letters and no lower-case ones: `API`, `SLO`, `P99`) matches only as written. Any other term matches as written or with the case of its first letter changed (`Error budget`, `error budget`), not otherwise (`ERROR BUDGET`). Longer terms win (`API gateway` over `API`). Other word forms (plurals) are not uses.
+- **Never changed:** headings (so heading ids and the table of contents stay the same), container titles, glossaries themselves, code spans and blocks, math, links and their text (raw `<a>` links too), autolinks and URLs, raw HTML blocks and tags, image alt text, attribute lists and inline directives. Footnote references and footnote definitions (§4.6) are never marked either.
+- **Includes (§3.4):** included text is part of the rendered document. A glossary in an included file defines terms for the whole document (so a shared glossary can be included), and the document's terms are marked in included text, under the same first-use-per-section rule. `smd validate` counts uses in included text when it can read the include, so a term used only there is not `glossary/unused`; editor hovers know the document's own glossaries.
+- **Accessibility:** a definition is never available only on hover. Each marked use is a link to its `<dt>`, which keyboard and screen-reader users can follow (rendered pages move focus to it), and the expansion of an abbreviation is its `<abbr title>`.
+
+Why the first use in each section: style guides expand an abbreviation at its first use, marking every use fills paragraphs with underlines, and a reader who jumps to a section from the contents or a link still finds the term marked there. Why a block and not front matter: a glossary is content people read and print, it is a readable list in GitHub and older tools, and agents read it once in the agent view.
+
+**Older renderers** (1.5 and earlier) treat `:::glossary` as an unknown container: the list renders as a normal bulleted list inside a plain box (`<div class="smd-box smd-box-glossary">`), uses of the terms stay plain text, and the validator reports `container/unknown` (a warning). See §10.
 
 ---
 
@@ -334,6 +359,9 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `figure/unknown-ref` | warning | `:ref[id]` names no `figure` in the document (fix: closest figure id) |
 | `figure/duplicate-id` | warning | Two `figure` blocks share an `{#id}`; references go to the first |
 | `figure/kind` | warning | `kind` on a `figure` is not `figure`, `table` or `listing`; it counts as `figure` (fix: closest value). A warning rather than `attrs/value`, so documents that passed before 1.6 keep passing |
+| `glossary/entry` | warning | A list item in a `glossary` is not `**Term**: definition` (its list then renders as a plain list and defines no terms), or an entry has no definition |
+| `glossary/duplicate` | warning | A term is defined again (in any glossary of the document); uses link to the first definition |
+| `glossary/unused` | info | A defined term is never used in the text outside glossaries |
 | `attrs/required` | error / warning | Required attribute missing (`:::api` needs `method` and `path`; `:metric` should have `label`; `:::include` should have `file`) |
 | `include/missing-file` · `include/outside-workspace` | warning | The `:::include` file does not exist / exists but the reader may not read it (outside the workspace) |
 | `include/missing-section` | warning | `section="…"` matches no heading in the included file |
@@ -366,6 +394,7 @@ Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.s
 | `:::figure{#id} Caption` | `<a id="id"></a>`, the content, then a `**Figure 1:** Caption` paragraph |
 | `:ref[id]` | `[Figure 1](#id)` (an unknown id stays as written) |
 | `:::include` | The included text, converted the same way, after an `<!-- included from … -->` comment (GitHub can't include); when the file can't be read, the fallback body, or a link to the file when the body is empty |
+| `:::glossary Title` | a `**Title**` paragraph, then the `- **Term**: definition` list unchanged; uses of terms stay as written |
 | `box`, `columns`, `steps` | content only |
 | `[text]{…}` | `text` (bold/italic/strike preserved from `weight`/`style`) |
 | `:badge[x]` | `` `x` `` |
@@ -393,6 +422,7 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 | `risk-matrix` | `[risk matrix: title — impact × likelihood …; each is a <risk> block]` pointer (the risks themselves are already `<risk>` tags) |
 | Tabs / cards | `Tab "name":` / `Title:` label lines; other layout containers vanish |
 | `figure` / `:ref[id]` | `<figure id="id"> Figure 1: Caption` … `</figure>` / `Figure 1 (id)` |
+| `glossary` | `<glossary title="…">`, the `- **Term**: definition` entries as written, `</glossary>`; uses of the terms in the text are not expanded (the glossary is read once) |
 | Styling, badges, status, metrics | Plain words: `[Beta]`, `[status: On track (ok)]`, `Activation: 42% (+3%)`, `(due 2026-10-01, OVERDUE)` |
 | Images, HTML comments | `[image: alt]`, removed |
 | Tables | Cell padding removed |
@@ -414,3 +444,13 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 Additive features (new containers, directives, front matter keys) keep `smd: 1`; older renderers degrade gracefully (unknown containers render as a box, unknown keys are kept). Only breaking changes increment `smd`.
 
 For example, tools before 1.6 don't know `:::include`: they render its body in a plain box (`smd-box smd-box-include`), warn `container/unknown`, and show the body in the agent view and `smd to-md`. That is why an include's body should be fallback text such as a link to the file.
+
+How the 1.6 glossary (§3.5) reads where it is not supported:
+
+| Reader | `:::glossary` block | Uses of its terms |
+|---|---|---|
+| `.smd` tools 1.5 and earlier | The `- **Term**: definition` list in a plain box (`<div class="smd-box smd-box-glossary">`), with a `container/unknown` warning; `smd validate` still passes. The agent view and `smd to-md` keep the list | Plain text |
+| GitHub and other Markdown renderers | The `:::glossary` and `:::` lines as text around the same bulleted list | Plain text |
+| markdown-it plugin with `glossary: false` | The list in `<div class="smd-glossary">` | Plain text |
+
+Nothing in a document without a `:::glossary` block changes: it renders, validates and converts byte for byte as in 1.5.

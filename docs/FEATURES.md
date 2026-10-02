@@ -484,6 +484,27 @@ stateDiagram-v2
 - **Agent view:** `<figure id="fig-states"> Figure 1: Order states` … `</figure>`, and references read `Figure 1 (fig-states)`, so an agent can find the figure by id. **GitHub** (`smd to-md`): an `<a id>` anchor, the content and a `**Figure 1:** Order states` line; references become `[Figure 1](#fig-states)` links.
 - Older `.smd` tools (1.5 and earlier) show a figure's content in a plain box without the caption, with a `container/unknown` warning, and `:ref[…]` as written.
 
+### Glossary and abbreviations
+
+```markdown
+Every API call counts against the SLO. When the error budget is spent, deploys stop.
+
+:::glossary Glossary
+- **API**: Application Programming Interface
+- **SLO**: Service level objective: the target share of good requests
+- **Error budget**: How much unreliability the SLO allows in a period
+:::
+```
+
+- **`:::glossary`** renders its `- **Term**: definition` list as a definition list, each term with its own anchor (`#term-api`, `#term-error-budget`).
+- **Hover definitions:** the first use of each term in every section (between two headings) gets a dotted underline, shows its definition on hover and links to it, so keyboard and screen-reader users reach it too. Abbreviations are `<abbr title="…">`. Later uses in the same section stay plain, so paragraphs don't fill with underlines.
+- **Matching:** whole words only. An abbreviation (capitals, no lower-case letters: `API`, `SLO`, `P99`) matches exactly as written; other terms also match with a small or capital first letter (`Error budget`, `error budget`). Headings (their ids never change), code, math, links, URLs and attribute values are left alone, and so are `API-first` and `API.md`.
+- The validator warns about list items in a glossary that aren't `**Term**: definition` (`glossary/entry`: that list then renders as a plain list) and about terms defined twice (`glossary/duplicate`), and notes terms never used (`glossary/unused`, info).
+- **Agent view:** `<glossary title="Glossary">` with the entries as written, once; uses in the text are not expanded, so they cost no extra tokens. **GitHub** (`smd to-md`): a bold title and the list as it is.
+- **Includes and footnotes:** included text counts as part of the document both ways: `:::include` a shared glossary to use its terms, and the document's terms are marked in included text too. Footnotes are never marked.
+- **Editor:** hover a term anywhere in the text, or in its entry, to see its definition (VS Code and the language server; the document's own glossaries); the `glossary` snippet starts a block.
+- Older `.smd` tools (1.5 and earlier) show the list in a plain box with a `container/unknown` warning, and the terms as plain text.
+
 ## 10. Audience: agent, human, agent=skip
 
 ```markdown
@@ -537,7 +558,7 @@ People-only content anywhere in the document.
 |---|---|
 | Syntax highlighting | Blocks, attributes, directives, math and front matter |
 | Completions | After `:::` (blocks, with snippets for tabs/columns), `:` (directives), `{` (attributes), `=` (allowed values: colors, statuses, HTTP methods…), front matter keys and values, Mermaid types. In links (`](…`, `[label]: …`), `related:` entries, `file="…"` embeds and `:::include{file="…"}`: relative files and folders, then after `#` the headings and ids of this or the linked document |
-| Hover | Documentation for blocks and directives |
+| Hover | Documentation for blocks and directives; the definition of a glossary term |
 | Color picker | Swatches next to `color=`, `bg=`, `border=`, `accent:` |
 | Outline & folding | Headings in the Outline view; fold blocks, code and front matter |
 | Go to definition | `F12` or `Ctrl+Click` on `#anchor`, `other.smd#anchor`, a relative file, a `related:` entry or a `[text][label]` reference jumps to the heading, `{#id}` block, file or definition |
@@ -552,7 +573,7 @@ People-only content anywhere in the document.
 | Lists on Enter | Enter on `- [x] Ship it @maya` starts `- [ ] ` with the cursor before ` @maya`. Bullets repeat, numbers count up, Enter on an empty item ends the list, and code blocks are left alone (`smd.editor.continueLists`) |
 | Images | Paste an image, or drop image files, to save them in `docs/images/` (`smd.images.folder`) and insert `![alt](relative/path.png)`. Images already in the workspace are linked where they are; name clashes get `-1`, `-2`… |
 | Spell checking | **Set Up Spell Checking (cSpell)** adds an `smd` entry to cSpell's `languageSettings`, so container and directive names, attribute lists, `@mentions`, link targets, front matter and code aren't flagged; titles and link text still are |
-| Snippets (37) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `figure` `ref` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
+| Snippets (39) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `figure` `ref` `glossary` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
 
 ## 14. VS Code: agent view and token counter
 
@@ -591,6 +612,9 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `:::figure{kind=tabel}` | `figure/kind` | → `table` |
 | `[^retires]` with only `[^retries]: …` defined | `footnote/undefined` | → `[^retries]` |
 | `[^old]: …` that nothing references, `[^1]: …` twice | `footnote/unused` (info), `footnote/duplicate` | — |
+| `- API: …` in a `:::glossary` | `glossary/entry` | — (write `- **API**: …`) |
+| two `- **API**: …` entries | `glossary/duplicate` | — |
+| a term no text uses | `glossary/unused` (info) | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
 | `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |

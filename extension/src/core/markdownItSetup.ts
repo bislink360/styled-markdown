@@ -8,6 +8,7 @@ import {
   annotateContainers, containerBlock, envFigures, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock, headingAttrs,
   headingIds, inlineDirective, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
 } from './markdownItRules';
+import { glossaryTerms } from './markdownItGlossary';
 import type { MarkdownItSmdOptions } from './markdownIt';
 
 /** Registers the .smd rules on a markdown-it instance, for renderSmd and for markdown-it hosts. */
@@ -34,7 +35,7 @@ export interface SmdContext {
 /** The syntax to add, all resolved. */
 export type SmdFeatures = Required<Pick<MarkdownItSmdOptions,
   'containers' | 'directives' | 'attributes' | 'mark' | 'math' | 'footnotes' | 'tasks' | 'fences' | 'codeFrames' | 'headingIds' | 'sourceLines' |
-  'frontMatter'>>;
+  'frontMatter' | 'glossary'>>;
 
 export function smdFeatures(options: MarkdownItSmdOptions): SmdFeatures {
   return {
@@ -50,6 +51,7 @@ export function smdFeatures(options: MarkdownItSmdOptions): SmdFeatures {
     headingIds: options.headingIds ?? false,
     sourceLines: options.sourceLines ?? false,
     frontMatter: options.frontMatter ?? false,
+    glossary: options.glossary ?? true,
   };
 }
 
@@ -75,6 +77,8 @@ export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext)
   if (features.math) addMath(md);
   if (features.footnotes) addFootnotes(md);
   addInline(md, features, ctx);
+  // After linkify and the typographer, so URLs are links by then; before source lines.
+  if (features.containers && features.glossary) md.core.ruler.push('smd_glossary', glossaryTerms);
   addCorePasses(md, features);
   if (features.fences) {
     const previous: RenderRule = md.renderer.rules.fence ?? ((tokens, idx, opts, _env, self) => self.renderToken(tokens, idx, opts));

@@ -259,6 +259,13 @@ function figureOpen(c: ContainerView): string {
   return `<figure${htmlAttrs(c.attrs, ['smd-figure', `smd-figure-${figure.kind}`], c.style)}${c.dataLine}>\n`;
 }
 
+/** `:::glossary`: an optional title above the definition list (see markdownItGlossary.ts). */
+function glossaryOpen(c: ContainerView): string {
+  c.meta.close = '</div>';
+  const title = c.meta.title ? `<div class="smd-glossary-title">${c.inline(c.meta.title)}</div>` : '';
+  return `<div${htmlAttrs(c.attrs, ['smd-glossary'], c.style)}${c.dataLine}>${title}\n`;
+}
+
 /** `:ref[id]`: the number of the figure with that id, linked to it; an unknown id is shown as written. */
 export function renderRef(id: string, figure: FigureNumber | undefined): string {
   const safe = escapeHtml(id);
@@ -283,6 +290,7 @@ const CONTAINERS = new Map<string, ContainerOpen>([
   ['risk-matrix', riskMatrixOpen],
   ['timeline', divOpen('smd-timeline')],
   ['figure', figureOpen],
+  ['glossary', glossaryOpen],
 ]);
 
 // ---------------------------------------------------------------------------

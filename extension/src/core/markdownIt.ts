@@ -14,10 +14,16 @@ import { applySmd, hostContext, smdFeatures } from './markdownItSetup';
  */
 export interface MarkdownItSmdOptions {
   /**
-   * `:::name{attrs} Title … :::` block containers: callouts, cards, tabs, decisions, risks, APIs, numbered figures…
+   * `:::name{attrs} Title … :::` block containers: callouts, cards, tabs, decisions, risks, APIs, numbered figures, glossaries…
    * Figure numbers are kept on the render's `env` as `smdFigures` for `:ref[id]`. Default true.
    */
   containers?: boolean;
+  /**
+   * Glossaries: the `**Term**: definition` list of a `:::glossary` block renders as a `<dl>`, and the first use of
+   * each term in every section links to its definition with the definition as a tooltip (`<abbr title>` for
+   * abbreviations). Needs `containers`. Default true.
+   */
+  glossary?: boolean;
   /** Inline directives: `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:metric[…]`, `:status[…]`, `:ref[…]`… Default true. */
   directives?: boolean;
   /** Attribute lists: `[text]{color=red .muted}` spans and `## Heading {#id .class}`. Default true. */

@@ -71,7 +71,7 @@ const parser = () => (md ??= recordingDefinitions(inPlaceFootnotes(createMarkdow
 /** Container titles render as inline Markdown with raw HTML off (see renderContainer). */
 let titleMd: MarkdownIt | undefined;
 const titleParser = () => (titleMd ??= createMarkdownIt({ allowHtml: false }));
-const TITLED = new Set<string>([...CALLOUT_TYPES, 'details', 'card', 'tab', 'agent', 'human', 'decision', 'risk', 'api', 'figure']);
+const TITLED = new Set<string>([...CALLOUT_TYPES, 'details', 'card', 'tab', 'agent', 'human', 'decision', 'risk', 'api', 'figure', 'glossary']);
 
 type ParseEnv = Env & { definitions: Definition[] };
 

@@ -7,7 +7,7 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 1. Front matter
 2. Block containers (general rules)
 3. Callouts and collapsibles
-4. Layout: tabs, columns, cards, boxes, steps, timeline, figures
+4. Layout: tabs, columns, cards, boxes, steps, timeline, figures, glossary
 5. Project blocks: decision, risk, risk-matrix
 6. Developer blocks: api, code fences, include
 7. Audience blocks: agent, human
@@ -149,6 +149,23 @@ flowchart LR
 - Figures are numbered in document order, one counter per `kind`: `figure` (default) → Figure 1, `table` → Table 1, `listing` (code) → Listing 1.
 - `:ref[id]` renders "Figure 2" as a link to the figure with `{#id}`; it may come before the figure. Give every figure you refer to an `{#id}` (e.g. `fig-…`, `tbl-…`, `lst-…`). An unknown id is a `figure/unknown-ref` warning; two figures with one id are `figure/duplicate-id`.
 - Write `:ref[id]` instead of "the figure below": the numbers stay right when figures move.
+
+### Glossary and abbreviations
+
+```markdown
+Every API call counts against the SLO.
+
+:::glossary Glossary
+- **API**: Application Programming Interface
+- **SLO**: Service level objective: the target share of good requests
+- **Error budget**: How much unreliability the SLO allows in a period
+:::
+```
+
+- Every item of the list is `**Term**: definition` (or `**Term:** definition`); one item in another form turns the whole list back into a plain list (`glossary/entry`).
+- The first use of each term in every section shows its definition on hover and links to it. Write the terms in the text exactly as defined: abbreviations (`API`) only match as written; other terms may change the case of their first letter. Plurals and compounds (`APIs`, `API-first`) don't match.
+- Headings, code, links and URLs are never marked. Define each term once (`glossary/duplicate`); a term no text uses is reported as `glossary/unused` (info).
+- One glossary near the end of the document is usual; put terms an agent must know in it rather than expanding them in every paragraph.
 
 ## 5. Project blocks
 

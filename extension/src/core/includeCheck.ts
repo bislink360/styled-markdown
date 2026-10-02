@@ -122,4 +122,13 @@ export function includedFigureIds(text: string, readFile?: (relativePath: string
   return new Set([...html.matchAll(FIGURE_ID)].map((m) => decodeHtml(m[1])));
 }
 
+const TERM_USE = /<a class="smd-term" href="#([^"]+)"/g;
+
+/** Ids of the glossary terms the rendered document uses, included text too (none without includes). */
+export function includedTermIds(text: string, readFile?: (relativePath: string) => string | undefined): Set<string> {
+  if (!readFile || !findIncludes(text.split(/\r?\n/)).length) return new Set();
+  const html = renderSmd(text, { readFile }).html;
+  return new Set([...html.matchAll(TERM_USE)].map((m) => decodeHtml(m[1])));
+}
+
 const decodeHtml = (s: string) => s.replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');

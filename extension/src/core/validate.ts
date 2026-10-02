@@ -6,9 +6,10 @@ import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS } from './render';
 import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
-import { checkIncludes, documentIds, includedFigureIds } from './includeCheck';
+import { checkIncludes, documentIds, includedFigureIds, includedTermIds } from './includeCheck';
 import { parseFenceInfo, sliceLines } from './fence';
 import { figureTargets, findRefs, type Figure, type FigureRef } from './figures';
+import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
 import { parseSmd } from './parse';
 import { suggest } from './util';
 import {
@@ -184,6 +185,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
   checkFigures(text, lines, fm.bodyStartLine, push, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, push);
+  checkGlossary(lines, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
 
   let result = applySuppressions(text, diagnostics);
   if (options.rules) result = applyRuleSettings(result, options.rules);
@@ -594,6 +596,41 @@ function unknownRef(ref: FigureRef, ids: string[], push: Push): void {
   push(ref.line, ref.column, ref.endColumn, 'warning', 'figure/unknown-ref',
     `No figure with id "${ref.id}" in this document${hint ? ` — did you mean "${hint}"?` : '.'} Give a :::figure that id with {#${ref.id || 'fig-id'}}.`,
     hint ? { line: ref.line, column: start, endColumn: ref.endColumn - 1, replacement: hint, title: `Change to ":ref[${hint}]"` } : undefined);
+}
+
+/**
+ * Glossary entries are `**Term**: definition` items, each term is defined once, and each is used in the text;
+ * `included` gives the terms used in included text (rendering it only when a term is not used otherwise).
+ */
+function checkGlossary(lines: string[], bodyStart: number, push: Push, included: () => Set<string>): void {
+  const glossary = findGlossary(lines, bodyStart);
+  for (const problem of glossary.problems) glossaryProblem(problem, push);
+  const first = new Map<string, GlossaryEntry>();
+  for (const entry of glossary.entries) {
+    const earlier = first.get(entry.id);
+    if (earlier) {
+      push(entry.line, entry.column, entry.endColumn, 'warning', 'glossary/duplicate',
+        `"${entry.term}" is already defined on line ${earlier.line + 1}; its uses link to that definition. Remove or merge this entry.`);
+    } else {
+      first.set(entry.id, entry);
+    }
+  }
+  if (!first.size) return;
+  const used = new Set(findTermUses(lines, bodyStart, glossary).map((u) => u.entry.id));
+  const unused = [...first.values()].filter((e) => !used.has(e.id));
+  const usedInIncludes = unused.length ? included() : new Set<string>();
+  for (const entry of unused) {
+    if (!usedInIncludes.has(entry.id)) {
+      push(entry.line, entry.column, entry.endColumn, 'info', 'glossary/unused', `"${entry.term}" is defined in the glossary but never used in the text.`);
+    }
+  }
+}
+
+function glossaryProblem(problem: GlossaryProblem, push: Push): void {
+  const message = problem.kind === 'empty'
+    ? 'This glossary entry has no definition; write it after the colon.'
+    : 'Glossary entries are list items written "**Term**: definition". This item is not one, so its list renders as a plain list and defines no terms.';
+  push(problem.line, problem.column, problem.endColumn, 'warning', 'glossary/entry', message);
 }
 
 function checkFence(lang: string, content: string[], line: number, push: Push, wholeLine: WholeLine): void {

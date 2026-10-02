@@ -319,6 +319,23 @@ details.smd-callout > summary::-webkit-details-marker { display: none; }
 .smd-figure-table > .smd-figure-caption { order: -1; margin: 0 0 .6em; }
 .smd-ref { white-space: nowrap; }
 .smd-ref-missing { color: var(--smd-red); text-decoration: underline dotted; }
+
+/* ---------- Glossary and defined terms ---------- */
+.smd-glossary { margin: 0 0 1.2em; }
+.smd-glossary-title { font-weight: 650; margin-bottom: .5em; }
+.smd-glossary-list { display: grid; grid-template-columns: minmax(6em, max-content) 1fr; gap: .45em 1.2em; margin: 0; }
+.smd-glossary-list > dt { font-weight: 650; }
+.smd-glossary-list > dd { margin: 0; }
+.smd-glossary-list > dd > :last-child { margin-bottom: 0; }
+.smd-glossary-list dfn { font-style: normal; }
+/* A term's first use in a section: body text with a dotted underline; the definition is its tooltip and link target. */
+.smd-term, .smd-doc a.smd-term { color: inherit; text-decoration: underline dotted var(--smd-fg-muted); text-underline-offset: .2em; cursor: help; }
+.smd-term:hover, .smd-doc a.smd-term:hover { text-decoration: underline solid var(--smd-fg-muted); }
+.smd-term abbr { text-decoration: none; }
+@media (max-width: 480px) {
+  .smd-glossary-list { grid-template-columns: 1fr; gap: .15em; }
+  .smd-glossary-list > dd { margin-bottom: .45em; }
+}
 .smd-error { color: var(--smd-red); font-family: var(--smd-font-mono); font-size: .85em; white-space: pre-wrap; display: block; text-align: left; }
 
 /* ---------- Utility classes from {.class} ---------- */
@@ -525,6 +542,8 @@ pre.smd-has-hl code { position: relative; }
   /* A caption stays on the page of what it describes (above a table, below anything else). */
   .smd-figure-caption { break-before: avoid; page-break-before: avoid; }
   .smd-figure-table > .smd-figure-caption { break-after: avoid; page-break-after: avoid; }
+  /* A term stays on the page of its definition. */
+  .smd-glossary-title, .smd-glossary-list > dt { break-after: avoid; page-break-after: avoid; }
   .smd-doc p { orphans: 3; widows: 3; }
 
   /* Footnotes stay a section at the end; back links lead nowhere on paper. */

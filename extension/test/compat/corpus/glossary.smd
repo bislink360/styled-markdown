@@ -1,0 +1,34 @@
+---
+smd: 1
+title: Glossary and abbreviations
+summary: Exercises the 1.6 glossary additions (:::glossary definition lists, defined terms with hover definitions) so later releases are compared against them.
+status: draft
+updated: 2026-10-01
+---
+
+## Overview
+
+Every API call counts against the SLO of its plan. When the error budget for the month is spent, deploys stop.
+The API is linked once per section; later uses of API in the same section stay plain text.
+
+Code (`API`), links ([API reference](https://example.com/api)), URLs (https://example.com/API) and
+attribute values ([plan]{.API}) never become terms, and neither does API-first or API.md.
+
+## Operations
+
+On call, the error budget is the first thing to check. Burn rate is how fast it is spent.
+
+### The API in this section
+
+Headings keep their ids: the heading above is still `#the-api-in-this-section`, while the API in this
+paragraph is linked again because a new section has started.
+
+## Glossary
+
+:::glossary Terms and abbreviations
+- **API**: Application Programming Interface, the HTTP interface of the service.
+- **SLO**: Service level objective: the target share of good requests, e.g. 99.9% over 30 days.
+- **Error budget**: How much unreliability the SLO allows in a period, as a share of requests.
+  Spending it pauses risky deploys.
+- **Burn rate:** How fast the error budget is being spent; `1` spends it exactly in the period.
+:::

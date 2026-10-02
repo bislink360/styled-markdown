@@ -212,6 +212,8 @@ const CONTAINER_MARKDOWN = new Map<string, (c: ContainerSource) => ContainerMark
   ['risk-matrix', ({ title, text }) => ({ before: riskMatrixMarkdown(text, title), prefix: '' })],
   ['tab', ({ title }) => ({ before: [`**${title || 'Tab'}**`, ''], prefix: '', close: '' })],
   ['figure', figureMarkdown],
+  // The `- **Term**: definition` list reads well as it is.
+  ['glossary', ({ title }) => ({ before: title ? [`**${title}**`, ''] : [], prefix: '' })],
 ]);
 
 /** Callouts become alerts; box, tabs, columns, column, steps and unknown containers keep the content only. */
