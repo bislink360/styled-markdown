@@ -20,6 +20,9 @@ export const PRIORITY_VALUES = ['P0', 'P1', 'P2', 'P3', 'P4', 'critical', 'high'
 
 export const CALLOUT_TYPES = ['note', 'info', 'tip', 'success', 'warning', 'danger', 'question'] as const;
 
+/** `:::figure{kind=…}` values. Each kind has its own label and counter: Figure 1, Table 1, Listing 1. */
+export const FIGURE_KINDS = ['figure', 'table', 'listing'];
+
 export interface ContainerSpec {
   description: string;
   /** Attribute keys accepted on the opening line, beyond the shared style keys. */
@@ -82,6 +85,12 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
     attrs: ['title'],
   },
   timeline: { description: 'Renders the list inside as a vertical timeline (start items with a date).' },
+  figure: {
+    description: 'Numbered figure around an image, diagram, table or code block. Title = the caption; give it an {#id} to refer to it with :ref[id].',
+    title: true,
+    attrs: ['title', 'kind'],
+    values: { kind: FIGURE_KINDS },
+  },
 
   // Developer
   api: {
@@ -146,6 +155,12 @@ export const INLINE_DIRECTIVES: Record<string, InlineDirectiveSpec> = {
     attrs: ['label', 'delta', 'trend', 'good'],
     values: { trend: ['up', 'down', 'flat'], good: ['up', 'down'] },
     example: ':metric[42%]{label="Activation" delta="+3%" trend=up}',
+  },
+  ref: {
+    description: 'Numbered reference to a :::figure by its id: renders "Figure 2" as a link to it',
+    content: true,
+    attrs: [],
+    example: ':ref[fig-checkout]',
   },
 };
 

@@ -13,9 +13,12 @@ import { applySmd, hostContext, smdFeatures } from './markdownItSetup';
  * builds its markdown-it instance with the same rules.
  */
 export interface MarkdownItSmdOptions {
-  /** `:::name{attrs} Title … :::` block containers: callouts, cards, tabs, decisions, risks, APIs… Default true. */
+  /**
+   * `:::name{attrs} Title … :::` block containers: callouts, cards, tabs, decisions, risks, APIs, numbered figures…
+   * Figure numbers are kept on the render's `env` as `smdFigures` for `:ref[id]`. Default true.
+   */
   containers?: boolean;
-  /** Inline directives: `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:metric[…]`, `:status[…]`… Default true. */
+  /** Inline directives: `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:metric[…]`, `:status[…]`, `:ref[…]`… Default true. */
   directives?: boolean;
   /** Attribute lists: `[text]{color=red .muted}` spans and `## Heading {#id .class}`. Default true. */
   attributes?: boolean;

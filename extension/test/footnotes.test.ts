@@ -66,7 +66,8 @@ test('footnotes: every render numbers from 1, with a fresh or a reused env', () 
   const env = {};
   const first = md.render('A[^z].\n\n[^z]: Z.\n', env);
   assert.equal(md.render('A[^z].\n\n[^z]: Z.\n', env), first);
-  assert.deepEqual(Object.keys(env), [], 'nothing is left on the host env');
+  // smdFigures is the documented figure-number map; footnotes leave nothing of their own.
+  assert.deepEqual(Object.keys(env).filter((key) => key !== 'smdFigures'), [], 'footnotes leave nothing on the host env');
   assert.match(first, /href="#fn-1"/);
 });
 
@@ -89,8 +90,8 @@ test('markdown-it plugin: footnotes match renderSmd, turn off, and leave markdow
   const plugin = new MarkdownIt({ html: true, linkify: true, typographer: true })
     .use(smd, { codeFrames: true, headingIds: true, sourceLines: true, today: '2026-01-01' });
   const body = corpus.slice(corpus.indexOf('---\n', 4) + 4);
-  const expected = html(body).replace('<div class="smd-table-wrap">', '').replace('</table>\n</div>', '</table>\n');
-  assert.equal(`<article class="smd-doc">${plugin.render(body)}</article>`, expected, 'renderSmd only adds its table wrapper');
+  const expected = html(body).replace('<div class="smd-table-wrap">', '').replace('</table>\n</div>', '</table>\n').replaceAll(' scope="col"', '');
+  assert.equal(`<article class="smd-doc">${plugin.render(body)}</article>`, expected, 'renderSmd only adds its table wrapper and header scope');
   assert.match(html(body), /<li id="fn-6">/);
   assert.equal(new MarkdownIt().use(smd, { footnotes: false }).render('A[^1].\n\n[^1]: B b.'), '<p>A[^1].</p>\n<p>[^1]: B b.</p>\n');
   assert.match(new MarkdownIt().use(smd).render('A[^1].\n\n[^1]: B.'), /^<p>A<sup class="smd-footnote-ref"><a href="#fn-1" id="fnref-1"/);

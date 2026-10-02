@@ -1,9 +1,10 @@
 import type { StateBlock, StateCore, StateInline, Token } from 'markdown-it';
-import { emptyAttrs, findAttrsEnd, parseAttrs, attrsToStyle } from './attrs';
+import { attrsToStyle, emptyAttrs, escapeHtml, findAttrsEnd, parseAttrs, type Attrs } from './attrs';
 import { ContainerInfo, parseContainerInfo } from './containers';
+import { FigureCounter, figureTargets, type FigureNumber } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
-import { renderInlineDirective } from './markdownItHtml';
+import { renderInlineDirective, withoutDueNotes } from './markdownItHtml';
 import { INLINE_DIRECTIVES } from './spec';
 import type { SmdContext } from './markdownItSetup';
 import type { Env } from './render';
@@ -104,6 +105,8 @@ export interface ContainerMeta extends ContainerInfo {
   close: string;
   /** The parsed source, for `:::risk-matrix` when the env doesn't carry the document. */
   source?: string;
+  /** The number of a `:::figure` (see numberFigures). */
+  figure?: FigureNumber;
 }
 
 export function annotateContainers(state: StateCore): void {
@@ -120,6 +123,35 @@ export function annotateContainers(state: StateCore): void {
       token.meta = open?.meta ?? { name: 'box', attrs: emptyAttrs(), title: '', close: '</div>' };
     }
   }
+}
+
+/** Where numbered figures are kept for `:ref[id]`, on the env of one render (a host's env too). */
+export interface FigureEnv {
+  smdFigures?: Map<string, FigureNumber>;
+}
+
+/**
+ * Number the `:::figure` containers of a document in order, one counter per kind, and keep them by id
+ * on the env so references anywhere (container titles too) can show "Figure 2". Runs after
+ * annotateContainers; inline-only parses (titles) keep the document's figures.
+ */
+export function numberFigures(state: StateCore): void {
+  if (state.inlineMode) return;
+  const counter = new FigureCounter();
+  const figures: Array<FigureNumber & { id?: string }> = [];
+  for (const token of state.tokens) {
+    const meta = token.meta as ContainerMeta | null;
+    if (token.type !== 'container_smd_open' || meta?.name !== 'figure') continue;
+    meta.figure = counter.next(meta.attrs.values.kind);
+    figures.push({ ...meta.figure, id: meta.attrs.id });
+  }
+  const env = state.env as FigureEnv | undefined;
+  if (env && typeof env === 'object') env.smdFigures = figureTargets(figures);
+}
+
+/** The figures numbered for the document being rendered (empty outside a render). */
+export function envFigures(env: unknown): ReadonlyMap<string, FigureNumber> {
+  return (env as FigureEnv | undefined)?.smdFigures ?? new Map();
 }
 
 // ---------------------------------------------------------------------------
@@ -182,12 +214,19 @@ export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdCon
     attrs = parsed;
     pos = end + 1;
   }
-  if (!silent) {
-    const token = state.push('html_inline', '', 0);
-    token.content = renderInlineDirective(state.md, name, content, attrs.values, ctx.options(state.env).today);
-  }
+  if (!silent) pushDirective(state, name, content, attrs, ctx);
   state.pos = pos;
   return true;
+}
+
+/** A directive's token: its HTML, or for `:ref[id]` an `smd_ref` token resolved when rendering (the figure may come later). */
+function pushDirective(state: StateInline, name: string, content: string, attrs: Attrs, ctx: SmdContext): void {
+  if (name === 'ref') {
+    state.push('smd_ref', '', 0).meta = { id: content.trim() };
+    return;
+  }
+  const token = state.push('html_inline', '', 0);
+  token.content = renderInlineDirective(state.md, name, content, attrs.values, ctx.options(state.env).today);
 }
 
 /** `==highlighted==` */
@@ -486,10 +525,39 @@ function markTask(state: StateCore, i: number, checked: boolean): void {
   const item = tokens[i - 2];
   const line = (item.map?.[0] ?? 0) + ((state.env as Env | undefined)?.lineOffset ?? 0);
   const box = new state.Token('html_inline', '', 0);
-  box.content = `<input type="checkbox" class="smd-task-box" data-task-line="${line}"${checked ? ' checked' : ''}>`;
+  // The task's text names its checkbox (no id: ids in the HTML are the document's anchors).
+  const label = taskLabel(inline.children!, checked);
+  box.content = `<input type="checkbox" class="smd-task-box" data-task-line="${line}"${checked ? ' checked' : ''}${label ? ` aria-label="${escapeHtml(label)}"` : ''}>`;
   inline.children!.unshift(box);
   item.attrJoin('class', `smd-task${checked ? ' smd-task-done' : ''}`);
   markTaskList(tokens, i - 2);
+}
+
+/** The plain text of a task's inline tokens: text, code, and the text of inline HTML such as directives. */
+function taskLabel(children: Token[], done: boolean): string {
+  return children.map((c) => {
+    if (c.type === 'text' || c.type === 'code_inline') return c.content;
+    if (c.type === 'html_inline') return htmlText(done ? withoutDueNotes(c.content) : c.content);
+    if (c.type === 'image') return taskLabel(c.children ?? [], done);
+    return c.type === 'softbreak' || c.type === 'hardbreak' ? ' ' : '';
+  }).join('').replace(/\s+/g, ' ').trim();
+}
+
+const ENTITIES = new Map([['&amp;', '&'], ['&lt;', '<'], ['&gt;', '>'], ['&quot;', '"'], ['&#39;', "'"]]);
+
+/** The text of an HTML fragment: tags dropped, the entities escapeHtml writes decoded. */
+function htmlText(html: string): string {
+  let text = '';
+  let pos = 0;
+  while (pos < html.length) {
+    const open = html.indexOf('<', pos);
+    const close = open < 0 ? -1 : html.indexOf('>', open);
+    if (close < 0) break;
+    text += html.slice(pos, open);
+    pos = close + 1;
+  }
+  text += html.slice(pos);
+  return text.replace(/&(?:amp|lt|gt|quot|#39);/g, (e) => ENTITIES.get(e) ?? e);
 }
 
 /** Add `smd-task-list` to the list that directly contains the item at index `item`. */

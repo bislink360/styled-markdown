@@ -107,7 +107,7 @@ test('markdown-it plugin: options turn syntax off', () => {
   assert.equal(render('$x$', { math: false }), '<p>$x$</p>\n');
   assert.equal(render('- [ ] a', { tasks: false }), '<ul>\n<li>[ ] a</li>\n</ul>\n');
   assert.equal(render('```mermaid\nA\n```', { fences: false }), '<pre><code class="language-mermaid">A\n</code></pre>\n');
-  assert.match(render('- [x] a', {}), /<input type="checkbox" class="smd-task-box" data-task-line="0" checked>a/);
+  assert.match(render('- [x] a', {}), /<input type="checkbox" class="smd-task-box" data-task-line="0" checked aria-label="a">a/);
   assert.match(render('```js\nx\n```', { codeFrames: true }), /^<div class="smd-code" data-line=""><div class="smd-code-lang">js<\/div><pre>/);
   assert.match(render(':::agent\nx\n:::', { agentBlocks: 'hidden' }), /<div class="smd-agent" data-line="0" hidden>/);
   assert.match(render(':due[2026-01-03]', { today: TODAY }), /smd-due-soon/);
@@ -142,13 +142,13 @@ test('markdown-it plugin: coexists with other plugins and keeps host options', (
   const src = ':::note <i>Title</i>\nHi!! <u>raw</u>\n:::\n\n```js\nx\n```\n\n```mermaid\nA\n```\n';
   for (const md of [new MarkdownIt({ html: false }).use(other).use(smd), new MarkdownIt({ html: false }).use(smd).use(other)]) {
     const html = md.render(src);
-    assert.match(html, /<span>&lt;i&gt;Title&lt;\/i&gt;<\/span>/, 'raw HTML stays off in titles');
+    assert.match(html, /<span><span class="smd-sr-only">Note: <\/span>&lt;i&gt;Title&lt;\/i&gt;<\/span>/, 'raw HTML stays off in titles');
     assert.match(html, /Hi<b>!<\/b> &lt;u&gt;raw&lt;\/u&gt;/, 'the other inline rule and html: false apply');
     assert.match(html, /<div class="other"><pre><code class="language-js">x\n<\/code><\/pre>\n<\/div>/, 'plain code goes through the other renderer');
     assert.match(html, /<pre class="smd-mermaid">A\n<\/pre>/);
   }
   const allowed = new MarkdownIt({ html: true }).use(smd).render(':::note <i>Title</i>\n:::\n');
-  assert.match(allowed, /<span><i>Title<\/i><\/span>/, "the host's html option applies to titles");
+  assert.match(allowed, /<span><span class="smd-sr-only">Note: <\/span><i>Title<\/i><\/span>/, "the host's html option applies to titles");
 });
 
 test('markdown-it plugin: file embeds read through readFile with the render env', () => {

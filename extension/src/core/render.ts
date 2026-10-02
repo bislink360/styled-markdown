@@ -4,6 +4,7 @@ import { escapeHtml, resolveColor } from './attrs';
 import { type FrontMatter, parseFrontMatter } from './frontmatter';
 import { applySmd, smdFeatures, type SmdContext } from './markdownItSetup';
 import { renderHeader } from './markdownItHtml';
+import type { FigureEnv } from './markdownItRules';
 import { documentRiskMatrixHtml } from './riskHtml';
 
 export { HEADING_ATTRS, slugify } from './markdownItRules';
@@ -38,7 +39,7 @@ export interface RenderResult {
 
 export type ResolvedOptions = Required<Omit<RenderOptions, 'readFile'>> & Pick<RenderOptions, 'readFile'>;
 
-export interface Env {
+export interface Env extends FigureEnv {
   lineOffset: number;
   headings: Heading[];
   slugs: Map<string, number>;
@@ -53,7 +54,8 @@ export interface Env {
 /** Every .smd rule, reading its options from the env (renderSmd and parseSmd put them there). */
 const SMD_CONTEXT: SmdContext = {
   options: (env) => (env as Env | undefined)?.options ?? {},
-  title: (text) => titleMarkdown().renderInline(text),
+  // Only the document's figures go along, so `:ref[id]` in a title resolves and nothing else changes.
+  title: (text, env) => titleMarkdown().renderInline(text, { smdFigures: (env as Env | undefined)?.smdFigures }),
   riskMatrix: (source) => documentRiskMatrixHtml(source),
   ownLines: true,
 };
@@ -80,6 +82,11 @@ export function createMarkdownIt(options: RenderOptions = {}): MarkdownIt {
   md.renderer.rules.table_open = (tokens, idx, opts, _env, self) =>
     `<div class="smd-table-wrap">${self.renderToken(tokens, idx, opts)}`;
   md.renderer.rules.table_close = (tokens, idx, opts, _env, self) => `${self.renderToken(tokens, idx, opts)}</div>`;
+  // Markdown tables have one header row: each header cell heads its column.
+  md.renderer.rules.th_open = (tokens, idx, opts, _env, self) => {
+    tokens[idx].attrSet('scope', 'col');
+    return self.renderToken(tokens, idx, opts);
+  };
   return md;
 }
 
@@ -131,7 +138,7 @@ export function renderParsed(text: string, fm: ParsedDocument, options: RenderOp
 function renderToc(headings: Heading[]): string {
   const items = headings.filter((h) => h.level >= 2 && h.level <= 3);
   if (!items.length) return '';
-  return `<nav class="smd-toc"><div class="smd-toc-title">Contents</div><ul>${items
+  return `<nav class="smd-toc" aria-label="Contents"><div class="smd-toc-title">Contents</div><ul>${items
     .map((h) => `<li class="smd-toc-l${h.level}"><a href="#${h.slug}">${escapeHtml(h.text)}</a></li>`)
     .join('')}</ul></nav>`;
 }

@@ -1,11 +1,11 @@
 import type MarkdownIt from 'markdown-it';
 import {
   fenceRule, footnoteBackref, footnoteClose, footnoteOpen, footnoteRef, footnotesClose, footnotesOpen, renderContainer, renderHeader,
-  renderMath, type RenderRule,
+  renderMath, renderRef, type RenderRule,
 } from './markdownItHtml';
 import {
-  annotateContainers, containerBlock, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock, headingAttrs, headingIds,
-  inlineDirective, mark, mathBlock, mathInline, sourceLines, styledSpan, taskLists,
+  annotateContainers, containerBlock, envFigures, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock, headingAttrs,
+  headingIds, inlineDirective, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
 } from './markdownItRules';
 import type { MarkdownItSmdOptions } from './markdownIt';
 
@@ -92,6 +92,7 @@ function addContainers(md: MarkdownIt, ctx: SmdContext): void {
   md.renderer.rules.container_smd_open = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx);
   md.renderer.rules.container_smd_close = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx);
   md.core.ruler.after('block', 'smd_container_meta', annotateContainers);
+  md.core.ruler.after('smd_container_meta', 'smd_figures', numberFigures);
 }
 
 function addMath(md: MarkdownIt): void {
@@ -119,9 +120,17 @@ function addFootnotes(md: MarkdownIt): void {
 
 function addInline(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext): void {
   if (features.attributes) md.inline.ruler.before('link', 'smd_span', styledSpan);
-  if (features.directives) md.inline.ruler.before('emphasis', 'smd_directive', (state, silent) => inlineDirective(state, silent, ctx));
+  if (features.directives) addDirectives(md, ctx);
   if (features.mark) md.inline.ruler.before('emphasis', 'smd_mark', mark);
   if (features.math) md.inline.ruler.after('escape', 'smd_math_inline', mathInline);
+}
+
+function addDirectives(md: MarkdownIt, ctx: SmdContext): void {
+  md.inline.ruler.before('emphasis', 'smd_directive', (state, silent) => inlineDirective(state, silent, ctx));
+  md.renderer.rules.smd_ref = (tokens, idx, _opts, env) => {
+    const id = (tokens[idx].meta as { id: string }).id;
+    return renderRef(id, envFigures(env).get(id));
+  };
 }
 
 function addCorePasses(md: MarkdownIt, features: SmdFeatures): void {

@@ -222,7 +222,7 @@ ${katex}<link rel="stylesheet" href="${href(`${ASSET_DIR}/smd.css`)}">
 <nav id="smd-site-nav" class="smd-site-nav" aria-label="Documents">${sidebarHtml(site.tree, page.output, site.linker)}</nav>
 <div class="smd-site-content">
 ${breadcrumbsHtml(site.tree, page, site.home, site.linker)}
-<main id="smd-root">${body}</main>
+<main id="smd-root" tabindex="-1">${body}</main>
 ${backlinks}${pagerHtml(site.order, page, site.linker)}
 </div>
 </div>

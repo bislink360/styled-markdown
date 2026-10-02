@@ -1,0 +1,58 @@
+---
+smd: 1
+title: Figures and numbered references
+summary: Exercises the 1.6 figure additions (:::figure captions, kinds and numbering, :ref references) so later releases are compared against them.
+status: draft
+updated: 2026-10-01
+---
+
+## Overview
+
+The checkout flow is in :ref[fig-checkout], the limits are in :ref[tbl-limits] and the client call is :ref[lst-client].
+A reference may come before its figure: :ref[fig-states] is further down.
+
+:::figure{#fig-checkout} Checkout flow, from cart to **confirmation**
+```mermaid
+flowchart LR
+  Cart --> Payment --> Confirmation
+```
+:::
+
+## Limits
+
+:::figure{#tbl-limits kind=table} Rate limits per plan
+
+| Plan | Requests per minute |
+| ---- | ------------------: |
+| Free |                  60 |
+| Team |                 600 |
+
+:::
+
+:::figure{#lst-client title="Creating an order with the client" kind=listing}
+```ts
+const order = await client.orders.create({ sku: 'A-1', quantity: 2 });
+```
+:::
+
+## Without an id or caption
+
+A figure without an id is still numbered, but cannot be referenced.
+
+:::figure
+![Architecture overview](https://example.com/architecture.svg)
+:::
+
+:::::tabs
+::::tab States
+:::figure{#fig-states} Order states, as in :ref[fig-checkout]
+```mermaid
+stateDiagram-v2
+  [*] --> Pending
+  Pending --> Paid
+```
+:::
+::::
+:::::
+
+`:ref[fig-checkout]` in inline code stays as written.
