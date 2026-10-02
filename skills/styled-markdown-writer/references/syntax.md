@@ -11,7 +11,7 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 5. Project blocks: decision, risk, risk-matrix
 6. Developer blocks: api, code fences
 7. Audience blocks: agent, human
-8. Inline: styled text, directives, math
+8. Inline: styled text, directives, math, footnotes
 9. Tasks
 10. Headings
 11. Diagrams
@@ -235,6 +235,20 @@ Context for people only. Agents skip it.
 | `$E=mc^2$` / `$$ … $$` | Math (KaTeX). No space just inside the `$`; `$5 and $10` is not math. |
 
 A directive's `:` must follow whitespace or opening punctuation, so `10:30` is safe.
+
+### Footnotes (GFM, since 1.6)
+
+```markdown
+Retries are capped at five[^retries].
+
+[^retries]: Five covers 99.9% of transient failures.
+    Indent further lines and paragraphs by 4 spaces.
+```
+
+- Labels are numbers or words without spaces, matched case-insensitively. Numbering follows the first reference, and the footnotes render as a numbered section at the end with back links, as on GitHub.
+- Put definitions at the end of the section that uses them, or of the document. An unreferenced definition is not shown (`footnote/unused`), a reference without a definition stays plain text (`footnote/undefined`), and a repeated label keeps its first definition (`footnote/duplicate`).
+- Write definitions as sentences: renderers without footnotes show them as written, but read a one-word definition (`[^1]: Note`) as a link target.
+- Agents see footnotes as written; `smd agent --section` adds the definitions a section's references need.
 
 ## 9. Tasks
 

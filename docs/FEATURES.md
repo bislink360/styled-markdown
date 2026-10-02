@@ -121,6 +121,18 @@ Named colors are theme tokens tuned for light and dark mode. Only whitelisted va
 | `:mention[@x]` | highlighted mention | `@x` | `@x` |
 | `:ref[fig-id]` | the figure's number as a link (see [§9](#figures-and-numbered-references)) | `Figure 2 (fig-id)` | `[Figure 2](#fig-id)` |
 
+### Footnotes
+
+```markdown
+Retries are capped at five[^retries], as the SRE review asked[^SRE].
+
+[^retries]: Five covers 99.9% of transient failures in last quarter's logs.
+[^sre]: SRE review, 2026-09-12.
+    Lines indented by 4 spaces continue the footnote, even across paragraphs.
+```
+
+GitHub-compatible footnotes (since 1.6). Labels are numbers or words, matched case-insensitively. The preview numbers footnotes by their first reference and lists them in a section at the end, each with a back link (↩︎) to every reference; hovering `[^retries]` in the editor shows the footnote, and typing `[^` completes the labels. As on GitHub, a definition nothing references is not shown and a reference without a definition stays plain text: the validator reports both (`footnote/unused`, `footnote/undefined`), plus repeated labels (`footnote/duplicate`). **Agent view:** as written, `[^1]` in the text and the definitions where they are; `smd agent --section` adds the definitions a section references but doesn't contain. **GitHub:** unchanged (GitHub renders footnotes).
+
 ## 5. Tasks with owners, priorities and due dates
 
 ```markdown
@@ -551,6 +563,8 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `:ref[fig-chekout]` | `figure/unknown-ref` | → closest figure id |
 | two `:::figure{#fig-a}` | `figure/duplicate-id` | — |
 | `:::figure{kind=tabel}` | `figure/kind` | → `table` |
+| `[^retires]` with only `[^retries]: …` defined | `footnote/undefined` | → `[^retries]` |
+| `[^old]: …` that nothing references, `[^1]: …` twice | `footnote/unused` (info), `footnote/duplicate` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
 | `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |
@@ -579,6 +593,7 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 | `attrs/unknown` | exactly one accepted attribute name is close and not already set, e.g. `colr` → `color` |
 | `attrs/value` | exactly one allowed value is close (block and directive values, named colors, `size`, `weight`, `font`, `align`, `:priority[…]`, heading `agent=skip`), or a `date`/`:due[…]` is year-first, e.g. `2026/10/5` → `2026-10-05` |
 | `link/missing-anchor` | a heading id is close |
+| `footnote/undefined` | exactly one defined footnote label is close, e.g. `[^retires]` → `[^retries]` |
 
 Everything else needs a decision only the author can make (which file was meant, where a block should end inside a list, what a missing attribute should be), so it has no fix. Fixes never touch values with several equally close matches, dates like `09/05/2026` whose day/month order is unclear, or `style=…`, which takes several words.
 

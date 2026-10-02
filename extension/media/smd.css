@@ -441,6 +441,17 @@ pre.smd-has-hl code { position: relative; }
 .smd-timeline li.smd-task-done::before { background: var(--smd-green); border-color: var(--smd-green); }
 .smd-timeline li.smd-task .smd-task-box { margin-left: 0; }
 
+/* ---------- Footnotes ---------- */
+.smd-footnote-ref { font-size: .75em; line-height: 0; }
+.smd-footnote-ref a { padding: 0 .1em; font-variant-numeric: tabular-nums; }
+.smd-footnotes { margin-top: 2.5em; padding-top: .8em; border-top: 1px solid var(--smd-border); font-size: .88em; color: var(--smd-fg-muted); }
+.smd-footnotes ol { padding-left: 1.6em; margin: 0; }
+.smd-footnotes li { margin: 0 0 .4em; }
+.smd-footnotes li > p { margin: 0 0 .4em; }
+.smd-footnotes li:target, .smd-footnote-ref a:target { background: var(--smd-accent-soft); border-radius: 4px; }
+.smd-footnote-backref { text-decoration: none; font-family: var(--smd-font-sans); }
+.smd-footnote-backref sup { font-size: .7em; }
+
 /* ---------- Keyboard focus, screen-reader text, motion ---------- */
 .smd-doc :focus-visible { outline: 2px solid var(--smd-focus); outline-offset: 2px; }
 /* Inside boxes that clip their overflow, the ring is drawn inside. */
@@ -501,6 +512,10 @@ pre.smd-has-hl code { position: relative; }
   .smd-figure-caption { break-before: avoid; page-break-before: avoid; }
   .smd-figure-table > .smd-figure-caption { break-after: avoid; page-break-after: avoid; }
   .smd-doc p { orphans: 3; widows: 3; }
+
+  /* Footnotes stay a section at the end; back links lead nowhere on paper. */
+  .smd-footnotes li { break-inside: avoid; page-break-inside: avoid; }
+  .smd-footnote-backref { display: none; }
 
   /* {.page-break} on a heading or block starts it on a new page. */
   .smd-u-page-break { break-before: page; page-break-before: always; }

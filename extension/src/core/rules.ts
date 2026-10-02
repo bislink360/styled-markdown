@@ -40,7 +40,10 @@ export const RULE_CODES: Record<string, string> = {
   'figure/duplicate-id': 'Two `:::figure` blocks share an `{#id}`; references go to the first',
   'figure/unknown-ref': '`:ref[id]` names no `:::figure` in this document',
   'figure/kind': 'Invalid `kind` on a `:::figure` (it counts as `figure`)',
-  'task/overdue': 'Open task past its `:due[…]` date',
+  'footnote/undefined': 'Footnote reference `[^label]` with no `[^label]: …` definition (info when the document defines no footnotes)',
+  'footnote/unused': 'Footnote definition that nothing references (it is not shown)',
+  'footnote/duplicate': 'Second definition of a footnote label (the first one is used)',
+  'task/overdue':'Open task past its `:due[…]` date',
   'rules/unknown': 'Suppression comment or rule setting names an unknown rule code',
 };
 

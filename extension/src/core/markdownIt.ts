@@ -26,6 +26,12 @@ export interface MarkdownItSmdOptions {
   mark?: boolean;
   /** `$inline$` and `$$display$$` math, rendered with KaTeX (the host page needs the KaTeX stylesheet). Default true. */
   math?: boolean;
+  /**
+   * GitHub-style footnotes: `[^1]` references and `[^1]: text` definitions, collected into a numbered
+   * footnotes section at the end. Default true. Left to the host when markdown-it-footnote was added
+   * to the instance before this plugin; set it to false to keep markdown-it-footnote added after it.
+   */
+  footnotes?: boolean;
   /** GFM task lists (`- [ ]`, `- [x]`) as checkboxes. Default true. */
   tasks?: boolean;
   /**

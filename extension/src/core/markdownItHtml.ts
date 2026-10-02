@@ -7,7 +7,7 @@ import { asStringList } from './frontmatter';
 import { langFromPath, parseFenceInfo, sliceLines, type FenceInfo } from './fence';
 import { CALLOUT_TYPES, STATUS_VALUES } from './spec';
 import type { SmdContext } from './markdownItSetup';
-import type { ContainerMeta } from './markdownItRules';
+import type { ContainerMeta, FootnoteMeta } from './markdownItRules';
 import type { Env } from './render';
 
 /** HTML for .smd blocks and inline directives, shared by renderSmd and the markdown-it plugin. */
@@ -385,6 +385,32 @@ export function dueState(date: string, today = new Date().toISOString().slice(0,
   if (days < 0) return 'overdue';
   return days <= 7 ? 'soon' : 'later';
 }
+
+// ---------------------------------------------------------------------------
+// Footnotes (GitHub's markup: ids, data-footnote-* attributes and the hidden "Footnotes" label)
+// ---------------------------------------------------------------------------
+
+/** The id of the n-th footnote's reference number `sub` (1-based): fnref-1, fnref-1-2… */
+const footnoteRefId = ({ n, sub }: FootnoteMeta) => (sub > 1 ? `fnref-${n}-${sub}` : `fnref-${n}`);
+
+/** `<sup>` with the footnote's number, linking to it. */
+export const footnoteRef: RenderRule = (tokens, idx) => {
+  const meta = tokens[idx].meta as FootnoteMeta;
+  return `<sup class="smd-footnote-ref"><a href="#fn-${meta.n}" id="${footnoteRefId(meta)}" data-footnote-ref role="doc-noteref" aria-describedby="footnote-label">${meta.n}</a></sup>`;
+};
+
+/** A back link from a footnote to one of its references; the second and later ones are numbered. */
+export const footnoteBackref: RenderRule = (tokens, idx) => {
+  const meta = tokens[idx].meta as FootnoteMeta;
+  const id = footnoteRefId(meta);
+  return ` <a href="#${id}" class="smd-footnote-backref" data-footnote-backref role="doc-backlink" aria-label="Back to reference ${id.slice(6)}">↩︎${meta.sub > 1 ? `<sup>${meta.sub}</sup>` : ''}</a>`;
+};
+
+export const footnotesOpen: RenderRule = () =>
+  '<section class="footnotes smd-footnotes" data-footnotes>\n<h2 id="footnote-label" class="smd-sr-only">Footnotes</h2>\n<ol>\n';
+export const footnotesClose: RenderRule = () => '</ol>\n</section>\n';
+export const footnoteOpen: RenderRule = (tokens, idx) => `<li id="fn-${(tokens[idx].meta as FootnoteMeta).n}">\n`;
+export const footnoteClose: RenderRule = () => '</li>\n';
 
 // ---------------------------------------------------------------------------
 // Math and code fences

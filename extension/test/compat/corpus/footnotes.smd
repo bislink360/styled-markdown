@@ -1,0 +1,55 @@
+---
+smd: 1
+title: Footnotes
+summary: Exercises the 1.6 GFM footnotes so later releases are compared against them.
+status: draft
+updated: 2026-10-01
+---
+
+## Retry policy[^policy]
+
+Retries are capped at five[^retries], as the SRE review asked[^SRE]. The cap is the same for every
+queue[^retries], and the review is linked again here[^sre].
+
+Not footnotes: `[^retries]` in code, a [^retries](https://example.com/retries) link and a
+[^retries]{color=red} span.
+
+<!-- smd-disable-next-line footnote/undefined -->
+A label nobody defined stays text: [^missing].
+
+| Queue  | Retries        |
+| ------ | -------------- |
+| emails | 5[^retries]    |
+| sms    | 3[^sms-limits] |
+
+:::warning Rate limits
+The provider throttles bursts[^burst].
+
+[^burst]: Defined inside the callout; rendered with the others at the end.
+:::
+
+::::tabs
+:::tab Staging
+Staging retries faster[^staging].
+:::
+:::tab Production
+Production backs off exponentially.
+:::
+::::
+
+## Notes
+
+[^policy]: Agreed in the 2026-09 incident review.
+[^retries]: Five covers 99.9% of transient failures in last quarter's logs.
+[^sre]: SRE review, 2026-09-12.
+    Lines indented by 4 spaces continue the footnote.
+
+    A second paragraph, with a list:
+
+    - backoff doubles each time
+    - jitter is ±20%
+[^sms-limits]: The SMS provider allows three attempts per message.
+[^staging]: Staging uses a 100 ms base delay instead of 1 s.
+
+<!-- smd-disable-next-line footnote/unused -->
+[^draft]: Not referenced anywhere, so it is not shown.

@@ -5,6 +5,7 @@ import {
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
+import { findFootnotes, type FootnoteDefinition } from './footnotes';
 import { parseFrontMatter, asStringList } from './frontmatter';
 import { figureIndex, parseSmd, type FigureIndex } from './parse';
 import { dueState, HEADING_ATTRS, slugify, type Heading } from './render';
@@ -167,21 +168,43 @@ function selectSections(sections: Section[], queries: string[] | undefined): { s
   return { selected, missingSections };
 }
 
-interface ViewHead { header: string; external: string }
+interface ViewHead { header: string; external: string; footnotes: string }
 
-/** The header, plus :::agent blocks outside the selected sections (they still apply). */
+/**
+ * The header, plus :::agent blocks outside the selected sections (they still apply) and the footnotes
+ * the sections reference but that are defined elsewhere.
+ */
 function viewHead(scope: ViewScope, options: AgentViewOptions): ViewHead {
   const { selected, lines, bodyStart, inScope } = scope;
   let external = '';
+  let footnotes = '';
   if (selected) {
     const outside = transform(lines, bodyStart, (l) => !inScope(l), { ...options, onlyAgentBlocks: true });
     if (outside.trim()) external = `Document-wide agent instructions:\n${outside.trim()}\n\n`;
+    footnotes = outsideFootnotes(scope, options);
   }
-  return { header: header(scope.data, selected ? selected.map((s) => s.heading.text) : null), external };
+  return { header: header(scope.data, selected ? selected.map((s) => s.heading.text) : null), external, footnotes };
+}
+
+/**
+ * Footnotes are kept as written: `[^1]` references in the text and `[^1]: …` definitions where they
+ * are. An excerpt lists the definitions its references need once after it, unless a skipped section
+ * holds them.
+ */
+function outsideFootnotes(scope: ViewScope, options: AgentViewOptions): string {
+  const { definitions, references } = findFootnotes(scope.lines.join('\n'));
+  const wanted = new Set(references.filter((r) => scope.inScope(r.line)).map((r) => r.label));
+  const first = new Map<string, FootnoteDefinition>();
+  for (const d of definitions) if (wanted.has(d.label) && !first.has(d.label)) first.set(d.label, d);
+  const inSkipped = (line: number) => scope.skipped.some((s) => line >= s.start && line <= s.end);
+  const ranges = [...first.values()].filter((d) => !scope.inScope(d.line) && !inSkipped(d.line)).map((d) => [d.line, d.endLine]);
+  if (!ranges.length) return '';
+  const view = transform(scope.lines, scope.bodyStart, (l) => ranges.some(([a, b]) => l >= a && l <= b), options);
+  return view.trim() ? `Footnotes referenced above:\n${view.trim()}` : '';
 }
 
 function assemble(head: ViewHead, body: string): string {
-  return [head.header, head.external + body]
+  return [head.header, head.external + body, head.footnotes]
     .filter((s) => s.trim())
     .join('\n\n')
     .replace(/\n{3,}/g, '\n\n')
