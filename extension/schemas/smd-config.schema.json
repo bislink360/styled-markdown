@@ -110,6 +110,26 @@
           ],
           "description": "Every link/… rule. Exact codes win."
         },
+        "figure/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every figure/… rule. Exact codes win."
+        },
+        "footnote/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every footnote/… rule. Exact codes win."
+        },
         "task/*": {
           "enum": [
             "off",
@@ -529,6 +549,66 @@
             "hint"
           ],
           "description": "Reference link with no [label]: … definition"
+        },
+        "figure/duplicate-id": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Two :::figure blocks share an {#id}; references go to the first"
+        },
+        "figure/unknown-ref": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": ":ref[id] names no :::figure in this document"
+        },
+        "figure/kind": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Invalid kind on a :::figure (it counts as figure)"
+        },
+        "footnote/undefined": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Footnote reference [^label] with no [^label]: … definition (info when the document defines no footnotes)"
+        },
+        "footnote/unused": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Footnote definition that nothing references (it is not shown)"
+        },
+        "footnote/duplicate": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Second definition of a footnote label (the first one is used)"
         },
         "task/overdue": {
           "enum": [

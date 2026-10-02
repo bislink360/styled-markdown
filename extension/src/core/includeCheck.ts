@@ -112,3 +112,14 @@ export function documentIds(text: string, readFile?: (relativePath: string) => s
   for (const h of renderSmd(text, { readFile }).headings) ids.add(h.slug);
   return ids;
 }
+
+const FIGURE_ID = /<figure id="([^"]+)" class="smd-figure /g;
+
+/** Ids of the figures the document's includes bring in, which `:ref[id]` may name (none without includes). */
+export function includedFigureIds(text: string, readFile?: (relativePath: string) => string | undefined): Set<string> {
+  if (!readFile || !findIncludes(text.split(/\r?\n/)).length) return new Set();
+  const html = renderSmd(text, { readFile }).html;
+  return new Set([...html.matchAll(FIGURE_ID)].map((m) => decodeHtml(m[1])));
+}
+
+const decodeHtml = (s: string) => s.replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&');

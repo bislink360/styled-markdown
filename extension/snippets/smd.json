@@ -295,6 +295,26 @@
       ":::"
     ]
   },
+  "Figure": {
+    "prefix": [
+      "figure",
+      "caption"
+    ],
+    "description": "Numbered figure with a caption around an image, diagram, table (kind=table) or code (kind=listing)",
+    "body": [
+      ":::figure{#${1:fig-id}} ${2:Caption}",
+      "${0:![Alt text](image.png)}",
+      ":::"
+    ]
+  },
+  "Figure reference": {
+    "prefix": [
+      "ref",
+      "figref"
+    ],
+    "description": "Numbered reference to a figure by id: renders \"Figure 2\" as a link to it",
+    "body": ":ref[${1:fig-id}]"
+  },
   "Priority": {
     "prefix": "priority",
     "body": [

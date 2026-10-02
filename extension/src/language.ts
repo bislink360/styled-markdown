@@ -14,6 +14,7 @@ import {
 } from './core/links';
 import { encodeAnchor, headingAt, linksToAnchor, renameHeading } from './core/anchors';
 import { blockquoteToCallout, containerAt, isCallout, wrapLines, type LineEdit } from './core/refactors';
+import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from './core/footnotes';
 import { frontMatterProperty } from './core/frontmatterSchema';
 import { documentPreview, documentSymbols, embedPreview, fuzzyMatch, sectionExcerpt, type SmdSymbol } from './core/symbols';
 
@@ -278,6 +279,33 @@ function decodePath(p: string): string {
   try { return decodeURIComponent(p); } catch { return p; }
 }
 
+/** The document's footnote labels after `[^`. */
+class FootnoteCompletionProvider implements vscode.CompletionItemProvider {
+  provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
+    const typed = footnoteLabelPrefix(document.lineAt(position.line).text.slice(0, position.character));
+    const labels = typed === undefined ? [] : footnoteLabels(document.getText());
+    if (typed === undefined || !labels.length) return undefined;
+    const range = new vscode.Range(position.line, position.character - typed.length, position.line, position.character);
+    return labels.map((label) => {
+      const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Reference);
+      item.range = range;
+      return item;
+    });
+  }
+}
+
+/** What completing an inline directive inserts after the `:`. */
+const DIRECTIVE_SNIPPETS = new Map([
+  ['progress', 'progress{value=${1:50}}'],
+  ['kbd', 'kbd[${1:Ctrl+S}]'],
+  ['mention', 'mention[${1:@team}]'],
+  ['ref', 'ref[${1:fig-id}]'],
+]);
+
+function directiveSnippet(name: string): string {
+  return DIRECTIVE_SNIPPETS.get(name) ?? `${name}[\${1:text}]{color=\${2|${NAMED_COLORS.join(',')}|}}`;
+}
+
 class CompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
@@ -373,13 +401,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
         item.range = range;
         item.detail = spec.example;
         item.documentation = spec.description;
-        const color = `{color=\${2|${NAMED_COLORS.join(',')}|}}`;
-        item.insertText = new vscode.SnippetString(
-          name === 'progress' ? 'progress{value=${1:50}}'
-            : name === 'kbd' ? 'kbd[${1:Ctrl+S}]'
-            : name === 'mention' ? 'mention[${1:@team}]'
-            : `${name}[\${1:text}]${color}`,
-        );
+        item.insertText = new vscode.SnippetString(directiveSnippet(name));
         return item;
       });
     }
@@ -416,8 +438,17 @@ class HoverProvider implements vscode.HoverProvider {
       const spec = INLINE_DIRECTIVES[name];
       if (spec) return new vscode.Hover(new vscode.MarkdownString(`**:${name}** — ${spec.description}\n\n\`${spec.example}\``), range);
     }
-    return linkHover(document, position) ?? embedHover(document, position);
+    return footnoteHover(document, position) ?? linkHover(document, position) ?? embedHover(document, position);
   }
+}
+
+/** A footnote reference `[^1]` previews its definition. */
+function footnoteHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+  const text = document.getText();
+  const hit = footnoteAt(text, position.line, position.character);
+  if (!hit) return undefined;
+  const markdown = new vscode.MarkdownString(`**[^${hit.definition.raw}]**\n\n${footnoteText(text, hit.definition)}`);
+  return new vscode.Hover(markdown, new vscode.Range(position.line, hit.start, position.line, hit.end));
 }
 
 /** Preview what a link points at: the start of a section, or a linked document's title and outline. */
@@ -540,9 +571,10 @@ class WorkspaceSymbolProvider implements vscode.WorkspaceSymbolProvider {
 // Color swatches for color=… / bg=… / accent: …
 // ---------------------------------------------------------------------------
 
+/** The light theme's named colors in smd.css (contrast.test.ts checks they match). */
 const LIGHT_HEX: Record<string, string> = {
-  red: '#dc2626', orange: '#ea580c', amber: '#d97706', yellow: '#ca8a04', green: '#16a34a', teal: '#0d9488',
-  cyan: '#0891b2', blue: '#2563eb', indigo: '#4f46e5', purple: '#9333ea', pink: '#db2777', gray: '#6b7280',
+  red: '#d52424', orange: '#c4420c', amber: '#b45309', yellow: '#a16207', green: '#15803d', teal: '#0f7c73',
+  cyan: '#0d7895', blue: '#2563eb', indigo: '#4f46e5', purple: '#9333ea', pink: '#cf216d', gray: '#686f7d',
 };
 
 function hexToColor(hex: string): vscode.Color | undefined {
@@ -787,6 +819,7 @@ export function registerLanguageFeatures(context: vscode.ExtensionContext): SmdD
     vscode.languages.registerCodeActionsProvider(SELECTOR, new QuickFixProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
     vscode.languages.registerCodeActionsProvider(SELECTOR, new RefactorProvider(), { providedCodeActionKinds: [RefactorProvider.kind] }),
     vscode.languages.registerCompletionItemProvider(SELECTOR, new CompletionProvider(), ':', '{', '=', ' ', '`', '(', '/', '#', '"'),
+    vscode.languages.registerCompletionItemProvider(SELECTOR, new FootnoteCompletionProvider(), '^'),
     vscode.languages.registerHoverProvider(SELECTOR, new HoverProvider()),
     vscode.languages.registerColorProvider(SELECTOR, new ColorProvider()),
     vscode.languages.registerDocumentSymbolProvider(SELECTOR, new SymbolProvider()),

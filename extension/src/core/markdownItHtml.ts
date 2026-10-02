@@ -2,6 +2,7 @@ import type MarkdownIt from 'markdown-it';
 import type { Options, Renderer, Token } from 'markdown-it';
 import katex from 'katex';
 import { attrsToStyle, escapeHtml, htmlAttrs, resolveColor, type Attrs } from './attrs';
+import { FigureCounter, type FigureNumber } from './figures';
 import { asStringList } from './frontmatter';
 import { langFromPath, parseFenceInfo, sliceLines, type FenceInfo } from './fence';
 import {
@@ -9,7 +10,7 @@ import {
 } from './include';
 import { CALLOUT_TYPES, STATUS_VALUES } from './spec';
 import type { SmdContext } from './markdownItSetup';
-import type { ContainerMeta } from './markdownItRules';
+import type { ContainerMeta, FootnoteMeta } from './markdownItRules';
 import type { Env } from './render';
 
 /** HTML for .smd blocks and inline directives, shared by renderSmd and the markdown-it plugin. */
@@ -104,8 +105,10 @@ export function renderContainer(tokens: Token[], idx: number, env: unknown, ctx:
 
 function calloutOpen(c: ContainerView): string {
   const { name, meta, attrs } = c;
-  const title = meta.title || name[0].toUpperCase() + name.slice(1);
-  const head = `<span class="smd-callout-icon" aria-hidden="true">${CALLOUT_ICONS[name]}</span><span>${c.inline(title)}</span>`;
+  const type = name[0].toUpperCase() + name.slice(1);
+  // With its own title, the type shows only as icon and colour; screen readers get it as text.
+  const typeText = meta.title ? `<span class="smd-sr-only">${type}: </span>` : '';
+  const head = `<span class="smd-callout-icon" aria-hidden="true">${CALLOUT_ICONS[name]}</span><span>${typeText}${c.inline(meta.title || type)}</span>`;
   const cls = htmlAttrs(attrs, ['smd-callout', `smd-callout-${name}`], c.style);
   if (attrs.values.collapsible !== undefined) {
     meta.close = '</div></details>';
@@ -142,6 +145,10 @@ function cardOpen(c: ContainerView): string {
   return `<div${htmlAttrs(c.attrs, ['smd-card'], cardStyle)}${c.dataLine}>${title}<div class="smd-card-body">\n`;
 }
 
+/**
+ * A pane under its title, so it reads well without scripts and in print. The runtime adds the tab bar and the
+ * WAI-ARIA tabs roles; it gives the panes ids then, so generated ids never mix with the document's anchors.
+ */
 function tabOpen(c: ContainerView): string {
   c.meta.close = '</section>';
   const title = c.meta.title || 'Tab';
@@ -243,6 +250,22 @@ function includeNote(result: IncludeResult | undefined, request: IncludeRequest 
   return `<div class="smd-include-note">${escapeHtml(text)}: ${target}</div>`;
 }
 
+/** `:::figure`: the content, then a caption with the figure's number (see numberFigures). */
+function figureOpen(c: ContainerView): string {
+  const figure = c.meta.figure ?? new FigureCounter().next(c.attrs.values.kind);
+  const caption = c.meta.title ? ` ${c.inline(c.meta.title)}` : '';
+  const label = `<span class="smd-figure-label">${figure.label}${caption ? ':' : ''}</span>`;
+  c.meta.close = `<figcaption class="smd-figure-caption">${label}${caption}</figcaption></figure>`;
+  return `<figure${htmlAttrs(c.attrs, ['smd-figure', `smd-figure-${figure.kind}`], c.style)}${c.dataLine}>\n`;
+}
+
+/** `:ref[id]`: the number of the figure with that id, linked to it; an unknown id is shown as written. */
+export function renderRef(id: string, figure: FigureNumber | undefined): string {
+  const safe = escapeHtml(id);
+  if (!figure) return `<span class="smd-ref smd-ref-missing" title="No figure with this id">${safe}</span>`;
+  return `<a class="smd-ref" href="#${safe}">${figure.label}</a>`;
+}
+
 const CONTAINERS = new Map<string, ContainerOpen>([
   ['include', includeOpen],
   ['details', detailsOpen],
@@ -259,6 +282,7 @@ const CONTAINERS = new Map<string, ContainerOpen>([
   ['api', apiOpen],
   ['risk-matrix', riskMatrixOpen],
   ['timeline', divOpen('smd-timeline')],
+  ['figure', figureOpen],
 ]);
 
 // ---------------------------------------------------------------------------
@@ -296,7 +320,9 @@ function progress({ content, values, color }: Directive): string {
   const value = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : 0;
   const barStyle = `width:${value}%${color ? `;background:${color}` : ''}`;
   const label = values.label ?? `${Math.round(value)}%`;
-  return `<span class="smd-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}"><span class="smd-progress-track"><span class="smd-progress-bar" style="${escapeHtml(barStyle)}"></span></span><span class="smd-progress-label">${escapeHtml(label)}</span></span>`;
+  // A progress bar needs a name; the label inside it is presentational to assistive technology.
+  const name = escapeHtml(values.label ?? 'Progress');
+  return `<span class="smd-progress" role="progressbar" aria-label="${name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}"><span class="smd-progress-track"><span class="smd-progress-bar" style="${escapeHtml(barStyle)}"></span></span><span class="smd-progress-label">${escapeHtml(label)}</span></span>`;
 }
 
 const PRIORITY_COLORS = new Map(Object.entries({
@@ -313,7 +339,26 @@ function due({ content, today }: Directive): string {
   const date = content.trim();
   const state = dueState(date, today);
   // ISO dates stay as written: unambiguous for distributed teams.
-  return `<span class="smd-due smd-due-${state}" title="Due ${escapeHtml(date)}${state === 'overdue' ? ' (overdue)' : ''}">📅 ${escapeHtml(date)}</span>`;
+  return `<span class="smd-due smd-due-${state}" title="Due ${escapeHtml(date)}${state === 'overdue' ? ' (overdue)' : ''}">📅 ${escapeHtml(date)}${dueNote(state)}</span>`;
+}
+
+/** Overdue and due soon in words as well as colour: "overdue" visibly, "due soon" for screen readers. Hidden on done tasks. */
+export function dueNote(state: string): string {
+  if (state === 'overdue') return '<span class="smd-due-note"> · overdue</span>';
+  return state === 'soon' ? '<span class="smd-due-note smd-sr-only"> (due soon)</span>' : '';
+}
+
+const DUE_NOTE = '<span class="smd-due-note';
+
+/** HTML without the notes dueNote adds: a done task is neither overdue nor due soon. */
+export function withoutDueNotes(html: string): string {
+  let out = html;
+  for (let at = out.indexOf(DUE_NOTE); at >= 0; at = out.indexOf(DUE_NOTE, at)) {
+    const end = out.indexOf('</span>', at);
+    if (end < 0) break;
+    out = out.slice(0, at) + out.slice(end + '</span>'.length);
+  }
+  return out;
 }
 
 const TREND_ARROWS = new Map([['up', '▲'], ['down', '▼'], ['flat', '■']]);
@@ -334,13 +379,19 @@ function metric({ md, content, values }: Directive): string {
   const trend = metricTrend(values);
   const tone = metricTone(trend, values.good ?? 'up');
   const arrow = TREND_ARROWS.get(trend) ?? '';
-  const delta = values.delta ? `<span class="smd-metric-delta smd-metric-${tone}">${arrow} ${escapeHtml(values.delta)}</span>` : '';
+  // Good or bad shows as colour; screen readers get it as text, and the arrow as the trend's name.
+  const spoken = [TREND_ARROWS.has(trend) ? trend : '', tone === 'flat' ? '' : tone].filter(Boolean).join(', ');
+  const sr = spoken ? `<span class="smd-sr-only"> (${spoken})</span>` : '';
+  const delta = values.delta ? `<span class="smd-metric-delta smd-metric-${tone}"><span aria-hidden="true">${arrow}</span> ${escapeHtml(values.delta)}${sr}</span>` : '';
   return `<span class="smd-metric"><span class="smd-metric-value">${md.renderInline(content)}</span><span class="smd-metric-label">${escapeHtml(values.label ?? '')}</span>${delta}</span>`;
 }
 
-function status({ md, content, color }: Directive): string {
+function status({ md, content, values, color }: Directive): string {
   const dot = color ?? 'var(--smd-gray)';
-  return `<span class="smd-status"><span class="smd-status-dot" style="background:${escapeHtml(dot)}"></span>${md.renderInline(content)}</span>`;
+  // The text says the status; the dot only repeats it in colour. Without text, the colour name stands in.
+  const text = content.trim() ? '' : escapeHtml(values.color ?? 'status');
+  const dotA11y = text ? ` role="img" aria-label="${text}"` : ' aria-hidden="true"';
+  return `<span class="smd-status"><span class="smd-status-dot" style="background:${escapeHtml(dot)}"${dotA11y}></span>${md.renderInline(content)}</span>`;
 }
 
 const DIRECTIVES = new Map<string, (d: Directive) => string>([
@@ -361,6 +412,32 @@ export function dueState(date: string, today = new Date().toISOString().slice(0,
   if (days < 0) return 'overdue';
   return days <= 7 ? 'soon' : 'later';
 }
+
+// ---------------------------------------------------------------------------
+// Footnotes (GitHub's markup: ids, data-footnote-* attributes and the hidden "Footnotes" label)
+// ---------------------------------------------------------------------------
+
+/** The id of the n-th footnote's reference number `sub` (1-based): fnref-1, fnref-1-2… */
+const footnoteRefId = ({ n, sub }: FootnoteMeta) => (sub > 1 ? `fnref-${n}-${sub}` : `fnref-${n}`);
+
+/** `<sup>` with the footnote's number, linking to it. */
+export const footnoteRef: RenderRule = (tokens, idx) => {
+  const meta = tokens[idx].meta as FootnoteMeta;
+  return `<sup class="smd-footnote-ref"><a href="#fn-${meta.n}" id="${footnoteRefId(meta)}" data-footnote-ref role="doc-noteref" aria-describedby="footnote-label">${meta.n}</a></sup>`;
+};
+
+/** A back link from a footnote to one of its references; the second and later ones are numbered. */
+export const footnoteBackref: RenderRule = (tokens, idx) => {
+  const meta = tokens[idx].meta as FootnoteMeta;
+  const id = footnoteRefId(meta);
+  return ` <a href="#${id}" class="smd-footnote-backref" data-footnote-backref role="doc-backlink" aria-label="Back to reference ${id.slice(6)}">↩︎${meta.sub > 1 ? `<sup>${meta.sub}</sup>` : ''}</a>`;
+};
+
+export const footnotesOpen: RenderRule = () =>
+  '<section class="footnotes smd-footnotes" data-footnotes>\n<h2 id="footnote-label" class="smd-sr-only">Footnotes</h2>\n<ol>\n';
+export const footnotesClose: RenderRule = () => '</ol>\n</section>\n';
+export const footnoteOpen: RenderRule = (tokens, idx) => `<li id="fn-${(tokens[idx].meta as FootnoteMeta).n}">\n`;
+export const footnoteClose: RenderRule = () => '</li>\n';
 
 // ---------------------------------------------------------------------------
 // Math and code fences

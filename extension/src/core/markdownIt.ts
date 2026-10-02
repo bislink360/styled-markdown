@@ -13,9 +13,12 @@ import { applySmd, hostContext, smdFeatures } from './markdownItSetup';
  * builds its markdown-it instance with the same rules.
  */
 export interface MarkdownItSmdOptions {
-  /** `:::name{attrs} Title … :::` block containers: callouts, cards, tabs, decisions, risks, APIs… Default true. */
+  /**
+   * `:::name{attrs} Title … :::` block containers: callouts, cards, tabs, decisions, risks, APIs, numbered figures…
+   * Figure numbers are kept on the render's `env` as `smdFigures` for `:ref[id]`. Default true.
+   */
   containers?: boolean;
-  /** Inline directives: `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:metric[…]`, `:status[…]`… Default true. */
+  /** Inline directives: `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:metric[…]`, `:status[…]`, `:ref[…]`… Default true. */
   directives?: boolean;
   /** Attribute lists: `[text]{color=red .muted}` spans and `## Heading {#id .class}`. Default true. */
   attributes?: boolean;
@@ -23,6 +26,12 @@ export interface MarkdownItSmdOptions {
   mark?: boolean;
   /** `$inline$` and `$$display$$` math, rendered with KaTeX (the host page needs the KaTeX stylesheet). Default true. */
   math?: boolean;
+  /**
+   * GitHub-style footnotes: `[^1]` references and `[^1]: text` definitions, collected into a numbered
+   * footnotes section at the end. Default true. Left to the host when markdown-it-footnote was added
+   * to the instance before this plugin; set it to false to keep markdown-it-footnote added after it.
+   */
+  footnotes?: boolean;
   /** GFM task lists (`- [ ]`, `- [x]`) as checkboxes. Default true. */
   tasks?: boolean;
   /**

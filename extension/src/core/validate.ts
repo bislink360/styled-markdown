@@ -4,9 +4,12 @@ import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem } 
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS } from './render';
+import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
-import { checkIncludes, documentIds } from './includeCheck';
+import { checkIncludes, documentIds, includedFigureIds } from './includeCheck';
 import { parseFenceInfo, sliceLines } from './fence';
+import { figureTargets, findRefs, type Figure, type FigureRef } from './figures';
+import { parseSmd } from './parse';
 import { suggest } from './util';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
@@ -179,6 +182,8 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
   checkLinks(text, push, options);
   checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
+  checkFigures(text, lines, fm.bodyStartLine, push, () => includedFigureIds(text, options.readFile));
+  checkFootnotes(text, push);
 
   let result = applySuppressions(text, diagnostics);
   if (options.rules) result = applyRuleSettings(result, options.rules);
@@ -314,6 +319,19 @@ function dueDate(content: string): string | undefined {
   return date && dueState(date) !== 'invalid' ? date : undefined;
 }
 
+/**
+ * Enumerated container attributes whose invalid values are reported under their own rule. `:::figure{kind}`
+ * is a warning: before 1.6 such a document only had a `container/unknown` warning and passed validation.
+ */
+const ENUM_VALUE_RULES = new Map<string, { severity: Severity; code: string }>([
+  ['figure.kind', { severity: 'warning', code: 'figure/kind' }],
+]);
+
+/** The rule for an invalid value of an enumerated container attribute: `attrs/value` (error) unless listed above. */
+function enumValueRule(container: string, key: string): { severity: Severity; code: string } {
+  return ENUM_VALUE_RULES.get(`${container}.${key}`) ?? { severity: 'error', code: 'attrs/value' };
+}
+
 function checkContainer(
   info: NonNullable<ReturnType<typeof parseContainerInfo>>,
   line: number, nameStart: number, nameEnd: number, parent: string | undefined, push: Push, raw: string,
@@ -346,7 +364,8 @@ function checkContainer(
     const v = info.attrs.values[key];
     if (v !== undefined && !allowed.some((a) => a.toLowerCase() === v.toLowerCase())) {
       const hint = suggest(v, allowed);
-      push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
+      const rule = enumValueRule(info.name, key);
+      push(line, nameStart, nameEnd, rule.severity, rule.code, `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
         attrValueFix(line, raw, nameEnd, raw.length, key, v, uniqueSuggestion(v, allowed)));
     }
   }
@@ -497,6 +516,43 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
   }
 }
 
+/**
+ * Footnotes: every `[^label]` needs a definition, and each definition a reference and a label of its own.
+ * Without any definition in the document, `[^x]` is as likely plain text (a regex class such as `[^a-z]`),
+ * so an undefined reference is only `info` then.
+ */
+function checkFootnotes(text: string, push: Push): void {
+  const { definitions, references } = findFootnotes(text);
+  const defined = new Map<string, FootnoteDefinition>();
+  for (const d of definitions) {
+    const first = defined.get(d.label);
+    if (first) {
+      push(d.line, d.column, d.endColumn, 'warning', 'footnote/duplicate',
+        `Footnote "[^${d.raw}]" is already defined on line ${first.line + 1}; this definition is ignored.`);
+    } else {
+      defined.set(d.label, d);
+    }
+  }
+  const labels = [...defined.values()].map((d) => d.raw);
+  for (const r of references) {
+    if (!defined.has(r.label)) undefinedFootnote(r, labels, push);
+  }
+  const used = new Set(references.map((r) => r.label));
+  for (const d of defined.values()) {
+    if (!used.has(d.label)) {
+      push(d.line, d.column, d.endColumn, 'info', 'footnote/unused', `Footnote "[^${d.raw}]" is never referenced, so it is not shown.`);
+    }
+  }
+}
+
+function undefinedFootnote(ref: FootnoteReference, labels: string[], push: Push): void {
+  const hint = uniqueSuggestion(ref.raw, labels);
+  const column = ref.column + 2;
+  push(ref.line, ref.column, ref.endColumn, labels.length ? 'warning' : 'info', 'footnote/undefined',
+    `No definition for the footnote "[^${ref.raw}]"${hint ? ` — did you mean "[^${hint}]"?` : '.'} Add a line like "[^${ref.raw}]: …"; until then it shows as plain text.`,
+    hint ? { line: ref.line, column, endColumn: column + ref.raw.length, replacement: hint, title: `Change to "[^${hint}]"` } : undefined);
+}
+
 function missingAnchor(
   anchor: string, ids: Set<string>, where: string, target: string,
   line: number, column: number, end: number, push: Push,
@@ -506,6 +562,38 @@ function missingAnchor(
   push(line, column, end, 'warning', 'link/missing-anchor',
     `No heading or element with id "${anchor}" ${where}${hint ? ` — did you mean "#${hint}"?` : '.'}`,
     fixed ? { line, column, endColumn: end, replacement: fixed, title: `Change to "${fixed}"` } : undefined);
+}
+
+/** Figure ids are unique, and every `:ref[id]` names a figure of this document. */
+/** Figure ids and `:ref[id]` references; `included` lists the ids of figures brought in by `:::include`. */
+function checkFigures(text: string, lines: string[], bodyStart: number, push: Push, included: () => Set<string>): void {
+  const figures = parseSmd(text).figures;
+  const targets = figureTargets(figures);
+  for (const f of figures) {
+    const first = f.id ? targets.get(f.id) : undefined;
+    if (first && first !== f) duplicateFigure(f, first, lines[f.line], push);
+  }
+  let fromIncludes: Set<string> | undefined;
+  for (const ref of findRefs(lines, bodyStart)) {
+    if (targets.has(ref.id)) continue;
+    fromIncludes ??= included();
+    if (!fromIncludes.has(ref.id)) unknownRef(ref, [...targets.keys(), ...fromIncludes], push);
+  }
+}
+
+function duplicateFigure(figure: Figure, first: Figure, raw: string, push: Push): void {
+  const at = raw.indexOf(`#${figure.id}`);
+  const [column, end] = at < 0 ? [0, raw.length] : [at, at + figure.id!.length + 1];
+  push(figure.line, column, end, 'warning', 'figure/duplicate-id',
+    `The figure on line ${first.line + 1} already has the id "${figure.id}"; :ref[${figure.id}] refers to that one. Give this figure its own id.`);
+}
+
+function unknownRef(ref: FigureRef, ids: string[], push: Push): void {
+  const hint = ref.id ? suggest(ref.id, ids) : undefined;
+  const start = ref.column + ':ref['.length;
+  push(ref.line, ref.column, ref.endColumn, 'warning', 'figure/unknown-ref',
+    `No figure with id "${ref.id}" in this document${hint ? ` — did you mean "${hint}"?` : '.'} Give a :::figure that id with {#${ref.id || 'fig-id'}}.`,
+    hint ? { line: ref.line, column: start, endColumn: ref.endColumn - 1, replacement: hint, title: `Change to ":ref[${hint}]"` } : undefined);
 }
 
 function checkFence(lang: string, content: string[], line: number, push: Push, wholeLine: WholeLine): void {

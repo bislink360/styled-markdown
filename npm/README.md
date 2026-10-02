@@ -95,11 +95,12 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 
 | Option | Default | What it adds |
 |---|---|---|
-| `containers` | `true` | `:::note`, `:::tabs`, `:::decision`, `:::risk`, `:::api` and the other blocks |
-| `directives` | `true` | `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:priority[…]`, `:metric[…]`, `:status[…]`, `:mention[…]` |
+| `containers` | `true` | `:::note`, `:::tabs`, `:::decision`, `:::risk`, `:::api`, numbered `:::figure` and the other blocks |
+| `directives` | `true` | `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:priority[…]`, `:metric[…]`, `:status[…]`, `:mention[…]`, `:ref[…]` |
 | `attributes` | `true` | `[text]{color=red .muted}` spans and `## Heading {#id .class}` |
 | `mark` | `true` | `==highlighted==` text |
 | `math` | `true` | `$inline$` and `$$display$$` math with KaTeX (include KaTeX's CSS) |
+| `footnotes` | `true` | GitHub-style `[^1]` footnotes, collected in a numbered section at the end (since 1.6). If you use markdown-it-footnote, add it before this plugin (this option then steps aside) or set `footnotes: false` |
 | `tasks` | `true` | `- [ ]` / `- [x]` task lists as checkboxes |
 | `fences` | `true` | ```` ```mermaid ```` and ```` ```math ```` blocks, and `title="…"`, `file="…"` and `{2,5-7}` on code blocks; turn it off if your host has its own fence attributes |
 | `codeFrames` | `false` | Frame every code block with a language label, as the `.smd` preview does |
@@ -110,7 +111,7 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 | `readFile` | none | `(path, env) => string \| undefined` for ```` ```ts file="…" ```` embeds; `env` is what you passed to `md.render` (sandbox it yourself) |
 | `today` | current date | `YYYY-MM-DD` for `:due[]` states |
 
-Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
+Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Figures are numbered per `md.render` call, and `:ref[id]` resolves against the figures of that call (they are kept on the `env` as `smdFigures`). Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
 
 ### remark and rehype plugins (Astro, Docusaurus, Next.js)
 

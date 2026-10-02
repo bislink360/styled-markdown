@@ -1,8 +1,10 @@
 import type { StateBlock, StateCore, StateInline, Token } from 'markdown-it';
-import { emptyAttrs, findAttrsEnd, parseAttrs, attrsToStyle } from './attrs';
+import { attrsToStyle, emptyAttrs, escapeHtml, findAttrsEnd, parseAttrs, type Attrs } from './attrs';
 import { ContainerInfo, parseContainerInfo } from './containers';
+import { FigureCounter, figureTargets, type FigureNumber } from './figures';
+import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
-import { renderInlineDirective } from './markdownItHtml';
+import { renderInlineDirective, withoutDueNotes } from './markdownItHtml';
 import { slugify } from './sections';
 import { INLINE_DIRECTIVES } from './spec';
 import type { IncludeResult, IncludeScope } from './include';
@@ -13,7 +15,7 @@ export { slugify } from './sections';
 
 /**
  * The markdown-it rules behind .smd syntax: block containers, inline spans and directives, math,
- * task lists, heading attributes and ids, and source lines. They only use what markdown-it hands
+ * footnotes, task lists, heading attributes and ids, and source lines. They only use what markdown-it hands
  * them (state.md, state.env), so they work on any markdown-it instance (see markdownIt.ts).
  */
 
@@ -109,6 +111,8 @@ export interface ContainerMeta extends ContainerInfo {
   source?: string;
   /** For `:::include`: what was included, or why nothing was (see markdownItInclude.ts). */
   include?: IncludeResult;
+  /** The number of a `:::figure` (see numberFigures). */
+  figure?: FigureNumber;
 }
 
 export function annotateContainers(state: StateCore): void {
@@ -130,6 +134,35 @@ export function annotateTokens(tokens: Token[], src: string): void {
       token.meta = open?.meta ?? { name: 'box', attrs: emptyAttrs(), title: '', close: '</div>' };
     }
   }
+}
+
+/** Where numbered figures are kept for `:ref[id]`, on the env of one render (a host's env too). */
+export interface FigureEnv {
+  smdFigures?: Map<string, FigureNumber>;
+}
+
+/**
+ * Number the `:::figure` containers of a document in order, one counter per kind, and keep them by id
+ * on the env so references anywhere (container titles too) can show "Figure 2". Runs after
+ * annotateContainers; inline-only parses (titles) keep the document's figures.
+ */
+export function numberFigures(state: StateCore): void {
+  if (state.inlineMode) return;
+  const counter = new FigureCounter();
+  const figures: Array<FigureNumber & { id?: string }> = [];
+  for (const token of state.tokens) {
+    const meta = token.meta as ContainerMeta | null;
+    if (token.type !== 'container_smd_open' || meta?.name !== 'figure') continue;
+    meta.figure = counter.next(meta.attrs.values.kind);
+    figures.push({ ...meta.figure, id: meta.attrs.id });
+  }
+  const env = state.env as FigureEnv | undefined;
+  if (env && typeof env === 'object') env.smdFigures = figureTargets(figures);
+}
+
+/** The figures numbered for the document being rendered (empty outside a render). */
+export function envFigures(env: unknown): ReadonlyMap<string, FigureNumber> {
+  return (env as FigureEnv | undefined)?.smdFigures ?? new Map();
 }
 
 // ---------------------------------------------------------------------------
@@ -192,12 +225,19 @@ export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdCon
     attrs = parsed;
     pos = end + 1;
   }
-  if (!silent) {
-    const token = state.push('html_inline', '', 0);
-    token.content = renderInlineDirective(state.md, name, content, attrs.values, ctx.options(state.env).today);
-  }
+  if (!silent) pushDirective(state, name, content, attrs, ctx);
   state.pos = pos;
   return true;
+}
+
+/** A directive's token: its HTML, or for `:ref[id]` an `smd_ref` token resolved when rendering (the figure may come later). */
+function pushDirective(state: StateInline, name: string, content: string, attrs: Attrs, ctx: SmdContext): void {
+  if (name === 'ref') {
+    state.push('smd_ref', '', 0).meta = { id: content.trim() };
+    return;
+  }
+  const token = state.push('html_inline', '', 0);
+  token.content = renderInlineDirective(state.md, name, content, attrs.values, ctx.options(state.env).today);
 }
 
 /** `==highlighted==` */
@@ -276,6 +316,176 @@ export function mathBlock(state: StateBlock, startLine: number, endLine: number,
 }
 
 // ---------------------------------------------------------------------------
+// Footnotes  ([^label] references, [^label]: definitions — as on GitHub)
+// ---------------------------------------------------------------------------
+
+/** One parse's footnotes, on the env from the first definition until footnoteTail moves them. */
+interface FootnoteState {
+  /** Labels (normalized) that have a definition. */
+  defined: Set<string>;
+  /** Referenced labels in the order of their first reference, with their number and reference count. */
+  used: Map<string, { n: number; count: number }>;
+  /** Read every `[^label]` as a reference, defined or not (see acceptAnyFootnote). */
+  anyLabel?: boolean;
+}
+
+/** What footnote tokens carry for rendering: the footnote's number and, on references and back links, which reference. */
+export interface FootnoteMeta { n: number; sub: number }
+
+// A symbol, so a host's own env keys (markdown-it-footnote uses `footnotes`) never clash.
+const FOOTNOTES = Symbol('smd.footnotes');
+type FootnoteEnv = { [FOOTNOTES]?: FootnoteState };
+
+const FOOTNOTE_DEF = /^\[\^([^\]\s]+)\]:/;
+
+/**
+ * Make a parse with this env read every `[^label]` as a reference, defined or not: for parsing part of
+ * a document whose definitions may be elsewhere (parse.ts), whose caller decides which labels are defined.
+ */
+export function acceptAnyFootnote(env: object): void {
+  (env as FootnoteEnv)[FOOTNOTES] = { defined: new Set(), used: new Map(), anyLabel: true };
+}
+
+/** `[^label]: text` definitions. Lines indented by 4 spaces continue one, as in a list item. */
+export function footnoteDefinition(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
+  if (state.sCount[startLine] - state.blkIndent >= 4 || typeof state.env !== 'object' || !state.env) return false;
+  const start = state.bMarks[startLine] + state.tShift[startLine];
+  const def = FOOTNOTE_DEF.exec(state.src.slice(start, state.eMarks[startLine]));
+  if (!def) return false;
+  if (silent) return true;
+
+  const env = state.env as FootnoteEnv;
+  env[FOOTNOTES] ??= { defined: new Set(), used: new Map() };
+  const label = normalizeFootnoteLabel(def[1]);
+  env[FOOTNOTES].defined.add(label);
+  const open = state.push('smd_footnote_definition_open', '', 1);
+  open.block = true;
+  open.meta = { label };
+  const saved = enterDefinition(state, startLine, start + def[0].length);
+  state.md.block.tokenize(state, startLine, endLine);
+  leaveDefinition(state, startLine, saved);
+  state.push('smd_footnote_definition_close', '', -1).block = true;
+  open.map = [startLine, state.line];
+  return true;
+}
+
+interface SavedLine { bMark: number; tShift: number; sCount: number; parentType: StateBlock['parentType'] }
+
+/** Parse the definition's first line from after the colon, with its content indented one level (markdown-it-footnote's approach). */
+function enterDefinition(state: StateBlock, line: number, afterColon: number): SavedLine {
+  const saved = { bMark: state.bMarks[line], tShift: state.tShift[line], sCount: state.sCount[line], parentType: state.parentType };
+  const initial = state.sCount[line] + afterColon - (state.bMarks[line] + state.tShift[line]);
+  let offset = initial;
+  let pos = afterColon;
+  for (; pos < state.eMarks[line]; pos++) {
+    const ch = state.src.charCodeAt(pos);
+    if (ch === 0x09) offset += 4 - (offset % 4);
+    else if (ch === 0x20) offset++;
+    else break;
+  }
+  state.tShift[line] = pos - afterColon;
+  state.sCount[line] = offset - initial;
+  state.bMarks[line] = afterColon;
+  state.blkIndent += 4;
+  state.parentType = 'footnote' as never;
+  if (state.sCount[line] < state.blkIndent) state.sCount[line] += state.blkIndent;
+  return saved;
+}
+
+function leaveDefinition(state: StateBlock, line: number, saved: SavedLine): void {
+  state.parentType = saved.parentType;
+  state.blkIndent -= 4;
+  state.tShift[line] = saved.tShift;
+  state.sCount[line] = saved.sCount;
+  state.bMarks[line] = saved.bMark;
+}
+
+/** Inside a link's text (markdown-it 13+ counts link levels; the types don't list it yet). */
+const insideLink = (state: StateInline) => ((state as StateInline & { linkLevel?: number }).linkLevel ?? 0) > 0;
+
+/**
+ * `[^label]` for a defined label. Undefined labels stay text, and so do references inside link text.
+ * It never matches in silent mode: link labels are scanned that way, and a match there would read as a
+ * nested link, so `[see [^1]](url)` would stop being a link.
+ */
+export function footnoteReference(state: StateInline, silent: boolean): boolean {
+  const notes = (state.env as FootnoteEnv | undefined)?.[FOOTNOTES];
+  const start = state.pos;
+  if (silent || !notes || insideLink(state) || !state.src.startsWith('[^', start)) return false;
+  const end = state.src.indexOf(']', start + 2);
+  if (end < 0 || end >= state.posMax) return false;
+  const raw = state.src.slice(start + 2, end);
+  const label = normalizeFootnoteLabel(raw);
+  if (!raw || /\s/.test(raw) || !(notes.anyLabel || notes.defined.has(label))) return false;
+  let use = notes.used.get(label);
+  if (!use) {
+    use = { n: notes.used.size + 1, count: 0 };
+    notes.used.set(label, use);
+  }
+  use.count++;
+  const token = state.push('smd_footnote_ref', '', 0);
+  token.meta = { n: use.n, sub: use.count } satisfies FootnoteMeta;
+  // As written, for heading text and slugs: the same as when the label is undefined and stays text.
+  token.content = state.src.slice(start, end + 1);
+  state.pos = end + 1;
+  return true;
+}
+
+/**
+ * Move definitions out of the text into a footnotes section at the end, numbered by first reference.
+ * Unreferenced definitions are left out and the first definition of a label wins, as on GitHub.
+ */
+export function footnoteTail(state: StateCore): void {
+  const env = state.env as FootnoteEnv | undefined;
+  const notes = env?.[FOOTNOTES];
+  if (!notes) return;
+  delete env![FOOTNOTES];
+  const { body, definitions } = splitDefinitions(state.tokens);
+  if (!notes.used.size) {
+    state.tokens = body;
+    return;
+  }
+  const out = [...body, new state.Token('smd_footnotes_open', 'section', 1)];
+  for (const [label, use] of notes.used) out.push(...footnoteItem(state, definitions.get(label) ?? [], use));
+  out.push(new state.Token('smd_footnotes_close', 'section', -1));
+  state.tokens = out;
+}
+
+/** The tokens outside definitions, and each label's first definition (nested definitions are their own). */
+function splitDefinitions(tokens: Token[]): { body: Token[]; definitions: Map<string, Token[]> } {
+  const body: Token[] = [];
+  const definitions = new Map<string, Token[]>();
+  const open: Array<{ label: string; tokens: Token[] }> = [];
+  for (const t of tokens) {
+    if (t.type === 'smd_footnote_definition_open') {
+      open.push({ label: (t.meta as { label: string }).label, tokens: [] });
+    } else if (t.type === 'smd_footnote_definition_close') {
+      const def = open.pop();
+      if (def && !definitions.has(def.label)) definitions.set(def.label, def.tokens);
+    } else {
+      (open[open.length - 1]?.tokens ?? body).push(t);
+    }
+  }
+  return { body, definitions };
+}
+
+/** One `<li>`: the definition, with a back link to each reference at the end of its last paragraph. */
+function footnoteItem(state: StateCore, content: Token[], use: { n: number; count: number }): Token[] {
+  const open = new state.Token('smd_footnote_open', 'li', 1);
+  open.meta = { n: use.n, sub: 0 } satisfies FootnoteMeta;
+  const items = [open, ...content];
+  const lastParagraph = items[items.length - 1].type === 'paragraph_close' ? items.pop() : undefined;
+  for (let sub = 1; sub <= use.count; sub++) {
+    const back = new state.Token('smd_footnote_backref', '', 0);
+    back.meta = { n: use.n, sub } satisfies FootnoteMeta;
+    items.push(back);
+  }
+  if (lastParagraph) items.push(lastParagraph);
+  items.push(new state.Token('smd_footnote_close', 'li', -1));
+  return items;
+}
+
+// ---------------------------------------------------------------------------
 // Front matter
 // ---------------------------------------------------------------------------
 
@@ -328,10 +538,39 @@ function markTask(state: StateCore, i: number, checked: boolean): void {
   // A task from an included document lives in another file, so the preview can't toggle it.
   const where = includedFrom(item) ? ' disabled' : ` data-task-line="${line}"`;
   const box = new state.Token('html_inline', '', 0);
-  box.content = `<input type="checkbox" class="smd-task-box"${where}${checked ? ' checked' : ''}>`;
+  // The task's text names its checkbox (no id: ids in the HTML are the document's anchors).
+  const label = taskLabel(inline.children!, checked);
+  box.content = `<input type="checkbox" class="smd-task-box"${where}${checked ? ' checked' : ''}${label ? ` aria-label="${escapeHtml(label)}"` : ''}>`;
   inline.children!.unshift(box);
   item.attrJoin('class', `smd-task${checked ? ' smd-task-done' : ''}`);
   markTaskList(tokens, i - 2);
+}
+
+/** The plain text of a task's inline tokens: text, code, and the text of inline HTML such as directives. */
+function taskLabel(children: Token[], done: boolean): string {
+  return children.map((c) => {
+    if (c.type === 'text' || c.type === 'code_inline') return c.content;
+    if (c.type === 'html_inline') return htmlText(done ? withoutDueNotes(c.content) : c.content);
+    if (c.type === 'image') return taskLabel(c.children ?? [], done);
+    return c.type === 'softbreak' || c.type === 'hardbreak' ? ' ' : '';
+  }).join('').replace(/\s+/g, ' ').trim();
+}
+
+const ENTITIES = new Map([['&amp;', '&'], ['&lt;', '<'], ['&gt;', '>'], ['&quot;', '"'], ['&#39;', "'"]]);
+
+/** The text of an HTML fragment: tags dropped, the entities escapeHtml writes decoded. */
+function htmlText(html: string): string {
+  let text = '';
+  let pos = 0;
+  while (pos < html.length) {
+    const open = html.indexOf('<', pos);
+    const close = open < 0 ? -1 : html.indexOf('>', open);
+    if (close < 0) break;
+    text += html.slice(pos, open);
+    pos = close + 1;
+  }
+  text += html.slice(pos);
+  return text.replace(/&(?:amp|lt|gt|quot|#39);/g, (e) => ENTITIES.get(e) ?? e);
 }
 
 /** Add `smd-task-list` to the list that directly contains the item at index `item`. */
@@ -387,7 +626,7 @@ export function headingIds(state: StateCore): void {
 
 function headingText(inline: Token): string {
   return (inline.children ?? [])
-    .filter((c) => c.type === 'text' || c.type === 'code_inline')
+    .filter((c) => c.type === 'text' || c.type === 'code_inline' || c.type === 'smd_footnote_ref')
     .map((c) => c.content)
     .join('');
 }

@@ -1,6 +1,7 @@
 import { escapeHtml } from './attrs';
 import { decisionLog, headingAbove, isInactiveDecision, type DecisionEntry } from './decisions';
 import { compareTasks, extractTasks, type TaskInfo } from './meta';
+import { dueNote } from './markdownItHtml';
 import { dueState, type Heading } from './render';
 import { riskBand, riskMatrixHtml } from './riskHtml';
 import { riskMatrix, riskRegister, type RiskEntry } from './risks';
@@ -87,7 +88,7 @@ function tasksTable(tasks: DashboardTask[], today: string, link: PlaceHref): str
   const rows = tasks.map((t) => {
     const anchor = headingAbove(t.doc.headings, t.line)?.slug;
     return [
-      t.due ? `<span class="smd-due smd-due-${dueState(t.due, today)}">${escapeHtml(t.due)}</span>` : '',
+      t.due ? dueCell(t.due, today) : '',
       escapeHtml(t.text),
       t.assignees.map((a) => `<span class="smd-mention">${escapeHtml(a)}</span>`).join(' '),
       escapeHtml(t.priority ?? ''),
@@ -95,6 +96,11 @@ function tasksTable(tasks: DashboardTask[], today: string, link: PlaceHref): str
     ];
   });
   return table(['Due', 'Task', 'Owner', 'Priority', 'Where'], rows, 'No open tasks.');
+}
+
+function dueCell(date: string, today: string): string {
+  const state = dueState(date, today);
+  return `<span class="smd-due smd-due-${state}">${escapeHtml(date)}${dueNote(state)}</span>`;
 }
 
 function decisionsTable(decisions: DecisionEntry[], link: PlaceHref): string {

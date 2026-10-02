@@ -39,7 +39,7 @@ export interface LanguageServerOptions {
 const SYMBOL_KIND: Record<SmdSymbol['kind'], number> = { heading: 15, decision: 24, risk: 14, api: 6 };
 const SEVERITY: Record<Diagnostic['severity'], number> = { error: 1, warning: 2, info: 3, hint: 4 };
 const TEXT_DOCUMENT_SYNC_FULL = 1;
-const TRIGGER_CHARACTERS = [':', '{', '=', '`', '(', '/', '#', '"'];
+const TRIGGER_CHARACTERS = [':', '{', '=', '`', '(', '/', '#', '"', '^'];
 
 interface TextDocumentParams { textDocument: { uri: string }; position: Position }
 interface Validation { version: number; diagnostics: Diagnostic[] }

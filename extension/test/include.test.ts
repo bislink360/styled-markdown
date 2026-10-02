@@ -55,7 +55,7 @@ test('include: links, images and code embeds in included text still point where 
   assert.match(html, /<div class="smd-code-title">shared\/code.ts<\/div>/);
   assert.match(html, /price/);
   // Tasks in included text can't be toggled from this document.
-  assert.match(html, /<input type="checkbox" class="smd-task-box" disabled>Publish discounts/);
+  assert.match(html, /<input type="checkbox" class="smd-task-box" disabled aria-label="Publish discounts">Publish discounts/);
   assert.equal(rebaseUrl('../img/a.png?x#y', 'shared/deep'), 'shared/img/a.png?x#y');
   assert.equal(rebaseUrl('https://example.com/a', 'shared'), 'https://example.com/a');
   assert.equal(rebaseUrl('#top', 'shared'), '#top');
@@ -231,4 +231,13 @@ test('CLI: smd agent expands includes through the sandboxed reader; --no-include
   const valid = run(['validate', corpusDoc]);
   assert.equal(valid.status, 0, valid.stdout);
   assert.match(valid.stdout, /0 error\(s\), 0 warning\(s\)/);
+});
+
+test('include: figures in included text are numbered with the document\'s, and :ref to them validates', () => {
+  const readFile = reader({ 'b.smd': '# B\n\n:::figure{#fig-b} Included\n![b](b.png)\n:::\n' });
+  const doc = ':::figure{#fig-a} Own\n![a](a.png)\n:::\n\n:::include{file="b.smd"}\n:::\n\nSee :ref[fig-a] and :ref[fig-b].\n';
+  const html = renderSmd(doc, { readFile }).html;
+  assert.match(html, /<a class="smd-ref" href="#fig-b">Figure 2<\/a>/);
+  assert.deepEqual(validateSmd(doc, { readFile }).filter((d) => d.code.startsWith('figure/')), []);
+  assert.equal(validateSmd(doc).filter((d) => d.code === 'figure/unknown-ref').length, 1, 'without a reader the reference is unknown');
 });

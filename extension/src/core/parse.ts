@@ -1,6 +1,9 @@
 import type MarkdownIt from 'markdown-it';
 import type { Token } from 'markdown-it';
+import { FigureCounter, figureTargets, type Figure } from './figures';
+import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
+import { acceptAnyFootnote, type ContainerMeta } from './markdownItRules';
 import { createMarkdownIt, type Env, type Heading, type ResolvedOptions } from './render';
 import { CALLOUT_TYPES } from './spec';
 
@@ -25,7 +28,12 @@ export interface ParseResult {
   /** Every id a `#fragment` can point at: heading slugs, `{#id}` attributes and raw HTML ids/names. */
   ids: ReadonlySet<string>;
   frontMatter: Record<string, unknown>;
+  /** The `:::figure` blocks in document order, numbered as the rendered HTML numbers them. */
+  figures: Figure[];
 }
+
+/** A `:::figure` before numbering, with a body-relative line. */
+interface FigureSource { id?: string; kind?: string; line: number }
 
 /** A reference definition markdown-it accepted, and the line it starts on. */
 interface Definition { line: number; label: string }
@@ -37,10 +45,15 @@ interface Block {
   /** Headings, with body-relative lines and slugs not yet de-duplicated. */
   headings: Heading[];
   bases: Array<string | null>;
-  /** Ids other than heading ids. */
+  /** Ids other than heading ids, outside footnote definitions. */
   ids: string[];
+  figures: FigureSource[];
   /** Definitions after the previous block, up to the end of this one (inside it too). */
   definitions: Definition[];
+  /** Footnote definitions in the block, with the ids inside each: they render only if the footnote does. */
+  notes: Array<{ label: string; ids: string[] }>;
+  /** Footnote references (`[^label]`, defined or not) in order, with the index in `notes` of the definition they are in, or -1. */
+  noteRefs: Array<{ label: string; inside: number }>;
 }
 
 interface State {
@@ -54,11 +67,11 @@ interface State {
 
 const OPTIONS: ResolvedOptions = { allowHtml: true, agentBlocks: 'collapsed', readFile: undefined, today: '' };
 let md: MarkdownIt | undefined;
-const parser = () => (md ??= recordingDefinitions(createMarkdownIt(OPTIONS)));
+const parser = () => (md ??= recordingDefinitions(inPlaceFootnotes(createMarkdownIt(OPTIONS))));
 /** Container titles render as inline Markdown with raw HTML off (see renderContainer). */
 let titleMd: MarkdownIt | undefined;
 const titleParser = () => (titleMd ??= createMarkdownIt({ allowHtml: false }));
-const TITLED = new Set<string>([...CALLOUT_TYPES, 'details', 'card', 'tab', 'agent', 'human', 'decision', 'risk', 'api']);
+const TITLED = new Set<string>([...CALLOUT_TYPES, 'details', 'card', 'tab', 'agent', 'human', 'decision', 'risk', 'api', 'figure']);
 
 type ParseEnv = Env & { definitions: Definition[] };
 
@@ -79,6 +92,15 @@ function recordingDefinitions(instance: MarkdownIt): MarkdownIt {
     }
     return accepted;
   });
+  return instance;
+}
+
+/**
+ * Keep footnote definitions where they are written instead of moving them to the end: each stays a
+ * top-level block at its own lines, so a window parses it the same as the whole document does.
+ */
+function inPlaceFootnotes(instance: MarkdownIt): MarkdownIt {
+  instance.core.ruler.disable('smd_footnote_tail');
   return instance;
 }
 
@@ -121,16 +143,34 @@ export function parseSmd(text: string): ParseResult {
     });
     for (const id of block.ids) ids.add(id);
   }
+  for (const id of footnoteIds(state.blocks)) ids.add(id);
   // The document header renders the title and summary as inline Markdown.
   for (const key of ['title', 'summary']) {
     const value = fm.data[key];
     if (typeof value === 'string') collectIds(parser().parseInline(value, newEnv(0, labelsOf(state))), ids);
   }
 
-  const result: ParseResult = { headings, ids, frontMatter: fm.data };
+  const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine) };
   results.unshift({ text, result });
   results.length = Math.min(results.length, 3);
   return result;
+}
+
+/** A document's figures by the line of their opening fence and by id (the first figure with an id wins). */
+export interface FigureIndex {
+  byLine: ReadonlyMap<number, Figure>;
+  byId: ReadonlyMap<string, Figure>;
+}
+
+export function figureIndex(text: string): FigureIndex {
+  const figures = parseSmd(text).figures;
+  return { byLine: new Map(figures.map((f) => [f.line, f])), byId: figureTargets(figures) };
+}
+
+/** Every block's figures in order, numbered per kind, with lines in the whole document. */
+function numberFigures(blocks: Block[], bodyStart: number): Figure[] {
+  const counter = new FigureCounter();
+  return blocks.flatMap((b) => b.figures).map((f) => ({ ...counter.next(f.kind), ...(f.id ? { id: f.id } : {}), line: f.line + bodyStart }));
 }
 
 const labelsOf = (state: Pick<State, 'blocks' | 'trailing'>): string[] =>
@@ -226,6 +266,7 @@ function shift(block: Block, delta: number): Block {
     start: block.start + delta,
     end: block.end + delta,
     headings: block.headings.map((h) => ({ ...h, line: h.line + delta })),
+    figures: block.figures.map((f) => ({ ...f, line: f.line + delta })),
     definitions: block.definitions.map((d) => ({ ...d, line: d.line + delta })),
   };
 }
@@ -238,6 +279,7 @@ function parseRange(
   lines: string[], from: number, to: number, labels: string[], complete: boolean, carried: Definition[] = [],
 ): { blocks: Block[]; trailing: Definition[]; mathHorizon: number } {
   const env = newEnv(from, labels);
+  acceptAnyFootnote(env); // which labels are defined is known once every block is (footnoteIds)
   const tokens = parser().parse(lines.slice(from, to).join('\n'), env);
   const definitions = [...carried, ...env.definitions.map((d) => ({ ...d, line: d.line + from }))];
 
@@ -268,22 +310,96 @@ function parseRange(
   let h = 0;
   let d = 0;
   for (const g of groups) {
-    const block: Block = { start: g.start, end: g.end, headings: [], bases: [], ids: [], definitions: [] };
+    const block: Block = {
+      start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), definitions: [], notes: [], noteRefs: [],
+    };
     while (h < env.headings.length && env.headings[h].line < g.end) {
       if (env.headings[h].line >= g.start) { block.headings.push(env.headings[h]); block.bases.push(env.bases![h]); }
       h++;
     }
     while (d < definitions.length && definitions[d].line < g.end) block.definitions.push(definitions[d++]);
-    collectIds(g.tokens, block.ids, true);
+    collectBlockIds(g.tokens, block);
     blocks.push(block);
   }
   return { blocks, trailing: complete ? definitions.slice(d) : [], mathHorizon };
+}
+
+/** A block's ids, footnote definitions and references; ids inside a definition go with it. */
+function collectBlockIds(tokens: Token[], block: Block): void {
+  const open: number[] = [];
+  for (const t of tokens) {
+    if (t.type === 'smd_footnote_definition_open') {
+      open.push(block.notes.push({ label: (t.meta as { label: string }).label, ids: [] }) - 1);
+      continue;
+    }
+    if (t.type === 'smd_footnote_definition_close') {
+      open.pop();
+      continue;
+    }
+    const inside = open[open.length - 1] ?? -1;
+    collectIds([t], inside < 0 ? block.ids : block.notes[inside].ids, true);
+    block.noteRefs.push(...noteRefsIn(t, inside));
+  }
+}
+
+const noteRefsIn = (t: Token, inside: number): Block['noteRefs'] => (t.children ?? [])
+  .filter((c) => c.type === 'smd_footnote_ref')
+  .map((c) => ({ label: normalizeFootnoteLabel(c.content.slice(2, -1)), inside }));
+
+/**
+ * The ids footnotes render (see footnoteTail): `fn-N` for each referenced footnote, numbered by first
+ * reference, `fnref-N` and `fnref-N-K` for each reference, the hidden `footnote-label` heading, and the
+ * ids inside definitions that are shown. References to undefined labels are text; a definition is shown
+ * when it is the first for its label and referenced, and references inside other definitions vanish with them.
+ */
+function footnoteIds(blocks: Block[]): string[] {
+  const { notes, refs } = documentNotes(blocks);
+  const defined = new Set(notes.map((n) => n.label));
+  const used = new Map<string, { n: number; count: number }>();
+  const refIds: Array<{ id: string; inside: number }> = [];
+  for (const r of refs.filter((ref) => defined.has(ref.label))) {
+    const use = used.get(r.label) ?? { n: used.size + 1, count: 0 };
+    used.set(r.label, use);
+    use.count++;
+    refIds.push({ id: use.count > 1 ? `fnref-${use.n}-${use.count}` : `fnref-${use.n}`, inside: r.inside });
+  }
+  const first = new Map<string, number>();
+  notes.forEach((note, i) => { if (!first.has(note.label)) first.set(note.label, i); });
+  const shown = (i: number) => i < 0 || (first.get(notes[i].label) === i && used.has(notes[i].label));
+  return [
+    ...(used.size ? ['footnote-label'] : []),
+    ...[...used.keys()].map((_, i) => `fn-${i + 1}`),
+    ...refIds.filter((r) => shown(r.inside)).map((r) => r.id),
+    ...notes.filter((_, i) => shown(i)).flatMap((note) => note.ids),
+  ];
+}
+
+/** Every block's footnote definitions and references, with `inside` indexing the whole list. */
+function documentNotes(blocks: Block[]): { notes: Block['notes']; refs: Block['noteRefs'] } {
+  const notes: Block['notes'] = [];
+  const refs: Block['noteRefs'] = [];
+  for (const block of blocks) {
+    const base = notes.length;
+    notes.push(...block.notes);
+    refs.push(...block.noteRefs.map((r) => ({ label: r.label, inside: r.inside < 0 ? -1 : r.inside + base })));
+  }
+  return { notes, refs };
 }
 
 function newEnv(lineOffset: number, labels: Iterable<string>): ParseEnv {
   const references: Record<string, unknown> = {};
   for (const label of labels) references[label] = { href: '', title: '' };
   return { lineOffset, headings: [], slugs: new Map(), options: OPTIONS, bases: [], references, definitions: [] };
+}
+
+/** The `:::figure` openers among a block's tokens (nested ones too), with body-relative lines. */
+function figuresIn(tokens: Token[], from: number): FigureSource[] {
+  return tokens
+    .filter((t) => t.type === 'container_smd_open' && (t.meta as ContainerMeta | null)?.name === 'figure')
+    .map((t) => {
+      const meta = t.meta as ContainerMeta;
+      return { id: meta.attrs.id, kind: meta.attrs.values.kind, line: from + (t.map?.[0] ?? 0) };
+    });
 }
 
 function collectIds(tokens: Token[], out: Set<string> | string[], skipHeadings = false): void {

@@ -32,7 +32,8 @@ export interface DocumentLinks {
 // `](target "title")`: the tail of an inline link or image. Angle-bracket targets may contain spaces,
 // bare targets may contain balanced parentheses.
 const INLINE_LINK = /\]\(\s*(<[^>\n]*>|[^\s()<]+(?:\([^\s()]*\)[^\s()]*)*)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
-const DEFINITION = /^(\s{0,3}\[([^\]\n]+)\]:\s*)(<[^>\n]*>|\S+)/;
+// A label starting with `^` is a footnote (`[^1]: …`, see footnotes.ts), not a link.
+const DEFINITION = /^(\s{0,3}\[([^\]\n^][^\]\n]*)\]:\s*)(<[^>\n]*>|\S+)/;
 const REFERENCE = /\[((?:[^[\]\n]|\[[^\]\n]*\])+)\]\[([^\]\n]*)\]/g;
 const HTML_LINK = /<(?:a|img|source)\b[^>]*?\s(?:href|src)\s*=\s*(["'])([^"'\n]*)\1/gi;
 
@@ -85,7 +86,9 @@ export function findLinks(text: string): DocumentLinks {
       // `:badge[x][y]` is a directive, and `[a][b][c]` is matched from its first bracket.
       const before = line.slice(0, m.index!);
       if (/(?::[a-z][a-z0-9-]*|\])$/i.test(before)) continue;
-      references.push({ label: normalizeLabel(m[2] || m[1]), line: i, column: m.index!, endColumn: m.index! + m[0].length });
+      const label = m[2] || m[1];
+      if (label.startsWith('^')) continue; // footnotes, e.g. `[^1][^2]`
+      references.push({ label: normalizeLabel(label), line: i, column: m.index!, endColumn: m.index! + m[0].length });
     }
   }
   return { links, references, definitions };
@@ -223,7 +226,7 @@ export function linkCompletionContext(text: string, line: number, character: num
 
   const inlineLink = /\]\(\s*<?([^\s()<>]*)$/.exec(prefix);
   if (inlineLink) return at('link', inlineLink[1]);
-  const definition = /^\s{0,3}\[[^\]\n]+\]:\s*<?([^\s<>]*)$/.exec(prefix);
+  const definition = /^\s{0,3}\[[^\]\n^][^\]\n]*\]:\s*<?([^\s<>]*)$/.exec(prefix);
   if (definition) return at('link', definition[1]);
   return undefined;
 }
