@@ -104,6 +104,7 @@ Any Markdown content, including other containers.
 | `api` | API endpoint; body documents params/responses | **`method`** (`GET` `POST` `PUT` `PATCH` `DELETE` `HEAD` `OPTIONS` `WS` `RPC` `EVENT`), **`path`**, `auth` |
 | `timeline` | Renders the list inside as a vertical timeline (tasks inside show done state) | — |
 | `figure` | Numbered figure around an image, diagram, table or code block; title = the caption (§3.3) | `title`, `kind` (`figure` `table` `listing`) |
+| `include` | Transclusion: another document's body, or one section of it, in place of the block (§3.4). The body is fallback text | `file` (needed), `section`, `level` (`1`–`6`) |
 
 All containers additionally accept the style attributes in §5. Attributes in **bold** are required.
 `tab` must be a direct child of `tabs`; `column` of `columns`.
@@ -138,6 +139,25 @@ flowchart LR
 Why a directive and not a link: an empty-text link `[](#fig-checkout)` would be invisible in every renderer that doesn't know figures (GitHub, older `.smd` tools), and `[@fig-checkout]` could already appear in documents as plain text (a bracketed mention). `:ref[…]` follows the existing directive rules (a `:` after whitespace or opening punctuation), so no existing text changes meaning, and an older renderer shows it as the readable text `:ref[fig-checkout]`.
 
 **Older renderers** (1.5 and earlier) treat `:::figure` as an unknown container: the content renders inside a plain box (`<div id="…" class="smd-box smd-box-figure">`) without the caption, the validator reports `container/unknown` (a warning) and the agent view and `smd to-md` keep the content only. `:ref[id]` stays literal text, with no diagnostic.
+
+### 3.4 Includes (transclusion)
+
+```text
+:::include{file="shared/terms.smd" section="Pricing" level=3}
+See [Pricing](shared/terms.smd#pricing) in the shared terms.
+:::
+```
+
+- **`file`** is a path relative to the including document. The included document's body is used, without its front matter.
+- **`section`** picks one section: the heading whose id (`#pricing` or `pricing`) or text matches, as `smd agent --section` matches them (an exact id wins over text that only contains the words), with everything up to the next heading of the same or a higher level, subsections included.
+- **`level=N`** moves the included headings so the top one (the section heading, or the document's highest heading) becomes level N; the others keep their distance from it (capped at 6). Without it, headings keep the levels they have in their own file. Use it to nest the included text under the current heading.
+- The block is closed with `:::` like every container. Its **body is fallback text**: renderers that include ignore it, and show it (under a short note with a link to the file) only when the file can't be included. A link to the file is a good body: renderers older than 1.6, which don't know `include`, show it as a plain box.
+- The included text is parsed with the same rules as the document, so nested includes and every block (and markdown-it plugins the host adds) work. Paths inside it (nested includes, links, images, code embeds) stay relative to the included file. Its tasks can't be checked off from the including document.
+- **Heading ids.** The including document's own headings keep exactly the ids they have without the include. Included headings keep the ids they have in their own file, numbered (`pricing-1`) where the including document already uses them; links inside the included text follow the renamed ids. Links in the including document may point at included headings by their ids.
+- **Files are read only through the host's sandboxed reader**, the same one that reads code embeds (§6): the CLI reads inside the working directory, the document's folder and its Git repository; VS Code inside the workspace folders and the document's folder; the MCP server inside its root. A host without a reader (and the markdown-it plugin without `readFile`) includes nothing and shows the fallback with an "Include not available here" note.
+- **Limits.** An include chain that leads back to a document being included (`a.smd → b.smd → a.smd`, or a document that includes itself) stops there with a note instead of repeating. Includes nest at most 8 deep, and one document includes at most 200 times and 2,000,000 characters.
+- **What includes, what doesn't.** Rendered output (preview, HTML, PDF, `smd build`), the agent view (§8a) and `smd to-md` (§8) include. `smd outline` lists the including document's own headings and line ranges, and an include adds to the token cost of the section it is in, as `smd agent --section` would show it. `smd query`, `smd tasks`, `smd decisions`, `smd risks`, `smd index` and `smd diff` read each document as written, an include being a one-line pointer there; the included document is read on its own.
+- **Figures (§3.3) in included text** are numbered with the including document's figures in rendered output, and `:ref[id]` there can name them; `smd validate` accepts such references when it can read the include. The agent view and `smd to-md` number an included document's figures within that document, and leave a `:ref` from the including document to one of them as written (`:ref[fig-b]`; the `<figure id="fig-b">` is in the `<included>` block).
 
 ---
 
@@ -314,7 +334,10 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `figure/unknown-ref` | warning | `:ref[id]` names no `figure` in the document (fix: closest figure id) |
 | `figure/duplicate-id` | warning | Two `figure` blocks share an `{#id}`; references go to the first |
 | `figure/kind` | warning | `kind` on a `figure` is not `figure`, `table` or `listing`; it counts as `figure` (fix: closest value). A warning rather than `attrs/value`, so documents that passed before 1.6 keep passing |
-| `attrs/required` | error / warning | Required attribute missing (`:::api` needs `method` and `path`; `:metric` should have `label`) |
+| `attrs/required` | error / warning | Required attribute missing (`:::api` needs `method` and `path`; `:metric` should have `label`; `:::include` should have `file`) |
+| `include/missing-file` · `include/outside-workspace` | warning | The `:::include` file does not exist / exists but the reader may not read it (outside the workspace) |
+| `include/missing-section` | warning | `section="…"` matches no heading in the included file |
+| `include/cycle` · `include/depth` · `include/too-large` | warning | The includes this one leads to come back to a document already included, nest more than 8 deep, or read more than 200 files or 2,000,000 characters |
 | `fence/embed-missing` · `fence/range` · `fence/embed-body` · `fence/lines-without-file` | error / warning | Embedded file missing or outside the workspace, bad line range, non-empty embed body, `lines` without `file` |
 | `footnote/undefined` | warning (info) | `[^label]` with no `[^label]: …` definition; it renders as plain text (fix: the closest defined label). `info` when the document defines no footnotes at all, since `[^a-z]` may be meant literally |
 | `footnote/unused` | info | A footnote definition nothing references; it is not shown |
@@ -342,6 +365,7 @@ Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.s
 | `:::risk-matrix` | **Risk matrix** label and a table: impact rows × likelihood columns, risk titles in the cells |
 | `:::figure{#id} Caption` | `<a id="id"></a>`, the content, then a `**Figure 1:** Caption` paragraph |
 | `:ref[id]` | `[Figure 1](#id)` (an unknown id stays as written) |
+| `:::include` | The included text, converted the same way, after an `<!-- included from … -->` comment (GitHub can't include); when the file can't be read, the fallback body, or a link to the file when the body is empty |
 | `box`, `columns`, `steps` | content only |
 | `[text]{…}` | `text` (bold/italic/strike preserved from `weight`/`style`) |
 | `:badge[x]` | `` `x` `` |
@@ -374,6 +398,7 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 | Tables | Cell padding removed |
 | File embeds | `[code: path lines a-b — read that file]` (or inlined with `--embed`) |
 | Footnotes | As written: `[^1]` references in the text, `[^1]: …` definitions where they are (no renumbering). A `--section` excerpt lists the definitions its references need once, after a `Footnotes referenced above:` line, unless they are in a `{agent=skip}` section or `:::human` block |
+| `:::include` | The included text inside `<included file="shared/terms.smd" section="Pricing">…</included>`; its `[L<n>]` references are lines of that file. With `--no-includes`, or when it can't be read: `[include: shared/terms.smd § Pricing — read that file for the content]` (or the reason, e.g. `— cannot read the file`). The fallback body is left out |
 
 `--brief` also condenses Mermaid diagrams to `[diagram: type, n lines — see Lx-Ly]`, long code blocks to their first 10 lines, `:::details` to a pointer, and completed tasks to a count.
 
@@ -382,7 +407,10 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 - Raw HTML is permitted in source (as in Markdown) but hosts MUST NOT execute scripts from documents. The VS Code preview enforces a nonce-based Content Security Policy.
 - Style attributes are converted to CSS only through the whitelist in §5; unknown keys and invalid values are dropped.
 - Mermaid runs with `securityLevel: 'strict'`.
+- Code embeds and `:::include` read files only through the host's sandboxed reader (§3.4), so a document cannot pull in files from outside the workspace such as `~/.ssh` keys. Includes stop at cycles and at the depth and size limits.
 
 ## 10. Versioning
 
 Additive features (new containers, directives, front matter keys) keep `smd: 1`; older renderers degrade gracefully (unknown containers render as a box, unknown keys are kept). Only breaking changes increment `smd`.
+
+For example, tools before 1.6 don't know `:::include`: they render its body in a plain box (`smd-box smd-box-include`), warn `container/unknown`, and show the body in the agent view and `smd to-md`. That is why an include's body should be fallback text such as a link to the file.

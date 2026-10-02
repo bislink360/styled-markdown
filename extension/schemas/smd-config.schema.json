@@ -90,6 +90,16 @@
           ],
           "description": "Every fence/… rule. Exact codes win."
         },
+        "include/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every include/… rule. Exact codes win."
+        },
         "link/*": {
           "enum": [
             "off",
@@ -449,6 +459,66 @@
             "hint"
           ],
           "description": "lines=\"…\" without file=\"…\""
+        },
+        "include/missing-file": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The :::include file does not exist"
+        },
+        "include/outside-workspace": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The :::include file is outside the folders the document may read, or unreadable"
+        },
+        "include/missing-section": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The :::include section matches no heading in the file"
+        },
+        "include/cycle": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Includes lead back to a document already being included"
+        },
+        "include/depth": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Includes nest more than 8 deep"
+        },
+        "include/too-large": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Includes read more than a document may (200 includes, 2,000,000 characters)"
         },
         "link/missing-anchor": {
           "enum": [

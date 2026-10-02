@@ -39,12 +39,14 @@ Reading (token-efficient, for agents):
   smd outline <file.smd> [--related] [--tokenizer <name>]
       Sections with line ranges and token costs, open tasks, where agent instructions are.
       --related    also list the front matter "related:" documents: title, status, summary and cost
-  smd agent <file.smd> [--section "<heading>"]... [--brief] [--include-human] [--embed] [--no-lines]
-                       [--max-tokens <n>] [--tokenizer <name>]
+  smd agent <file.smd> [--section "<heading>"]... [--brief] [--include-human] [--embed] [--no-includes]
+                       [--no-lines] [--max-tokens <n>] [--tokenizer <name>]
       Compact agent view: styling, layout and human-only content removed; meaning kept.
       --section    only these sections (repeatable; agent instructions elsewhere are still included)
       --brief      also condense diagrams, long code, :::details and completed tasks
       --embed      inline file="…" code embeds instead of referencing the file
+      --no-includes a one-line pointer for each :::include instead of the included text (by default
+                   it is shown in an <included file="…"> block; line references in it are that file's)
       --max-tokens fit the view into n tokens: condense as --brief, then replace the least important
                    sections with one-line pointers (never the header, agent instructions or --section)
       --tokenizer  exact counts next to the ≈ estimate (also on outline, and used by --max-tokens) for an
@@ -557,6 +559,7 @@ function printAgentView(file: string, args: Args, extra: Pick<AgentViewOptions, 
     brief: args.flags.has('--brief'),
     includeHuman: args.flags.has('--include-human'),
     embed: args.flags.has('--embed'),
+    includes: !args.flags.has('--no-includes'),
     lineRefs: !args.flags.has('--no-lines'),
     readFile: readerFor(file),
     file,

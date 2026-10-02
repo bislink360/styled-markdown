@@ -3,6 +3,7 @@ import {
   fenceRule, footnoteBackref, footnoteClose, footnoteOpen, footnoteRef, footnotesClose, footnotesOpen, renderContainer, renderHeader,
   renderMath, renderRef, type RenderRule,
 } from './markdownItHtml';
+import { expandIncludes, includedLinks } from './markdownItInclude';
 import {
   annotateContainers, containerBlock, envFigures, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock, headingAttrs,
   headingIds, inlineDirective, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
@@ -92,7 +93,11 @@ function addContainers(md: MarkdownIt, ctx: SmdContext): void {
   md.renderer.rules.container_smd_open = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx);
   md.renderer.rules.container_smd_close = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx);
   md.core.ruler.after('block', 'smd_container_meta', annotateContainers);
-  md.core.ruler.after('smd_container_meta', 'smd_figures', numberFigures);
+  // :::include splices in the included blocks before inline parsing; their links are rebased at the end.
+  md.core.ruler.after('smd_container_meta', 'smd_include', (state) => expandIncludes(state, ctx));
+  md.core.ruler.push('smd_include_links', includedLinks);
+  // Figures are numbered once included blocks are in place, so their figures count too.
+  md.core.ruler.after('smd_include', 'smd_figures', numberFigures);
 }
 
 function addMath(md: MarkdownIt): void {

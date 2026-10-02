@@ -6,6 +6,7 @@ import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS } from './render';
 import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
+import { checkIncludes, documentIds, includedFigureIds } from './includeCheck';
 import { parseFenceInfo, sliceLines } from './fence';
 import { figureTargets, findRefs, type Figure, type FigureRef } from './figures';
 import { parseSmd } from './parse';
@@ -47,7 +48,7 @@ export interface Fix {
 export interface ValidateOptions {
   /** Return true when a path (relative to the document) exists. Omit to skip link checks. */
   fileExists?: (relativePath: string) => boolean;
-  /** Read a file relative to the document, for checking `file="…" lines="…"` embeds. */
+  /** Read a file relative to the document, for checking `file="…" lines="…"` embeds and `:::include` blocks. */
   readFile?: (relativePath: string) => string | undefined;
   /** "Today" as YYYY-MM-DD for overdue and stale checks. Defaults to the current date. */
   today?: string;
@@ -180,7 +181,8 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   }
 
   checkLinks(text, push, options);
-  checkFigures(text, lines, fm.bodyStartLine, push);
+  checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
+  checkFigures(text, lines, fm.bodyStartLine, push, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, push);
 
   let result = applySuppressions(text, diagnostics);
@@ -478,14 +480,15 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
     return otherIds.get(path);
   };
 
-  for (const link of links) {
+  // `:::include` files have their own checks (includeCheck.ts).
+  for (const link of links.filter((l) => l.kind !== 'include')) {
     const parts = splitTarget(link.target);
     if (!parts) continue;
     const { line, column } = link;
     const end = column + link.target.length;
     if (!parts.path) {
       if (!parts.anchor) continue;
-      ownIds ??= anchorIds(text);
+      ownIds ??= documentIds(text, options.readFile);
       if (!ownIds.has(parts.anchor)) {
         missingAnchor(parts.anchor, ownIds, 'in this document', link.target, line, column, end, push);
       }
@@ -562,15 +565,19 @@ function missingAnchor(
 }
 
 /** Figure ids are unique, and every `:ref[id]` names a figure of this document. */
-function checkFigures(text: string, lines: string[], bodyStart: number, push: Push): void {
+/** Figure ids and `:ref[id]` references; `included` lists the ids of figures brought in by `:::include`. */
+function checkFigures(text: string, lines: string[], bodyStart: number, push: Push, included: () => Set<string>): void {
   const figures = parseSmd(text).figures;
   const targets = figureTargets(figures);
   for (const f of figures) {
     const first = f.id ? targets.get(f.id) : undefined;
     if (first && first !== f) duplicateFigure(f, first, lines[f.line], push);
   }
+  let fromIncludes: Set<string> | undefined;
   for (const ref of findRefs(lines, bodyStart)) {
-    if (!targets.has(ref.id)) unknownRef(ref, [...targets.keys()], push);
+    if (targets.has(ref.id)) continue;
+    fromIncludes ??= included();
+    if (!fromIncludes.has(ref.id)) unknownRef(ref, [...targets.keys(), ...fromIncludes], push);
   }
 }
 

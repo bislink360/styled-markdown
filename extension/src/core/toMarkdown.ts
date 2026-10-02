@@ -1,13 +1,20 @@
 import { parseAttrs } from './attrs';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
+import {
+  containerEnd, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
+} from './include';
+import { includedLines, includeSource } from './includeText';
 import { figureIndex } from './parse';
 import { HEADING_ATTRS } from './render';
 import { riskMatrixMarkdown } from './risks';
 
 export interface ToMarkdownOptions {
-  /** Read files for file="…" code embeds; without it the embed becomes a link only. */
+  /**
+   * Read files for file="…" code embeds and `:::include` blocks; without it an embed becomes a link only,
+   * and an include its fallback body (or a link when it has none).
+   */
   readFile?: (relativePath: string) => string | undefined;
 }
 
@@ -87,6 +94,11 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
     const open = CONTAINER_OPEN.exec(line);
     const info = open ? parseContainerInfo(open[3] + open[4]) : null;
     if (open && info) {
+      if (info.name === 'include') {
+        const len = open[2].length;
+        i = includeMarkdown(info, { lines, open: i, options, emit, keepBody: () => stack.push({ len, prefix: '' }) });
+        continue;
+      }
       const title = info.title ? convertInline(info.title, figures.byId) : '';
       const head = containerMarkdown({ name: info.name, title, values: info.attrs.values, id: info.attrs.id, figure: figures.byLine.get(i), text });
       for (const l of head.before ?? []) emit(l);
@@ -97,6 +109,48 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
     emit(convertInline(/^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line, figures.byId));
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+/** The include scope of the converted text, for included documents (the root document has none). */
+const includeScopes = new WeakMap<ToMarkdownOptions, IncludeScope>();
+
+interface IncludeAt {
+  lines: string[];
+  /** The line of the `:::include`. */
+  open: number;
+  options: ToMarkdownOptions;
+  emit: (line: string) => void;
+  /** Convert the block's body as content, as for a box. */
+  keepBody: () => void;
+}
+
+/**
+ * `:::include` in plain Markdown, which GitHub can't include: the included text, converted, in place of the block.
+ * When it can't be read, the fallback body is kept, after a link to the file when the body is empty. Returns the
+ * line to go on after: the closing `:::` when the body is skipped.
+ */
+function includeMarkdown(info: ContainerInfo, at: IncludeAt): number {
+  const { lines, open, options } = at;
+  const request = includeRequest(info.attrs.values);
+  const scope = includeScopes.get(options) ?? rootScope(lines.join('\n'));
+  const end = containerEnd(lines, open);
+  const result = request && loadInclude(request, scope, includeSource(options.readFile));
+  if (result?.ok) {
+    const inc = result.include;
+    const child: ToMarkdownOptions = { readFile: options.readFile };
+    includeScopes.set(child, innerScope(scope, inc));
+    // A leading blank line, so a body that starts with `---` is not taken for front matter.
+    const text = ['', ...includedLines(inc).slice(inc.start, inc.end + 1)].join('\n');
+    at.emit(`<!-- included from ${includeLabel(inc.path, request?.section)} -->`);
+    smdToMarkdown(text, child).split('\n').slice(1).forEach(at.emit);
+    return end;
+  }
+  if (request && !lines.slice(open + 1, end).some((l) => l.trim())) {
+    const path = includePath(scope.dir, request.file);
+    at.emit(`[${includeLabel(path, request.section)}](${includeHref(path, request.section) ?? path})`);
+  }
+  at.keepBody();
+  return open;
 }
 
 /** A container's opening line in plain Markdown. */

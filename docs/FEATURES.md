@@ -377,6 +377,31 @@ smd report docs/ --since v1.3.0 --title "Checkout squad"             # since a t
 | `file="…" lines="a-b"` | Embeds real source, so docs never drift from code. The preview refreshes on save, and the validator reports missing files or out-of-range lines. For safety, only files inside the workspace or the document's folder can be embedded. Agent view: `[code: path lines a-b — read that file]` (inline it with `--embed`). |
 | Highlighting | 35+ languages (highlight.js), with a copy button on hover |
 
+### Include another document: `:::include`
+
+Write shared text once (terms, a glossary, a setup section) and include it wherever it is needed:
+
+```markdown
+## Pricing
+
+:::include{file="shared/terms.smd" section="Pricing" level=3}
+See [Pricing](shared/terms.smd#pricing) in the shared terms.
+:::
+```
+
+| Attribute | Meaning |
+|---|---|
+| `file` | The document to include, relative to this one. Its body is included, without the front matter. |
+| `section` | Only this section (with its subsections): a heading's text or id, matched like `smd agent --section`. |
+| `level` | The level its top heading becomes, here `###` under `## Pricing`; the other headings move with it. |
+
+- **The body is the fallback.** It shows only where the file can't be included (and in tools before 1.6, which render the block as a plain box), so a link to the file is a good body.
+- **Same rendering.** Included text is parsed like the rest of the document: every block and nested includes work, and links, images and code embeds in it still point where they did from their own folder. A subtle rule in the margin shows its extent on hover.
+- **Ids stay stable.** The document's own heading ids never change; included headings are numbered where they would clash (`#pricing-1`), and the document may link to them.
+- **Safe.** Files are read with the same sandbox as code embeds (the workspace, the document's folder, its Git repository; the MCP server's root). Cycles (`a → b → a`) stop with a note, includes nest at most 8 deep, and a document includes at most 200 times and 2,000,000 characters.
+- **Everywhere it reads.** The preview (it refreshes when the included file is saved), `smd render`, `smd pdf`, `smd build` and the markdown-it, remark and rehype plugins (given a `readFile`) include. The agent view shows the text in `<included file="shared/terms.smd" section="Pricing">…</included>` (`smd agent --no-includes` shows a one-line pointer instead), and `smd to-md` inlines it, since GitHub can't include. `smd outline`, `query`, `tasks`, `decisions`, `risks`, `index` and `diff` work per file.
+- **Editor help.** Completion of paths in `file="…"`, go to definition on the path, hover preview of the included document, the `transclude` snippet, and warnings for a missing file or section, a file outside the workspace, cycles and limits (`include/*`).
+
 ## 8. Layout: tabs, columns, cards, boxes, steps
 
 ![Cards in columns, tabs, flowchart and agent block in dark mode](images/04-dark-layout.png)
@@ -511,7 +536,7 @@ People-only content anywhere in the document.
 | Feature | How |
 |---|---|
 | Syntax highlighting | Blocks, attributes, directives, math and front matter |
-| Completions | After `:::` (blocks, with snippets for tabs/columns), `:` (directives), `{` (attributes), `=` (allowed values: colors, statuses, HTTP methods…), front matter keys and values, Mermaid types. In links (`](…`, `[label]: …`), `related:` entries and `file="…"` embeds: relative files and folders, then after `#` the headings and ids of this or the linked document |
+| Completions | After `:::` (blocks, with snippets for tabs/columns), `:` (directives), `{` (attributes), `=` (allowed values: colors, statuses, HTTP methods…), front matter keys and values, Mermaid types. In links (`](…`, `[label]: …`), `related:` entries, `file="…"` embeds and `:::include{file="…"}`: relative files and folders, then after `#` the headings and ids of this or the linked document |
 | Hover | Documentation for blocks and directives |
 | Color picker | Swatches next to `color=`, `bg=`, `border=`, `accent:` |
 | Outline & folding | Headings in the Outline view; fold blocks, code and front matter |
@@ -557,6 +582,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |
 | `$$\frac{1}{$$` | `math/syntax` | — |
 | `file="nope.ts"` | `fence/embed-missing` | — |
+| `:::include{file="nope.smd"}`, `section="Nope"`, `a.smd` including `b.smd` including `a.smd` | `include/missing-file`, `include/missing-section`, `include/cycle` | — |
 | `[x](#rolout)`, `[x](plan.smd#rolout)` | `link/missing-anchor` | → closest heading id |
 | `[x](gone.md)`, `related: [gone.smd]` | `link/missing-file` | — |
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
@@ -732,8 +758,9 @@ Rendered pages (the preview, `smd render`, `smd build` sites and `smd risks --ht
 
 ```text
 smd outline <file> [--related] [--tokenizer <name>]  sections, line ranges, token costs, markers; --related adds related docs
-smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
+smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-includes] [--no-lines]
                  [--max-tokens <n>] [--tokenizer <name>]   fit the view into n tokens; exact counts
+                 --no-includes: a pointer per :::include instead of the included text
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd tasks <files|dirs> [--all] [--mine @name] --csv [-o tasks.csv]                 spreadsheet export
 smd tasks <files|dirs> [--all] [--mine @name] --gantt [--smd] [--title "…"] [-o <file>]   Mermaid Gantt chart

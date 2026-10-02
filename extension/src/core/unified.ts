@@ -39,7 +39,7 @@ export interface SmdPluginOptions extends Omit<RenderOptions, 'readFile'> {
    * Only used when the source itself has no front matter.
    */
   frontMatter?: (file: SmdVFile) => Record<string, unknown> | undefined;
-  /** Read a file relative to the document, for ```lang file="…"` embeds; `file.path` is the document. */
+  /** Read a file relative to the document, for ```lang file="…"` embeds and `:::include`; `file.path` is the document. */
   readFile?: (relativePath: string, file: SmdVFile) => string | undefined;
 }
 

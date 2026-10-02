@@ -15,7 +15,10 @@ export interface RenderOptions {
   allowHtml?: boolean;
   /** How :::agent blocks are presented to human readers. */
   agentBlocks?: 'collapsed' | 'expanded' | 'hidden';
-  /** Read a file relative to the document (for ```lang file="…"` embeds). Return undefined when not allowed/missing. */
+  /**
+   * Read a file relative to the document, for ```lang file="…"` embeds and `:::include` blocks (nested includes ask
+   * for paths relative to this document too). Return undefined when not allowed/missing. Without it nothing is included.
+   */
   readFile?: (relativePath: string) => string | undefined;
   /** "Today" as YYYY-MM-DD, for :due[] states. Defaults to the current date. */
   today?: string;

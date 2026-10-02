@@ -2,13 +2,18 @@ import { parseAttrs } from './attrs';
 import {
   omissionOrder, omissionPointer, omittableSections, withOmitted, type BudgetResult, type BudgetSection, type Tokenizer,
 } from './budget';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import { findFootnotes, type FootnoteDefinition } from './footnotes';
 import { parseFrontMatter, asStringList } from './frontmatter';
+import {
+  includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
+} from './include';
+import { includedLines, includeSource } from './includeText';
 import { figureIndex, parseSmd, type FigureIndex } from './parse';
-import { dueState, HEADING_ATTRS, slugify, type Heading } from './render';
+import { dueState, HEADING_ATTRS, type Heading } from './render';
+import { matchesHeading, sectionsOf, type Section } from './sections';
 import { CALLOUT_TYPES } from './spec';
 
 /**
@@ -31,6 +36,12 @@ export interface AgentViewOptions {
   lineRefs?: boolean;
   /** Inline `file="…"` code embeds instead of referencing the path (default false). */
   embed?: boolean;
+  /**
+   * Show `:::include` blocks as the included text in an `<included file="…">` block (default true; needs
+   * `readFile`). False: a one-line pointer to the file instead, to save tokens.
+   */
+  includes?: boolean;
+  /** Reads code embeds and includes, relative to the document. */
   readFile?: (relativePath: string) => string | undefined;
   today?: string;
   /**
@@ -118,20 +129,6 @@ const CONTAINER_HEADS = new Map<string, (c: HeadSource) => ContainerHead>([
 
 const NOISE_KEYS = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
 
-interface Section { heading: Heading; start: number; end: number }
-
-function sectionsOf(headings: Heading[], lineCount: number): Section[] {
-  return headings.map((h, i) => {
-    const next = headings.slice(i + 1).find((n) => n.level <= h.level);
-    return { heading: h, start: h.line, end: (next ? next.line : lineCount) - 1 };
-  });
-}
-
-function matches(h: Heading, query: string): boolean {
-  const q = query.trim().toLowerCase().replace(/^#+\s*/, '');
-  return h.slug === slugify(q) || h.slug === q || h.text.toLowerCase().includes(q);
-}
-
 interface ViewScope {
   data: Record<string, unknown>;
   bodyStart: number;
@@ -162,7 +159,7 @@ function selectSections(sections: Section[], queries: string[] | undefined): { s
   if (!queries?.length) return { selected: null, missingSections };
   const selected: Section[] = [];
   for (const q of queries) {
-    const hit = sections.filter((s) => matches(s.heading, q));
+    const hit = sections.filter((s) => matchesHeading(s.heading, q));
     if (hit.length) selected.push(...hit); else missingSections.push(q);
   }
   return { selected, missingSections };
@@ -323,6 +320,8 @@ interface TransformOptions extends AgentViewOptions {
   figures?: FigureIndex;
   /** Receives every emitted line with the source line it came from. */
   collect?: Array<[at: number, line: string]>;
+  /** Inside an included document: where its own includes resolve. */
+  includeScope?: IncludeScope;
 }
 
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
@@ -405,6 +404,11 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
         frame.drop = true;
         continue;
       }
+      if (info.name === 'include') {
+        includeView(info, lines, options).forEach((l) => emit(l, i));
+        frame.drop = true; // the body is fallback text for renderers that can't include
+        continue;
+      }
       const head = CONTAINER_HEADS.get(info.name)?.({ title, values: info.attrs.values, id: info.attrs.id, figure: figures.byLine.get(i) }) ?? {};
       if (head.line !== undefined) emit(head.line, i);
       frame.close = head.close;
@@ -447,6 +451,38 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
   return transform(lines.slice(0, end + 1), start, () => true, { ...options, figures: figureIndex(lines.join('\n')) }).trim();
+}
+
+/**
+ * `:::include` in the agent view: the included text inside `<included file="…" section="…">` (line references in it
+ * are lines of that file), or a one-line pointer when it isn't expanded or can't be read.
+ */
+function includeView(info: ContainerInfo, lines: string[], options: TransformOptions): string[] {
+  const request = includeRequest(info.attrs.values);
+  if (!request) return ['[include: no file given]'];
+  const scope = options.includeScope ?? rootScope(lines.join('\n'));
+  const label = includeLabel(includePath(scope.dir, request.file), request.section);
+  if (options.includes === false) return [`[include: ${label} — read that file for the content]`];
+  const result = loadInclude(request, scope, includeSource(options.readFile));
+  if (!result.ok) {
+    const problem = includeProblemText(result);
+    const reason = result.problem === 'unavailable' ? 'read that file for the content' : problem[0].toLowerCase() + problem.slice(1);
+    return [`[include: ${label} — ${reason}]`];
+  }
+  const inc = result.include;
+  const inner = { ...options, collect: undefined, includeScope: innerScope(scope, inc) };
+  const body = transform(includedLines(inc).slice(0, inc.end + 1), inc.start, () => true, inner);
+  const section = request.section ? ` section="${request.section}"` : '';
+  return [`<included file="${inc.path}"${section}>`, ...withoutBlankEnds(body.split('\n')), '</included>'];
+}
+
+/** Lines without the blank ones at the start and at the end. */
+function withoutBlankEnds(lines: string[]): string[] {
+  const first = lines.findIndex((l) => l.trim());
+  if (first < 0) return [];
+  let last = lines.length - 1;
+  while (!lines[last].trim()) last--;
+  return lines.slice(first, last + 1);
 }
 
 function renderFence(fence: { start: number; body: string[]; info: string }, endLine: number, options: TransformOptions): string[] {
