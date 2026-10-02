@@ -91,11 +91,22 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
     attrs: ['title'],
   },
   timeline: { description: 'Renders the list inside as a vertical timeline (start items with a date).' },
+  changelog: {
+    description: 'Release history: each heading inside is a release, "## 1.2.0 — 2026-03-01" (newest first), followed by its notes. ' +
+      'Rendered as a timeline of versions with dates. Title after the name.',
+    title: true,
+    attrs: ['title'],
+  },
   figure: {
     description: 'Numbered figure around an image, diagram, table or code block. Title = the caption; give it an {#id} to refer to it with :ref[id].',
     title: true,
     attrs: ['title', 'kind'],
     values: { kind: FIGURE_KINDS },
+  },
+  quote: {
+    description: 'Quotation with attribution: the body is the quoted text. author="…" and source="…" make the "— Author, Source" line; ' +
+      'cite="…" is the http(s) or relative URL it comes from. Not numbered as a figure.',
+    attrs: ['author', 'source', 'cite'],
   },
   glossary: {
     description: 'Glossary: a list of **Term**: definition items, rendered as a definition list. The first use of each term in a section shows its definition on hover and links to it.',

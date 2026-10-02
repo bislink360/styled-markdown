@@ -7,6 +7,7 @@ import {
 } from './include';
 import { includedLines, includeSource } from './includeText';
 import { figureIndex } from './parse';
+import { quoteCite } from './quote';
 import { HEADING_ATTRS } from './render';
 import { riskMatrixMarkdown } from './risks';
 
@@ -30,7 +31,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
   const lines = text.split(/\r?\n/);
   const out: string[] = [];
   const figures = figureIndex(text);
-  interface Frame { len: number; prefix: string; close?: string }
+  interface Frame { len: number; prefix: string; close?: string; end?: string[] }
   const stack: Frame[] = [];
   const prefix = () => stack.map((f) => f.prefix).join('');
   const emit = (line: string) => {
@@ -86,6 +87,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
 
     const close = CONTAINER_CLOSE.exec(line);
     if (close && stack.length) {
+      stack.at(-1)!.end?.forEach((l) => emit(l));
       const frame = stack.pop()!;
       if (frame.close !== undefined) emit(frame.close);
       if (frame.prefix) emit(''); // end the blockquote so the next one doesn't merge into it
@@ -102,7 +104,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       const title = info.title ? convertInline(info.title, figures.byId) : '';
       const head = containerMarkdown({ name: info.name, title, values: info.attrs.values, id: info.attrs.id, figure: figures.byLine.get(i), text });
       for (const l of head.before ?? []) emit(l);
-      stack.push({ len: open[2].length, prefix: head.prefix, ...(head.close === undefined ? {} : { close: head.close }) });
+      stack.push({ len: open[2].length, prefix: head.prefix, ...(head.close === undefined ? {} : { close: head.close }), ...(head.end ? { end: head.end } : {}) });
       for (const l of head.inside ?? []) emit(l);
       continue;
     }
@@ -168,9 +170,9 @@ interface ContainerSource {
 
 /**
  * What a container becomes: lines before its content (outside it), the prefix of its content lines
- * (`> ` for blockquotes), lines that start its content, and a line that closes it.
+ * (`> ` for blockquotes), lines that start its content, lines that end it (inside it) and a line that closes it.
  */
-interface ContainerMarkdown { before?: string[]; prefix: string; inside?: string[]; close?: string }
+interface ContainerMarkdown { before?: string[]; prefix: string; inside?: string[]; end?: string[]; close?: string }
 
 const withTitle = (label: string, title: string) => `**${label}${title ? `: ${title}` : ''}**`;
 
@@ -199,6 +201,17 @@ function figureMarkdown({ title, id, figure }: ContainerSource): ContainerMarkdo
   return { before: id ? [`<a id="${id}"></a>`, ''] : [], prefix: '', close: `\n${title ? `**${label}:** ${title}` : `**${label}**`}` };
 }
 
+/** A blockquote of the body, then `— Author, *Source*` (the source linked to `cite` when that is http(s) or relative). */
+function quoteMarkdown({ values }: ContainerSource): ContainerMarkdown {
+  const author = values.author?.trim() ? convertInline(values.author.trim()) : '';
+  const cite = quoteCite(values.cite);
+  const source = values.source?.trim() ? convertInline(values.source.trim()) : '';
+  const linked = cite && source && !source.includes('](') ? `[${source}](${cite})` : source;
+  const cited = linked && !/^[*_]/.test(linked) ? `*${linked}*` : linked;
+  const by = [author, cited].filter(Boolean).join(', ');
+  return { prefix: '> ', end: by ? ['', `— ${by}`] : [] };
+}
+
 const CONTAINER_MARKDOWN = new Map<string, (c: ContainerSource) => ContainerMarkdown>([
   ['agent', ({ title }) => alert('NOTE', withTitle('For agents', title))],
   ['human', ({ title }) => alert('NOTE', withTitle('For humans', title))],
@@ -214,6 +227,9 @@ const CONTAINER_MARKDOWN = new Map<string, (c: ContainerSource) => ContainerMark
   ['figure', figureMarkdown],
   // The `- **Term**: definition` list reads well as it is.
   ['glossary', ({ title }) => ({ before: title ? [`**${title}**`, ''] : [], prefix: '' })],
+  // Its `## 1.2.0 — 2026-03-01` headings and lists are plain Markdown already.
+  ['changelog', ({ title }) => ({ before: title ? [`**${title}**`, ''] : [], prefix: '' })],
+  ['quote', quoteMarkdown],
 ]);
 
 /** Callouts become alerts; box, tabs, columns, column, steps and unknown containers keep the content only. */

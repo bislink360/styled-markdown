@@ -3,6 +3,7 @@ import {
   fenceRule, footnoteBackref, footnoteClose, footnoteOpen, footnoteRef, footnotesClose, footnotesOpen, renderContainer, renderHeader,
   renderMath, renderRef, type RenderRule,
 } from './markdownItHtml';
+import { addChangelogRules, changelogEntries } from './markdownItChangelog';
 import { expandIncludes, includedLinks } from './markdownItInclude';
 import {
   annotateContainers, containerBlock, envFigures, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock, headingAttrs,
@@ -94,14 +95,17 @@ function addFrontMatter(md: MarkdownIt): void {
 
 function addContainers(md: MarkdownIt, ctx: SmdContext): void {
   md.block.ruler.before('fence', 'smd_container', containerBlock, ALT);
-  md.renderer.rules.container_smd_open = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx);
-  md.renderer.rules.container_smd_close = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx);
+  md.renderer.rules.container_smd_open = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx, md);
+  md.renderer.rules.container_smd_close = (tokens, idx, _opts, env) => renderContainer(tokens, idx, env, ctx, md);
   md.core.ruler.after('block', 'smd_container_meta', annotateContainers);
   // :::include splices in the included blocks before inline parsing; their links are rebased at the end.
   md.core.ruler.after('smd_container_meta', 'smd_include', (state) => expandIncludes(state, ctx));
   md.core.ruler.push('smd_include_links', includedLinks);
   // Figures are numbered once included blocks are in place, so their figures count too.
   md.core.ruler.after('smd_include', 'smd_figures', numberFigures);
+  // After inline parsing and the heading passes, so entry headings keep the ids and outline entries they have anywhere.
+  md.core.ruler.push('smd_changelog', changelogEntries);
+  addChangelogRules(md.renderer.rules);
 }
 
 function addMath(md: MarkdownIt): void {

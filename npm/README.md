@@ -95,7 +95,7 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 
 | Option | Default | What it adds |
 |---|---|---|
-| `containers` | `true` | `:::note`, `:::tabs`, `:::decision`, `:::risk`, `:::api`, numbered `:::figure`, `:::glossary` and the other blocks |
+| `containers` | `true` | `:::note`, `:::tabs`, `:::decision`, `:::risk`, `:::api`, numbered `:::figure`, `:::glossary`, `:::changelog`, `:::quote` and the other blocks |
 | `glossary` | `true` | `:::glossary` term lists as `<dl>`, and the first use of each term per section linked to its definition with a tooltip (needs `containers`) |
 | `directives` | `true` | `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:priority[…]`, `:metric[…]`, `:status[…]`, `:mention[…]`, `:ref[…]` |
 | `attributes` | `true` | `[text]{color=red .muted}` spans and `## Heading {#id .class}` |

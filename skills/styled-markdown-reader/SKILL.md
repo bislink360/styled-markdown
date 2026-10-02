@@ -53,6 +53,8 @@ Catching up on a changed document:
 | `[risk matrix: …]` | A grid of the document's risks for people; the risks themselves are the `<risk>` blocks |
 | `API POST /v1/x — …` | Endpoint definition; the following lines describe it |
 | `<glossary>` … `</glossary>` | The document's defined terms and abbreviations, listed once; the text uses them as written (not expanded) |
+| `<changelog>` with `## 1.2.0 (2026-03-01)` lines | Release history, newest first: each line is a version and its release date, followed by what changed in it |
+| `<quote author="…" source="…" cite="…">` | A quotation: the words are the author's, not the document's own claims |
 | `<figure id="fig-x"> Figure 2: caption`, `Figure 2 (fig-x)` | A numbered figure (or Table/Listing) and a reference to it; the id in parentheses names the `<figure>` meant |
 | front matter `status:` | `approved` is authoritative, `draft`/`review` is tentative, `deprecated`/`archived` is history |
 | `[P1]`, `@name`, `(due …, OVERDUE)` | Task priority, owner, due date |

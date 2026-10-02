@@ -55,7 +55,7 @@ These are the rules the validator and renderers depend on. `references/syntax.md
 1. **Front matter first:** `smd: 1`, `title`, a precise one- or two-sentence `summary`, `status` (`draft` · `review` · `approved` · `deprecated` · `archived`), `owners`, and `updated` (`YYYY-MM-DD`). Don't repeat the title as a `# H1`; start the body at `##`.
 2. **Blocks** are `:::name{attrs} Title` … `:::`. Attributes go directly after the name with no space. A bare `:::` closes the innermost block. Write outer containers with more colons (`::::tabs`) for readability.
 3. **Only known names:**
-   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `figure` `glossary` `decision` `risk` `risk-matrix` `api` `agent` `human` `include`.
+   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `figure` `glossary` `quote` `decision` `risk` `risk-matrix` `changelog` `api` `agent` `human` `include`.
    - Inline: `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention` `:ref`.
 4. **Enumerated values exactly as specified:**
    - decision `status`: proposed, accepted, rejected, superseded, deprecated
@@ -63,6 +63,8 @@ These are the rules the validator and renderers depend on. `references/syntax.md
    - api `method`: GET, POST, PUT, PATCH, DELETE…; `path` is required
    - figure `kind`: figure, table, listing (`:ref[id]` needs a figure with that `{#id}`)
    - glossary items: `- **Term**: definition`, every item of the list (otherwise it stays a plain list)
+   - changelog releases: headings `## 1.2.0 — 2026-03-01`, newest first, each followed by its notes
+   - quote: `:::quote{author="…" source="…" cite="https://…"}` with the quoted text as the body (`cite` only http(s) or relative)
    - priority: P0–P4
    - dates: `YYYY-MM-DD`
 5. **Named colors only** (red orange amber yellow green teal cyan blue indigo purple pink gray muted accent) unless a brand hex is required.

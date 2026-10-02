@@ -115,6 +115,8 @@ const PAIRS: Pair[] = [
   { what: 'links', fg: v('accent-default'), bg: [BG], min: TEXT },
   { what: 'links on surfaces (contents, sidebar)', fg: v('accent-default'), bg: [SURFACE], min: TEXT },
   { what: 'glossary term underline (the term itself is body text)', fg: v('fg-muted'), bg: [BG], min: GRAPHIC },
+  { what: 'changelog dates, quote attributions', fg: v('fg-muted'), bg: [BG], min: TEXT },
+  { what: 'changelog entry dots, quote rule', fg: v('accent-default'), bg: [BG], min: GRAPHIC },
   { what: 'current page in the sidebar, mentions', fg: v('accent-default'), bg: [BG, soft('indigo')], min: TEXT },
   { what: 'step numbers, skip link', fg: BG, bg: [v('accent-default')], min: TEXT },
   { what: 'focus ring', fg: v('focus'), bg: [BG], min: GRAPHIC },

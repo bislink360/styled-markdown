@@ -106,6 +106,8 @@ Any Markdown content, including other containers.
 | `figure` | Numbered figure around an image, diagram, table or code block; title = the caption (§3.3) | `title`, `kind` (`figure` `table` `listing`) |
 | `include` | Transclusion: another document's body, or one section of it, in place of the block (§3.4). The body is fallback text | `file` (needed), `section`, `level` (`1`–`6`) |
 | `glossary` | Glossary: a `**Term**: definition` list, rendered as a definition list; the first use of each term per section shows its definition (§3.5) | `title` (or title text after the name) |
+| `changelog` | Release history: each heading directly inside is a release, `## 1.2.0 — 2026-03-01`, newest first, followed by its notes; rendered as a timeline (§3.7) | `title` (or title text after the name) |
+| `quote` | Quotation; the body is the quoted text, rendered with a `— Author, Source` line (§3.8) | `author` (recommended), `source`, `cite` (an `http(s)` or relative URL) |
 
 All containers additionally accept the style attributes in §5. Attributes in **bold** are required.
 `tab` must be a direct child of `tabs`; `column` of `columns`.
@@ -183,6 +185,47 @@ Every API call counts against the SLO; the error budget is what is left.
 Why the first use in each section: style guides expand an abbreviation at its first use, marking every use fills paragraphs with underlines, and a reader who jumps to a section from the contents or a link still finds the term marked there. Why a block and not front matter: a glossary is content people read and print, it is a readable list in GitHub and older tools, and agents read it once in the agent view.
 
 **Older renderers** (1.5 and earlier) treat `:::glossary` as an unknown container: the list renders as a normal bulleted list inside a plain box (`<div class="smd-box smd-box-glossary">`), uses of the terms stay plain text, and the validator reports `container/unknown` (a warning). See §10.
+
+### 3.7 Changelogs (release history)
+
+```text
+:::changelog Release history
+## 1.2.0 — 2026-03-01
+- Added CSV export
+
+## [1.1.0] - 2026-01-15
+### Fixed
+- Date picker in Safari
+
+## Unreleased
+:::
+```
+
+- **Entries:** the ATX headings directly inside a `changelog` (not inside a nested container, list or blockquote) at the highest level used there are its releases; deeper headings (`### Fixed`) are sections of the release above them. Content before the first release (an introduction) stays above the list. Releases are written **newest first**, and render in the order written.
+- **Entry heading:** the version, then a separator (` — `, ` – `, ` - `, ` -- ` or ` --- `, with spaces around it), then the date as `YYYY-MM-DD`. The date is the text after the last separator; `v1.2.0 (2026-03-01)` is also read as a date. A heading without one is a version without a date (`## Unreleased`). The version is any inline Markdown, so Keep a Changelog's `## [1.2.0] - 2026-03-01` (a link when `[1.2.0]: …` is defined) works as written. For ordering, the version number is the first `1.2.0`-like number in it (a leading `v` ignored), compared as a semantic version: part by part, a pre-release (`1.2.0-beta.1`) before its release.
+- **Rendering:** `<div class="smd-changelog">`, the title if any (`<div class="smd-changelog-title">`), the introduction, then `<ol class="smd-changelog-list">` with one `<li class="smd-changelog-entry">` per release holding its heading and notes. In the heading, the version is wrapped in `<span class="smd-changelog-version">` and a valid date in `<time class="smd-changelog-date" datetime="2026-03-01">`; a date that isn't one is `<span class="smd-changelog-date smd-changelog-date-invalid">`. The heading's text is not changed, only wrapped.
+- **Headings stay headings:** release headings keep the ids, `{#id}` attributes and outline entries that the same heading has outside the block (and in 1.5), so `smd outline`, `--section`, the table of contents and links to them behave as for any heading.
+- **Validation (warnings):** `changelog/date` for a date that is not a real `YYYY-MM-DD` date (fix for year-first dates such as `2026/3/1`), `changelog/order` for a version newer than the one listed above it, `changelog/duplicate` for a version listed twice (the same number, or the same text for entries without one).
+
+Why headings and not `:::release{version=… date=…}` children: the version and date stay visible text in GitHub, in 1.5 renderers and in any Markdown tool, release notes copied from a `CHANGELOG.md` work unchanged, and there is no nested block syntax to get wrong.
+
+**Older renderers** (1.5 and earlier) treat `:::changelog` as an unknown container: the headings and lists render as usual inside a plain box (`<div class="smd-box smd-box-changelog">`) with the same heading ids, and the validator reports `container/unknown` (a warning). See §10.
+
+### 3.8 Quotes with attribution
+
+```text
+:::quote{author="Ada Lovelace" source="Notes" cite="https://example.com/notes"}
+The quoted text, any Markdown.
+:::
+```
+
+- **Body:** the quotation. **`author`** is who said or wrote it, **`source`** where (a book, talk or page), **`cite`** the URL of the source. `author` and `source` may contain inline Markdown.
+- **Rendering:** `<figure class="smd-quote"><blockquote cite="…">` the body `</blockquote><figcaption class="smd-quote-caption">— <span class="smd-quote-author">Author</span>, <cite>Source</cite></figcaption></figure>`. When `cite` is given, `source` links to it. Without `author` and `source` there is no caption.
+- **`cite`** must be an `http:` or `https:` URL or a relative one (no scheme, not `//host`, no spaces); it then goes through the same checks and normalization as link targets. Any other value (`javascript:`, `data:`, `mailto:`…) is left out of the output and reported as `quote/cite`.
+- **Not a figure:** quotes use the `<figure>` element but are never numbered with `:::figure` (§3.3) and are not `:ref` targets. A quote inside a `:::figure` is part of that figure's content.
+- **Validation (warnings):** `quote/empty` for a quote without text, `quote/author` for one without `author`, `quote/cite` for a `cite` that is left out.
+
+**Older renderers** (1.5 and earlier) treat `:::quote` as an unknown container: the text renders inside a plain box (`<div class="smd-box smd-box-quote">`) without the attribution, and the validator reports `container/unknown` (a warning). See §10.
 
 ---
 
@@ -362,6 +405,11 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `glossary/entry` | warning | A list item in a `glossary` is not `**Term**: definition` (its list then renders as a plain list and defines no terms), or an entry has no definition |
 | `glossary/duplicate` | warning | A term is defined again (in any glossary of the document); uses link to the first definition |
 | `glossary/unused` | info | A defined term is never used in the text outside glossaries |
+| `changelog/date` | warning | A release heading in a `changelog` has a date that is not a real `YYYY-MM-DD` date (fix: year-first dates such as `2026/3/1`) |
+| `changelog/order` | warning | A `changelog` lists a version newer than the one above it; releases go newest first |
+| `changelog/duplicate` | warning | A `changelog` lists the same version twice |
+| `quote/empty` · `quote/author` | warning | A `quote` has no text / no `author` |
+| `quote/cite` | warning | `cite` on a `quote` is not an `http(s)` or relative URL; it is left out |
 | `attrs/required` | error / warning | Required attribute missing (`:::api` needs `method` and `path`; `:metric` should have `label`; `:::include` should have `file`) |
 | `include/missing-file` · `include/outside-workspace` | warning | The `:::include` file does not exist / exists but the reader may not read it (outside the workspace) |
 | `include/missing-section` | warning | `section="…"` matches no heading in the included file |
@@ -395,6 +443,8 @@ Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.s
 | `:ref[id]` | `[Figure 1](#id)` (an unknown id stays as written) |
 | `:::include` | The included text, converted the same way, after an `<!-- included from … -->` comment (GitHub can't include); when the file can't be read, the fallback body, or a link to the file when the body is empty |
 | `:::glossary Title` | a `**Title**` paragraph, then the `- **Term**: definition` list unchanged; uses of terms stay as written |
+| `:::changelog Title` | a `**Title**` paragraph, then the release headings and lists as written |
+| `:::quote{author source cite}` | a blockquote of the body ending with a `— Author, *Source*` line (`*[Source](cite)*` with a valid `cite`) |
 | `box`, `columns`, `steps` | content only |
 | `[text]{…}` | `text` (bold/italic/strike preserved from `weight`/`style`) |
 | `:badge[x]` | `` `x` `` |
@@ -423,6 +473,8 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 | Tabs / cards | `Tab "name":` / `Title:` label lines; other layout containers vanish |
 | `figure` / `:ref[id]` | `<figure id="id"> Figure 1: Caption` … `</figure>` / `Figure 1 (id)` |
 | `glossary` | `<glossary title="…">`, the `- **Term**: definition` entries as written, `</glossary>`; uses of the terms in the text are not expanded (the glossary is read once) |
+| `changelog` | `<changelog title="…">` … `</changelog>`; each release heading as `## 1.2.0 (2026-03-01)  [L<n>]` (version without its link, then the date), followed by its notes |
+| `quote` | `<quote author="…" source="…" cite="…">` … `</quote>` (attribution as plain words; a `cite` that rendering leaves out is left out here too) |
 | Styling, badges, status, metrics | Plain words: `[Beta]`, `[status: On track (ok)]`, `Activation: 42% (+3%)`, `(due 2026-10-01, OVERDUE)` |
 | Images, HTML comments | `[image: alt]`, removed |
 | Tables | Cell padding removed |
@@ -454,3 +506,12 @@ How the 1.6 glossary (§3.5) reads where it is not supported:
 | markdown-it plugin with `glossary: false` | The list in `<div class="smd-glossary">` | Plain text |
 
 Nothing in a document without a `:::glossary` block changes: it renders, validates and converts byte for byte as in 1.5.
+
+How the 1.6 changelog (§3.7) and quote (§3.8) blocks read where they are not supported:
+
+| Reader | `:::changelog` | `:::quote` |
+|---|---|---|
+| `.smd` tools 1.5 and earlier | The headings and lists in a plain box (`<div class="smd-box smd-box-changelog">`), same heading ids and outline, with a `container/unknown` warning; `smd validate` still passes. The agent view and `smd to-md` keep the content | The text in a plain box (`<div class="smd-box smd-box-quote">`) without the attribution, with a `container/unknown` warning. The agent view and `smd to-md` keep the text only |
+| GitHub and other Markdown renderers | The `:::changelog` and `:::` lines as text around the same headings and lists | The opening line, with its attributes, as text above the quoted text |
+
+Nothing in a document without a `:::changelog` or `:::quote` block changes: it renders, validates and converts byte for byte as before.

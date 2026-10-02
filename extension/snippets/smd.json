@@ -328,6 +328,34 @@
       ":::"
     ]
   },
+  "Changelog": {
+    "prefix": [
+      "changelog",
+      "release"
+    ],
+    "description": "Release history: one heading per version with its date, newest first, then its notes",
+    "body": [
+      ":::changelog ${1:Release history}",
+      "## ${2:1.1.0} — ${3:$CURRENT_YEAR-$CURRENT_MONTH-$CURRENT_DATE}",
+      "- ${0:Added …}",
+      "",
+      "## ${4:1.0.0} — ${5:2026-01-15}",
+      "- First release",
+      ":::"
+    ]
+  },
+  "Quote": {
+    "prefix": [
+      "quote",
+      "cite"
+    ],
+    "description": "Quotation with attribution: — Author, Source (cite is the URL it comes from)",
+    "body": [
+      ":::quote{author=\"${1:Ada Lovelace}\" source=\"${2:Notes}\" cite=\"${3:https://example.com}\"}",
+      "${0:The quoted text.}",
+      ":::"
+    ]
+  },
   "Priority": {
     "prefix": "priority",
     "body": [

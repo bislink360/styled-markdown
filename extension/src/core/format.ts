@@ -255,17 +255,20 @@ export function formatAttrs(src: string, order: readonly string[]): string | nul
     ...classes.map((c) => `.${c}`),
     ...keys.map((k) => {
       const v = entries.get(k);
-      return v === undefined ? k : `${k}=${quote(k, v)}`;
+      return v === undefined ? k : `${k}=${quote(k, v, order)}`;
     }),
   ].join(' ');
 }
 
 /** Keys whose values are prose or paths (`:::include`), always quoted so they can grow into several words. */
 const TEXT_KEYS = ['title', 'label', 'file', 'section'];
+/** Prose and URL keys of `:::quote`, quoted where the block accepts them (elsewhere they are unknown and left as written). */
+const OWN_TEXT_KEYS = ['author', 'source', 'cite'];
 
 /** Keywords, numbers, dates, sizes and @owners stay bare (`status=accepted width=50%`); the rest is quoted. */
-function quote(key: string, value: string): string {
-  if (!TEXT_KEYS.includes(key) && /^[\w@][\w.%@-]*$/.test(value)) return value;
+function quote(key: string, value: string, order: readonly string[]): string {
+  const text = TEXT_KEYS.includes(key) || (OWN_TEXT_KEYS.includes(key) && order.includes(key));
+  if (!text && /^[\w@][\w.%@-]*$/.test(value)) return value;
   return value.includes('"') ? `'${value}'` : `"${value}"`;
 }
 

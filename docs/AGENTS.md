@@ -103,6 +103,8 @@ Then write normal Markdown, adding Styled Markdown only where it helps the reade
 | Diagram | ```` ```mermaid ```` fenced block (`flowchart LR`, `sequenceDiagram`, `gantt`, `pie`, `erDiagram`, …) |
 | Glossary | `:::glossary` with `- **API**: Application Programming Interface` items … `:::`; the first use of each term per section shows its definition on hover |
 | Numbered figure | `:::figure{#fig-flow} Caption` around an image, diagram, table (`kind=table`) or code (`kind=listing`) … `:::`; refer to it with `:ref[fig-flow]` ("Figure 2") |
+| Release history | `:::changelog` with `## 1.2.0 — 2026-03-01` headings (newest first) and their notes … `:::` |
+| Quote | `:::quote{author="Ada Lovelace" source="Notes" cite="https://…"}` quoted text `:::` |
 | Math | `$x^2$` inline, `$$ … $$` block |
 | Tabs | `::::tabs` / `:::tab Name` … `:::` / `::::` |
 | Columns | `::::columns` / `:::column` … `:::` / `::::` |

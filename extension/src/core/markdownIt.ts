@@ -14,7 +14,7 @@ import { applySmd, hostContext, smdFeatures } from './markdownItSetup';
  */
 export interface MarkdownItSmdOptions {
   /**
-   * `:::name{attrs} Title … :::` block containers: callouts, cards, tabs, decisions, risks, APIs, numbered figures, glossaries…
+   * `:::name{attrs} Title … :::` block containers: callouts, cards, tabs, decisions, risks, APIs, numbered figures, glossaries, changelogs, quotes…
    * Figure numbers are kept on the render's `env` as `smdFigures` for `:ref[id]`. Default true.
    */
   containers?: boolean;

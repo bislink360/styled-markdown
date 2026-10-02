@@ -254,8 +254,29 @@ Start in week 1; Google Pay can launch alone.
 | `risk` | `impact`, `likelihood`: low · medium · high · critical; `owner`; `status`: open · mitigated · accepted · closed | `<risk impact="high" …> title …</risk>` |
 | `timeline` | — (checked items show as done) | the list |
 | `risk-matrix` | title after the name; no body | `[risk matrix: title — …]` pointer (the risks are already `<risk>` blocks) |
+| `changelog` | title after the name; one heading per release | `<changelog title="…">` with `## 1.2.0 (2026-03-01)` entry lines |
 
 Rejected and superseded decisions are struck through in the preview. `smd meta` lists all decisions and risks as JSON.
+
+### Release history: `:::changelog`
+
+```markdown
+:::changelog Release history
+## 1.2.0 — 2026-03-01
+- Added CSV export
+- Fixed the date picker in Safari
+
+## [1.1.0] - 2026-01-15
+### Added
+- Dark theme
+:::
+```
+
+- Each heading directly inside the block is a release: the version, a separator (` — `, ` – ` or ` - `) and the date as `YYYY-MM-DD`; `## Unreleased` (no date) is fine. Write releases **newest first**, as on GitHub and in Keep a Changelog (whose `## [1.1.0] - 2026-01-15` headings and `### Added` subsections work as they are).
+- It renders as a timeline: one dot per release, the version, then the date as `<time datetime="2026-03-01">`, then its notes. The headings stay headings, with the same ids and outline entries as anywhere else (`#120-2026-03-01`), so links to them keep working.
+- The validator warns about a date that isn't a real `YYYY-MM-DD` date (`changelog/date`, with a fix for `2026/3/1`), a version listed below an older one (`changelog/order`, versions compared as semantic versions, pre-releases before their release) and a version listed twice (`changelog/duplicate`).
+- **Agent view:** `<changelog title="Release history">`, each release as `## 1.2.0 (2026-03-01)  [L2]` followed by its notes. **GitHub** (`smd to-md`): a bold title, then the headings and lists as written. `smd query changelog` finds the blocks; snippet `changelog`.
+- Older `.smd` tools (1.5 and earlier) show the headings and lists in a plain box, with a `container/unknown` warning.
 
 ### Risk register and risk matrix
 
@@ -505,6 +526,19 @@ Every API call counts against the SLO. When the error budget is spent, deploys s
 - **Editor:** hover a term anywhere in the text, or in its entry, to see its definition (VS Code and the language server; the document's own glossaries); the `glossary` snippet starts a block.
 - Older `.smd` tools (1.5 and earlier) show the list in a plain box with a `container/unknown` warning, and the terms as plain text.
 
+### Quotes with attribution
+
+```markdown
+:::quote{author="Ada Lovelace" source="Notes on the Analytical Engine" cite="https://example.com/notes"}
+The Analytical Engine weaves algebraic patterns just as the Jacquard loom weaves flowers and leaves.
+:::
+```
+
+- Renders as `<figure class="smd-quote">` with the body in a `<blockquote cite="…">` and the attribution below: "— Ada Lovelace, *Notes on the Analytical Engine*" (`<figcaption>— Author, <cite>Source</cite></figcaption>`). The source links to `cite` when both are given. A quote is never numbered as a figure, so `:ref[…]` and figure numbers ignore it.
+- `cite` must be an `http(s)` or relative URL; anything else (`javascript:`, `data:`, `mailto:`) is left out and reported (`quote/cite`). The validator also warns about a quote with no text (`quote/empty`) or no `author` (`quote/author`).
+- **Agent view:** `<quote author="Ada Lovelace" source="…" cite="…">` … `</quote>`. **GitHub** (`smd to-md`): a blockquote ending with a `— Ada Lovelace, *[Source](url)*` line. `smd query 'quote[author*=lovelace]'` finds quotes; snippet `quote`.
+- Older `.smd` tools (1.5 and earlier) show the text in a plain box without the attribution, with a `container/unknown` warning.
+
 ## 10. Audience: agent, human, agent=skip
 
 ```markdown
@@ -573,7 +607,7 @@ People-only content anywhere in the document.
 | Lists on Enter | Enter on `- [x] Ship it @maya` starts `- [ ] ` with the cursor before ` @maya`. Bullets repeat, numbers count up, Enter on an empty item ends the list, and code blocks are left alone (`smd.editor.continueLists`) |
 | Images | Paste an image, or drop image files, to save them in `docs/images/` (`smd.images.folder`) and insert `![alt](relative/path.png)`. Images already in the workspace are linked where they are; name clashes get `-1`, `-2`… |
 | Spell checking | **Set Up Spell Checking (cSpell)** adds an `smd` entry to cSpell's `languageSettings`, so container and directive names, attribute lists, `@mentions`, link targets, front matter and code aren't flagged; titles and link text still are |
-| Snippets (39) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `figure` `ref` `glossary` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
+| Snippets (41) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `figure` `ref` `glossary` `changelog` `quote` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
 
 ## 14. VS Code: agent view and token counter
 
@@ -615,6 +649,9 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `- API: …` in a `:::glossary` | `glossary/entry` | — (write `- **API**: …`) |
 | two `- **API**: …` entries | `glossary/duplicate` | — |
 | a term no text uses | `glossary/unused` (info) | — |
+| `## 1.2.0 — 2026/3/1` in a `:::changelog` | `changelog/date` | → `2026-03-01` |
+| `## 1.1.0` above `## 1.2.0`, or `## 1.2.0` twice | `changelog/order`, `changelog/duplicate` | — |
+| `:::quote` with no text, no `author`, or `cite="javascript:…"` | `quote/empty`, `quote/author`, `quote/cite` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
 | `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |

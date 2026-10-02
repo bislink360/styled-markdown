@@ -7,8 +7,8 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 1. Front matter
 2. Block containers (general rules)
 3. Callouts and collapsibles
-4. Layout: tabs, columns, cards, boxes, steps, timeline, figures, glossary
-5. Project blocks: decision, risk, risk-matrix
+4. Layout: tabs, columns, cards, boxes, steps, timeline, figures, glossary, quotes
+5. Project blocks: decision, risk, risk-matrix, changelog
 6. Developer blocks: api, code fences, include
 7. Audience blocks: agent, human
 8. Inline: styled text, directives, math, footnotes
@@ -167,6 +167,18 @@ Every API call counts against the SLO.
 - Headings, code, links and URLs are never marked. Define each term once (`glossary/duplicate`); a term no text uses is reported as `glossary/unused` (info).
 - One glossary near the end of the document is usual; put terms an agent must know in it rather than expanding them in every paragraph.
 
+### Quotes with attribution
+
+```markdown
+:::quote{author="Ada Lovelace" source="Notes" cite="https://example.com/notes"}
+The quoted text.
+:::
+```
+
+- Renders the body as a blockquote with a "— Author, *Source*" line; the source links to `cite`. Attributes: `author` (always give it: `quote/author`), `source`, `cite`.
+- `cite` must be an `http(s)` or relative URL; anything else is dropped (`quote/cite`). An empty quote is `quote/empty`.
+- A quote is not a numbered figure; use `:::figure` only for things you want numbered.
+
 ## 5. Project blocks
 
 ```markdown
@@ -193,6 +205,23 @@ Mitigation.
 | risk-matrix | title after the name | — (no body; draws this document's risks) |
 
 `:::risk-matrix` draws an impact × likelihood grid of the `:::risk` blocks in the same document (closed ones left out), so set `impact` and `likelihood` on every risk: a missing level counts as medium. Leave its body empty. `smd risks DIR` lists the risks of many documents, highest impact × likelihood first.
+
+### Release history
+
+```markdown
+:::changelog Release history
+## 1.2.0 — 2026-03-01
+- Added CSV export
+
+## 1.1.0 — 2026-01-15
+### Fixed
+- Date picker in Safari
+:::
+```
+
+- Each heading directly inside is a release: version, ` — ` (or ` - `), date as `YYYY-MM-DD`. `## Unreleased` needs no date; Keep a Changelog's `## [1.2.0] - 2026-03-01` works as written. Deeper headings (`### Fixed`) group a release's notes.
+- Newest first. A date that isn't a real date is `changelog/date`, an older version above a newer one `changelog/order`, a version listed twice `changelog/duplicate` (all warnings).
+- The headings stay normal headings (same ids and outline entries), so link to a release with its heading id.
 
 ## 6. Developer blocks
 
