@@ -209,6 +209,15 @@ test('quote: to-md is a blockquote that ends with the attribution', () => {
 // Both
 // ---------------------------------------------------------------------------
 
+test('changelog: {{name}} values in a release heading are read as they render', () => {
+  const doc = '---\nversion: "1.3.0"\nshipped: 2026-11-02\nsoon: next week\n---\n:::changelog\n## {{version}} — {{shipped}}\n- New\n## 1.2.0 — {{soon}}\n- Old\n:::\n';
+  const html = renderSmd(doc).html;
+  assert.match(html, /<span class="smd-changelog-version">1\.3\.0<\/span> — <time class="smd-changelog-date" datetime="2026-11-02">2026-11-02<\/time>/);
+  const dates = validateSmd(doc).filter((d) => d.code.startsWith('changelog/'));
+  assert.deepEqual(dates.map((d) => [d.code, d.line, d.fix]), [['changelog/date', 8, undefined]], 'only the value that is not a date, with no text fix');
+  assert.match(agentView(doc).text, /## 1\.3\.0 \(2026-11-02\)/);
+});
+
 test('changelog and quote: the markdown-it plugin renders them like renderSmd', () => {
   const doc = `${changelog}\n${quote}`;
   const md = new MarkdownIt({ html: true, linkify: true, typographer: true }).use(smd, { codeFrames: true, headingIds: true, sourceLines: true });

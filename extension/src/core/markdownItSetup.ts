@@ -1,4 +1,5 @@
 import type MarkdownIt from 'markdown-it';
+import { escapeHtml } from './attrs';
 import {
   fenceRule, footnoteBackref, footnoteClose, footnoteOpen, footnoteRef, footnotesClose, footnotesOpen, renderContainer, renderHeader,
   renderMath, renderRef, type RenderRule,
@@ -6,8 +7,9 @@ import {
 import { addChangelogRules, changelogEntries } from './markdownItChangelog';
 import { expandIncludes, includedLinks } from './markdownItInclude';
 import {
-  annotateContainers, containerBlock, envFigures, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock, headingAttrs,
-  headingIds, inlineDirective, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
+  annotateContainers, collectVariables, containerBlock, envFigures, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock,
+  headingAttrs, headingIds, inlineDirective, inlineVariable, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
+  variablesAsText,
 } from './markdownItRules';
 import { glossaryTerms } from './markdownItGlossary';
 import type { MarkdownItSmdOptions } from './markdownIt';
@@ -31,12 +33,14 @@ export interface SmdContext {
   riskMatrix?: (source: string) => string;
   /** The `data-line` attributes are the plugin's own (sourceLines), so code frames may move them. */
   ownLines: boolean;
+  /** Front matter variables are on: `{{name}}` in directive content is replaced too. */
+  variables?: boolean;
 }
 
 /** The syntax to add, all resolved. */
 export type SmdFeatures = Required<Pick<MarkdownItSmdOptions,
   'containers' | 'directives' | 'attributes' | 'mark' | 'math' | 'footnotes' | 'tasks' | 'fences' | 'codeFrames' | 'headingIds' | 'sourceLines' |
-  'frontMatter' | 'glossary'>>;
+  'frontMatter' | 'glossary' | 'variables'>>;
 
 export function smdFeatures(options: MarkdownItSmdOptions): SmdFeatures {
   return {
@@ -53,6 +57,7 @@ export function smdFeatures(options: MarkdownItSmdOptions): SmdFeatures {
     sourceLines: options.sourceLines ?? false,
     frontMatter: options.frontMatter ?? false,
     glossary: options.glossary ?? true,
+    variables: options.variables ?? true,
   };
 }
 
@@ -63,6 +68,7 @@ export function hostContext(md: MarkdownIt, options: MarkdownItSmdOptions): SmdC
     options: () => render,
     title: (text, env) => md.renderInline(text, env as object | undefined),
     ownLines: options.sourceLines ?? false,
+    variables: options.variables ?? true,
   };
 }
 
@@ -89,8 +95,9 @@ export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext)
 
 function addFrontMatter(md: MarkdownIt): void {
   md.block.ruler.before('table', 'smd_front_matter', frontMatterBlock);
+  // Front matter values are shown as written: `{{name}}` in the title is not replaced.
   md.renderer.rules.smd_front_matter = (tokens, idx, _opts, env) =>
-    `${renderHeader((s) => md.renderInline(s, env), tokens[idx].meta as Record<string, unknown>)}\n`;
+    `${renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), tokens[idx].meta as Record<string, unknown>)}\n`;
 }
 
 function addContainers(md: MarkdownIt, ctx: SmdContext): void {
@@ -136,6 +143,13 @@ function addInline(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext): void
   if (features.directives) addDirectives(md, ctx);
   if (features.mark) md.inline.ruler.before('emphasis', 'smd_mark', mark);
   if (features.math) md.inline.ruler.after('escape', 'smd_math_inline', mathInline);
+  if (features.variables) addVariables(md);
+}
+
+function addVariables(md: MarkdownIt): void {
+  md.core.ruler.before('inline', 'smd_variables', collectVariables);
+  md.inline.ruler.before('emphasis', 'smd_variable', inlineVariable);
+  md.renderer.rules.smd_variable = (tokens, idx) => escapeHtml(tokens[idx].content);
 }
 
 function addDirectives(md: MarkdownIt, ctx: SmdContext): void {
@@ -147,7 +161,9 @@ function addDirectives(md: MarkdownIt, ctx: SmdContext): void {
 }
 
 function addCorePasses(md: MarkdownIt, features: SmdFeatures): void {
-  // Each goes right after 'inline', so the last added runs first: heading attributes, heading ids, tasks.
+  // Each goes right after 'inline', so the last added runs first: heading attributes, heading ids, tasks, then
+  // variables become text.
+  if (features.variables) md.core.ruler.after('inline', 'smd_variable_text', variablesAsText);
   if (features.tasks) md.core.ruler.after('inline', 'smd_tasks', taskLists);
   if (features.headingIds) md.core.ruler.after('inline', 'smd_headings', headingIds);
   if (features.attributes) md.core.ruler.after('inline', 'smd_heading_attrs', headingAttrs);

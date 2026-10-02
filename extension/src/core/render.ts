@@ -4,7 +4,7 @@ import { escapeHtml, resolveColor } from './attrs';
 import { type FrontMatter, parseFrontMatter } from './frontmatter';
 import { applySmd, smdFeatures, type SmdContext } from './markdownItSetup';
 import { renderHeader } from './markdownItHtml';
-import type { FigureEnv } from './markdownItRules';
+import type { FigureEnv, VariableEnv } from './markdownItRules';
 import { documentRiskMatrixHtml } from './riskHtml';
 
 export { HEADING_ATTRS, slugify } from './markdownItRules';
@@ -42,7 +42,7 @@ export interface RenderResult {
 
 export type ResolvedOptions = Required<Omit<RenderOptions, 'readFile'>> & Pick<RenderOptions, 'readFile'>;
 
-export interface Env extends FigureEnv {
+export interface Env extends FigureEnv, VariableEnv {
   lineOffset: number;
   headings: Heading[];
   slugs: Map<string, number>;
@@ -57,10 +57,14 @@ export interface Env extends FigureEnv {
 /** Every .smd rule, reading its options from the env (renderSmd and parseSmd put them there). */
 const SMD_CONTEXT: SmdContext = {
   options: (env) => (env as Env | undefined)?.options ?? {},
-  // Only the document's figures go along, so `:ref[id]` in a title resolves and nothing else changes.
-  title: (text, env) => titleMarkdown().renderInline(text, { smdFigures: (env as Env | undefined)?.smdFigures }),
+  // Only the document's figures and variables go along, so `:ref[id]` and `{{name}}` in a title resolve and nothing else changes.
+  title: (text, env) => {
+    const { smdFigures, smdVariables } = (env as Env | undefined) ?? {};
+    return titleMarkdown().renderInline(text, { smdFigures, smdVariables });
+  },
   riskMatrix: (source) => documentRiskMatrixHtml(source),
   ownLines: true,
+  variables: true,
 };
 
 const ALL_SYNTAX = smdFeatures({ codeFrames: true, headingIds: true, sourceLines: true });
@@ -120,7 +124,7 @@ export function renderParsed(text: string, fm: ParsedDocument, options: RenderOp
     today: options.today ?? new Date().toISOString().slice(0, 10),
   };
   const md = createMarkdownIt(opts);
-  const env: Env = { lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts, source: text };
+  const env: Env = { lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts, source: text, smdVariables: fm.data };
   // markdown-it treats a lone \r as a line break, but every other tool here splits lines on \r?\n.
   // A space keeps heading lines and data-line (preview scroll sync) in step with the editor.
   const tokens = md.parse(fm.body.replace(/\r(?!\n)/g, ' '), env);

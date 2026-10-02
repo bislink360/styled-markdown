@@ -11,7 +11,7 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 5. Project blocks: decision, risk, risk-matrix, changelog
 6. Developer blocks: api, code fences, include
 7. Audience blocks: agent, human
-8. Inline: styled text, directives, math, footnotes
+8. Inline: styled text, directives, math, footnotes, front matter variables
 9. Tasks
 10. Headings
 11. Diagrams
@@ -41,7 +41,7 @@ related: [docs/other.smd]    # list of paths/URLs
 ---
 ```
 
-Unknown keys are allowed (reported as hints).
+Unknown keys are allowed (reported as hints, except keys the text shows with `{{key}}`, see §8).
 
 ## 2. Block containers — general rules
 
@@ -315,6 +315,27 @@ Retries are capped at five[^retries].
 - Put definitions at the end of the section that uses them, or of the document. An unreferenced definition is not shown (`footnote/unused`), a reference without a definition stays plain text (`footnote/undefined`), and a repeated label keeps its first definition (`footnote/duplicate`).
 - Write definitions as sentences: renderers without footnotes show them as written, but read a one-word definition (`[^1]: Note`) as a link target.
 - Agents see footnotes as written; `smd agent --section` adds the definitions a section's references need.
+
+### Front matter variables (since 1.6)
+
+```markdown
+---
+version: "2.10"
+release:
+  date: 2026-10-20
+---
+
+## What's new in {{version}}
+
+Version {{version}} ships on {{release.date}}. :badge[v{{version}}]{color=indigo}
+```
+
+- `{{name}}` shows the value of a front matter key; dots reach nested keys and list items (`{{owners.0}}`), and a list shows as `a, b`. Spaces inside the braces are fine.
+- Works in text, headings, lists, tables, link text, image alt text, block titles and directive content. Never in code, math, URLs, raw HTML, attribute lists or the front matter itself.
+- Only defined keys are replaced: anything else stays as written (`variable/undefined`, info, fixes near misses such as `{{verison}}`). A key holding a mapping is `variable/not-text`. `\{{name}}` or a code span keeps literal braces.
+- Quote versions: YAML reads `version: 2.10` as the number 2.1.
+- Heading ids use the heading as written (`#whats-new-in-version`), so they don't change with the value.
+- Agents and `smd to-md` see the values; tools before 1.6 and GitHub show `{{version}}` as written.
 
 ## 9. Tasks
 

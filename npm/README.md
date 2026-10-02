@@ -108,6 +108,7 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 | `headingIds` | `false` | Heading ids from their text (`#setup`, `#setup-1`), the same slugs as `renderSmd` |
 | `sourceLines` | `false` | `data-line` source line numbers on blocks |
 | `frontMatter` | `false` | Render `---` YAML front matter as the `.smd` document header (leave it off if your host handles front matter) |
+| `variables` | `true` | `{{version}}` in text shows the front matter value of `version` (`{{owner.name}}` for nested keys; since 1.6). Names the front matter doesn't define stay as written. The front matter is read from the source; if your host removes it first, pass its data as `env.smdVariables` |
 | `agentBlocks` | `'collapsed'` | How `:::agent` blocks show to humans: `collapsed`, `expanded` or `hidden` |
 | `readFile` | none | `(path, env) => string \| undefined` for ```` ```ts file="…" ```` embeds; `env` is what you passed to `md.render` (sandbox it yourself) |
 | `today` | current date | `YYYY-MM-DD` for `:due[]` states |

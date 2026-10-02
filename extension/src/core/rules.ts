@@ -58,6 +58,8 @@ export const RULE_CODES: Record<string, string> = {
   'quote/empty': 'A `:::quote` has no text',
   'quote/author': 'A `:::quote` has no `author`',
   'quote/cite': 'A `:::quote` `cite` is not an http(s) or relative URL; it is left out',
+  'variable/undefined': '`{{name}}` names no front matter key; it is shown as written',
+  'variable/not-text': '`{{name}}` names a front matter mapping or empty value, which has no text',
   'task/overdue': 'Open task past its `:due[…]` date',
   'rules/unknown': 'Suppression comment or rule setting names an unknown rule code',
 };

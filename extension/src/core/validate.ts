@@ -13,6 +13,7 @@ import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, v
 import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
 import { parseSmd } from './parse';
+import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
 import { suggest } from './util';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
@@ -165,7 +166,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       push(i, due.index, due.index + due[0].length, 'info', 'task/overdue', `Open task is overdue (due ${due[1]}).`);
     }
 
-    checkInline(raw, i, push);
+    checkInline(raw, i, push, fm.data);
   }
 
   if (fence) {
@@ -188,8 +189,11 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   checkFigures(text, lines, fm.bodyStartLine, push, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, push);
   checkGlossary(lines, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
-  for (const block of findChangelogs(lines, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
+  // Release headings are read with their `{{name}}` values in, as they render.
+  const expanded = lines.map((l) => substituteLine(l, fm.data));
+  for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
+  checkVariables(lines, fm.bodyStartLine, fm.data, push);
 
   let result = applySuppressions(text, diagnostics);
   if (options.rules) result = applyRuleSettings(result, options.rules);
@@ -198,6 +202,16 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
 type Push = (line: number, column: number, endColumn: number, severity: Severity, code: string, message: string, fix?: Fix) => void;
 type WholeLine = (line: number, severity: Severity, code: string, message: string) => void;
+
+/** A front matter key outside the schema, with a rename to the close standard key when there is one. */
+function unknownKey(key: string, l: number, lines: string[], push: Push): void {
+  const hint = suggest(key, Object.keys(FRONTMATTER_SCHEMA.properties));
+  // Only offer the rename where the key is written as-is; never rewrite the `---` line.
+  const found = l > 0;
+  push(l, 0, found ? key.length : lines[0].length, 'hint', 'frontmatter/unknown-key',
+    `"${key}" is not a standard front matter key${hint ? ` — did you mean "${hint}"?` : '.'} It is kept as custom metadata.`,
+    hint && found ? { line: l, column: 0, endColumn: key.length, replacement: hint, title: `Change to "${hint}"` } : undefined);
+}
 
 /** Status values whose documents are not expected to be kept up to date. */
 const RETIRED_STATUS = ['archived', 'deprecated'];
@@ -225,17 +239,12 @@ function checkFrontMatter(
     markKey('smd', 'warning', 'frontmatter/version', `Unsupported Styled Markdown version "${data.smd}". This tool supports version ${SMD_VERSION}.`);
   }
 
-  const known = Object.keys(FRONTMATTER_SCHEMA.properties);
+  // Custom keys the body shows with `{{key}}` are meant: no unknown-key hint for them.
+  const shown = new Set(findVariables(lines, end).map((v) => v.name.split('.')[0]));
   for (const [key, value] of Object.entries(data)) {
     const prop = frontMatterProperty(key);
     if (!prop) {
-      const hint = suggest(key, known);
-      const l = keyLine(key);
-      // Only offer the rename where the key is written as-is; never rewrite the `---` line.
-      const found = l > 0;
-      push(l, 0, found ? key.length : lines[0].length, 'hint', 'frontmatter/unknown-key',
-        `"${key}" is not a standard front matter key${hint ? ` — did you mean "${hint}"?` : '.'} It is kept as custom metadata.`,
-        hint && found ? { line: l, column: 0, endColumn: key.length, replacement: hint, title: `Change to "${hint}"` } : undefined);
+      if (!shown.has(key)) unknownKey(key, keyLine(key), lines, push);
       continue;
     }
     if (key === 'smd' || value === undefined || value === null) continue;
@@ -395,7 +404,7 @@ function checkContainer(
   }
 }
 
-function checkInline(raw: string, line: number, push: Push): void {
+function checkInline(raw: string, line: number, push: Push, variables: Variables): void {
   // Blank out inline code so its contents are never treated as syntax.
   const text = raw.replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
 
@@ -420,7 +429,8 @@ function checkInline(raw: string, line: number, push: Push): void {
     if (spec.content && !m[3]) push(line, col, end, 'error', 'directive/content', `":${name}" needs content in brackets, e.g. ${spec.example}.`);
     const attrs = m[4] ? parseAttrs(m[4].slice(1, -1)) : null;
     if (m[4] && !attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed attribute list.'); continue; }
-    const content = m[3]?.slice(1, -1).trim() ?? '';
+    // Checked with front matter variables replaced: :due[{{deadline}}] is the date in "deadline".
+    const content = substituteLine(m[3]?.slice(1, -1) ?? '', variables).trim();
     if (name === 'priority' && content && !PRIORITY_VALUES.some((v) => v.toLowerCase() === content.toLowerCase())) {
       push(line, col, end, 'warning', 'attrs/value', `Unknown priority "${content}". Use one of: ${PRIORITY_VALUES.join(', ')}.`,
         contentFix(line, text, col, name, content, uniqueSuggestion(content, PRIORITY_VALUES)));
@@ -587,6 +597,38 @@ function checkFigures(text: string, lines: string[], bodyStart: number, push: Pu
   }
 }
 
+/**
+ * `{{name}}` in the body names a front matter key with a text value. Undefined names are only `info`: until
+ * 1.6, `{{…}}` was plain text (templates, Handlebars or Jinja examples), so it must not start failing checks.
+ */
+function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push): void {
+  const uses = findVariables(lines, bodyStart);
+  if (!uses.length) return;
+  const names = [...new Set([...Object.keys(data), ...variableNames(data).map((v) => v.name)])];
+  for (const use of uses) {
+    const value = lookupVariable(data, use.name);
+    if (value.kind === 'undefined') undefinedVariable(use, lines[use.line], names, push);
+    else if (value.kind === 'not-text') {
+      push(use.line, use.column, use.endColumn, 'warning', 'variable/not-text',
+        `"${use.name}" in the front matter is a mapping or has no value, so {{${use.name}}} is shown as written. Use a key with a text, number or list value${nestedHint(data, use.name)}.`);
+    }
+  }
+}
+
+/** ", e.g. {{owner.name}}" when the name is a mapping with text values. */
+function nestedHint(data: Variables, name: string): string {
+  const nested = variableNames(data).find((v) => v.name.startsWith(`${name}.`));
+  return nested ? `, e.g. {{${nested.name}}}` : '';
+}
+
+function undefinedVariable(use: VariableUse, raw: string, names: string[], push: Push): void {
+  const hint = suggest(use.name, names);
+  const start = raw.indexOf(use.name, use.column);
+  push(use.line, use.column, use.endColumn, 'info', 'variable/undefined',
+    `"${use.name}" is not defined in the front matter, so {{${use.name}}} is shown as written${hint ? ` — did you mean "${hint}"?` : '.'} Add "${use.name}: …" to the front matter, or write \\{{${use.name}}} to keep the braces.`,
+    hint ? { line: use.line, column: start, endColumn: start + use.name.length, replacement: hint, title: `Change to "{{${hint}}}"` } : undefined);
+}
+
 function duplicateFigure(figure: Figure, first: Figure, raw: string, push: Push): void {
   const at = raw.indexOf(`#${figure.id}`);
   const [column, end] = at < 0 ? [0, raw.length] : [at, at + figure.id!.length + 1];
@@ -663,11 +705,13 @@ function checkChangelog(entries: ChangelogEntry[], lines: string[], push: Push):
 
 function changelogDate(entry: ChangelogEntry, raw: string, push: Push): void {
   const date = entry.date!;
+  const message = `"${date}" is not a date like 2026-03-01; release headings are written "## 1.2.0 — 2026-03-01".`;
   const column = raw.lastIndexOf(date);
+  // A date from a {{name}} value is not in the line: mark the heading, with no fix to the text.
+  if (column < 0) { push(entry.line, entry.column, raw.length, 'warning', 'changelog/date', message); return; }
   const fixed = normalizeDate(date);
   const valid = fixed && isIsoDate(fixed) ? fixed : undefined;
-  push(entry.line, column, column + date.length, 'warning', 'changelog/date',
-    `"${date}" is not a date like 2026-03-01; release headings are written "## 1.2.0 — 2026-03-01".`,
+  push(entry.line, column, column + date.length, 'warning', 'changelog/date', message,
     valid ? { line: entry.line, column, endColumn: column + date.length, replacement: valid, title: `Change to "${valid}"` } : undefined);
 }
 

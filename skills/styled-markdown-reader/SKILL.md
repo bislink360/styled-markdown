@@ -58,6 +58,7 @@ Catching up on a changed document:
 | `<figure id="fig-x"> Figure 2: caption`, `Figure 2 (fig-x)` | A numbered figure (or Table/Listing) and a reference to it; the id in parentheses names the `<figure>` meant |
 | front matter `status:` | `approved` is authoritative, `draft`/`review` is tentative, `deprecated`/`archived` is history |
 | `[P1]`, `@name`, `(due …, OVERDUE)` | Task priority, owner, due date |
+| Values such as a version in the text | The source may write them as `{{version}}`, a front matter variable the view fills in. To change one everywhere, edit the front matter key, not the `[L…]` line. |
 | `[^1]` … `[^1]: text` | A footnote reference and its definition, as written. In a `--section` excerpt, `Footnotes referenced above:` lists the definitions it needs. |
 | `[code: path lines a-b …]` | Real source embedded by the doc. Read that file range if you need it (or rerun with `--embed`). |
 | `<included file="shared/terms.smd" section="…">…</included>` | Text included from another document, part of this one. `[L…]` refs inside point into that file, so edit it there. |

@@ -106,6 +106,7 @@ Then write normal Markdown, adding Styled Markdown only where it helps the reade
 | Release history | `:::changelog` with `## 1.2.0 — 2026-03-01` headings (newest first) and their notes … `:::` |
 | Quote | `:::quote{author="Ada Lovelace" source="Notes" cite="https://…"}` quoted text `:::` |
 | Math | `$x^2$` inline, `$$ … $$` block |
+| Front matter value in text | `{{version}}` with `version: "2.10"` in the front matter (`{{owner.name}}` for nested keys; `\{{x}}` keeps the braces) |
 | Tabs | `::::tabs` / `:::tab Name` … `:::` / `::::` |
 | Columns | `::::columns` / `:::column` … `:::` / `::::` |
 | Card | `:::card{accent=green} Title` … `:::` |

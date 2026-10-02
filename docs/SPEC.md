@@ -61,7 +61,9 @@ A YAML mapping between `---` lines at the very start of the file. It is parsed w
 | `toc` | boolean | `true` renders a table of contents after the header |
 | `related` | list | Paths or URLs of related documents |
 
-Unknown keys are allowed and preserved (reported as *hints* so typos are caught).
+Unknown keys are allowed and preserved (reported as *hints* so typos are caught, except keys the body shows with `{{key}}`).
+
+Any key, standard or custom, can be shown in the text with `{{key}}` (§4.7).
 
 The table is published as a JSON Schema: [`extension/schemas/smd-frontmatter.schema.json`](https://raw.githubusercontent.com/bislink360/styled-markdown/main/extension/schemas/smd-frontmatter.schema.json), also shipped on npm as `styled-markdown/frontmatter.schema.json`. The validator and editor completion read the same schema, and YAML tools or pipelines can use it to check document metadata.
 
@@ -106,8 +108,8 @@ Any Markdown content, including other containers.
 | `figure` | Numbered figure around an image, diagram, table or code block; title = the caption (§3.3) | `title`, `kind` (`figure` `table` `listing`) |
 | `include` | Transclusion: another document's body, or one section of it, in place of the block (§3.4). The body is fallback text | `file` (needed), `section`, `level` (`1`–`6`) |
 | `glossary` | Glossary: a `**Term**: definition` list, rendered as a definition list; the first use of each term per section shows its definition (§3.5) | `title` (or title text after the name) |
-| `changelog` | Release history: each heading directly inside is a release, `## 1.2.0 — 2026-03-01`, newest first, followed by its notes; rendered as a timeline (§3.7) | `title` (or title text after the name) |
-| `quote` | Quotation; the body is the quoted text, rendered with a `— Author, Source` line (§3.8) | `author` (recommended), `source`, `cite` (an `http(s)` or relative URL) |
+| `changelog` | Release history: each heading directly inside is a release, `## 1.2.0 — 2026-03-01`, newest first, followed by its notes; rendered as a timeline (§3.6) | `title` (or title text after the name) |
+| `quote` | Quotation; the body is the quoted text, rendered with a `— Author, Source` line (§3.7) | `author` (recommended), `source`, `cite` (an `http(s)` or relative URL) |
 
 All containers additionally accept the style attributes in §5. Attributes in **bold** are required.
 `tab` must be a direct child of `tabs`; `column` of `columns`.
@@ -186,7 +188,7 @@ Why the first use in each section: style guides expand an abbreviation at its fi
 
 **Older renderers** (1.5 and earlier) treat `:::glossary` as an unknown container: the list renders as a normal bulleted list inside a plain box (`<div class="smd-box smd-box-glossary">`), uses of the terms stay plain text, and the validator reports `container/unknown` (a warning). See §10.
 
-### 3.7 Changelogs (release history)
+### 3.6 Changelogs (release history)
 
 ```text
 :::changelog Release history
@@ -211,7 +213,7 @@ Why headings and not `:::release{version=… date=…}` children: the version an
 
 **Older renderers** (1.5 and earlier) treat `:::changelog` as an unknown container: the headings and lists render as usual inside a plain box (`<div class="smd-box smd-box-changelog">`) with the same heading ids, and the validator reports `container/unknown` (a warning). See §10.
 
-### 3.8 Quotes with attribution
+### 3.7 Quotes with attribution
 
 ```text
 :::quote{author="Ada Lovelace" source="Notes" cite="https://example.com/notes"}
@@ -322,6 +324,36 @@ Retries are capped at five[^retries], as the SRE review asked[^SRE].
   Ids use the footnote's number: `fn-1`, `fnref-1`, and `fnref-1-2` for the second reference to the same footnote, whose back link reads `↩︎²` ("Back to reference 1-2"). The "Footnotes" heading is visually hidden; it labels the references for screen readers. Heading ids and outlines are unchanged: a reference in a heading counts as its text as written, as it did before 1.6.
 - **Older renderers** (Styled Markdown before 1.6, and Markdown renderers without footnotes) show the syntax as written: `[^1]` stays text and a definition is a plain paragraph — except a definition whose text is a single word, such as `[^1]: Note`, which CommonMark reads as a link reference definition, so `[^1]` then renders as a link labelled `^1` pointing at `Note`. Write definitions as sentences to keep that degradation readable. Conversely, a document that used `[^label]: url` as a link reference definition now gets a footnote; GitHub reads it the same way.
 
+### 4.7 Front matter variables
+
+```text
+---
+smd: 1
+title: Release notes
+version: "2.10"
+release:
+  date: 2026-10-20
+owners: ["@platform", "@docs"]
+---
+
+## What's new in {{version}}
+
+Version {{version}} ships on {{release.date}}. Questions: {{owners}}.
+```
+
+renders *What's new in 2.10* and *Version 2.10 ships on 2026-10-20. Questions: @platform, @docs.* (since 1.6)
+
+- **Syntax:** `{{name}}`, with optional spaces inside the braces (`{{ version }}`). A name is a front matter key: letters, digits, `_` and `-`, starting with a letter or `_`. Dots reach into nested mappings (`{{release.date}}`) and lists (`{{owners.0}}`); a key that itself contains the dots wins over the nested path.
+- **Values:** strings, numbers and booleans as YAML reads them, and lists of those joined with `, `. A string on several lines becomes one line. The value is **text**: Markdown and HTML in it are shown as written, never rendered (HTML is escaped). YAML reads `version: 2.10` as the number 2.1, so quote version numbers: `version: "2.10"`.
+- **Only defined names are replaced.** `{{name}}` for a key the front matter doesn't have, or whose value is a mapping or empty, stays exactly as written, so documents that show Handlebars, Jinja or Mustache syntax in prose render as before. The validator reports them (§7): `variable/undefined` as info, with the closest key as a fix, and `variable/not-text` as a warning.
+- **Escaping:** `\{{name}}` shows `{{name}}` (the backslash escapes the brace, as for any Markdown punctuation), and so does a code span. `{{{name}}}` (Handlebars' triple braces) is never a variable.
+- **Where values are shown:** text in paragraphs, headings, lists, tables, block quotes and footnotes, link text, image alt text, container titles (`:::note Upgrading to {{version}}`, also `title="…"`) and inline directive content (`:badge[v{{version}}]`, `:due[{{release.date}}]`; there the value becomes part of the content, so `:due` checks the date it names).
+- **Order:** values are put in while inline Markdown is parsed, before anything that works on the resulting text: a glossary term (§3.5) inside a value is marked like any other use, task labels and heading text include the value, and the typographer treats it as text.
+- **Never replaced:** code spans and fenced code, math, Mermaid, raw HTML (tags, attribute values and HTML blocks) and comments, link and image destinations and reference definitions (URLs keep `{{…}}`; renderers percent-encode the braces), attribute lists other than a container's title, and the front matter itself: the header shows `title` and `summary` as written.
+- **Heading ids** come from the heading as written: `## What's new in {{version}}` has the id `whats-new-in-version` whatever the value, so links don't break when the value changes. The heading text (table of contents, outline, `smd agent --section`, `smd tasks` sections) shows the value.
+- **Includes:** text included with `:::include` (§3.4) uses the *including* document's front matter, since the included body comes without its own.
+- **Tools:** rendered output, the agent view (§8a), `smd to-md` (§8), `smd tasks` and `smd query` (task text, due dates and block titles), `smd meta` and the editors' outlines show the values; `smd fmt` leaves `{{name}}` as written. In the markdown-it plugin the `variables` option (default on) turns them off; the plugin reads the front matter from the source, and a host that removes the front matter first can pass its data as `env.smdVariables`.
+
 ---
 
 ## 5. Attributes
@@ -418,6 +450,8 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `footnote/undefined` | warning (info) | `[^label]` with no `[^label]: …` definition; it renders as plain text (fix: the closest defined label). `info` when the document defines no footnotes at all, since `[^a-z]` may be meant literally |
 | `footnote/unused` | info | A footnote definition nothing references; it is not shown |
 | `footnote/duplicate` | warning | A second definition of a footnote label; the first one is used |
+| `variable/undefined` | info | `{{name}}` names no front matter key; it is shown as written (fix: the closest key). `info`, since `{{…}}` in prose may be meant literally, as in documents written before 1.6 |
+| `variable/not-text` | warning | `{{name}}` names a front matter mapping or empty value, which has no text; it is shown as written |
 | `task/overdue` | info | Open task past its `:due[…]` date |
 | `rules/unknown` | warning | A suppression comment names an unknown rule code (fix: closest code) |
 
@@ -441,6 +475,7 @@ Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.s
 | `:::risk-matrix` | **Risk matrix** label and a table: impact rows × likelihood columns, risk titles in the cells |
 | `:::figure{#id} Caption` | `<a id="id"></a>`, the content, then a `**Figure 1:** Caption` paragraph |
 | `:ref[id]` | `[Figure 1](#id)` (an unknown id stays as written) |
+| `{{name}}` | The front matter value, written as it is (an undefined name, code and URLs stay as written) |
 | `:::include` | The included text, converted the same way, after an `<!-- included from … -->` comment (GitHub can't include); when the file can't be read, the fallback body, or a link to the file when the body is empty |
 | `:::glossary Title` | a `**Title**` paragraph, then the `- **Term**: definition` list unchanged; uses of terms stay as written |
 | `:::changelog Title` | a `**Title**` paragraph, then the release headings and lists as written |
@@ -479,6 +514,7 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 | Images, HTML comments | `[image: alt]`, removed |
 | Tables | Cell padding removed |
 | File embeds | `[code: path lines a-b — read that file]` (or inlined with `--embed`) |
+| `{{name}}` | The front matter value (the header keeps the front matter as written); undefined names, code and URLs as written |
 | Footnotes | As written: `[^1]` references in the text, `[^1]: …` definitions where they are (no renumbering). A `--section` excerpt lists the definitions its references need once, after a `Footnotes referenced above:` line, unless they are in a `{agent=skip}` section or `:::human` block |
 | `:::include` | The included text inside `<included file="shared/terms.smd" section="Pricing">…</included>`; its `[L<n>]` references are lines of that file. With `--no-includes`, or when it can't be read: `[include: shared/terms.smd § Pricing — read that file for the content]` (or the reason, e.g. `— cannot read the file`). The fallback body is left out |
 
@@ -507,7 +543,7 @@ How the 1.6 glossary (§3.5) reads where it is not supported:
 
 Nothing in a document without a `:::glossary` block changes: it renders, validates and converts byte for byte as in 1.5.
 
-How the 1.6 changelog (§3.7) and quote (§3.8) blocks read where they are not supported:
+How the 1.6 changelog (§3.6) and quote (§3.7) blocks read where they are not supported:
 
 | Reader | `:::changelog` | `:::quote` |
 |---|---|---|
@@ -515,3 +551,5 @@ How the 1.6 changelog (§3.7) and quote (§3.8) blocks read where they are not s
 | GitHub and other Markdown renderers | The `:::changelog` and `:::` lines as text around the same headings and lists | The opening line, with its attributes, as text above the quoted text |
 
 Nothing in a document without a `:::changelog` or `:::quote` block changes: it renders, validates and converts byte for byte as before.
+
+Front matter variables (§4.7) degrade to their source: tools before 1.6, GitHub and other Markdown renderers show `{{version}}` as written, which reads as a placeholder, and `\{{version}}` as `{{version}}` (a backslash before punctuation is an escape in CommonMark), so an escaped brace looks the same everywhere. `smd to-md` writes the values for renderers that don't know them. A document written before 1.6 that has `{{key}}` in prose, outside code, for a key its own front matter defines now shows the value there; write `\{{key}}` or a code span to keep the braces. Every other `{{…}}` renders as before. Older validators don't resolve variables in directive content, so they report `:due[{{key}}]` as an invalid date (`attrs/value`), and a suppression comment naming `variable/…` as `rules/unknown`.

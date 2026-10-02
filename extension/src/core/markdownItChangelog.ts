@@ -64,7 +64,9 @@ function marker(state: StateCore, type: string, tag: string, nesting: 1 | -1, le
 function markEntry(state: StateCore, inline: Token | undefined): void {
   const children = inline?.children;
   if (!inline || !children) return;
-  const date = splitEntry(inline.content).date;
+  joinTrailingText(children);
+  // The heading's text after `{{name}}` values are in, which may hold the date.
+  const date = splitEntry(children.map((c) => (c.type === 'text' || c.type === 'code_inline' ? c.content : '')).join('')).date;
   const last = children.at(-1);
   const suffix = date && last?.type === 'text' ? dateSuffix(last.content) : undefined;
   const version = [new state.Token('smd_changelog_version_open', 'span', 1), new state.Token('smd_changelog_version_close', 'span', -1)];
@@ -79,6 +81,15 @@ function markEntry(state: StateCore, inline: Token | undefined): void {
   const rest = [text(content.slice(suffix.at, at)), dateToken, text(content.slice(at + suffix.date.length))].filter((t) => t.content);
   last.content = content.slice(0, suffix.at);
   inline.children = [version[0], ...children.filter((c) => c !== last || c.content), version[1], ...rest];
+}
+
+/** Join the text tokens that end a heading (a `{{name}}` value is a token of its own), so a date split across them is one. */
+function joinTrailingText(children: Token[]): void {
+  let first = children.length;
+  while (first > 0 && children[first - 1].type === 'text') first--;
+  if (children.length - first < 2) return;
+  children[first].content = children.slice(first).map((c) => c.content).join('');
+  children.splice(first + 1);
 }
 
 /** Register the HTML of the tokens above. */

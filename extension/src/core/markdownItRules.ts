@@ -10,6 +10,7 @@ import { INLINE_DIRECTIVES } from './spec';
 import type { IncludeResult, IncludeScope } from './include';
 import type { SmdContext } from './markdownItSetup';
 import type { Env, Heading } from './render';
+import { substituteLine, variableAt, lookupVariable, type Variables } from './variables';
 
 export { slugify } from './sections';
 
@@ -230,14 +231,76 @@ export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdCon
   return true;
 }
 
-/** A directive's token: its HTML, or for `:ref[id]` an `smd_ref` token resolved when rendering (the figure may come later). */
+/**
+ * A directive's token: its HTML, or for `:ref[id]` an `smd_ref` token resolved when rendering (the figure may come later).
+ * Front matter variables in the content are replaced first (`:badge[v{{version}}]`).
+ */
 function pushDirective(state: StateInline, name: string, content: string, attrs: Attrs, ctx: SmdContext): void {
   if (name === 'ref') {
     state.push('smd_ref', '', 0).meta = { id: content.trim() };
     return;
   }
+  const text = ctx.variables ? substituteLine(content, envVariables(state.env)) : content;
   const token = state.push('html_inline', '', 0);
-  token.content = renderInlineDirective(state.md, name, content, attrs.values, ctx.options(state.env).today);
+  token.content = renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today);
+}
+
+// ---------------------------------------------------------------------------
+// Front matter variables  ({{name}})
+// ---------------------------------------------------------------------------
+
+/** Where the front matter of the document being rendered is kept for `{{name}}` (a host's env too). */
+export interface VariableEnv {
+  smdVariables?: Variables;
+}
+
+/** The front matter variables of the render (none outside a render). */
+export function envVariables(env: unknown): Variables | undefined {
+  return (env as VariableEnv | undefined)?.smdVariables;
+}
+
+/**
+ * Keep the document's front matter on the env for `{{name}}`, unless the env already has it: renderSmd puts
+ * it there, and so may a host that removes the front matter before rendering. Inline-only parses (titles)
+ * keep the document's.
+ */
+export function collectVariables(state: StateCore): void {
+  const env = state.env as VariableEnv | undefined;
+  if (state.inlineMode || !env || typeof env !== 'object' || env.smdVariables) return;
+  if (state.src.startsWith('---')) env.smdVariables = parseFrontMatter(state.src).data;
+}
+
+/**
+ * `{{name}}` for a front matter key with a text value: an `smd_variable` token holding the value (the
+ * source stays in `markup` for heading ids). Unknown names are left to the text rule, as written.
+ */
+export function inlineVariable(state: StateInline, silent: boolean): boolean {
+  const start = state.pos;
+  if (state.src.charCodeAt(start) !== 0x7b /* { */ || state.src.charCodeAt(start + 1) !== 0x7b) return false;
+  const ref = variableAt(state.src, start, state.posMax);
+  const value = ref && lookupVariable(envVariables(state.env), ref.name);
+  if (!ref || value?.kind !== 'text') return false;
+  if (!silent) {
+    const token = state.push('smd_variable', '', 0);
+    token.content = value.text;
+    token.markup = state.src.slice(ref.column, ref.endColumn);
+  }
+  state.pos = ref.endColumn;
+  return true;
+}
+
+/**
+ * Turn `smd_variable` tokens into text once heading ids and task labels are taken, so a value is text
+ * like any other: in image alt text, for the typographer, and for later plugins.
+ */
+export function variablesAsText(state: StateCore): void {
+  const convert = (tokens: Token[] | null) => {
+    for (const t of tokens ?? []) {
+      if (t.type === 'smd_variable') t.type = 'text';
+      else if (t.children) convert(t.children);
+    }
+  };
+  convert(state.tokens);
 }
 
 /** `==highlighted==` */
@@ -549,7 +612,7 @@ function markTask(state: StateCore, i: number, checked: boolean): void {
 /** The plain text of a task's inline tokens: text, code, and the text of inline HTML such as directives. */
 function taskLabel(children: Token[], done: boolean): string {
   return children.map((c) => {
-    if (c.type === 'text' || c.type === 'code_inline') return c.content;
+    if (c.type === 'text' || c.type === 'code_inline' || c.type === 'smd_variable') return c.content;
     if (c.type === 'html_inline') return htmlText(done ? withoutDueNotes(c.content) : c.content);
     if (c.type === 'image') return taskLabel(c.children ?? [], done);
     return c.type === 'softbreak' || c.type === 'hardbreak' ? ' ' : '';
@@ -610,25 +673,28 @@ export function headingIds(state: StateCore): void {
   const slugs = env?.slugs ?? new Map<string, number>();
   const tokens = state.tokens;
   // Included headings get their ids last, so they never change the ids of the document's own headings.
-  const later: Array<[Token, Heading]> = [];
+  const later: Array<[Token, Heading, string]> = [];
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
     if (t.type !== 'heading_open') continue;
-    const text = headingText(tokens[i + 1]);
+    const text = headingText(tokens[i + 1], false);
+    // Ids come from the source, so `{{version}}` gives the same id whatever its value.
+    const source = headingText(tokens[i + 1], true);
     const agent = t.attrGet('data-agent') ?? undefined;
     const heading: Heading = { level: Number(t.tag.slice(1)), text: text.trim(), slug: '', line: (t.map?.[0] ?? 0) + (env?.lineOffset ?? 0), ...(agent ? { agent } : {}) };
-    if (includedFrom(t)) later.push([t, heading]);
-    else heading.slug = ownSlug(t, text, slugs, env);
+    if (includedFrom(t)) later.push([t, heading, source]);
+    else heading.slug = ownSlug(t, source, slugs, env);
     env?.headings?.push(heading);
   }
   if (later.length) includedSlugs(tokens, later);
 }
 
-function headingText(inline: Token): string {
-  return (inline.children ?? [])
-    .filter((c) => c.type === 'text' || c.type === 'code_inline' || c.type === 'smd_footnote_ref')
-    .map((c) => c.content)
-    .join('');
+/** A heading's text: text, inline code and footnote references; front matter variables as their values, or as written for `source`. */
+function headingText(inline: Token, source: boolean): string {
+  return (inline.children ?? []).map((c) => {
+    if (c.type === 'smd_variable') return source ? c.markup : c.content;
+    return ['text', 'code_inline', 'smd_footnote_ref'].includes(c.type) ? c.content : '';
+  }).join('');
 }
 
 /** `base`, or `base-1`, `base-2`… for its later uses. */
@@ -650,11 +716,11 @@ function ownSlug(t: Token, text: string, slugs: Map<string, number>, env: Env | 
 }
 
 /** Ids for included headings: the ones they have in their own document, numbered on where this document uses them. */
-function includedSlugs(tokens: Token[], later: Array<[Token, Heading]>): void {
+function includedSlugs(tokens: Token[], later: Array<[Token, Heading, string]>): void {
   const used = new Set(tokens.filter((t) => t.type === 'heading_open' && !includedFrom(t)).map((t) => t.attrGet('id')));
-  for (const [t, heading] of later) {
+  for (const [t, heading, source] of later) {
     const from = includedFrom(t)!;
-    const own = t.attrGet('id') ?? numbered(from.slugs, slugify(heading.text) || 'section');
+    const own = t.attrGet('id') ?? numbered(from.slugs, slugify(source.trim()) || 'section');
     let slug = own;
     let n = 0;
     while (used.has(slug)) slug = `${own}-${++n}`;
