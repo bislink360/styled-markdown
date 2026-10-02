@@ -5,17 +5,18 @@
  */
 import {
   CONTAINERS, FONT_VALUES, FRONTMATTER_SCHEMA, INLINE_DIRECTIVES, MERMAID_TYPES, NAMED_COLORS, SIZE_VALUES, STYLE_KEYS, ALIGN_VALUES,
-  TEXT_STYLE_VALUES, WEIGHT_VALUES, frontMatterValues, parseFrontMatter,
+  TEXT_STYLE_VALUES, VARIABLE_SYNTAX, WEIGHT_VALUES, frontMatterValues, parseFrontMatter,
 } from './core';
 import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from './core/footnotes';
 import { frontMatterProperty } from './core/frontmatterSchema';
 import { anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext } from './core/links';
 import { termHover } from './core/glossary';
 import { documentPreview, embedPreview, sectionExcerpt } from './core/symbols';
+import { variableCompletion, variableHover } from './core/variables';
 
 /** LSP CompletionItemKind values used here. */
 export const COMPLETION_KIND = {
-  function: 3, module: 9, property: 10, value: 12, keyword: 14, color: 16, file: 17, reference: 18, folder: 19, enumMember: 20,
+  function: 3, variable: 6, module: 9, property: 10, value: 12, keyword: 14, color: 16, file: 17, reference: 18, folder: 19, enumMember: 20,
 } as const;
 
 export interface AssistItem {
@@ -76,7 +77,7 @@ type Provider = (cursor: Cursor, env: AssistEnv) => Completion | undefined;
 
 /** In order: the first provider that recognizes the context answers. */
 const PROVIDERS: Provider[] = [
-  linkCompletion, footnoteCompletion, frontMatterCompletion, attributeCompletion, containerCompletion, fenceCompletion, directiveCompletion,
+  linkCompletion, footnoteCompletion, frontMatterCompletion, variableCompletionProvider, attributeCompletion, containerCompletion, fenceCompletion, directiveCompletion,
   mermaidCompletion,
 ];
 
@@ -180,6 +181,17 @@ function frontMatterValueItems(key: string, env: AssistEnv): AssistItem[] {
   return frontMatterValues(key).map((label) => ({ label, kind }));
 }
 
+/** Front matter names after `{{` in the body, each with its value. */
+function variableCompletionProvider(cursor: Cursor): Completion | undefined {
+  const found = variableCompletion(cursor.text, cursor.line, cursor.column);
+  if (!found) return undefined;
+  const items = found.names.map(({ name, text }, i) => ({
+    label: name, kind: COMPLETION_KIND.variable, detail: text, documentation: VARIABLE_SYNTAX.description,
+    insertText: found.close ? `${name}}}` : name, sortText: String(i).padStart(4, '0'),
+  }));
+  return { from: found.from, items };
+}
+
 /** Attribute keys and values inside `{…}` on a container line or after an inline directive. */
 function attributeCompletion(cursor: Cursor): Completion | undefined {
   const { prefix, column } = cursor;
@@ -274,10 +286,10 @@ export interface AssistHover {
   end?: number;
 }
 
-/** What the text at a zero-based line and UTF-16 column is: a container, directive, glossary term, link or code embed. */
+/** What the text at a zero-based line and UTF-16 column is: a front matter variable, container, directive, glossary term, link or code embed. */
 export function hoverAt(text: string, line: number, column: number, env: AssistEnv = {}): AssistHover | undefined {
   const lineText = text.split(/\r?\n/)[line] ?? '';
-  return containerHover(lineText, column) ?? directiveHover(lineText, column) ?? footnoteHover(text, line, column)
+  return variableHover(text, line, column) ?? containerHover(lineText, column) ?? directiveHover(lineText, column) ?? footnoteHover(text, line, column)
     ?? termHover(text, line, column) ?? linkHover(text, line, column, env) ?? embedHover(lineText, env);
 }
 

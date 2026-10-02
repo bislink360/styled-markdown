@@ -6,6 +6,7 @@ import { parseFrontMatter } from './frontmatter';
 import { acceptAnyFootnote, type ContainerMeta } from './markdownItRules';
 import { createMarkdownIt, type Env, type Heading, type ResolvedOptions } from './render';
 import { CALLOUT_TYPES } from './spec';
+import type { Variables } from './variables';
 
 /**
  * Incremental parsing for headings and anchor ids: what validation, outlines, the outline view and
@@ -63,6 +64,23 @@ interface State {
   trailing: Definition[];
   /** The label set inline parsing used. */
   refKey: string;
+  /** The front matter variables inline parsing used (see documentVariablesOf). */
+  vars: ParseVariables;
+}
+
+/**
+ * Front matter variables for `{{name}}` in headings, so their text matches renderSmd's. `key` is the raw
+ * front matter when the body uses `{{` at all, else empty: states are only reused under the same key, so
+ * editing the front matter of a document without variables keeps incremental parsing.
+ */
+interface ParseVariables {
+  key: string;
+  data: Variables;
+}
+
+function documentVariablesOf(lines: string[], fm: { data: Record<string, unknown>; bodyStartLine: number }, text: string): ParseVariables {
+  const uses = lines.some((l) => l.includes('{{'));
+  return { key: uses ? text.split(/\r?\n/, fm.bodyStartLine).join('\n') : '', data: uses ? fm.data : {} };
 }
 
 const OPTIONS: ResolvedOptions = { allowHtml: true, agentBlocks: 'collapsed', readFile: undefined, today: '' };
@@ -123,7 +141,7 @@ export function parseSmd(text: string): ParseResult {
   // A space keeps them in step, as in renderSmd.
   let lines = text.split(/\r?\n/).slice(fm.bodyStartLine);
   if (text.includes('\r')) lines = lines.map((l) => l.replace(/\r/g, ' '));
-  const state = update(lines);
+  const state = update(lines, documentVariablesOf(lines, fm, text));
 
   const headings: Heading[] = [];
   const ids = new Set<string>();
@@ -177,16 +195,16 @@ const labelsOf = (state: Pick<State, 'blocks' | 'trailing'>): string[] =>
   [...new Set([...state.blocks.flatMap((b) => b.definitions), ...state.trailing].map((d) => d.label))].sort();
 
 /** The block state for `lines`: an incremental update of the closest recent state, or a full parse. */
-function update(lines: string[]): State {
+function update(lines: string[], vars: ParseVariables): State {
   let best: { state: State; prefix: number; suffix: number } | undefined;
-  for (const state of states) {
+  for (const state of states.filter((s) => s.vars.key === vars.key)) {
     const prefix = commonPrefix(state.lines, lines);
     const suffix = commonSuffix(state.lines, lines, prefix);
     if (!best || prefix + suffix > best.prefix + best.suffix) best = { state, prefix, suffix };
   }
   let next = best && best.prefix + best.suffix > 0 ? incremental(best.state, lines, best.prefix, best.suffix) : undefined;
-  if (next && labelsOf(next).join('\u0001') !== next.refKey) next = full(lines, labelsOf(next)); // labels changed
-  next ??= full(lines);
+  if (next && labelsOf(next).join('\u0001') !== next.refKey) next = full(lines, vars, labelsOf(next)); // labels changed
+  next ??= full(lines, vars);
   const i = best ? states.indexOf(best.state) : -1;
   if (i >= 0) states.splice(i, 1); // the old state of this document is replaced
   states.unshift(next);
@@ -195,10 +213,10 @@ function update(lines: string[]): State {
 }
 
 /** Parse everything. Inline parsing needs every reference label, so repeat once if new ones turn up. */
-function full(lines: string[], labels: string[] = []): State {
+function full(lines: string[], vars: ParseVariables, labels: string[] = []): State {
   for (;;) {
-    const parsed = parseRange(lines, 0, lines.length, labels, true);
-    const state: State = { lines, ...parsed, refKey: labels.join('\u0001') };
+    const parsed = parseRange(lines, 0, lines.length, { labels, vars: vars.data }, true);
+    const state: State = { lines, ...parsed, refKey: labels.join('\u0001'), vars };
     const found = labelsOf(state);
     if (found.join('\u0001') === state.refKey) return state;
     labels = found;
@@ -231,8 +249,8 @@ function incremental(old: State, lines: string[], prefix: number, suffix: number
   let to = Math.min(lines.length, damageEnd + 64);
   for (;;) {
     const atEnd = to === lines.length;
-    const parsed = parseRange(lines, from, to, labels, atEnd, carried);
-    if (atEnd) return { lines, blocks: [...kept, ...parsed.blocks], trailing: parsed.trailing, refKey: old.refKey };
+    const parsed = parseRange(lines, from, to, { labels, vars: old.vars.data }, atEnd, carried);
+    if (atEnd) return { lines, blocks: [...kept, ...parsed.blocks], trailing: parsed.trailing, refKey: old.refKey, vars: old.vars };
     const grow = () => Math.min(lines.length, Math.max(parsed.mathHorizon, to + Math.max(256, (to - from) * 2)));
     // A `$$` the window couldn't close may be math in the full document: parse up to its closing line.
     if (parsed.mathHorizon > to) { to = grow(); continue; }
@@ -242,7 +260,7 @@ function incremental(old: State, lines: string[], prefix: number, suffix: number
       const at = parsed.blocks[join];
       const rest = old.blocks.slice(oldStarts.get(at.start - delta)!).map((b) => shift(b, delta));
       rest[0] = { ...rest[0], definitions: at.definitions };
-      return { lines, blocks: [...kept, ...parsed.blocks.slice(0, join), ...rest], trailing: old.trailing.map((d) => ({ ...d, line: d.line + delta })), refKey: old.refKey };
+      return { lines, blocks: [...kept, ...parsed.blocks.slice(0, join), ...rest], trailing: old.trailing.map((d) => ({ ...d, line: d.line + delta })), refKey: old.refKey, vars: old.vars };
     }
     to = grow();
   }
@@ -276,9 +294,9 @@ function shift(block: Block, delta: number): Block {
  * short, so it is left out; blocks before it ended within the range and are exact.
  */
 function parseRange(
-  lines: string[], from: number, to: number, labels: string[], complete: boolean, carried: Definition[] = [],
+  lines: string[], from: number, to: number, scope: { labels: string[]; vars: Variables }, complete: boolean, carried: Definition[] = [],
 ): { blocks: Block[]; trailing: Definition[]; mathHorizon: number } {
-  const env = newEnv(from, labels);
+  const env = newEnv(from, scope.labels, scope.vars);
   acceptAnyFootnote(env); // which labels are defined is known once every block is (footnoteIds)
   const tokens = parser().parse(lines.slice(from, to).join('\n'), env);
   const definitions = [...carried, ...env.definitions.map((d) => ({ ...d, line: d.line + from }))];
@@ -386,10 +404,11 @@ function documentNotes(blocks: Block[]): { notes: Block['notes']; refs: Block['n
   return { notes, refs };
 }
 
-function newEnv(lineOffset: number, labels: Iterable<string>): ParseEnv {
+function newEnv(lineOffset: number, labels: Iterable<string>, smdVariables: Variables = {}): ParseEnv {
   const references: Record<string, unknown> = {};
   for (const label of labels) references[label] = { href: '', title: '' };
-  return { lineOffset, headings: [], slugs: new Map(), options: OPTIONS, bases: [], references, definitions: [] };
+  // Blocks are parsed apart from the front matter, so its variables come along explicitly (never from the source).
+  return { lineOffset, headings: [], slugs: new Map(), options: OPTIONS, bases: [], references, definitions: [], smdVariables };
 }
 
 /** The `:::figure` openers among a block's tokens (nested ones too), with body-relative lines. */

@@ -6,7 +6,7 @@ import { readerFor } from './files';
 import { loadMermaidParser } from './mermaidLoader';
 import {
   CALLOUT_TYPES, CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
-  STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES,
+  STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES, VARIABLE_SYNTAX,
   checkMermaid, formatSmd, FRONTMATTER_SCHEMA, frontMatterValues, parseFrontMatter, parseSmd, renderSmd, validateSmd, type Diagnostic,
 } from './core';
 import {
@@ -18,6 +18,7 @@ import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from '.
 import { frontMatterProperty } from './core/frontmatterSchema';
 import { termHover } from './core/glossary';
 import { documentPreview, documentSymbols, embedPreview, fuzzyMatch, sectionExcerpt, type SmdSymbol } from './core/symbols';
+import { variableCompletion, variableHover, type VariableCompletion } from './core/variables';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
 
@@ -307,11 +308,27 @@ function directiveSnippet(name: string): string {
   return DIRECTIVE_SNIPPETS.get(name) ?? `${name}[\${1:text}]{color=\${2|${NAMED_COLORS.join(',')}|}}`;
 }
 
+/** Front matter names after `{{`, each with its value. */
+function variableItems(found: VariableCompletion, position: vscode.Position): vscode.CompletionItem[] {
+  const range = new vscode.Range(position.line, found.from, position.line, position.character);
+  return found.names.map(({ name, text }, i) => {
+    const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Variable);
+    item.range = range;
+    item.detail = text;
+    item.documentation = VARIABLE_SYNTAX.description;
+    item.insertText = found.close ? `${name}}}` : name;
+    item.sortText = String(i).padStart(4, '0');
+    return item;
+  });
+}
+
 class CompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] | undefined {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
     const link = pathCompletionContext(document.getText(), position.line, position.character);
     if (link) return linkCompletions(document, position, link);
+    const variable = variableCompletion(document.getText(), position.line, position.character);
+    if (variable) return variableItems(variable, position);
     const fm = parseFrontMatter(document.getText());
 
     // Front matter keys and values, from FRONTMATTER_SCHEMA
@@ -421,6 +438,10 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 
 class HoverProvider implements vscode.HoverProvider {
   provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+    const variable = variableHover(document.getText(), position.line, position.character);
+    if (variable) {
+      return new vscode.Hover(new vscode.MarkdownString(variable.markdown), new vscode.Range(position.line, variable.start, position.line, variable.end));
+    }
     const line = document.lineAt(position.line).text;
     const container = /^(\s*:{3,}\s*)([\w-]+)/.exec(line);
     if (container) {

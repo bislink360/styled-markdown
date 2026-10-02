@@ -53,6 +53,13 @@ export interface MarkdownItSmdOptions {
   sourceLines?: boolean;
   /** Render `---` YAML front matter as the .smd document header (title, status, owners, tags). Default false. */
   frontMatter?: boolean;
+  /**
+   * Front matter variables: `{{version}}` in text shows the value of the front matter key `version`
+   * (`{{owner.name}}` for nested keys); names the front matter doesn't define stay as written. The front
+   * matter is read from the source; a host that removes it first can pass its data as `env.smdVariables`.
+   * Default true.
+   */
+  variables?: boolean;
   /** How `:::agent` blocks are shown to human readers. Default `collapsed`. */
   agentBlocks?: 'collapsed' | 'expanded' | 'hidden';
   /**

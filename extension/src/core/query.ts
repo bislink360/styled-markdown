@@ -6,6 +6,7 @@ import { parseSmd } from './parse';
 import type { Heading } from './render';
 import { CALLOUT_TYPES, CONTAINERS, RISK_LEVELS, STYLE_KEYS } from './spec';
 import { suggest } from './util';
+import { documentVariables } from './variables';
 
 /**
  * Block queries: select decisions, risks, API endpoints, callouts, tasks and headings by type and
@@ -271,6 +272,7 @@ function taskBlocks(text: string, today: string, sectionAt: (line: number) => st
 }
 
 function containerBlocks(lines: string[], from: number, sectionAt: (line: number) => string | null): Block[] {
+  const variables = documentVariables(lines);
   const blocks: Block[] = [];
   const open: Block[] = [];
   let fence: Fence = null;
@@ -285,7 +287,7 @@ function containerBlocks(lines: string[], from: number, sectionAt: (line: number
     }
     const info = openingOf(lines[i]);
     if (!info) continue;
-    const block: Block = { type: info.name, line: i, endLine: lines.length - 1, title: inlineText(info.title), attrs: containerAttrs(info), section: sectionAt(i) };
+    const block: Block = { type: info.name, line: i, endLine: lines.length - 1, title: inlineText(info.title, undefined, false, undefined, variables), attrs: containerAttrs(info), section: sectionAt(i) };
     blocks.push(block);
     open.push(block);
   }

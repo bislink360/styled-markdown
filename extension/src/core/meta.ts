@@ -4,6 +4,7 @@ import { parseSmd } from './parse';
 import { dueState } from './render';
 import { validateSmd, type Diagnostic, type ValidateOptions } from './validate';
 import { inlineText } from './agentView';
+import { substituteLine } from './variables';
 import { priorityRank } from './util';
 
 export interface TaskInfo {
@@ -50,10 +51,10 @@ export function extractTasks(text: string, today?: string): TaskInfo[] {
     if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; continue; }
     if (f) { fence = f[1]; continue; }
     const h = /^\s{0,3}#{1,6}\s+(.*?)(?:\s+\{[^{}]*\})?\s*#*\s*$/.exec(line);
-    if (h) { section = inlineText(h[1]); continue; }
+    if (h) { section = inlineText(h[1], undefined, false, undefined, fm.data); continue; }
     const m = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\]\s+(.*)$/.exec(line);
     if (!m) continue;
-    const body = m[2];
+    const body = substituteLine(m[2], fm.data);
     const due = /:due\[([^\]]+)\]/.exec(body)?.[1]?.trim();
     const priority = /:priority\[([^\]]+)\]/.exec(body)?.[1]?.trim();
     const assignees = [
@@ -127,7 +128,7 @@ export function getDocumentInfo(text: string, options: ValidateOptions = {}): Sm
     if (open && info) {
       containers[info.name] = (containers[info.name] ?? 0) + 1;
       const v = info.attrs.values;
-      const title = inlineText(info.title);
+      const title = inlineText(info.title, undefined, false, undefined, fm.data);
       if (info.name === 'decision') decisions.push({ title, status: v.status ?? 'proposed', date: v.date, owner: v.owner, line: i });
       if (info.name === 'risk') risks.push({ title, impact: v.impact ?? 'medium', likelihood: v.likelihood, owner: v.owner, status: v.status, line: i });
       stack.push({ name: info.name, line: i, title, body: [] });

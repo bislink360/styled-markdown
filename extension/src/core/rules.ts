@@ -52,6 +52,8 @@ export const RULE_CODES: Record<string, string> = {
   'glossary/entry': 'List item in a `:::glossary` that is not `**Term**: definition`, or has no definition',
   'glossary/duplicate': 'A `:::glossary` term is defined again; its uses link to the first definition',
   'glossary/unused': 'A `:::glossary` term is never used in the text',
+  'variable/undefined': '`{{name}}` names no front matter key; it is shown as written',
+  'variable/not-text': '`{{name}}` names a front matter mapping or empty value, which has no text',
   'task/overdue':'Open task past its `:due[…]` date',
   'rules/unknown': 'Suppression comment or rule setting names an unknown rule code',
 };
