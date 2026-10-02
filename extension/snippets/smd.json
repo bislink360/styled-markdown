@@ -315,6 +315,19 @@
     "description": "Numbered reference to a figure by id: renders \"Figure 2\" as a link to it",
     "body": ":ref[${1:fig-id}]"
   },
+  "Glossary": {
+    "prefix": [
+      "glossary",
+      "abbr"
+    ],
+    "description": "Glossary of terms and abbreviations: each defined term shows its definition on hover where it is used",
+    "body": [
+      ":::glossary ${1:Glossary}",
+      "- **${2:API}**: ${3:Application Programming Interface}",
+      "${0}",
+      ":::"
+    ]
+  },
   "Priority": {
     "prefix": "priority",
     "body": [

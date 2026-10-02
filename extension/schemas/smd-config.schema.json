@@ -130,6 +130,16 @@
           ],
           "description": "Every footnote/… rule. Exact codes win."
         },
+        "glossary/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every glossary/… rule. Exact codes win."
+        },
         "task/*": {
           "enum": [
             "off",
@@ -609,6 +619,36 @@
             "hint"
           ],
           "description": "Second definition of a footnote label (the first one is used)"
+        },
+        "glossary/entry": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "List item in a :::glossary that is not **Term**: definition, or has no definition"
+        },
+        "glossary/duplicate": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::glossary term is defined again; its uses link to the first definition"
+        },
+        "glossary/unused": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::glossary term is never used in the text"
         },
         "task/overdue": {
           "enum": [

@@ -10,6 +10,7 @@ import {
 import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from './core/footnotes';
 import { frontMatterProperty } from './core/frontmatterSchema';
 import { anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext } from './core/links';
+import { termHover } from './core/glossary';
 import { documentPreview, embedPreview, sectionExcerpt } from './core/symbols';
 
 /** LSP CompletionItemKind values used here. */
@@ -273,11 +274,11 @@ export interface AssistHover {
   end?: number;
 }
 
-/** What the text at a zero-based line and UTF-16 column is: a container, directive, link or code embed. */
+/** What the text at a zero-based line and UTF-16 column is: a container, directive, glossary term, link or code embed. */
 export function hoverAt(text: string, line: number, column: number, env: AssistEnv = {}): AssistHover | undefined {
   const lineText = text.split(/\r?\n/)[line] ?? '';
   return containerHover(lineText, column) ?? directiveHover(lineText, column) ?? footnoteHover(text, line, column)
-    ?? linkHover(text, line, column, env) ?? embedHover(lineText, env);
+    ?? termHover(text, line, column) ?? linkHover(text, line, column, env) ?? embedHover(lineText, env);
 }
 
 function containerHover(lineText: string, column: number): AssistHover | undefined {

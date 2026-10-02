@@ -16,6 +16,7 @@ import { encodeAnchor, headingAt, linksToAnchor, renameHeading } from './core/an
 import { blockquoteToCallout, containerAt, isCallout, wrapLines, type LineEdit } from './core/refactors';
 import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from './core/footnotes';
 import { frontMatterProperty } from './core/frontmatterSchema';
+import { termHover } from './core/glossary';
 import { documentPreview, documentSymbols, embedPreview, fuzzyMatch, sectionExcerpt, type SmdSymbol } from './core/symbols';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
@@ -438,7 +439,7 @@ class HoverProvider implements vscode.HoverProvider {
       const spec = INLINE_DIRECTIVES[name];
       if (spec) return new vscode.Hover(new vscode.MarkdownString(`**:${name}** — ${spec.description}\n\n\`${spec.example}\``), range);
     }
-    return footnoteHover(document, position) ?? linkHover(document, position) ?? embedHover(document, position);
+    return footnoteHover(document, position) ?? glossaryHover(document, position) ?? linkHover(document, position) ?? embedHover(document, position);
   }
 }
 
@@ -449,6 +450,13 @@ function footnoteHover(document: vscode.TextDocument, position: vscode.Position)
   if (!hit) return undefined;
   const markdown = new vscode.MarkdownString(`**[^${hit.definition.raw}]**\n\n${footnoteText(text, hit.definition)}`);
   return new vscode.Hover(markdown, new vscode.Range(position.line, hit.start, position.line, hit.end));
+}
+
+/** A defined glossary term: its definition. */
+function glossaryHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+  const hover = termHover(document.getText(), position.line, position.character);
+  if (!hover) return undefined;
+  return new vscode.Hover(new vscode.MarkdownString(hover.markdown), new vscode.Range(position.line, hover.start, position.line, hover.end));
 }
 
 /** Preview what a link points at: the start of a section, or a linked document's title and outline. */

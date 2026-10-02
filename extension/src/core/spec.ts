@@ -97,6 +97,11 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
     attrs: ['title', 'kind'],
     values: { kind: FIGURE_KINDS },
   },
+  glossary: {
+    description: 'Glossary: a list of **Term**: definition items, rendered as a definition list. The first use of each term in a section shows its definition on hover and links to it.',
+    title: true,
+    attrs: ['title'],
+  },
 
   // Developer
   api: {

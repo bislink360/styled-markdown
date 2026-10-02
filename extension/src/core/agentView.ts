@@ -125,6 +125,8 @@ const CONTAINER_HEADS = new Map<string, (c: HeadSource) => ContainerHead>([
   ['tab', ({ title }) => ({ line: `Tab "${title || 'Tab'}":` })],
   ['card', ({ title }) => (title ? { line: `${title}:` } : {})],
   ['figure', figureHead],
+  // Listed once, as written; uses of the terms in the text are not expanded.
+  ['glossary', tagged('glossary')],
 ]);
 
 const NOISE_KEYS = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
