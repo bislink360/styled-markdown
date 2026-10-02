@@ -140,6 +140,26 @@
           ],
           "description": "Every glossary/… rule. Exact codes win."
         },
+        "changelog/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every changelog/… rule. Exact codes win."
+        },
+        "quote/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every quote/… rule. Exact codes win."
+        },
         "variable/*": {
           "enum": [
             "off",
@@ -659,6 +679,66 @@
             "hint"
           ],
           "description": "A :::glossary term is never used in the text"
+        },
+        "changelog/date": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::changelog release heading has a date that is not YYYY-MM-DD"
+        },
+        "changelog/order": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::changelog lists a newer version below an older one (releases go newest first)"
+        },
+        "changelog/duplicate": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::changelog lists the same version twice"
+        },
+        "quote/empty": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::quote has no text"
+        },
+        "quote/author": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::quote has no author"
+        },
+        "quote/cite": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::quote cite is not an http(s) or relative URL; it is left out"
         },
         "variable/undefined": {
           "enum": [

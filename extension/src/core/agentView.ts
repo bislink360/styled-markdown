@@ -1,4 +1,5 @@
 import { parseAttrs } from './attrs';
+import { changelogEntries, versionLabel, type ChangelogEntry } from './changelog';
 import {
   omissionOrder, omissionPointer, omittableSections, withOmitted, type BudgetResult, type BudgetSection, type Tokenizer,
 } from './budget';
@@ -14,6 +15,7 @@ import { includedLines, includeSource } from './includeText';
 import { figureIndex, parseSmd, type FigureIndex } from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
+import { quoteCite } from './quote';
 import { CALLOUT_TYPES } from './spec';
 import { documentVariables, substituteVariables, type Variables } from './variables';
 
@@ -110,6 +112,12 @@ function figureHead({ title, id, figure }: HeadSource): ContainerHead {
   return { line: `<figure${id ? ` id="${id}"` : ''}> ${label}`, close: '</figure>' };
 }
 
+/** `<quote author="…" source="…" cite="…">` … `</quote>`: attribution as plain words, and only a cite URL that renders. */
+function quoteHead({ values }: HeadSource): ContainerHead {
+  const plainValues = { author: inlineText(values.author ?? '').trim(), source: inlineText(values.source ?? '').trim(), cite: quoteCite(values.cite) ?? '' };
+  return { line: `<quote${attrList(plainValues, ['author', 'source', 'cite'])}>`, close: '</quote>' };
+}
+
 /**
  * The agent view of each container's opening line. `:::human` (unless included) and `:::details` in brief
  * views are dropped before this. tabs, columns, column, box, steps, timeline and unknown containers: content only.
@@ -128,6 +136,9 @@ const CONTAINER_HEADS = new Map<string, (c: HeadSource) => ContainerHead>([
   ['figure', figureHead],
   // Listed once, as written; uses of the terms in the text are not expanded.
   ['glossary', tagged('glossary')],
+  // Its entry headings become `## 1.2.0 (2026-03-01)` lines (see entryHeading).
+  ['changelog', tagged('changelog')],
+  ['quote', quoteHead],
 ]);
 
 const NOISE_KEYS = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
@@ -321,6 +332,8 @@ interface TransformOptions extends AgentViewOptions {
   onlyAgentBlocks?: boolean;
   /** The document's figures, when `lines` are not the whole document (see agentViewOfRange). */
   figures?: FigureIndex;
+  /** The document's changelog entry headings by line, when `lines` are not the whole document. */
+  changelogs?: ReadonlyMap<number, ChangelogEntry>;
   /** The document's front matter, for `{{name}}`; read from `lines` when left out. */
   variables?: Variables;
   /** Receives every emitted line with the source line it came from. */
@@ -335,6 +348,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   const figures = options.figures ?? figureIndex(lines.join('\n'));
   const variables = options.variables ?? documentVariables(lines);
   const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, variables);
+  const changelogs = options.changelogs ?? changelogEntries(lines);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
   const dropping = () => stack.some((f) => f.drop);
@@ -425,7 +439,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     const h = /^(\s{0,3}#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
     if (h) {
       flushDone(i);
-      emit(`${h[1].trim()} ${text(h[2].replace(HEADING_ATTRS, ''))}${lineRefs ? `  [L${i + 1}]` : ''}`, i);
+      emit(`${h[1].trim()} ${headingText(h[2], changelogs.get(i), text)}${lineRefs ? `  [L${i + 1}]` : ''}`, i);
       continue;
     }
 
@@ -456,7 +470,15 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
-  return transform(lines.slice(0, end + 1), start, () => true, { ...options, figures: figureIndex(lines.join('\n')), variables: documentVariables(lines) }).trim();
+  const whole = { figures: figureIndex(lines.join('\n')), changelogs: changelogEntries(lines), variables: documentVariables(lines) };
+  return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
+}
+
+/** A heading's words; a changelog release in brief, `1.2.0 (2026-03-01)`, the version without its link. */
+function headingText(raw: string, entry: ChangelogEntry | undefined, text: (s: string) => string): string {
+  if (!entry) return text(raw.replace(HEADING_ATTRS, ''));
+  const version = text(versionLabel(entry.version));
+  return entry.date ? `${version} (${text(entry.date)})` : version;
 }
 
 /**
@@ -582,7 +604,7 @@ function plain(s: string, today: string | undefined, openTask: boolean, figures?
  * size. Brief views count completed tasks per scope, so they are transformed per range.
  */
 function sectionViews(lines: string[], from: number, documentOptions: TransformOptions): (start: number, end: number) => string {
-  const options = { ...documentOptions, figures: figureIndex(lines.join('\n')), variables: documentVariables(lines) };
+  const options = { ...documentOptions, figures: figureIndex(lines.join('\n')), changelogs: changelogEntries(lines), variables: documentVariables(lines) };
   if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);
   const emitted: Array<[number, string]> = [];
   transform(lines, from, () => true, { ...options, collect: emitted });

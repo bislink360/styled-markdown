@@ -12,7 +12,7 @@ const src = ':::warnign\nA [word]{color=blu}\n:::\n';
 
 test('every code the validator reports is registered, and the schema lists them all', () => {
   const sources = ['validate.ts', 'rules.ts', 'mermaid.ts', 'includeCheck.ts'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'core', f), 'utf8')).join('\n');
-  const emitted = new Set([...sources.matchAll(/'((?:frontmatter|container|attrs|directive|mermaid|math|fence|include|link|figure|footnote|glossary|variable|task|rules)\/[a-z-]+)'/g)].map((m) => m[1]));
+  const emitted = new Set([...sources.matchAll(/'((?:frontmatter|container|attrs|directive|mermaid|math|fence|include|link|figure|footnote|glossary|variable|changelog|quote|task|rules)\/[a-z-]+)'/g)].map((m) => m[1]));
   assert.deepEqual([...emitted].sort(), Object.keys(RULE_CODES).sort());
 
   const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'schemas', 'smd-config.schema.json'), 'utf8'));

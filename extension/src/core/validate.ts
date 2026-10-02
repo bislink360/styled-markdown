@@ -9,6 +9,8 @@ import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
 import { checkIncludes, documentIds, includedFigureIds, includedTermIds } from './includeCheck';
 import { parseFenceInfo, sliceLines } from './fence';
 import { figureTargets, findRefs, type Figure, type FigureRef } from './figures';
+import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, versionLabel, type ChangelogEntry, type Version } from './changelog';
+import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
 import { parseSmd } from './parse';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
@@ -187,6 +189,10 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   checkFigures(text, lines, fm.bodyStartLine, push, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, push);
   checkGlossary(lines, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
+  // Release headings are read with their `{{name}}` values in, as they render.
+  const expanded = lines.map((l) => substituteLine(l, fm.data));
+  for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
+  for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
   checkVariables(lines, fm.bodyStartLine, fm.data, push);
 
   let result = applySuppressions(text, diagnostics);
@@ -671,6 +677,56 @@ function glossaryProblem(problem: GlossaryProblem, push: Push): void {
     ? 'This glossary entry has no definition; write it after the colon.'
     : 'Glossary entries are list items written "**Term**: definition". This item is not one, so its list renders as a plain list and defines no terms.';
   push(problem.line, problem.column, problem.endColumn, 'warning', 'glossary/entry', message);
+}
+
+/** A changelog's entries: dates are YYYY-MM-DD, versions run newest first, and each version appears once. */
+function checkChangelog(entries: ChangelogEntry[], lines: string[], push: Push): void {
+  const seen = new Map<string, ChangelogEntry>();
+  let previous: { entry: ChangelogEntry; version: Version } | undefined;
+  for (const entry of entries) {
+    if (entry.date !== undefined && !isIsoDate(entry.date)) changelogDate(entry, lines[entry.line], push);
+    const key = versionKey(entry.version);
+    const first = seen.get(key);
+    if (first) {
+      push(entry.line, entry.column, lines[entry.line].length, 'warning', 'changelog/duplicate',
+        `Version ${versionLabel(entry.version)} is already listed on line ${first.line + 1}. Merge the two entries.`);
+      continue;
+    }
+    seen.set(key, entry);
+    const version = parseVersion(entry.version);
+    if (!version) continue;
+    if (previous && compareVersions(version, previous.version) > 0) {
+      push(entry.line, entry.column, lines[entry.line].length, 'warning', 'changelog/order',
+        `Version ${versionLabel(entry.version)} is newer than ${versionLabel(previous.entry.version)} on line ${previous.entry.line + 1}. List releases newest first.`);
+    }
+    previous = { entry, version };
+  }
+}
+
+function changelogDate(entry: ChangelogEntry, raw: string, push: Push): void {
+  const date = entry.date!;
+  const message = `"${date}" is not a date like 2026-03-01; release headings are written "## 1.2.0 — 2026-03-01".`;
+  const column = raw.lastIndexOf(date);
+  // A date from a {{name}} value is not in the line: mark the heading, with no fix to the text.
+  if (column < 0) { push(entry.line, entry.column, raw.length, 'warning', 'changelog/date', message); return; }
+  const fixed = normalizeDate(date);
+  const valid = fixed && isIsoDate(fixed) ? fixed : undefined;
+  push(entry.line, column, column + date.length, 'warning', 'changelog/date', message,
+    valid ? { line: entry.line, column, endColumn: column + date.length, replacement: valid, title: `Change to "${valid}"` } : undefined);
+}
+
+/** A quote has text, says who said it, and cites only http(s) or relative URLs. */
+function checkQuote(quote: QuoteBlock, raw: string, push: Push): void {
+  const name = raw.indexOf('quote');
+  const [column, end] = [name, name + 'quote'.length];
+  const { author, cite } = quote.info.attrs.values;
+  if (quote.empty) push(quote.line, column, end, 'warning', 'quote/empty', 'This quote has no text; write the quotation between ":::quote" and ":::".');
+  if (!author?.trim()) {
+    push(quote.line, column, end, 'warning', 'quote/author', 'Say who is quoted with author="…" (and source="…" for where), e.g. :::quote{author="Ada Lovelace"}.');
+  }
+  if (cite !== undefined && !quoteCite(cite)) {
+    push(quote.line, column, end, 'warning', 'quote/cite', `cite="${cite}" is left out: it must be an http(s) or relative URL without spaces.`);
+  }
 }
 
 function checkFence(lang: string, content: string[], line: number, push: Push, wholeLine: WholeLine): void {

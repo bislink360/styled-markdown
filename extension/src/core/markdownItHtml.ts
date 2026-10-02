@@ -8,6 +8,7 @@ import { langFromPath, parseFenceInfo, sliceLines, type FenceInfo } from './fenc
 import {
   includeHref, includeLabel, includeProblemText, includeRequest, type IncludeRequest, type IncludeResult,
 } from './include';
+import { quoteCite } from './quote';
 import { CALLOUT_TYPES, STATUS_VALUES } from './spec';
 import type { SmdContext } from './markdownItSetup';
 import type { ContainerMeta, FootnoteMeta } from './markdownItRules';
@@ -77,12 +78,14 @@ interface ContainerView {
   inline: (text: string) => string;
   env: Env | undefined;
   ctx: SmdContext;
+  /** The instance rendering, for its link checks (`:::quote{cite}`). */
+  md?: MarkdownIt;
 }
 
 /** Opening HTML of a container; sets meta.close to the matching closing tags. */
 type ContainerOpen = (c: ContainerView) => string;
 
-export function renderContainer(tokens: Token[], idx: number, env: unknown, ctx: SmdContext): string {
+export function renderContainer(tokens: Token[], idx: number, env: unknown, ctx: SmdContext, md?: MarkdownIt): string {
   const token = tokens[idx];
   const meta = token.meta as ContainerMeta;
   if (token.nesting === -1) return `${meta.close}\n`;
@@ -98,6 +101,7 @@ export function renderContainer(tokens: Token[], idx: number, env: unknown, ctx:
     inline: (s) => ctx.title(s, env),
     env: smdEnv,
     ctx,
+    md,
   };
   if ((CALLOUT_TYPES as readonly string[]).includes(meta.name)) return calloutOpen(view);
   return (CONTAINERS.get(meta.name) ?? boxOpen)(view);
@@ -266,6 +270,45 @@ function glossaryOpen(c: ContainerView): string {
   return `<div${htmlAttrs(c.attrs, ['smd-glossary'], c.style)}${c.dataLine}>${title}\n`;
 }
 
+/** `:::changelog`: an optional title, then the entries (wrapped in a list by markdownItChangelog.ts). */
+function changelogOpen(c: ContainerView): string {
+  c.meta.close = '</div>';
+  const title = c.meta.title ? `<div class="smd-changelog-title">${c.inline(c.meta.title)}</div>` : '';
+  return `<div${htmlAttrs(c.attrs, ['smd-changelog'], c.style)}${c.dataLine}>${title}
+`;
+}
+
+/**
+ * `:::quote`: `<figure class="smd-quote"><blockquote cite="…">` the body `</blockquote>`, then `— Author, <cite>Source</cite>`.
+ * The `cite` URL goes through the same checks as links (only http, https and relative URLs); the source links to it.
+ * Not a numbered figure.
+ */
+function quoteOpen(c: ContainerView): string {
+  const href = quoteHref(c.attrs.values.cite, c.md);
+  c.meta.close = `</blockquote>${quoteCaption(c, href)}</figure>`;
+  const cite = href ? ` cite="${escapeHtml(href)}"` : '';
+  return `<figure${htmlAttrs(c.attrs, ['smd-quote'], c.style)}${c.dataLine}><blockquote${cite}>
+`;
+}
+
+/** A `cite` URL that is http(s) or relative and that markdown-it would link to, normalized as it normalizes links. */
+function quoteHref(value: string | undefined, md: MarkdownIt | undefined): string | undefined {
+  const url = quoteCite(value);
+  if (!url || !md) return url;
+  return md.validateLink(url) ? md.normalizeLink(url) : undefined;
+}
+
+function quoteCaption(c: ContainerView, href: string | undefined): string {
+  const { author, source } = c.attrs.values;
+  const parts: string[] = [];
+  if (author?.trim()) parts.push(`<span class="smd-quote-author">${c.inline(author.trim())}</span>`);
+  if (source?.trim()) {
+    const text = c.inline(source.trim());
+    parts.push(`<cite>${href && !text.includes('<a ') ? `<a href="${escapeHtml(href)}">${text}</a>` : text}</cite>`);
+  }
+  return parts.length ? `<figcaption class="smd-quote-caption">— ${parts.join(', ')}</figcaption>` : '';
+}
+
 /** `:ref[id]`: the number of the figure with that id, linked to it; an unknown id is shown as written. */
 export function renderRef(id: string, figure: FigureNumber | undefined): string {
   const safe = escapeHtml(id);
@@ -290,6 +333,8 @@ const CONTAINERS = new Map<string, ContainerOpen>([
   ['risk-matrix', riskMatrixOpen],
   ['timeline', divOpen('smd-timeline')],
   ['figure', figureOpen],
+  ['changelog', changelogOpen],
+  ['quote', quoteOpen],
   ['glossary', glossaryOpen],
 ]);
 
