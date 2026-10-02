@@ -656,7 +656,8 @@ function includedSlugs(tokens: Token[], later: Array<[Token, Heading]>): void {
     const from = includedFrom(t)!;
     const own = t.attrGet('id') ?? numbered(from.slugs, slugify(heading.text) || 'section');
     let slug = own;
-    for (let n = 1; used.has(slug); n++) slug = `${own}-${n}`;
+    let n = 0;
+    while (used.has(slug)) slug = `${own}-${++n}`;
     used.add(slug);
     t.attrSet('id', slug);
     heading.slug = slug;
