@@ -113,6 +113,14 @@
 
   const body = document.body;
   const root = body.getAttribute('data-smd-root') || '';
+  // Search messages in the site's language, from data-smd-labels (only on sites in a language other than English).
+  let labels = {};
+  try {
+    labels = JSON.parse(body.getAttribute('data-smd-labels') || '{}') || {};
+  } catch {
+    labels = {};
+  }
+  const say = (key, english) => (typeof labels[key] === 'string' && labels[key] ? labels[key] : english);
   document.documentElement.classList.add('smd-site-js');
 
   // Sidebar: a menu button opens and closes it on narrow screens.
@@ -189,9 +197,11 @@
       return;
     }
     const results = search(index, query);
-    if (!index) box.appendChild(message('Search is not available: the search index did not load.'));
-    else if (!results.length) box.appendChild(message('No results.'));
-    status.textContent = index ? results.length + ' result(s)' : 'Search is not available';
+    if (!index) box.appendChild(message(say('searchNoIndex', 'Search is not available: the search index did not load.')));
+    else if (!results.length) box.appendChild(message(say('searchNone', 'No results.')));
+    status.textContent = index
+      ? say('searchCount', '{count} result(s)').replace('{count}', String(results.length))
+      : say('searchUnavailable', 'Search is not available');
     for (const result of results) box.appendChild(resultLink(result, words));
     box.hidden = false;
   }

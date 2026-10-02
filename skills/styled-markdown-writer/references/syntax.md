@@ -38,8 +38,11 @@ theme: auto                  # auto | light | dark (preview hint)
 accent: indigo               # named color or #hex for headings/links
 toc: true                    # table of contents after the header
 related: [docs/other.smd]    # list of paths/URLs
+lang: de                     # optional: language of rendered labels (de es fr ja pt zh; default English)
 ---
 ```
+
+`lang` changes only the words the renderer adds (callout titles, "Figure 2", "overdue", status names); the document's text, the agent view and `smd to-md` are unchanged. Set it when the document is written in that language.
 
 Unknown keys are allowed (reported as hints, except keys the text shows with `{{key}}`, see §8).
 

@@ -71,6 +71,12 @@ export interface MarkdownItSmdOptions {
   readFile?: (relativePath: string, env: unknown) => string | undefined;
   /** "Today" as YYYY-MM-DD, for `:due[]` states. Defaults to the current date. */
   today?: string;
+  /**
+   * The language of the labels the plugin adds ("Note", "Figure 2", "overdue"…), a BCP 47 tag such as `de` or
+   * `pt-BR`, for documents that don't name one. A render's `env.lang` overrides it, and with `frontMatter` the
+   * document's own `lang:` overrides both. Unsupported languages, and the default, are English.
+   */
+  lang?: string;
 }
 
 /** Add Styled Markdown syntax to a markdown-it instance. Using it twice on one instance has no further effect. */

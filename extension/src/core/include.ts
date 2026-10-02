@@ -1,6 +1,7 @@
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFenceInfo } from './fence';
 import { parseFrontMatter } from './frontmatter';
+import { EN, label, type Messages } from './i18n';
 import { findSection, sectionsOf, slugify } from './sections';
 import type { Heading } from './render';
 
@@ -185,20 +186,23 @@ function counted(read: IncludeScope['read'], lines: string[], range: LineRange):
 }
 
 /** `a.smd → b.smd → a.smd`, or `this document → b.smd → a.smd` when the loop leads back to the root document. */
-export function cycleText(chain: string[]): string {
+export function cycleText(chain: string[], thisDocument: string = EN['include.thisDocument']): string {
   const last = chain[chain.length - 1];
-  return (chain.indexOf(last) < chain.length - 1 ? chain : ['this document', ...chain]).join(' → ');
+  return (chain.indexOf(last) < chain.length - 1 ? chain : [thisDocument, ...chain]).join(' → ');
 }
 
-/** What went wrong, in a few words, for placeholders and agent-view pointers. */
-export function includeProblemText(failure: IncludeFailure): string {
+/**
+ * What went wrong, in a few words, for placeholders and agent-view pointers. `m` gives the words for rendered
+ * placeholders in the document's language; agent views keep the English default.
+ */
+export function includeProblemText(failure: IncludeFailure, m: Messages = EN): string {
   switch (failure.problem) {
-    case 'unavailable': return 'Include not available here';
-    case 'missing-file': return 'Cannot read the file';
-    case 'missing-section': return `No section "${failure.request.section}" in the file`;
-    case 'cycle': return `Include cycle (${cycleText(failure.chain ?? [failure.path])})`;
-    case 'depth': return `Includes nested more than ${INCLUDE_LIMITS.depth} deep`;
-    default: return 'Too much included content';
+    case 'unavailable': return m['include.unavailable'];
+    case 'missing-file': return m['include.missingFile'];
+    case 'missing-section': return label(m, 'include.missingSection', { section: String(failure.request.section) });
+    case 'cycle': return label(m, 'include.cycle', { chain: cycleText(failure.chain ?? [failure.path], m['include.thisDocument']) });
+    case 'depth': return label(m, 'include.depth', { depth: INCLUDE_LIMITS.depth });
+    default: return m['include.tooLarge'];
   }
 }
 

@@ -1,4 +1,5 @@
 import { escapeHtml } from './attrs';
+import { EN, label, messagesFor, term, type Messages } from './i18n';
 import { riskMatrix, riskRegister, type RiskEntry, type RiskMatrix, type RiskRegister } from './risks';
 import { RISK_LEVELS } from './spec';
 
@@ -21,37 +22,48 @@ export function riskBand(score: number): RiskBand {
 export interface RiskMatrixHtmlOptions {
   /** Where a risk links to (e.g. `#risk-3`); undefined for plain text. */
   href?: (risk: RiskEntry) => string | undefined;
+  /** The language of the headers and cell titles, a BCP 47 tag such as `de` (default English). */
+  lang?: string;
 }
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** The matrix as a table: impact rows (critical first) × likelihood columns, each cell listing its risks. */
 export function riskMatrixHtml(matrix: RiskMatrix, risks: RiskEntry[], options: RiskMatrixHtmlOptions = {}): string {
-  const head = matrix.likelihood.map((l) => `<th scope="col">${escapeHtml(capital(l))}</th>`).join('');
+  return riskMatrixTable(matrix, risks, options, messagesFor(options.lang));
+}
+
+/** riskMatrixHtml with the labels given. */
+export function riskMatrixTable(matrix: RiskMatrix, risks: RiskEntry[], options: RiskMatrixHtmlOptions, m: Messages): string {
+  const head = matrix.likelihood.map((l) => `<th scope="col">${escapeHtml(capital(term(m, 'likelihood', l)))}</th>`).join('');
   const rows = matrix.impact.map((impact) => {
     const cells = matrix.likelihood.map((likelihood) => {
       const inCell = risks.filter((r) => r.impact === impact && r.likelihood === likelihood);
-      return matrixCell(impact, likelihood, inCell, options);
+      return matrixCell({ impact, likelihood }, inCell, options, m);
     });
-    return `<tr><th scope="row">${escapeHtml(capital(impact))}</th>${cells.join('')}</tr>`;
+    return `<tr><th scope="row">${escapeHtml(capital(term(m, 'impact', impact)))}</th>${cells.join('')}</tr>`;
   });
   return '<div class="smd-risk-matrix-wrap"><table class="smd-risk-matrix-grid">'
-    + `<thead><tr><th class="smd-risk-matrix-corner" scope="col">Impact ↓ · Likelihood →</th>${head}</tr></thead>`
+    + `<thead><tr><th class="smd-risk-matrix-corner" scope="col">${m['riskMatrix.corner']}</th>${head}</tr></thead>`
     + `<tbody>${rows.join('')}</tbody></table></div>`;
 }
 
-function matrixCell(impact: string, likelihood: string, risks: RiskEntry[], options: RiskMatrixHtmlOptions): string {
+interface MatrixCellPlace { impact: string; likelihood: string }
+
+function matrixCell({ impact, likelihood }: MatrixCellPlace, risks: RiskEntry[], options: RiskMatrixHtmlOptions, m: Messages): string {
   const score = cellScore(impact, likelihood);
-  const label = `${capital(impact)} impact, ${likelihood} likelihood: ${risks.length} risk(s)`;
-  const items = risks.map((r) => `<li>${riskLink(r, options)}</li>`).join('');
+  const title = capital(label(m, 'riskMatrix.cell', {
+    impact: term(m, 'impact', impact), likelihood: term(m, 'likelihood', likelihood), count: risks.length,
+  }));
+  const items = risks.map((r) => `<li>${riskLink(r, options, m)}</li>`).join('');
   const list = items ? `<ul class="smd-risk-cell-list">${items}</ul>` : '';
   const count = risks.length ? `<span class="smd-risk-cell-count">${risks.length}</span>` : '';
   const empty = risks.length ? '' : ' smd-risk-cell-empty';
-  return `<td class="smd-risk-cell smd-risk-band-${riskBand(score)}${empty}" data-score="${score}" title="${escapeHtml(label)}">${count}${list}</td>`;
+  return `<td class="smd-risk-cell smd-risk-band-${riskBand(score)}${empty}" data-score="${score}" title="${escapeHtml(title)}">${count}${list}</td>`;
 }
 
-function riskLink(r: RiskEntry, options: RiskMatrixHtmlOptions): string {
-  const title = escapeHtml(r.title || 'Risk');
+function riskLink(r: RiskEntry, options: RiskMatrixHtmlOptions, m: Messages): string {
+  const title = escapeHtml(r.title || m['risk.title']);
   const href = options.href?.(r);
   return href ? `<a href="${escapeHtml(href)}">${title}</a>` : `<span>${title}</span>`;
 }
@@ -103,8 +115,11 @@ function riskRowHtml(r: RiskEntry, i: number): string {
   return `<tr id="${riskAnchor(i)}">${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
 }
 
-/** The matrix of one document's risks for `:::risk-matrix` (closed ones left out); risks with an `{#id}` link to it. */
-export function documentRiskMatrixHtml(text: string): string {
+/**
+ * The matrix of one document's risks for `:::risk-matrix` (closed ones left out); risks with an `{#id}` link to it.
+ * `m` gives the labels in the document's language.
+ */
+export function documentRiskMatrixHtml(text: string, m: Messages = EN): string {
   const risks = riskRegister([{ path: '', text }]).risks;
-  return riskMatrixHtml(riskMatrix(risks), risks, { href: (r) => (r.id ? `#${r.id}` : undefined) });
+  return riskMatrixTable(riskMatrix(risks), risks, { href: (r) => (r.id ? `#${r.id}` : undefined) }, m);
 }

@@ -23,6 +23,7 @@ import {
   CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION,
 } from './spec';
 import { FRONTMATTER_SCHEMA, frontMatterProperty } from './frontmatterSchema';
+import { languageTag, matchLanguage, SUPPORTED_LANGUAGES } from './i18n';
 
 export type Severity = 'error' | 'warning' | 'info' | 'hint';
 
@@ -202,6 +203,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
 type Push = (line: number, column: number, endColumn: number, severity: Severity, code: string, message: string, fix?: Fix) => void;
 type WholeLine = (line: number, severity: Severity, code: string, message: string) => void;
+type MarkKey = (key: string, severity: Severity, code: string, message: string, fix?: FrontMatterFix) => void;
 
 /** A front matter key outside the schema, with a rename to the close standard key when there is one. */
 function unknownKey(key: string, l: number, lines: string[], push: Push): void {
@@ -227,7 +229,7 @@ function checkFrontMatter(
     for (let i = 1; i < end; i++) if (re.test(lines[i])) return i;
     return 0;
   };
-  const markKey = (key: string, severity: Severity, code: string, message: string, fix?: FrontMatterFix) => {
+  const markKey: MarkKey = (key, severity, code, message, fix) => {
     const l = keyLine(key);
     push(l, 0, lines[l]?.length ?? key.length, severity, code, message, fix?.(lines, l, key, String(data[key])));
   };
@@ -247,7 +249,7 @@ function checkFrontMatter(
       if (!shown.has(key)) unknownKey(key, keyLine(key), lines, push);
       continue;
     }
-    if (key === 'smd' || value === undefined || value === null) continue;
+    if (key === 'smd' || key === 'lang' || value === undefined || value === null) continue;
     if (key === 'accent') {
       if (!resolveColor(String(value))) markKey(key, 'error', 'frontmatter/accent', `Invalid accent color "${value}".`, fixColorValue);
     } else if (prop.enum) {
@@ -268,6 +270,8 @@ function checkFrontMatter(
     }
   }
 
+  checkLanguage(data.lang, markKey);
+
   // Stale documents: `updated` long ago on a document that is still live.
   const staleAfter = options.staleAfterDays ?? 180;
   const updated = typeof data.updated === 'string' ? data.updated.slice(0, 10) : '';
@@ -278,6 +282,18 @@ function checkFrontMatter(
       markKey('updated', 'info', 'frontmatter/stale',
         `Last updated ${days} days ago (more than ${staleAfter}). Review the document and bump "updated", or set "status: archived".`);
     }
+  }
+}
+
+/** `lang`: a language tag the renderer has labels for. Anything else is only information: labels render in English. */
+function checkLanguage(value: unknown, markKey: MarkKey): void {
+  if (value === undefined || value === null) return;
+  const supported = `Supported: ${SUPPORTED_LANGUAGES.join(', ')}.`;
+  const tag = languageTag(value);
+  if (!tag) {
+    markKey('lang', 'info', 'frontmatter/lang', `"lang" should be a language tag such as de or pt-BR; labels render in English. ${supported}`);
+  } else if (!matchLanguage(tag)) {
+    markKey('lang', 'info', 'frontmatter/lang', `No labels for language "${tag}" yet; they render in English. ${supported}`);
   }
 }
 

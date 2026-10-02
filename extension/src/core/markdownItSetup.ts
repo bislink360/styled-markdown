@@ -12,6 +12,7 @@ import {
   variablesAsText,
 } from './markdownItRules';
 import { glossaryTerms } from './markdownItGlossary';
+import { documentLanguage, languageTag, messagesFor, type Messages } from './i18n';
 import type { MarkdownItSmdOptions } from './markdownIt';
 
 /** Registers the .smd rules on a markdown-it instance, for renderSmd and for markdown-it hosts. */
@@ -29,12 +30,14 @@ export interface SmdContext {
   options(env: unknown): SmdRenderOptions;
   /** Inline Markdown in container titles. */
   title(text: string, env: unknown): string;
-  /** The computed grid of `:::risk-matrix` for a document's source; left out when absent. */
-  riskMatrix?: (source: string) => string;
+  /** The computed grid of `:::risk-matrix` for a document's source, labelled with `messages`; left out when absent. */
+  riskMatrix?: (source: string, messages: Messages) => string;
   /** The `data-line` attributes are the plugin's own (sourceLines), so code frames may move them. */
   ownLines: boolean;
   /** Front matter variables are on: `{{name}}` in directive content is replaced too. */
   variables?: boolean;
+  /** The labels for one render, in the document's language. */
+  messages(env: unknown): Messages;
 }
 
 /** The syntax to add, all resolved. */
@@ -69,7 +72,20 @@ export function hostContext(md: MarkdownIt, options: MarkdownItSmdOptions): SmdC
     title: (text, env) => md.renderInline(text, env as object | undefined),
     ownLines: options.sourceLines ?? false,
     variables: options.variables ?? true,
+    messages: (env) => messagesFor(hostLanguage(env, options.lang)),
   };
+}
+
+/** What a host's render env may say about the language: `lang`, and the front matter's (see addFrontMatter). */
+interface LanguageEnv {
+  lang?: unknown;
+  smdLang?: unknown;
+}
+
+/** A host render's language: the document's front matter `lang`, else `env.lang`, else the plugin's `lang` option. */
+function hostLanguage(env: unknown, fallback: string | undefined): string {
+  const e = (env && typeof env === 'object' ? env : {}) as LanguageEnv;
+  return documentLanguage(e.smdLang, languageTag(e.lang) ?? fallback);
 }
 
 const ALT = { alt: ['paragraph', 'reference', 'blockquote', 'list'] };
@@ -79,10 +95,10 @@ const applied = new WeakSet<MarkdownIt>();
 export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext): void {
   if (applied.has(md)) return;
   applied.add(md);
-  if (features.frontMatter) addFrontMatter(md);
+  if (features.frontMatter) addFrontMatter(md, ctx);
   if (features.containers) addContainers(md, ctx);
   if (features.math) addMath(md);
-  if (features.footnotes) addFootnotes(md);
+  if (features.footnotes) addFootnotes(md, ctx);
   addInline(md, features, ctx);
   // After linkify and the typographer, so URLs are links by then; before source lines.
   if (features.containers && features.glossary) md.core.ruler.push('smd_glossary', glossaryTerms);
@@ -93,11 +109,18 @@ export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext)
   }
 }
 
-function addFrontMatter(md: MarkdownIt): void {
+function addFrontMatter(md: MarkdownIt, ctx: SmdContext): void {
   md.block.ruler.before('table', 'smd_front_matter', frontMatterBlock);
+  // The front matter's `lang` goes on the env before inline parsing, so every label of the render follows it.
+  md.core.ruler.after('block', 'smd_front_matter_lang', (state) => {
+    const data = state.tokens.find((t) => t.type === 'smd_front_matter')?.meta as Record<string, unknown> | undefined;
+    if (data?.lang !== undefined && state.env && typeof state.env === 'object') (state.env as LanguageEnv).smdLang = data.lang;
+  });
   // Front matter values are shown as written: `{{name}}` in the title is not replaced.
-  md.renderer.rules.smd_front_matter = (tokens, idx, _opts, env) =>
-    `${renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), tokens[idx].meta as Record<string, unknown>)}\n`;
+  md.renderer.rules.smd_front_matter = (tokens, idx, _opts, env) => {
+    const header = renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), tokens[idx].meta as Record<string, unknown>, ctx.messages(env));
+    return `${header}\n`;
+  };
 }
 
 function addContainers(md: MarkdownIt, ctx: SmdContext): void {
@@ -123,7 +146,7 @@ function addMath(md: MarkdownIt): void {
 }
 
 /** GFM footnotes, unless markdown-it-footnote already handles them on this instance. */
-function addFootnotes(md: MarkdownIt): void {
+function addFootnotes(md: MarkdownIt, ctx: SmdContext): void {
   if (md.renderer.rules.footnote_ref) return;
   md.block.ruler.before('reference', 'smd_footnote_def', footnoteDefinition, { alt: ['paragraph', 'reference'] });
   // After links, so `[^1](url)` stays a link.
@@ -131,8 +154,8 @@ function addFootnotes(md: MarkdownIt): void {
   // Added before the passes in addCorePasses, so it runs after them.
   md.core.ruler.after('inline', 'smd_footnote_tail', footnoteTail);
   md.renderer.rules.smd_footnote_ref = footnoteRef;
-  md.renderer.rules.smd_footnote_backref = footnoteBackref;
-  md.renderer.rules.smd_footnotes_open = footnotesOpen;
+  md.renderer.rules.smd_footnote_backref = footnoteBackref(ctx.messages);
+  md.renderer.rules.smd_footnotes_open = footnotesOpen(ctx.messages);
   md.renderer.rules.smd_footnotes_close = footnotesClose;
   md.renderer.rules.smd_footnote_open = footnoteOpen;
   md.renderer.rules.smd_footnote_close = footnoteClose;
@@ -156,7 +179,7 @@ function addDirectives(md: MarkdownIt, ctx: SmdContext): void {
   md.inline.ruler.before('emphasis', 'smd_directive', (state, silent) => inlineDirective(state, silent, ctx));
   md.renderer.rules.smd_ref = (tokens, idx, _opts, env) => {
     const id = (tokens[idx].meta as { id: string }).id;
-    return renderRef(id, envFigures(env).get(id));
+    return renderRef(id, envFigures(env).get(id), ctx.messages(env));
   };
 }
 

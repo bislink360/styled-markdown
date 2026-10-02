@@ -174,5 +174,5 @@ export async function exportPdf(
 
 /** PDFs use the light theme, so diagrams (themed when they render) match the print stylesheet's palette. */
 export function lightTheme(html: string): string {
-  return html.replace(/<html lang="en" data-smd-theme-pref="[a-z]+"/, '<html lang="en" data-smd-theme-pref="light"');
+  return html.replace(/<html lang="([^"]*)" data-smd-theme-pref="[a-z]+"/, '<html lang="$1" data-smd-theme-pref="light"');
 }
