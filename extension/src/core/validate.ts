@@ -1,6 +1,6 @@
 import katex from 'katex';
 import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules';
-import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem } from './attrs';
+import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem, type Attrs } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS } from './render';
@@ -20,7 +20,7 @@ import {
 } from './fixes';
 import {
   ALIGN_VALUES, FONT_VALUES, NAMED_COLORS, PRIORITY_VALUES, SIZE_VALUES, STYLE_KEYS, WEIGHT_VALUES,
-  CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION,
+  CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION, type InlineDirectiveSpec,
 } from './spec';
 import { FRONTMATTER_SCHEMA, frontMatterProperty } from './frontmatterSchema';
 import { languageTag, matchLanguage, SUPPORTED_LANGUAGES } from './i18n';
@@ -424,60 +424,86 @@ function checkInline(raw: string, line: number, push: Push, variables: Variables
   // Blank out inline code so its contents are never treated as syntax.
   const text = raw.replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
 
+  const at: InlineAt = { line, text, push };
+
   // :directive[content]{attrs}
   const directiveSpans: Array<[number, number]> = [];
   for (const m of text.matchAll(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g)) {
     if (!m[3] && !m[4]) continue;
-    const name = m[2];
     const col = m.index! + m[1].length;
     const end = col + m[0].length - m[1].length;
     directiveSpans.push([col, end]);
-    const spec = INLINE_DIRECTIVES[name];
-    if (!spec) {
-      const hint = suggest(name, Object.keys(INLINE_DIRECTIVES));
-      // Only flag things that look intentional, e.g. ":badg[..]" — not "see:[link]".
-      if (hint) {
-        push(line, col, end, 'warning', 'directive/unknown', `Unknown inline directive ":${name}" — did you mean ":${hint}"?`,
-          { line, column: col + 1, endColumn: col + 1 + name.length, replacement: hint, title: `Change to ":${hint}"` });
-      }
-      continue;
-    }
-    if (spec.content && !m[3]) push(line, col, end, 'error', 'directive/content', `":${name}" needs content in brackets, e.g. ${spec.example}.`);
-    const attrs = m[4] ? parseAttrs(m[4].slice(1, -1)) : null;
-    if (m[4] && !attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed attribute list.'); continue; }
-    // Checked with front matter variables replaced: :due[{{deadline}}] is the date in "deadline".
-    const content = substituteLine(m[3]?.slice(1, -1) ?? '', variables).trim();
-    if (name === 'priority' && content && !PRIORITY_VALUES.some((v) => v.toLowerCase() === content.toLowerCase())) {
-      push(line, col, end, 'warning', 'attrs/value', `Unknown priority "${content}". Use one of: ${PRIORITY_VALUES.join(', ')}.`,
-        contentFix(line, text, col, name, content, uniqueSuggestion(content, PRIORITY_VALUES)));
-    }
-    if (name === 'due' && content && dueState(content) === 'invalid') {
-      push(line, col, end, 'error', 'attrs/value', `Due date "${content}" should look like 2026-10-15.`, contentFix(line, text, col, name, content, dueDate(content)));
-    }
-    if (name === 'metric' && !attrs?.values.label) {
-      push(line, col, end, 'warning', 'attrs/required', `":metric" should have a label, e.g. :metric[${content || '42%'}]{label="Activation"}.`);
-    }
-    if (!attrs) continue;
-    const values = spec.values ?? {};
-    const keys = Object.keys(attrs.values);
-    for (const [key, value] of Object.entries(attrs.values)) {
-      if (values[key] && !values[key].includes(value)) {
-        push(line, col, end, 'error', 'attrs/value', `Invalid ${key} "${value}" for ":${name}". Use one of: ${values[key].join(', ')}.`,
-          attrValueFix(line, text, col, end, key, value, uniqueSuggestion(value, values[key])));
-      } else if (!spec.attrs.includes(key)) {
-        push(line, col, end, 'warning', 'attrs/unknown', `":${name}" does not take "${key}". Accepted: ${spec.attrs.join(', ') || 'none'}.`,
-          attrKeyFix(line, text, col, end, key, spec.attrs, keys));
-      } else if (key === 'color' && !resolveColor(value)) {
-        push(line, col, end, 'error', 'attrs/value', `Invalid color "${value}".`, attrValueFix(line, text, col, end, key, value, namedColor(value)));
-      }
-      else if (key === 'value') {
-        const n = Number(value);
-        if (!Number.isFinite(n) || n < 0 || n > 100) push(line, col, end, 'error', 'attrs/value', `Progress value must be a number from 0 to 100, got "${value}".`);
-      }
-    }
+    checkDirective(at, { name: m[2], col, end, content: m[3], attrList: m[4] }, variables);
   }
+  checkStyledSpans(at, directiveSpans);
+}
 
-  // [text]{attrs} — styled spans (skip the attribute lists that belong to directives)
+/** Where an inline check reports: the line, its text with inline code blanked out, and the push. */
+interface InlineAt { line: number; text: string; push: Push }
+
+/** One `:name[content]{attrs}` on the line: `content` and `attrList` keep their brackets. */
+interface DirectiveUse { name: string; col: number; end: number; content?: string; attrList?: string }
+
+function checkDirective(at: InlineAt, d: DirectiveUse, variables: Variables): void {
+  const { line, push } = at;
+  const spec = INLINE_DIRECTIVES[d.name];
+  if (!spec) { unknownDirective(at, d); return; }
+  if (spec.content && !d.content) push(line, d.col, d.end, 'error', 'directive/content', `":${d.name}" needs content in brackets, e.g. ${spec.example}.`);
+  const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1)) : null;
+  if (d.attrList && !attrs) { push(line, d.col, d.end, 'error', 'attrs/syntax', 'Malformed attribute list.'); return; }
+  // Checked with front matter variables replaced: :due[{{deadline}}] is the date in "deadline".
+  const content = substituteLine(d.content?.slice(1, -1) ?? '', variables).trim();
+  checkDirectiveContent(at, d, content, attrs);
+  if (attrs) checkDirectiveAttrs(at, d, spec, attrs);
+}
+
+/** Only flag names that look intentional, e.g. ":badg[..]" — not "see:[link]". */
+function unknownDirective({ line, push }: InlineAt, { name, col, end }: DirectiveUse): void {
+  const hint = suggest(name, Object.keys(INLINE_DIRECTIVES));
+  if (!hint) return;
+  push(line, col, end, 'warning', 'directive/unknown', `Unknown inline directive ":${name}" — did you mean ":${hint}"?`,
+    { line, column: col + 1, endColumn: col + 1 + name.length, replacement: hint, title: `Change to ":${hint}"` });
+}
+
+function checkDirectiveContent({ line, text, push }: InlineAt, { name, col, end }: DirectiveUse, content: string, attrs: Attrs | null): void {
+  if (name === 'priority' && content && !PRIORITY_VALUES.some((v) => v.toLowerCase() === content.toLowerCase())) {
+    push(line, col, end, 'warning', 'attrs/value', `Unknown priority "${content}". Use one of: ${PRIORITY_VALUES.join(', ')}.`,
+      contentFix(line, text, col, name, content, uniqueSuggestion(content, PRIORITY_VALUES)));
+  }
+  if (name === 'due' && content && dueState(content) === 'invalid') {
+    push(line, col, end, 'error', 'attrs/value', `Due date "${content}" should look like 2026-10-15.`, contentFix(line, text, col, name, content, dueDate(content)));
+  }
+  if (name === 'metric' && !attrs?.values.label) {
+    push(line, col, end, 'warning', 'attrs/required', `":metric" should have a label, e.g. :metric[${content || '42%'}]{label="Activation"}.`);
+  }
+}
+
+function checkDirectiveAttrs(at: InlineAt, d: DirectiveUse, spec: InlineDirectiveSpec, attrs: Attrs): void {
+  const keys = Object.keys(attrs.values);
+  for (const [key, value] of Object.entries(attrs.values)) checkDirectiveAttr(at, d, spec, { key, value, keys });
+}
+
+/** One attribute of a directive: an allowed value, an accepted key, a color, a progress value. */
+function checkDirectiveAttr(
+  { line, text, push }: InlineAt, { name, col, end }: DirectiveUse, spec: InlineDirectiveSpec, { key, value, keys }: { key: string; value: string; keys: string[] },
+): void {
+  const allowed = spec.values?.[key];
+  if (allowed && !allowed.includes(value)) {
+    push(line, col, end, 'error', 'attrs/value', `Invalid ${key} "${value}" for ":${name}". Use one of: ${allowed.join(', ')}.`,
+      attrValueFix(line, text, col, end, key, value, uniqueSuggestion(value, allowed)));
+  } else if (!spec.attrs.includes(key)) {
+    push(line, col, end, 'warning', 'attrs/unknown', `":${name}" does not take "${key}". Accepted: ${spec.attrs.join(', ') || 'none'}.`,
+      attrKeyFix(line, text, col, end, key, spec.attrs, keys));
+  } else if (key === 'color' && !resolveColor(value)) {
+    push(line, col, end, 'error', 'attrs/value', `Invalid color "${value}".`, attrValueFix(line, text, col, end, key, value, namedColor(value)));
+  } else if (key === 'value') {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 100) push(line, col, end, 'error', 'attrs/value', `Progress value must be a number from 0 to 100, got "${value}".`);
+  }
+}
+
+/** `[text]{attrs}` styled spans; the attribute lists that belong to directives are skipped. */
+function checkStyledSpans({ line, text, push }: InlineAt, directiveSpans: Array<[number, number]>): void {
   for (const m of text.matchAll(/\]\{([^{}\n]*)\}/g)) {
     const col = m.index! + 1;
     const end = col + m[0].length - 1;
