@@ -2,7 +2,7 @@
   "name": "styled-markdown",
   "displayName": "Styled Markdown (.smd)",
   "description": "Markdown for humans and AI agents: callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "publisher": "bislink360",
   "author": {
     "name": "Roshan Alwis"

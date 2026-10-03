@@ -63,6 +63,9 @@ Should we support Windows ARM in the first release?
 
 ## Diagrams
 
+The authoring loop is in :ref[fig-workflow]: figures are numbered for you, and `:ref` links to them.
+
+:::figure{#fig-workflow} Writing, checking and exporting a document
 ```mermaid
 flowchart LR
     A[Write .smd] --> B{Validate}
@@ -71,6 +74,7 @@ flowchart LR
     C --> D[Export HTML]
     C --> E[Export .md for GitHub]
 ```
+:::
 
 ```mermaid
 sequenceDiagram

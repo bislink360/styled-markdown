@@ -6,6 +6,7 @@ import { parseSmd } from './parse';
 import type { Heading } from './render';
 import { CALLOUT_TYPES, CONTAINERS, RISK_LEVELS, STYLE_KEYS } from './spec';
 import { suggest } from './util';
+import { documentVariables } from './variables';
 
 /**
  * Block queries: select decisions, risks, API endpoints, callouts, tasks and headings by type and
@@ -80,6 +81,7 @@ const DEFAULTS: Record<string, Record<string, string>> = {
   decision: { status: 'proposed' },
   risk: { impact: 'medium' },
   api: { method: 'GET' },
+  figure: { kind: 'figure' },
 };
 const PRIORITY_RANK: Record<string, number> = { p0: 0, critical: 0, p1: 1, high: 1, p2: 2, medium: 2, p3: 3, low: 3, p4: 4 };
 
@@ -270,6 +272,7 @@ function taskBlocks(text: string, today: string, sectionAt: (line: number) => st
 }
 
 function containerBlocks(lines: string[], from: number, sectionAt: (line: number) => string | null): Block[] {
+  const variables = documentVariables(lines);
   const blocks: Block[] = [];
   const open: Block[] = [];
   let fence: Fence = null;
@@ -284,7 +287,7 @@ function containerBlocks(lines: string[], from: number, sectionAt: (line: number
     }
     const info = openingOf(lines[i]);
     if (!info) continue;
-    const block: Block = { type: info.name, line: i, endLine: lines.length - 1, title: inlineText(info.title), attrs: containerAttrs(info), section: sectionAt(i) };
+    const block: Block = { type: info.name, line: i, endLine: lines.length - 1, title: inlineText(info.title, undefined, false, undefined, variables), attrs: containerAttrs(info), section: sectionAt(i) };
     blocks.push(block);
     open.push(block);
   }

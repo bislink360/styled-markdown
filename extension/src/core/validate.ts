@@ -1,20 +1,29 @@
 import katex from 'katex';
 import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules';
-import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem } from './attrs';
+import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem, type Attrs } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS } from './render';
+import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
+import { checkIncludes, documentIds, includedFigureIds, includedTermIds } from './includeCheck';
 import { parseFenceInfo, sliceLines } from './fence';
+import { figureTargets, findRefs, type Figure, type FigureRef } from './figures';
+import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, versionLabel, type ChangelogEntry, type Version } from './changelog';
+import { findQuotes, quoteCite, type QuoteBlock } from './quote';
+import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
+import { parseSmd } from './parse';
+import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
 import { suggest } from './util';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
 } from './fixes';
 import {
   ALIGN_VALUES, FONT_VALUES, NAMED_COLORS, PRIORITY_VALUES, SIZE_VALUES, STYLE_KEYS, WEIGHT_VALUES,
-  CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION,
+  CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION, type InlineDirectiveSpec,
 } from './spec';
 import { FRONTMATTER_SCHEMA, frontMatterProperty } from './frontmatterSchema';
+import { languageTag, matchLanguage, SUPPORTED_LANGUAGES } from './i18n';
 
 export type Severity = 'error' | 'warning' | 'info' | 'hint';
 
@@ -44,7 +53,7 @@ export interface Fix {
 export interface ValidateOptions {
   /** Return true when a path (relative to the document) exists. Omit to skip link checks. */
   fileExists?: (relativePath: string) => boolean;
-  /** Read a file relative to the document, for checking `file="…" lines="…"` embeds. */
+  /** Read a file relative to the document, for checking `file="…" lines="…"` embeds and `:::include` blocks. */
   readFile?: (relativePath: string) => string | undefined;
   /** "Today" as YYYY-MM-DD for overdue and stale checks. Defaults to the current date. */
   today?: string;
@@ -158,7 +167,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       push(i, due.index, due.index + due[0].length, 'info', 'task/overdue', `Open task is overdue (due ${due[1]}).`);
     }
 
-    checkInline(raw, i, push);
+    checkInline(raw, i, push, fm.data);
   }
 
   if (fence) {
@@ -177,6 +186,15 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   }
 
   checkLinks(text, push, options);
+  checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
+  checkFigures(text, lines, fm.bodyStartLine, push, () => includedFigureIds(text, options.readFile));
+  checkFootnotes(text, push);
+  checkGlossary(lines, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
+  // Release headings are read with their `{{name}}` values in, as they render.
+  const expanded = lines.map((l) => substituteLine(l, fm.data));
+  for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
+  for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
+  checkVariables(lines, fm.bodyStartLine, fm.data, push);
 
   let result = applySuppressions(text, diagnostics);
   if (options.rules) result = applyRuleSettings(result, options.rules);
@@ -185,6 +203,17 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
 type Push = (line: number, column: number, endColumn: number, severity: Severity, code: string, message: string, fix?: Fix) => void;
 type WholeLine = (line: number, severity: Severity, code: string, message: string) => void;
+type MarkKey = (key: string, severity: Severity, code: string, message: string, fix?: FrontMatterFix) => void;
+
+/** A front matter key outside the schema, with a rename to the close standard key when there is one. */
+function unknownKey(key: string, l: number, lines: string[], push: Push): void {
+  const hint = suggest(key, Object.keys(FRONTMATTER_SCHEMA.properties));
+  // Only offer the rename where the key is written as-is; never rewrite the `---` line.
+  const found = l > 0;
+  push(l, 0, found ? key.length : lines[0].length, 'hint', 'frontmatter/unknown-key',
+    `"${key}" is not a standard front matter key${hint ? ` — did you mean "${hint}"?` : '.'} It is kept as custom metadata.`,
+    hint && found ? { line: l, column: 0, endColumn: key.length, replacement: hint, title: `Change to "${hint}"` } : undefined);
+}
 
 /** Status values whose documents are not expected to be kept up to date. */
 const RETIRED_STATUS = ['archived', 'deprecated'];
@@ -200,7 +229,7 @@ function checkFrontMatter(
     for (let i = 1; i < end; i++) if (re.test(lines[i])) return i;
     return 0;
   };
-  const markKey = (key: string, severity: Severity, code: string, message: string, fix?: FrontMatterFix) => {
+  const markKey: MarkKey = (key, severity, code, message, fix) => {
     const l = keyLine(key);
     push(l, 0, lines[l]?.length ?? key.length, severity, code, message, fix?.(lines, l, key, String(data[key])));
   };
@@ -212,20 +241,15 @@ function checkFrontMatter(
     markKey('smd', 'warning', 'frontmatter/version', `Unsupported Styled Markdown version "${data.smd}". This tool supports version ${SMD_VERSION}.`);
   }
 
-  const known = Object.keys(FRONTMATTER_SCHEMA.properties);
+  // Custom keys the body shows with `{{key}}` are meant: no unknown-key hint for them.
+  const shown = new Set(findVariables(lines, end).map((v) => v.name.split('.')[0]));
   for (const [key, value] of Object.entries(data)) {
     const prop = frontMatterProperty(key);
     if (!prop) {
-      const hint = suggest(key, known);
-      const l = keyLine(key);
-      // Only offer the rename where the key is written as-is; never rewrite the `---` line.
-      const found = l > 0;
-      push(l, 0, found ? key.length : lines[0].length, 'hint', 'frontmatter/unknown-key',
-        `"${key}" is not a standard front matter key${hint ? ` — did you mean "${hint}"?` : '.'} It is kept as custom metadata.`,
-        hint && found ? { line: l, column: 0, endColumn: key.length, replacement: hint, title: `Change to "${hint}"` } : undefined);
+      if (!shown.has(key)) unknownKey(key, keyLine(key), lines, push);
       continue;
     }
-    if (key === 'smd' || value === undefined || value === null) continue;
+    if (key === 'smd' || key === 'lang' || value === undefined || value === null) continue;
     if (key === 'accent') {
       if (!resolveColor(String(value))) markKey(key, 'error', 'frontmatter/accent', `Invalid accent color "${value}".`, fixColorValue);
     } else if (prop.enum) {
@@ -246,6 +270,8 @@ function checkFrontMatter(
     }
   }
 
+  checkLanguage(data.lang, markKey);
+
   // Stale documents: `updated` long ago on a document that is still live.
   const staleAfter = options.staleAfterDays ?? 180;
   const updated = typeof data.updated === 'string' ? data.updated.slice(0, 10) : '';
@@ -256,6 +282,18 @@ function checkFrontMatter(
       markKey('updated', 'info', 'frontmatter/stale',
         `Last updated ${days} days ago (more than ${staleAfter}). Review the document and bump "updated", or set "status: archived".`);
     }
+  }
+}
+
+/** `lang`: a language tag the renderer has labels for. Anything else is only information: labels render in English. */
+function checkLanguage(value: unknown, markKey: MarkKey): void {
+  if (value === undefined || value === null) return;
+  const supported = `Supported: ${SUPPORTED_LANGUAGES.join(', ')}.`;
+  const tag = languageTag(value);
+  if (!tag) {
+    markKey('lang', 'info', 'frontmatter/lang', `"lang" should be a language tag such as de or pt-BR; labels render in English. ${supported}`);
+  } else if (!matchLanguage(tag)) {
+    markKey('lang', 'info', 'frontmatter/lang', `No labels for language "${tag}" yet; they render in English. ${supported}`);
   }
 }
 
@@ -312,6 +350,19 @@ function dueDate(content: string): string | undefined {
   return date && dueState(date) !== 'invalid' ? date : undefined;
 }
 
+/**
+ * Enumerated container attributes whose invalid values are reported under their own rule. `:::figure{kind}`
+ * is a warning: before 1.6 such a document only had a `container/unknown` warning and passed validation.
+ */
+const ENUM_VALUE_RULES = new Map<string, { severity: Severity; code: string }>([
+  ['figure.kind', { severity: 'warning', code: 'figure/kind' }],
+]);
+
+/** The rule for an invalid value of an enumerated container attribute: `attrs/value` (error) unless listed above. */
+function enumValueRule(container: string, key: string): { severity: Severity; code: string } {
+  return ENUM_VALUE_RULES.get(`${container}.${key}`) ?? { severity: 'error', code: 'attrs/value' };
+}
+
 function checkContainer(
   info: NonNullable<ReturnType<typeof parseContainerInfo>>,
   line: number, nameStart: number, nameEnd: number, parent: string | undefined, push: Push, raw: string,
@@ -344,7 +395,8 @@ function checkContainer(
     const v = info.attrs.values[key];
     if (v !== undefined && !allowed.some((a) => a.toLowerCase() === v.toLowerCase())) {
       const hint = suggest(v, allowed);
-      push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
+      const rule = enumValueRule(info.name, key);
+      push(line, nameStart, nameEnd, rule.severity, rule.code, `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
         attrValueFix(line, raw, nameEnd, raw.length, key, v, uniqueSuggestion(v, allowed)));
     }
   }
@@ -368,63 +420,90 @@ function checkContainer(
   }
 }
 
-function checkInline(raw: string, line: number, push: Push): void {
+function checkInline(raw: string, line: number, push: Push, variables: Variables): void {
   // Blank out inline code so its contents are never treated as syntax.
   const text = raw.replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
+
+  const at: InlineAt = { line, text, push };
 
   // :directive[content]{attrs}
   const directiveSpans: Array<[number, number]> = [];
   for (const m of text.matchAll(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g)) {
     if (!m[3] && !m[4]) continue;
-    const name = m[2];
     const col = m.index! + m[1].length;
     const end = col + m[0].length - m[1].length;
     directiveSpans.push([col, end]);
-    const spec = INLINE_DIRECTIVES[name];
-    if (!spec) {
-      const hint = suggest(name, Object.keys(INLINE_DIRECTIVES));
-      // Only flag things that look intentional, e.g. ":badg[..]" — not "see:[link]".
-      if (hint) {
-        push(line, col, end, 'warning', 'directive/unknown', `Unknown inline directive ":${name}" — did you mean ":${hint}"?`,
-          { line, column: col + 1, endColumn: col + 1 + name.length, replacement: hint, title: `Change to ":${hint}"` });
-      }
-      continue;
-    }
-    if (spec.content && !m[3]) push(line, col, end, 'error', 'directive/content', `":${name}" needs content in brackets, e.g. ${spec.example}.`);
-    const attrs = m[4] ? parseAttrs(m[4].slice(1, -1)) : null;
-    if (m[4] && !attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed attribute list.'); continue; }
-    const content = m[3]?.slice(1, -1).trim() ?? '';
-    if (name === 'priority' && content && !PRIORITY_VALUES.some((v) => v.toLowerCase() === content.toLowerCase())) {
-      push(line, col, end, 'warning', 'attrs/value', `Unknown priority "${content}". Use one of: ${PRIORITY_VALUES.join(', ')}.`,
-        contentFix(line, text, col, name, content, uniqueSuggestion(content, PRIORITY_VALUES)));
-    }
-    if (name === 'due' && content && dueState(content) === 'invalid') {
-      push(line, col, end, 'error', 'attrs/value', `Due date "${content}" should look like 2026-10-15.`, contentFix(line, text, col, name, content, dueDate(content)));
-    }
-    if (name === 'metric' && !attrs?.values.label) {
-      push(line, col, end, 'warning', 'attrs/required', `":metric" should have a label, e.g. :metric[${content || '42%'}]{label="Activation"}.`);
-    }
-    if (!attrs) continue;
-    const values = spec.values ?? {};
-    const keys = Object.keys(attrs.values);
-    for (const [key, value] of Object.entries(attrs.values)) {
-      if (values[key] && !values[key].includes(value)) {
-        push(line, col, end, 'error', 'attrs/value', `Invalid ${key} "${value}" for ":${name}". Use one of: ${values[key].join(', ')}.`,
-          attrValueFix(line, text, col, end, key, value, uniqueSuggestion(value, values[key])));
-      } else if (!spec.attrs.includes(key)) {
-        push(line, col, end, 'warning', 'attrs/unknown', `":${name}" does not take "${key}". Accepted: ${spec.attrs.join(', ') || 'none'}.`,
-          attrKeyFix(line, text, col, end, key, spec.attrs, keys));
-      } else if (key === 'color' && !resolveColor(value)) {
-        push(line, col, end, 'error', 'attrs/value', `Invalid color "${value}".`, attrValueFix(line, text, col, end, key, value, namedColor(value)));
-      }
-      else if (key === 'value') {
-        const n = Number(value);
-        if (!Number.isFinite(n) || n < 0 || n > 100) push(line, col, end, 'error', 'attrs/value', `Progress value must be a number from 0 to 100, got "${value}".`);
-      }
-    }
+    checkDirective(at, { name: m[2], col, end, content: m[3], attrList: m[4] }, variables);
   }
+  checkStyledSpans(at, directiveSpans);
+}
 
-  // [text]{attrs} — styled spans (skip the attribute lists that belong to directives)
+/** Where an inline check reports: the line, its text with inline code blanked out, and the push. */
+interface InlineAt { line: number; text: string; push: Push }
+
+/** One `:name[content]{attrs}` on the line: `content` and `attrList` keep their brackets. */
+interface DirectiveUse { name: string; col: number; end: number; content?: string; attrList?: string }
+
+function checkDirective(at: InlineAt, d: DirectiveUse, variables: Variables): void {
+  const { line, push } = at;
+  const spec = INLINE_DIRECTIVES[d.name];
+  if (!spec) { unknownDirective(at, d); return; }
+  if (spec.content && !d.content) push(line, d.col, d.end, 'error', 'directive/content', `":${d.name}" needs content in brackets, e.g. ${spec.example}.`);
+  const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1)) : null;
+  if (d.attrList && !attrs) { push(line, d.col, d.end, 'error', 'attrs/syntax', 'Malformed attribute list.'); return; }
+  // Checked with front matter variables replaced: :due[{{deadline}}] is the date in "deadline".
+  const content = substituteLine(d.content?.slice(1, -1) ?? '', variables).trim();
+  checkDirectiveContent(at, d, content, attrs);
+  if (attrs) checkDirectiveAttrs(at, d, spec, attrs);
+}
+
+/** Only flag names that look intentional, e.g. ":badg[..]" — not "see:[link]". */
+function unknownDirective({ line, push }: InlineAt, { name, col, end }: DirectiveUse): void {
+  const hint = suggest(name, Object.keys(INLINE_DIRECTIVES));
+  if (!hint) return;
+  push(line, col, end, 'warning', 'directive/unknown', `Unknown inline directive ":${name}" — did you mean ":${hint}"?`,
+    { line, column: col + 1, endColumn: col + 1 + name.length, replacement: hint, title: `Change to ":${hint}"` });
+}
+
+function checkDirectiveContent({ line, text, push }: InlineAt, { name, col, end }: DirectiveUse, content: string, attrs: Attrs | null): void {
+  if (name === 'priority' && content && !PRIORITY_VALUES.some((v) => v.toLowerCase() === content.toLowerCase())) {
+    push(line, col, end, 'warning', 'attrs/value', `Unknown priority "${content}". Use one of: ${PRIORITY_VALUES.join(', ')}.`,
+      contentFix(line, text, col, name, content, uniqueSuggestion(content, PRIORITY_VALUES)));
+  }
+  if (name === 'due' && content && dueState(content) === 'invalid') {
+    push(line, col, end, 'error', 'attrs/value', `Due date "${content}" should look like 2026-10-15.`, contentFix(line, text, col, name, content, dueDate(content)));
+  }
+  if (name === 'metric' && !attrs?.values.label) {
+    push(line, col, end, 'warning', 'attrs/required', `":metric" should have a label, e.g. :metric[${content || '42%'}]{label="Activation"}.`);
+  }
+}
+
+function checkDirectiveAttrs(at: InlineAt, d: DirectiveUse, spec: InlineDirectiveSpec, attrs: Attrs): void {
+  const keys = Object.keys(attrs.values);
+  for (const [key, value] of Object.entries(attrs.values)) checkDirectiveAttr(at, d, spec, { key, value, keys });
+}
+
+/** One attribute of a directive: an allowed value, an accepted key, a color, a progress value. */
+function checkDirectiveAttr(
+  { line, text, push }: InlineAt, { name, col, end }: DirectiveUse, spec: InlineDirectiveSpec, { key, value, keys }: { key: string; value: string; keys: string[] },
+): void {
+  const allowed = spec.values?.[key];
+  if (allowed && !allowed.includes(value)) {
+    push(line, col, end, 'error', 'attrs/value', `Invalid ${key} "${value}" for ":${name}". Use one of: ${allowed.join(', ')}.`,
+      attrValueFix(line, text, col, end, key, value, uniqueSuggestion(value, allowed)));
+  } else if (!spec.attrs.includes(key)) {
+    push(line, col, end, 'warning', 'attrs/unknown', `":${name}" does not take "${key}". Accepted: ${spec.attrs.join(', ') || 'none'}.`,
+      attrKeyFix(line, text, col, end, key, spec.attrs, keys));
+  } else if (key === 'color' && !resolveColor(value)) {
+    push(line, col, end, 'error', 'attrs/value', `Invalid color "${value}".`, attrValueFix(line, text, col, end, key, value, namedColor(value)));
+  } else if (key === 'value') {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 100) push(line, col, end, 'error', 'attrs/value', `Progress value must be a number from 0 to 100, got "${value}".`);
+  }
+}
+
+/** `[text]{attrs}` styled spans; the attribute lists that belong to directives are skipped. */
+function checkStyledSpans({ line, text, push }: InlineAt, directiveSpans: Array<[number, number]>): void {
   for (const m of text.matchAll(/\]\{([^{}\n]*)\}/g)) {
     const col = m.index! + 1;
     const end = col + m[0].length - 1;
@@ -459,14 +538,15 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
     return otherIds.get(path);
   };
 
-  for (const link of links) {
+  // `:::include` files have their own checks (includeCheck.ts).
+  for (const link of links.filter((l) => l.kind !== 'include')) {
     const parts = splitTarget(link.target);
     if (!parts) continue;
     const { line, column } = link;
     const end = column + link.target.length;
     if (!parts.path) {
       if (!parts.anchor) continue;
-      ownIds ??= anchorIds(text);
+      ownIds ??= documentIds(text, options.readFile);
       if (!ownIds.has(parts.anchor)) {
         missingAnchor(parts.anchor, ownIds, 'in this document', link.target, line, column, end, push);
       }
@@ -494,6 +574,43 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
   }
 }
 
+/**
+ * Footnotes: every `[^label]` needs a definition, and each definition a reference and a label of its own.
+ * Without any definition in the document, `[^x]` is as likely plain text (a regex class such as `[^a-z]`),
+ * so an undefined reference is only `info` then.
+ */
+function checkFootnotes(text: string, push: Push): void {
+  const { definitions, references } = findFootnotes(text);
+  const defined = new Map<string, FootnoteDefinition>();
+  for (const d of definitions) {
+    const first = defined.get(d.label);
+    if (first) {
+      push(d.line, d.column, d.endColumn, 'warning', 'footnote/duplicate',
+        `Footnote "[^${d.raw}]" is already defined on line ${first.line + 1}; this definition is ignored.`);
+    } else {
+      defined.set(d.label, d);
+    }
+  }
+  const labels = [...defined.values()].map((d) => d.raw);
+  for (const r of references) {
+    if (!defined.has(r.label)) undefinedFootnote(r, labels, push);
+  }
+  const used = new Set(references.map((r) => r.label));
+  for (const d of defined.values()) {
+    if (!used.has(d.label)) {
+      push(d.line, d.column, d.endColumn, 'info', 'footnote/unused', `Footnote "[^${d.raw}]" is never referenced, so it is not shown.`);
+    }
+  }
+}
+
+function undefinedFootnote(ref: FootnoteReference, labels: string[], push: Push): void {
+  const hint = uniqueSuggestion(ref.raw, labels);
+  const column = ref.column + 2;
+  push(ref.line, ref.column, ref.endColumn, labels.length ? 'warning' : 'info', 'footnote/undefined',
+    `No definition for the footnote "[^${ref.raw}]"${hint ? ` — did you mean "[^${hint}]"?` : '.'} Add a line like "[^${ref.raw}]: …"; until then it shows as plain text.`,
+    hint ? { line: ref.line, column, endColumn: column + ref.raw.length, replacement: hint, title: `Change to "[^${hint}]"` } : undefined);
+}
+
 function missingAnchor(
   anchor: string, ids: Set<string>, where: string, target: string,
   line: number, column: number, end: number, push: Push,
@@ -503,6 +620,155 @@ function missingAnchor(
   push(line, column, end, 'warning', 'link/missing-anchor',
     `No heading or element with id "${anchor}" ${where}${hint ? ` — did you mean "#${hint}"?` : '.'}`,
     fixed ? { line, column, endColumn: end, replacement: fixed, title: `Change to "${fixed}"` } : undefined);
+}
+
+/** Figure ids are unique, and every `:ref[id]` names a figure of this document. */
+/** Figure ids and `:ref[id]` references; `included` lists the ids of figures brought in by `:::include`. */
+function checkFigures(text: string, lines: string[], bodyStart: number, push: Push, included: () => Set<string>): void {
+  const figures = parseSmd(text).figures;
+  const targets = figureTargets(figures);
+  for (const f of figures) {
+    const first = f.id ? targets.get(f.id) : undefined;
+    if (first && first !== f) duplicateFigure(f, first, lines[f.line], push);
+  }
+  let fromIncludes: Set<string> | undefined;
+  for (const ref of findRefs(lines, bodyStart)) {
+    if (targets.has(ref.id)) continue;
+    fromIncludes ??= included();
+    if (!fromIncludes.has(ref.id)) unknownRef(ref, [...targets.keys(), ...fromIncludes], push);
+  }
+}
+
+/**
+ * `{{name}}` in the body names a front matter key with a text value. Undefined names are only `info`: until
+ * 1.6, `{{…}}` was plain text (templates, Handlebars or Jinja examples), so it must not start failing checks.
+ */
+function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push): void {
+  const uses = findVariables(lines, bodyStart);
+  if (!uses.length) return;
+  const names = [...new Set([...Object.keys(data), ...variableNames(data).map((v) => v.name)])];
+  for (const use of uses) {
+    const value = lookupVariable(data, use.name);
+    if (value.kind === 'undefined') undefinedVariable(use, lines[use.line], names, push);
+    else if (value.kind === 'not-text') {
+      push(use.line, use.column, use.endColumn, 'warning', 'variable/not-text',
+        `"${use.name}" in the front matter is a mapping or has no value, so {{${use.name}}} is shown as written. Use a key with a text, number or list value${nestedHint(data, use.name)}.`);
+    }
+  }
+}
+
+/** ", e.g. {{owner.name}}" when the name is a mapping with text values. */
+function nestedHint(data: Variables, name: string): string {
+  const nested = variableNames(data).find((v) => v.name.startsWith(`${name}.`));
+  return nested ? `, e.g. {{${nested.name}}}` : '';
+}
+
+function undefinedVariable(use: VariableUse, raw: string, names: string[], push: Push): void {
+  const hint = suggest(use.name, names);
+  const start = raw.indexOf(use.name, use.column);
+  push(use.line, use.column, use.endColumn, 'info', 'variable/undefined',
+    `"${use.name}" is not defined in the front matter, so {{${use.name}}} is shown as written${hint ? ` — did you mean "${hint}"?` : '.'} Add "${use.name}: …" to the front matter, or write \\{{${use.name}}} to keep the braces.`,
+    hint ? { line: use.line, column: start, endColumn: start + use.name.length, replacement: hint, title: `Change to "{{${hint}}}"` } : undefined);
+}
+
+function duplicateFigure(figure: Figure, first: Figure, raw: string, push: Push): void {
+  const at = raw.indexOf(`#${figure.id}`);
+  const [column, end] = at < 0 ? [0, raw.length] : [at, at + figure.id!.length + 1];
+  push(figure.line, column, end, 'warning', 'figure/duplicate-id',
+    `The figure on line ${first.line + 1} already has the id "${figure.id}"; :ref[${figure.id}] refers to that one. Give this figure its own id.`);
+}
+
+function unknownRef(ref: FigureRef, ids: string[], push: Push): void {
+  const hint = ref.id ? suggest(ref.id, ids) : undefined;
+  const start = ref.column + ':ref['.length;
+  push(ref.line, ref.column, ref.endColumn, 'warning', 'figure/unknown-ref',
+    `No figure with id "${ref.id}" in this document${hint ? ` — did you mean "${hint}"?` : '.'} Give a :::figure that id with {#${ref.id || 'fig-id'}}.`,
+    hint ? { line: ref.line, column: start, endColumn: ref.endColumn - 1, replacement: hint, title: `Change to ":ref[${hint}]"` } : undefined);
+}
+
+/**
+ * Glossary entries are `**Term**: definition` items, each term is defined once, and each is used in the text;
+ * `included` gives the terms used in included text (rendering it only when a term is not used otherwise).
+ */
+function checkGlossary(lines: string[], bodyStart: number, push: Push, included: () => Set<string>): void {
+  const glossary = findGlossary(lines, bodyStart);
+  for (const problem of glossary.problems) glossaryProblem(problem, push);
+  const first = new Map<string, GlossaryEntry>();
+  for (const entry of glossary.entries) {
+    const earlier = first.get(entry.id);
+    if (earlier) {
+      push(entry.line, entry.column, entry.endColumn, 'warning', 'glossary/duplicate',
+        `"${entry.term}" is already defined on line ${earlier.line + 1}; its uses link to that definition. Remove or merge this entry.`);
+    } else {
+      first.set(entry.id, entry);
+    }
+  }
+  if (!first.size) return;
+  const used = new Set(findTermUses(lines, bodyStart, glossary).map((u) => u.entry.id));
+  const unused = [...first.values()].filter((e) => !used.has(e.id));
+  const usedInIncludes = unused.length ? included() : new Set<string>();
+  for (const entry of unused) {
+    if (!usedInIncludes.has(entry.id)) {
+      push(entry.line, entry.column, entry.endColumn, 'info', 'glossary/unused', `"${entry.term}" is defined in the glossary but never used in the text.`);
+    }
+  }
+}
+
+function glossaryProblem(problem: GlossaryProblem, push: Push): void {
+  const message = problem.kind === 'empty'
+    ? 'This glossary entry has no definition; write it after the colon.'
+    : 'Glossary entries are list items written "**Term**: definition". This item is not one, so its list renders as a plain list and defines no terms.';
+  push(problem.line, problem.column, problem.endColumn, 'warning', 'glossary/entry', message);
+}
+
+/** A changelog's entries: dates are YYYY-MM-DD, versions run newest first, and each version appears once. */
+function checkChangelog(entries: ChangelogEntry[], lines: string[], push: Push): void {
+  const seen = new Map<string, ChangelogEntry>();
+  let previous: { entry: ChangelogEntry; version: Version } | undefined;
+  for (const entry of entries) {
+    if (entry.date !== undefined && !isIsoDate(entry.date)) changelogDate(entry, lines[entry.line], push);
+    const key = versionKey(entry.version);
+    const first = seen.get(key);
+    if (first) {
+      push(entry.line, entry.column, lines[entry.line].length, 'warning', 'changelog/duplicate',
+        `Version ${versionLabel(entry.version)} is already listed on line ${first.line + 1}. Merge the two entries.`);
+      continue;
+    }
+    seen.set(key, entry);
+    const version = parseVersion(entry.version);
+    if (!version) continue;
+    if (previous && compareVersions(version, previous.version) > 0) {
+      push(entry.line, entry.column, lines[entry.line].length, 'warning', 'changelog/order',
+        `Version ${versionLabel(entry.version)} is newer than ${versionLabel(previous.entry.version)} on line ${previous.entry.line + 1}. List releases newest first.`);
+    }
+    previous = { entry, version };
+  }
+}
+
+function changelogDate(entry: ChangelogEntry, raw: string, push: Push): void {
+  const date = entry.date!;
+  const message = `"${date}" is not a date like 2026-03-01; release headings are written "## 1.2.0 — 2026-03-01".`;
+  const column = raw.lastIndexOf(date);
+  // A date from a {{name}} value is not in the line: mark the heading, with no fix to the text.
+  if (column < 0) { push(entry.line, entry.column, raw.length, 'warning', 'changelog/date', message); return; }
+  const fixed = normalizeDate(date);
+  const valid = fixed && isIsoDate(fixed) ? fixed : undefined;
+  push(entry.line, column, column + date.length, 'warning', 'changelog/date', message,
+    valid ? { line: entry.line, column, endColumn: column + date.length, replacement: valid, title: `Change to "${valid}"` } : undefined);
+}
+
+/** A quote has text, says who said it, and cites only http(s) or relative URLs. */
+function checkQuote(quote: QuoteBlock, raw: string, push: Push): void {
+  const name = raw.indexOf('quote');
+  const [column, end] = [name, name + 'quote'.length];
+  const { author, cite } = quote.info.attrs.values;
+  if (quote.empty) push(quote.line, column, end, 'warning', 'quote/empty', 'This quote has no text; write the quotation between ":::quote" and ":::".');
+  if (!author?.trim()) {
+    push(quote.line, column, end, 'warning', 'quote/author', 'Say who is quoted with author="…" (and source="…" for where), e.g. :::quote{author="Ada Lovelace"}.');
+  }
+  if (cite !== undefined && !quoteCite(cite)) {
+    push(quote.line, column, end, 'warning', 'quote/cite', `cite="${cite}" is left out: it must be an http(s) or relative URL without spaces.`);
+  }
 }
 
 function checkFence(lang: string, content: string[], line: number, push: Push, wholeLine: WholeLine): void {

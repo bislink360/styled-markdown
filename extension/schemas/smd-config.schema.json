@@ -90,6 +90,16 @@
           ],
           "description": "Every fence/… rule. Exact codes win."
         },
+        "include/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every include/… rule. Exact codes win."
+        },
         "link/*": {
           "enum": [
             "off",
@@ -99,6 +109,66 @@
             "hint"
           ],
           "description": "Every link/… rule. Exact codes win."
+        },
+        "figure/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every figure/… rule. Exact codes win."
+        },
+        "footnote/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every footnote/… rule. Exact codes win."
+        },
+        "glossary/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every glossary/… rule. Exact codes win."
+        },
+        "changelog/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every changelog/… rule. Exact codes win."
+        },
+        "quote/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every quote/… rule. Exact codes win."
+        },
+        "variable/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every variable/… rule. Exact codes win."
         },
         "task/*": {
           "enum": [
@@ -229,6 +299,16 @@
             "hint"
           ],
           "description": "updated is older than the stale limit and the document is not archived or deprecated"
+        },
+        "frontmatter/lang": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "lang is not a language tag, or names a language without labels (they render in English)"
         },
         "container/unknown": {
           "enum": [
@@ -430,6 +510,66 @@
           ],
           "description": "lines=\"…\" without file=\"…\""
         },
+        "include/missing-file": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The :::include file does not exist"
+        },
+        "include/outside-workspace": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The :::include file is outside the folders the document may read, or unreadable"
+        },
+        "include/missing-section": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The :::include section matches no heading in the file"
+        },
+        "include/cycle": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Includes lead back to a document already being included"
+        },
+        "include/depth": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Includes nest more than 8 deep"
+        },
+        "include/too-large": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Includes read more than a document may (200 includes, 2,000,000 characters)"
+        },
         "link/missing-anchor": {
           "enum": [
             "off",
@@ -459,6 +599,176 @@
             "hint"
           ],
           "description": "Reference link with no [label]: … definition"
+        },
+        "figure/duplicate-id": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Two :::figure blocks share an {#id}; references go to the first"
+        },
+        "figure/unknown-ref": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": ":ref[id] names no :::figure in this document"
+        },
+        "figure/kind": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Invalid kind on a :::figure (it counts as figure)"
+        },
+        "footnote/undefined": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Footnote reference [^label] with no [^label]: … definition (info when the document defines no footnotes)"
+        },
+        "footnote/unused": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Footnote definition that nothing references (it is not shown)"
+        },
+        "footnote/duplicate": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Second definition of a footnote label (the first one is used)"
+        },
+        "glossary/entry": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "List item in a :::glossary that is not **Term**: definition, or has no definition"
+        },
+        "glossary/duplicate": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::glossary term is defined again; its uses link to the first definition"
+        },
+        "glossary/unused": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::glossary term is never used in the text"
+        },
+        "changelog/date": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::changelog release heading has a date that is not YYYY-MM-DD"
+        },
+        "changelog/order": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::changelog lists a newer version below an older one (releases go newest first)"
+        },
+        "changelog/duplicate": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::changelog lists the same version twice"
+        },
+        "quote/empty": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::quote has no text"
+        },
+        "quote/author": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::quote has no author"
+        },
+        "quote/cite": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A :::quote cite is not an http(s) or relative URL; it is left out"
+        },
+        "variable/undefined": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "{{name}} names no front matter key; it is shown as written"
+        },
+        "variable/not-text": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "{{name}} names a front matter mapping or empty value, which has no text"
         },
         "task/overdue": {
           "enum": [

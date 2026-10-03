@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { renderSmd, type RenderOptions } from './core';
+import { escapeHtml } from './core/attrs';
 import { taskCheckbox } from './editing';
 import { readerFor } from './files';
 
@@ -21,9 +22,10 @@ export class PreviewManager implements vscode.Disposable {
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('smd.preview')) this.previews.forEach((p) => p.update());
       }),
-      // Embedded source files (```ts file="…") may have changed.
+      // Embedded source files (```ts file="…") or included documents (:::include) may have changed.
       vscode.workspace.onDidSaveTextDocument((d) => {
-        if (d.languageId !== 'smd') this.previews.forEach((p) => p.scheduleUpdate());
+        const saved = d.uri.toString();
+        this.previews.forEach((p, key) => { if (key !== saved) p.scheduleUpdate(); });
       }),
     );
   }
@@ -195,7 +197,7 @@ class Preview {
       `script-src 'nonce-${nonce}'`,
     ].join('; ');
     return `<!DOCTYPE html>
-<html lang="en" data-smd-theme-pref="${themePreference(result.frontMatter)}">
+<html lang="${escapeHtml(result.lang ?? 'en')}" data-smd-theme-pref="${themePreference(result.frontMatter)}">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">

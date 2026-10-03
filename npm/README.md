@@ -69,6 +69,7 @@ import {
 const { html, frontMatter, headings } = renderSmd(source, {
   agentBlocks: 'collapsed',                  // how :::agent blocks show to humans: collapsed | expanded | hidden
   readFile: (path) => fs.readFileSync(path, 'utf8'), // enables ```ts file="…" embeds (sandbox it yourself)
+  lang: 'de',                                // labels ("Hinweis", "Abbildung 2") for documents without their own `lang:`
 });
 
 // Complete standalone page (styles + runtime for tabs, Mermaid, theme switching)
@@ -95,22 +96,26 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 
 | Option | Default | What it adds |
 |---|---|---|
-| `containers` | `true` | `:::note`, `:::tabs`, `:::decision`, `:::risk`, `:::api` and the other blocks |
-| `directives` | `true` | `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:priority[…]`, `:metric[…]`, `:status[…]`, `:mention[…]` |
+| `containers` | `true` | `:::note`, `:::tabs`, `:::decision`, `:::risk`, `:::api`, numbered `:::figure`, `:::glossary`, `:::changelog`, `:::quote` and the other blocks |
+| `glossary` | `true` | `:::glossary` term lists as `<dl>`, and the first use of each term per section linked to its definition with a tooltip (needs `containers`) |
+| `directives` | `true` | `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:priority[…]`, `:metric[…]`, `:status[…]`, `:mention[…]`, `:ref[…]` |
 | `attributes` | `true` | `[text]{color=red .muted}` spans and `## Heading {#id .class}` |
 | `mark` | `true` | `==highlighted==` text |
 | `math` | `true` | `$inline$` and `$$display$$` math with KaTeX (include KaTeX's CSS) |
+| `footnotes` | `true` | GitHub-style `[^1]` footnotes, collected in a numbered section at the end (since 1.6). If you use markdown-it-footnote, add it before this plugin (this option then steps aside) or set `footnotes: false` |
 | `tasks` | `true` | `- [ ]` / `- [x]` task lists as checkboxes |
 | `fences` | `true` | ```` ```mermaid ```` and ```` ```math ```` blocks, and `title="…"`, `file="…"` and `{2,5-7}` on code blocks; turn it off if your host has its own fence attributes |
 | `codeFrames` | `false` | Frame every code block with a language label, as the `.smd` preview does |
 | `headingIds` | `false` | Heading ids from their text (`#setup`, `#setup-1`), the same slugs as `renderSmd` |
 | `sourceLines` | `false` | `data-line` source line numbers on blocks |
 | `frontMatter` | `false` | Render `---` YAML front matter as the `.smd` document header (leave it off if your host handles front matter) |
+| `variables` | `true` | `{{version}}` in text shows the front matter value of `version` (`{{owner.name}}` for nested keys; since 1.6). Names the front matter doesn't define stay as written. The front matter is read from the source; if your host removes it first, pass its data as `env.smdVariables` |
 | `agentBlocks` | `'collapsed'` | How `:::agent` blocks show to humans: `collapsed`, `expanded` or `hidden` |
 | `readFile` | none | `(path, env) => string \| undefined` for ```` ```ts file="…" ```` embeds; `env` is what you passed to `md.render` (sandbox it yourself) |
 | `today` | current date | `YYYY-MM-DD` for `:due[]` states |
+| `lang` | English | Language of the labels the plugin adds ("Note", "Figure 2", "overdue"…), a BCP 47 tag: `de`, `es`, `fr`, `ja`, `pt`, `zh` (`pt-BR` → `pt`; others are English). A render's `env.lang` overrides it, and with `frontMatter` the document's `lang:` overrides both (since 1.6) |
 
-Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
+Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Figures are numbered per `md.render` call, and `:ref[id]` resolves against the figures of that call (they are kept on the `env` as `smdFigures`). Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
 
 ### remark and rehype plugins (Astro, Docusaurus, Next.js)
 
@@ -139,7 +144,7 @@ file.data.smd;          // { frontMatter, headings }
 | `header` | `true` | the title/status/owners header from front matter; `false` when the site layout already shows the title |
 | `frontMatter` | see below | `(file) => object`: front matter the host already removed from the source |
 | `readFile` | none | `(relativePath, file) => string \| undefined`, for ```` ```ts file="…" ```` embeds (resolve against `file.path`, sandbox it yourself) |
-| `allowHtml`, `agentBlocks`, `today` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML |
+| `allowHtml`, `agentBlocks`, `today`, `lang` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML |
 
 **Front matter.** When the source still starts with `---` (plain unified, with or without remark-frontmatter), the plugin reads it like `renderSmd`. When the host removed it first, the plugin looks for the parsed data in `file.data.astro.frontmatter` (Astro), `file.data.matter` (vfile-matter) or `file.data.frontmatter`, or uses your `frontMatter` option. Front matter nodes (`yaml`, `toml`) and MDX `import`/`export` nodes stay in the tree.
 

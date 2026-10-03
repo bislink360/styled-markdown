@@ -46,6 +46,7 @@ const PROPERTIES: Record<string, FrontMatterProperty> = {
   },
   toc: { description: FRONTMATTER_KEYS.toc, type: 'boolean' },
   related: listOf(FRONTMATTER_KEYS.related, [['adr-0007-event-bus.smd', 'https://example.com/spec']]),
+  lang: { description: FRONTMATTER_KEYS.lang, type: 'string', examples: ['de', 'pt-BR'] },
 };
 
 export const FRONTMATTER_SCHEMA = {

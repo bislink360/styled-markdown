@@ -1,0 +1,34 @@
+---
+smd: 1
+title: Quotes with attribution
+summary: Exercises the 1.6 quote block (author, source, cite, Markdown in the body, a quote inside a figure) so later releases are compared against them.
+status: draft
+updated: 2026-10-01
+---
+
+## Why we measure
+
+:::quote{author="Ada Lovelace" source="Notes on the Analytical Engine" cite="https://example.com/notes"}
+The Analytical Engine weaves algebraic patterns just as the Jacquard loom weaves flowers and leaves.
+:::
+
+:::quote{author="Platform team" source="*Postmortem 42*"}
+Alert on **symptoms**, not causes.
+
+- Page on user-facing errors
+- Ticket everything else
+:::
+
+## Quotes are not numbered
+
+The checkout flow is :ref[fig-flow]; the quote below it is not a figure.
+
+:::figure{#fig-flow} Checkout flow
+| Step | Page |
+| ---- | ---- |
+| 1    | Cart |
+:::
+
+:::quote{author="Grace Hopper" cite="/quotes/hopper"}
+It's easier to ask forgiveness than it is to get permission.
+:::

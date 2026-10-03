@@ -1,8 +1,10 @@
 import { escapeHtml } from './attrs';
 import { decisionLog, headingAbove, isInactiveDecision, type DecisionEntry } from './decisions';
 import { compareTasks, extractTasks, type TaskInfo } from './meta';
+import { EN, label, term, type MessageKey, type Messages } from './i18n';
+import { dueNote } from './markdownItHtml';
 import { dueState, type Heading } from './render';
-import { riskBand, riskMatrixHtml } from './riskHtml';
+import { riskBand, riskMatrixTable } from './riskHtml';
 import { riskMatrix, riskRegister, type RiskEntry } from './risks';
 import type { Linker } from './siteLinks';
 
@@ -28,6 +30,8 @@ export interface DashboardOptions {
   output: string;
   /** YYYY-MM-DD for overdue and due-soon tasks; defaults to the current date. */
   today?: string;
+  /** The labels in the site's language (default English). */
+  messages?: Messages;
 }
 
 /** Risk statuses that no longer need attention (as `smd index` counts open risks). */
@@ -46,15 +50,20 @@ export function dashboardHtml(documents: DashboardDocument[], options: Dashboard
   const risks = riskRegister(sources).risks.filter((r) => !SETTLED_RISKS.has(r.status));
   const bySource = new Map(documents.map((d) => [d.source, d]));
   const link: PlaceHref = (source, anchor) => placeHref(bySource.get(source), anchor, options);
-  const overdue = tasks.filter((t) => t.overdue).length;
-  const proposed = decisions.filter((d) => d.status === 'proposed').length;
-  const summary = `${tasks.length} open task(s), ${overdue} overdue · ${decisions.length} decision(s), ${proposed} proposed · `
-    + `${risks.length} open risk(s) · ${documents.length} document(s)`;
-  return '<article class="smd-doc smd-site-dashboard"><h1 id="dashboard">Dashboard</h1>'
+  const m = options.messages ?? EN;
+  const summary = label(m, 'dashboard.summary', {
+    tasks: tasks.length,
+    overdue: tasks.filter((t) => t.overdue).length,
+    decisions: decisions.length,
+    proposed: decisions.filter((d) => d.status === 'proposed').length,
+    risks: risks.length,
+    documents: documents.length,
+  });
+  return `<article class="smd-doc smd-site-dashboard"><h1 id="dashboard">${m['site.dashboard']}</h1>`
     + `<p class="smd-site-lead">${escapeHtml(summary)}</p>`
-    + `<h2 id="tasks">Open tasks</h2>${tasksTable(tasks, today, link)}`
-    + `<h2 id="decisions">Decisions</h2>${decisionsTable(decisions, link)}`
-    + `<h2 id="risks">Open risks</h2>${risksSection(risks, documents, link)}`
+    + `<h2 id="tasks">${m['dashboard.openTasks']}</h2>${tasksTable(tasks, today, link, m)}`
+    + `<h2 id="decisions">${m['dashboard.decisions']}</h2>${decisionsTable(decisions, link, m)}`
+    + `<h2 id="risks">${m['dashboard.openRisks']}</h2>${risksSection(risks, documents, link, m)}`
     + '</article>';
 }
 
@@ -76,6 +85,9 @@ function where(document: string, section: string | null): string {
   return section && section !== document ? `${document} › ${section}` : document;
 }
 
+/** Column headers by label key. */
+const columnNames = (m: Messages, keys: MessageKey[]): string[] => keys.map((k) => m[k]);
+
 function table(columns: string[], rows: string[][], empty: string): string {
   if (!rows.length) return `<p class="smd-site-empty">${escapeHtml(empty)}</p>`;
   const head = columns.map((c) => `<th scope="col">${c}</th>`).join('');
@@ -83,45 +95,54 @@ function table(columns: string[], rows: string[][], empty: string): string {
   return `<div class="smd-table-wrap"><table class="smd-site-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
-function tasksTable(tasks: DashboardTask[], today: string, link: PlaceHref): string {
+function tasksTable(tasks: DashboardTask[], today: string, link: PlaceHref, m: Messages): string {
   const rows = tasks.map((t) => {
     const anchor = headingAbove(t.doc.headings, t.line)?.slug;
     return [
-      t.due ? `<span class="smd-due smd-due-${dueState(t.due, today)}">${escapeHtml(t.due)}</span>` : '',
+      t.due ? dueCell(t.due, today, m) : '',
       escapeHtml(t.text),
       t.assignees.map((a) => `<span class="smd-mention">${escapeHtml(a)}</span>`).join(' '),
-      escapeHtml(t.priority ?? ''),
+      escapeHtml(term(m, 'priority', t.priority ?? '')),
       linked(link(t.file, anchor), where(t.doc.title, t.section)),
     ];
   });
-  return table(['Due', 'Task', 'Owner', 'Priority', 'Where'], rows, 'No open tasks.');
+  const columns = columnNames(m, ['column.due', 'column.task', 'label.owner', 'column.priority', 'column.where']);
+  return table(columns, rows, m['dashboard.noTasks']);
 }
 
-function decisionsTable(decisions: DecisionEntry[], link: PlaceHref): string {
+function dueCell(date: string, today: string, m: Messages): string {
+  const state = dueState(date, today);
+  return `<span class="smd-due smd-due-${state}">${escapeHtml(date)}${dueNote(state, m)}</span>`;
+}
+
+function decisionsTable(decisions: DecisionEntry[], link: PlaceHref, m: Messages): string {
   const rows = decisions.map((d) => [
     escapeHtml(d.date ?? ''),
-    `<span class="smd-decision-status smd-decision-${escapeHtml(d.status)}">${escapeHtml(d.status)}</span>`,
-    `<span${isInactiveDecision(d.status) ? ' class="smd-site-inactive"' : ''}>${linked(link(d.path, d.anchor), d.title || 'Decision')}</span>`,
+    `<span class="smd-decision-status smd-decision-${escapeHtml(d.status)}">${escapeHtml(term(m, 'decisionStatus', d.status))}</span>`,
+    `<span${isInactiveDecision(d.status) ? ' class="smd-site-inactive"' : ''}>${linked(link(d.path, d.anchor), d.title || m['decision.label'])}</span>`,
     escapeHtml(d.owner ?? ''),
     escapeHtml(where(d.document, d.section)),
   ]);
-  return table(['Date', 'Status', 'Decision', 'Owner', 'Where'], rows, 'No decisions.');
+  const columns = columnNames(m, ['column.date', 'column.status', 'decision.label', 'label.owner', 'column.where']);
+  return table(columns, rows, m['dashboard.noDecisions']);
 }
 
-function risksSection(risks: RiskEntry[], documents: DashboardDocument[], link: PlaceHref): string {
-  if (!risks.length) return '<p class="smd-site-empty">No open risks.</p>';
+function risksSection(risks: RiskEntry[], documents: DashboardDocument[], link: PlaceHref, m: Messages): string {
+  if (!risks.length) return `<p class="smd-site-empty">${m['dashboard.noRisks']}</p>`;
   const headings = new Map(documents.map((d) => [d.source, d.headings]));
   const anchor = (r: RiskEntry) => r.id ?? headingAbove(headings.get(r.path) ?? [], r.line)?.slug;
-  const matrix = riskMatrixHtml(riskMatrix(risks), risks, { href: (r) => link(r.path, anchor(r)) });
+  const matrix = riskMatrixTable(riskMatrix(risks), risks, { href: (r) => link(r.path, anchor(r)) }, m);
   const rows = risks.map((r) => [
     `<span class="smd-risk-score smd-risk-band-${riskBand(r.score)}">${r.score}</span>`,
-    linked(link(r.path, anchor(r)), r.title || 'Risk'),
-    escapeHtml(r.impact),
-    escapeHtml(r.likelihood),
+    linked(link(r.path, anchor(r)), r.title || m['risk.title']),
+    escapeHtml(term(m, 'impact', r.impact)),
+    escapeHtml(term(m, 'likelihood', r.likelihood)),
     escapeHtml(r.owner ?? ''),
-    `<span class="smd-risk-status">${escapeHtml(r.status)}</span>`,
+    `<span class="smd-risk-status">${escapeHtml(term(m, 'riskStatus', r.status))}</span>`,
     escapeHtml(r.summary),
   ]);
-  return `<div class="smd-risk-matrix">${matrix}</div>`
-    + table(['Score', 'Risk', 'Impact', 'Likelihood', 'Owner', 'Status', 'Mitigation'], rows, '');
+  const columns = columnNames(m, [
+    'column.score', 'risk.title', 'label.impact', 'label.likelihood', 'label.owner', 'column.status', 'column.mitigation',
+  ]);
+  return `<div class="smd-risk-matrix">${matrix}</div>` + table(columns, rows, '');
 }

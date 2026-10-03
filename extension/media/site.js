@@ -113,6 +113,14 @@
 
   const body = document.body;
   const root = body.getAttribute('data-smd-root') || '';
+  // Search messages in the site's language, from data-smd-labels (only on sites in a language other than English).
+  let labels = {};
+  try {
+    labels = JSON.parse(body.getAttribute('data-smd-labels') || '{}') || {};
+  } catch {
+    labels = {};
+  }
+  const say = (key, english) => (typeof labels[key] === 'string' && labels[key] ? labels[key] : english);
   document.documentElement.classList.add('smd-site-js');
 
   // Sidebar: a menu button opens and closes it on narrow screens.
@@ -128,6 +136,11 @@
   const input = document.getElementById('smd-site-q');
   const box = document.getElementById('smd-site-results');
   let loading = null;
+  // Screen readers hear how many results there are as they type (a polite live region).
+  const status = document.createElement('p');
+  status.className = 'smd-site-sr';
+  status.setAttribute('role', 'status');
+  if (box && box.parentNode) box.parentNode.appendChild(status);
 
   function loadIndex() {
     if (window.SMD_SEARCH_INDEX) return Promise.resolve(window.SMD_SEARCH_INDEX);
@@ -180,11 +193,15 @@
     box.replaceChildren();
     if (!words.length) {
       box.hidden = true;
+      status.textContent = '';
       return;
     }
     const results = search(index, query);
-    if (!index) box.appendChild(message('Search is not available: the search index did not load.'));
-    else if (!results.length) box.appendChild(message('No results.'));
+    if (!index) box.appendChild(message(say('searchNoIndex', 'Search is not available: the search index did not load.')));
+    else if (!results.length) box.appendChild(message(say('searchNone', 'No results.')));
+    status.textContent = index
+      ? say('searchCount', '{count} result(s)').replace('{count}', String(results.length))
+      : say('searchUnavailable', 'Search is not available');
     for (const result of results) box.appendChild(resultLink(result, words));
     box.hidden = false;
   }
@@ -233,6 +250,10 @@
   }
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && body.classList.contains('smd-site-nav-open')) setNav(false);
+    if (e.key !== 'Escape' || !body.classList.contains('smd-site-nav-open')) return;
+    // Focus goes back to the menu button when it was in the closing sidebar.
+    const inside = nav && nav.contains(document.activeElement);
+    setNav(false);
+    if (inside && menu) menu.focus();
   });
 })();

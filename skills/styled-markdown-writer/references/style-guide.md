@@ -71,7 +71,7 @@ How to write `.smd` that people enjoy reading and agents can use cheaply.
 ## 7. Checklist before you finish
 
 - [ ] Front matter has `smd: 1`, title, summary, status, owners and updated.
-- [ ] No template placeholders left (`—`, `@owner`, `YYYY-MM-DD`, `{{…}}`).
+- [ ] No template placeholders left (`—`, `@owner`, `YYYY-MM-DD`, or a `{{…}}` the front matter doesn't define: `smd validate` lists those as `variable/undefined`).
 - [ ] Every unresolved item is a `:::question` with an owner and a date.
 - [ ] Hard constraints are in one `:::agent` block.
 - [ ] Narrative sections are `{agent=skip}` or `:::human`.

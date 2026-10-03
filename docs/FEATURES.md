@@ -46,6 +46,7 @@ updated: 2026-09-26
 accent: indigo            # accent color for headings, links, mentions
 toc: true                 # table of contents
 theme: auto               # auto | light | dark
+lang: de                  # language of the rendered labels (optional, default English)
 ---
 ```
 
@@ -54,7 +55,31 @@ theme: auto               # auto | light | dark
 - **Tip:** the `summary` is the first thing every agent reads. Make it self-contained.
 - **Schema:** keys and values are completed and checked from one JSON Schema, published as [`smd-frontmatter.schema.json`](../extension/schemas/smd-frontmatter.schema.json) and as `styled-markdown/frontmatter.schema.json` on npm for YAML tooling and pipelines. Typing `updated: ` suggests today's date.
 - **Status workflow:** in VS Code the status bar shows `status` and changes it, bumping `updated`; see [section 13](#13-vs-code-editing-assistance).
+- **Variables:** any key can be shown in the text with `{{key}}`, e.g. `Version {{version}}`; see [Front matter variables](#front-matter-variables).
 - **Staleness:** a live document whose `updated` date is more than 180 days old gets a `frontmatter/stale` hint. Bump `updated` after a review, or set `status: archived`. The threshold is set with `smd.validation.staleAfterDays` or `smd validate --stale-after <days>`, where `0` turns it off.
+- **Language:** `lang` sets the language of the labels the renderer adds; see [Localized labels](#localized-labels).
+
+### Localized labels
+
+The words the renderer adds around your text follow the document's `lang:`, a BCP 47 tag. Labels ship in English, German (`de`), Spanish (`es`), French (`fr`), Japanese (`ja`), Portuguese (`pt`) and Chinese (`zh`); regional tags use their language (`pt-BR` → `pt`, `zh-Hant` → `zh`).
+
+```yaml
+lang: de
+```
+
+| English | `lang: de` |
+|---|---|
+| Note, Warning (callout titles) | Hinweis, Warnung |
+| Figure 2, Table 1 | Abbildung 2, Tabelle 1 |
+| 📅 2026-01-15 · overdue | 📅 2026-01-15 · überfällig |
+| Owners · Updated 2026-10-01 · draft | Verantwortlich · Aktualisiert am 2026-10-01 · Entwurf |
+| Impact **high** · Likelihood **medium** | Auswirkung **hoch** · Wahrscheinlichkeit **mittel** |
+
+- **Covered:** the document header (labels, status and audience), the table of contents title, callout titles and their screen-reader prefix, `:::details`, tabs, `:::agent`/`:::human` labels, decisions and their status, risks (labels, levels, status) and the risk matrix, figure labels and `:ref[…]`, the footnotes heading and back links, include notes, quote attributions, `:priority[high]` and other word priorities, `:due[…]` notes, metric and status-dot words, progress bar names, copy buttons and diagram messages, and the `smd build` site's navigation, search and dashboard.
+- **Not translated:** your text, dates and numbers, and anything for agents and tools: the agent view, `smd to-md` (its figure labels stay "Figure 2"), `smd outline` and validator messages stay English.
+- **English stays as it was:** without `lang`, or with `lang: en`, output is byte for byte what it was before 1.6.
+- **Other languages:** a well-formed tag without labels (say `lang: ko`) renders English labels but marks the page as that language; `smd validate` reports it as `frontmatter/lang` (info) with the supported list.
+- **Fallback for documents without `lang`:** `smd render --lang de`, `smd pdf --lang de` and `smd build --lang de` (which also sets the site's navigation; without it the home document's `lang` is used), `renderSmd(text, { lang: 'de' })`, and the markdown-it plugin's `lang` option or `env.lang`.
 
 ## 2. Callouts and collapsibles
 
@@ -119,6 +144,41 @@ Named colors are theme tokens tuned for light and dark mode. Only whitelisted va
 | `:progress{value color label}` | progress bar | `65%` | `▰▰▰▰▰▰▱▱▱▱ 65%` |
 | `:kbd[Ctrl+S]` | key caps | `Ctrl+S` | `<kbd>Ctrl</kbd>+<kbd>S</kbd>` |
 | `:mention[@x]` | highlighted mention | `@x` | `@x` |
+| `:ref[fig-id]` | the figure's number as a link (see [§9](#figures-and-numbered-references)) | `Figure 2 (fig-id)` | `[Figure 2](#fig-id)` |
+
+### Footnotes
+
+```markdown
+Retries are capped at five[^retries], as the SRE review asked[^SRE].
+
+[^retries]: Five covers 99.9% of transient failures in last quarter's logs.
+[^sre]: SRE review, 2026-09-12.
+    Lines indented by 4 spaces continue the footnote, even across paragraphs.
+```
+
+GitHub-compatible footnotes (since 1.6). Labels are numbers or words, matched case-insensitively. The preview numbers footnotes by their first reference and lists them in a section at the end, each with a back link (↩︎) to every reference; hovering `[^retries]` in the editor shows the footnote, and typing `[^` completes the labels. As on GitHub, a definition nothing references is not shown and a reference without a definition stays plain text: the validator reports both (`footnote/unused`, `footnote/undefined`), plus repeated labels (`footnote/duplicate`). **Agent view:** as written, `[^1]` in the text and the definitions where they are; `smd agent --section` adds the definitions a section references but doesn't contain. **GitHub:** unchanged (GitHub renders footnotes).
+
+### Front matter variables
+
+```markdown
+---
+version: "2.10"
+release:
+  date: 2026-10-20
+---
+
+## What's new in {{version}}
+
+Version {{version}} ships on {{release.date}}. :badge[v{{version}}]{color=indigo}
+```
+
+`{{name}}` shows the value of a front matter key (since 1.6): *Version 2.10 ships on 2026-10-20*. Dots reach nested keys (`{{release.date}}`) and list items (`{{owners.0}}`); a whole list shows as `a, b`. Use it for the version, product name, dates or owners you'd otherwise repeat and forget to update. Quote versions (`version: "2.10"`), or YAML reads `2.10` as the number 2.1.
+
+- **Where:** text, headings, lists, tables, link text, image alt text, block titles and directive content (`:badge[v{{version}}]`, `:due[{{release.date}}]`). Code, math, URLs, raw HTML and attribute lists keep `{{…}}` as written, and so does the front matter (the header shows the title as written).
+- **Literal braces:** a name the front matter doesn't define stays as written, so Handlebars or Jinja examples render as before; `\{{name}}` or a code span keeps the braces even when it is defined. The validator notes undefined names (`variable/undefined`, info, with a fix for a near miss such as `{{verison}}`) and warns about a name that is a mapping (`variable/not-text`).
+- **Heading ids** come from the heading as written (`#whats-new-in-version`), so links keep working when the value changes.
+- **Editor:** typing `{{` completes the front matter names with their values, and hovering a variable shows its value (VS Code and the language server).
+- **Agent view** and **GitHub** (`smd to-md`): the values, so agents and readers see `2.10`. Older `.smd` tools and plain Markdown show `{{version}}` as written.
 
 ## 5. Tasks with owners, priorities and due dates
 
@@ -241,8 +301,29 @@ Start in week 1; Google Pay can launch alone.
 | `risk` | `impact`, `likelihood`: low · medium · high · critical; `owner`; `status`: open · mitigated · accepted · closed | `<risk impact="high" …> title …</risk>` |
 | `timeline` | — (checked items show as done) | the list |
 | `risk-matrix` | title after the name; no body | `[risk matrix: title — …]` pointer (the risks are already `<risk>` blocks) |
+| `changelog` | title after the name; one heading per release | `<changelog title="…">` with `## 1.2.0 (2026-03-01)` entry lines |
 
 Rejected and superseded decisions are struck through in the preview. `smd meta` lists all decisions and risks as JSON.
+
+### Release history: `:::changelog`
+
+```markdown
+:::changelog Release history
+## 1.2.0 — 2026-03-01
+- Added CSV export
+- Fixed the date picker in Safari
+
+## [1.1.0] - 2026-01-15
+### Added
+- Dark theme
+:::
+```
+
+- Each heading directly inside the block is a release: the version, a separator (` — `, ` – ` or ` - `) and the date as `YYYY-MM-DD`; `## Unreleased` (no date) is fine. Write releases **newest first**, as on GitHub and in Keep a Changelog (whose `## [1.1.0] - 2026-01-15` headings and `### Added` subsections work as they are).
+- It renders as a timeline: one dot per release, the version, then the date as `<time datetime="2026-03-01">`, then its notes. The headings stay headings, with the same ids and outline entries as anywhere else (`#120-2026-03-01`), so links to them keep working.
+- The validator warns about a date that isn't a real `YYYY-MM-DD` date (`changelog/date`, with a fix for `2026/3/1`), a version listed below an older one (`changelog/order`, versions compared as semantic versions, pre-releases before their release) and a version listed twice (`changelog/duplicate`).
+- **Agent view:** `<changelog title="Release history">`, each release as `## 1.2.0 (2026-03-01)  [L2]` followed by its notes. **GitHub** (`smd to-md`): a bold title, then the headings and lists as written. `smd query changelog` finds the blocks; snippet `changelog`.
+- Older `.smd` tools (1.5 and earlier) show the headings and lists in a plain box, with a `container/unknown` warning.
 
 ### Risk register and risk matrix
 
@@ -364,6 +445,31 @@ smd report docs/ --since v1.3.0 --title "Checkout squad"             # since a t
 | `file="…" lines="a-b"` | Embeds real source, so docs never drift from code. The preview refreshes on save, and the validator reports missing files or out-of-range lines. For safety, only files inside the workspace or the document's folder can be embedded. Agent view: `[code: path lines a-b — read that file]` (inline it with `--embed`). |
 | Highlighting | 35+ languages (highlight.js), with a copy button on hover |
 
+### Include another document: `:::include`
+
+Write shared text once (terms, a glossary, a setup section) and include it wherever it is needed:
+
+```markdown
+## Pricing
+
+:::include{file="shared/terms.smd" section="Pricing" level=3}
+See [Pricing](shared/terms.smd#pricing) in the shared terms.
+:::
+```
+
+| Attribute | Meaning |
+|---|---|
+| `file` | The document to include, relative to this one. Its body is included, without the front matter. |
+| `section` | Only this section (with its subsections): a heading's text or id, matched like `smd agent --section`. |
+| `level` | The level its top heading becomes, here `###` under `## Pricing`; the other headings move with it. |
+
+- **The body is the fallback.** It shows only where the file can't be included (and in tools before 1.6, which render the block as a plain box), so a link to the file is a good body.
+- **Same rendering.** Included text is parsed like the rest of the document: every block and nested includes work, and links, images and code embeds in it still point where they did from their own folder. A subtle rule in the margin shows its extent on hover.
+- **Ids stay stable.** The document's own heading ids never change; included headings are numbered where they would clash (`#pricing-1`), and the document may link to them.
+- **Safe.** Files are read with the same sandbox as code embeds (the workspace, the document's folder, its Git repository; the MCP server's root). Cycles (`a → b → a`) stop with a note, includes nest at most 8 deep, and a document includes at most 200 times and 2,000,000 characters.
+- **Everywhere it reads.** The preview (it refreshes when the included file is saved), `smd render`, `smd pdf`, `smd build` and the markdown-it, remark and rehype plugins (given a `readFile`) include. The agent view shows the text in `<included file="shared/terms.smd" section="Pricing">…</included>` (`smd agent --no-includes` shows a one-line pointer instead), and `smd to-md` inlines it, since GitHub can't include. `smd outline`, `query`, `tasks`, `decisions`, `risks`, `index` and `diff` work per file.
+- **Editor help.** Completion of paths in `file="…"`, go to definition on the path, hover preview of the included document, the `transclude` snippet, and warnings for a missing file or section, a file outside the workspace, cycles and limits (`include/*`).
+
 ## 8. Layout: tabs, columns, cards, boxes, steps
 
 ![Cards in columns, tabs, flowchart and agent block in dark mode](images/04-dark-layout.png)
@@ -421,6 +527,65 @@ $$
 - **Math:** KaTeX, inline and display, with syntax errors reported. `$5 and $10` stays plain text.
 - **Agent view:** diagrams are kept (they're compact); `--brief` turns them into `[diagram: sequenceDiagram, 4 lines — see L10-L15]`.
 
+### Figures and numbered references
+
+````markdown
+Orders move through the states in :ref[fig-states]; the limits are in :ref[tbl-limits].
+
+:::figure{#fig-states} Order states
+```mermaid
+stateDiagram-v2
+  [*] --> Pending --> Paid
+```
+:::
+
+:::figure{#tbl-limits kind=table} Rate limits per plan
+| Plan | Requests per minute |
+| ---- | ------------------- |
+| Free | 60                  |
+:::
+````
+
+- **`:::figure`** puts a caption under an image, diagram, table or code block, numbered in document order: *Figure 1: Order states*. `kind=table` counts *Table 1, 2…* separately (its caption sits above the table) and `kind=listing` *Listing 1, 2…* for code.
+- **`:ref[id]`** shows the figure's number as a link (*Figure 1*), before or after the figure and in titles. Numbers are computed, so they stay right when figures move.
+- The validator warns about a `:ref` to an id no figure has (`figure/unknown-ref`, with a fix for a near miss) about two figures with one id (`figure/duplicate-id`) and about an unknown `kind` (`figure/kind`, with a fix).
+- **Agent view:** `<figure id="fig-states"> Figure 1: Order states` … `</figure>`, and references read `Figure 1 (fig-states)`, so an agent can find the figure by id. **GitHub** (`smd to-md`): an `<a id>` anchor, the content and a `**Figure 1:** Order states` line; references become `[Figure 1](#fig-states)` links.
+- Older `.smd` tools (1.5 and earlier) show a figure's content in a plain box without the caption, with a `container/unknown` warning, and `:ref[…]` as written.
+
+### Glossary and abbreviations
+
+```markdown
+Every API call counts against the SLO. When the error budget is spent, deploys stop.
+
+:::glossary Glossary
+- **API**: Application Programming Interface
+- **SLO**: Service level objective: the target share of good requests
+- **Error budget**: How much unreliability the SLO allows in a period
+:::
+```
+
+- **`:::glossary`** renders its `- **Term**: definition` list as a definition list, each term with its own anchor (`#term-api`, `#term-error-budget`).
+- **Hover definitions:** the first use of each term in every section (between two headings) gets a dotted underline, shows its definition on hover and links to it, so keyboard and screen-reader users reach it too. Abbreviations are `<abbr title="…">`. Later uses in the same section stay plain, so paragraphs don't fill with underlines.
+- **Matching:** whole words only. An abbreviation (capitals, no lower-case letters: `API`, `SLO`, `P99`) matches exactly as written; other terms also match with a small or capital first letter (`Error budget`, `error budget`). Headings (their ids never change), code, math, links, URLs and attribute values are left alone, and so are `API-first` and `API.md`.
+- The validator warns about list items in a glossary that aren't `**Term**: definition` (`glossary/entry`: that list then renders as a plain list) and about terms defined twice (`glossary/duplicate`), and notes terms never used (`glossary/unused`, info).
+- **Agent view:** `<glossary title="Glossary">` with the entries as written, once; uses in the text are not expanded, so they cost no extra tokens. **GitHub** (`smd to-md`): a bold title and the list as it is.
+- **Includes and footnotes:** included text counts as part of the document both ways: `:::include` a shared glossary to use its terms, and the document's terms are marked in included text too. Footnotes are never marked.
+- **Editor:** hover a term anywhere in the text, or in its entry, to see its definition (VS Code and the language server; the document's own glossaries); the `glossary` snippet starts a block.
+- Older `.smd` tools (1.5 and earlier) show the list in a plain box with a `container/unknown` warning, and the terms as plain text.
+
+### Quotes with attribution
+
+```markdown
+:::quote{author="Ada Lovelace" source="Notes on the Analytical Engine" cite="https://example.com/notes"}
+The Analytical Engine weaves algebraic patterns just as the Jacquard loom weaves flowers and leaves.
+:::
+```
+
+- Renders as `<figure class="smd-quote">` with the body in a `<blockquote cite="…">` and the attribution below: "— Ada Lovelace, *Notes on the Analytical Engine*" (`<figcaption>— Author, <cite>Source</cite></figcaption>`). The source links to `cite` when both are given. A quote is never numbered as a figure, so `:ref[…]` and figure numbers ignore it.
+- `cite` must be an `http(s)` or relative URL; anything else (`javascript:`, `data:`, `mailto:`) is left out and reported (`quote/cite`). The validator also warns about a quote with no text (`quote/empty`) or no `author` (`quote/author`).
+- **Agent view:** `<quote author="Ada Lovelace" source="…" cite="…">` … `</quote>`. **GitHub** (`smd to-md`): a blockquote ending with a `— Ada Lovelace, *[Source](url)*` line. `smd query 'quote[author*=lovelace]'` finds quotes; snippet `quote`.
+- Older `.smd` tools (1.5 and earlier) show the text in a plain box without the attribution, with a `container/unknown` warning.
+
 ## 10. Audience: agent, human, agent=skip
 
 ```markdown
@@ -473,8 +638,8 @@ People-only content anywhere in the document.
 | Feature | How |
 |---|---|
 | Syntax highlighting | Blocks, attributes, directives, math and front matter |
-| Completions | After `:::` (blocks, with snippets for tabs/columns), `:` (directives), `{` (attributes), `=` (allowed values: colors, statuses, HTTP methods…), front matter keys and values, Mermaid types. In links (`](…`, `[label]: …`), `related:` entries and `file="…"` embeds: relative files and folders, then after `#` the headings and ids of this or the linked document |
-| Hover | Documentation for blocks and directives |
+| Completions | After `:::` (blocks, with snippets for tabs/columns), `:` (directives), `{` (attributes), `=` (allowed values: colors, statuses, HTTP methods…), front matter keys and values, Mermaid types, front matter names with their values after `{{`. In links (`](…`, `[label]: …`), `related:` entries, `file="…"` embeds and `:::include{file="…"}`: relative files and folders, then after `#` the headings and ids of this or the linked document |
+| Hover | Documentation for blocks and directives; the definition of a glossary term; the value of a `{{variable}}` |
 | Color picker | Swatches next to `color=`, `bg=`, `border=`, `accent:` |
 | Outline & folding | Headings in the Outline view; fold blocks, code and front matter |
 | Go to definition | `F12` or `Ctrl+Click` on `#anchor`, `other.smd#anchor`, a relative file, a `related:` entry or a `[text][label]` reference jumps to the heading, `{#id}` block, file or definition |
@@ -489,7 +654,7 @@ People-only content anywhere in the document.
 | Lists on Enter | Enter on `- [x] Ship it @maya` starts `- [ ] ` with the cursor before ` @maya`. Bullets repeat, numbers count up, Enter on an empty item ends the list, and code blocks are left alone (`smd.editor.continueLists`) |
 | Images | Paste an image, or drop image files, to save them in `docs/images/` (`smd.images.folder`) and insert `![alt](relative/path.png)`. Images already in the workspace are linked where they are; name clashes get `-1`, `-2`… |
 | Spell checking | **Set Up Spell Checking (cSpell)** adds an `smd` entry to cSpell's `languageSettings`, so container and directive names, attribute lists, `@mentions`, link targets, front matter and code aren't flagged; titles and link text still are |
-| Snippets (35) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
+| Snippets (41) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `figure` `ref` `glossary` `changelog` `quote` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
 
 ## 14. VS Code: agent view and token counter
 
@@ -519,9 +684,23 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |
 | `$$\frac{1}{$$` | `math/syntax` | — |
 | `file="nope.ts"` | `fence/embed-missing` | — |
+| `:::include{file="nope.smd"}`, `section="Nope"`, `a.smd` including `b.smd` including `a.smd` | `include/missing-file`, `include/missing-section`, `include/cycle` | — |
 | `[x](#rolout)`, `[x](plan.smd#rolout)` | `link/missing-anchor` | → closest heading id |
 | `[x](gone.md)`, `related: [gone.smd]` | `link/missing-file` | — |
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
+| `:ref[fig-chekout]` | `figure/unknown-ref` | → closest figure id |
+| two `:::figure{#fig-a}` | `figure/duplicate-id` | — |
+| `:::figure{kind=tabel}` | `figure/kind` | → `table` |
+| `[^retires]` with only `[^retries]: …` defined | `footnote/undefined` | → `[^retries]` |
+| `[^old]: …` that nothing references, `[^1]: …` twice | `footnote/unused` (info), `footnote/duplicate` | — |
+| `- API: …` in a `:::glossary` | `glossary/entry` | — (write `- **API**: …`) |
+| two `- **API**: …` entries | `glossary/duplicate` | — |
+| a term no text uses | `glossary/unused` (info) | — |
+| `{{verison}}` with `version:` in the front matter | `variable/undefined` (info) | → `{{version}}` |
+| `{{owner}}` where `owner:` is a mapping | `variable/not-text` | — |
+| `## 1.2.0 — 2026/3/1` in a `:::changelog` | `changelog/date` | → `2026-03-01` |
+| `## 1.1.0` above `## 1.2.0`, or `## 1.2.0` twice | `changelog/order`, `changelog/duplicate` | — |
+| `:::quote` with no text, no `author`, or `cite="javascript:…"` | `quote/empty`, `quote/author`, `quote/cite` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
 | `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |
@@ -550,6 +729,8 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 | `attrs/unknown` | exactly one accepted attribute name is close and not already set, e.g. `colr` → `color` |
 | `attrs/value` | exactly one allowed value is close (block and directive values, named colors, `size`, `weight`, `font`, `align`, `:priority[…]`, heading `agent=skip`), or a `date`/`:due[…]` is year-first, e.g. `2026/10/5` → `2026-10-05` |
 | `link/missing-anchor` | a heading id is close |
+| `footnote/undefined` | exactly one defined footnote label is close, e.g. `[^retires]` → `[^retries]` |
+| `variable/undefined` | a front matter key is close, e.g. `{{verison}}` → `{{version}}` |
 
 Everything else needs a decision only the author can make (which file was meant, where a block should end inside a list, what a missing attribute should be), so it has no fix. Fixes never touch values with several equally close matches, dates like `09/05/2026` whose day/month order is unclear, or `style=…`, which takes several words.
 
@@ -674,12 +855,23 @@ smd looks for `playwright`, then `@playwright/test`, then `puppeteer`, in the cu
 
 It waits until the page has finished rendering: the runtime sets `data-smd-ready` on `<html>` once Mermaid diagrams are drawn and fonts are loaded (after 60 s it prints anyway, with a warning). So **diagrams are in the PDF as vector SVG**, and math as KaTeX text. Mermaid and the KaTeX stylesheet still load from the CDN, so diagrams need a network connection. The page is printed from a temporary file beside the document (removed afterwards), so relative image paths resolve. PDFs always use the light theme.
 
+### Accessibility
+
+Rendered pages (the preview, `smd render`, `smd build` sites and `smd risks --html`) aim at WCAG 2.2 AA:
+
+- **Contrast:** text has at least 4.5:1 against its background, and focus rings and status dots 3:1, in the light and the dark theme. Named colors, badges, pills, callouts, due dates and risk matrix bands are checked by a test that reads the colors from `smd.css`.
+- **Keyboard:** every control has a visible focus ring. Tabs follow the WAI-ARIA tabs pattern: Tab enters the tab list, **←/→** move between tabs (wrapping), **Home/End** jump to the first and last, and the panel is next in the Tab order. Collapsibles (`:::details`, collapsible callouts, `:::agent`) are native `<details>` and open with **Enter** or **Space**. Copy buttons appear on keyboard focus and announce "Code copied". Code blocks, tables and diagrams that scroll sideways can be focused and scrolled with the arrow keys. Sites have a "Skip to content" link, and **Escape** closes the sidebar menu (back to its button) and the search results.
+- **Screen readers:** pages declare their language (`lang="en"`, or the document's `lang:`; see [Localized labels](#localized-labels)) and use `main`, `header` and named `nav` landmarks. Task checkboxes are named by their text, table header cells have `scope`, progress bars have a name and value, and status dots are hidden behind their text. Meaning carried by color also comes in words: a callout with its own title starts with its type ("Warning:"), overdue dates say "overdue" (and due-soon dates "due soon" to screen readers), and metric deltas say "up, good". Search announces the number of results.
+- **Images and diagrams:** `![alt](…)` becomes the image's alt text; an empty alt marks a decorative image. Name a Mermaid diagram with `accTitle:` and `accDescr:` lines, which Mermaid turns into the SVG's title and description. Math is rendered with MathML for screen readers.
+- **Motion:** with the system's "reduce motion" setting, transitions and smooth scrolling are turned off.
+
 ## 17. CLI reference
 
 ```text
 smd outline <file> [--related] [--tokenizer <name>]  sections, line ranges, token costs, markers; --related adds related docs
-smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-lines]
+smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-includes] [--no-lines]
                  [--max-tokens <n>] [--tokenizer <name>]   fit the view into n tokens; exact counts
+                 --no-includes: a pointer per :::include instead of the included text
 smd tasks <files|dirs> [--all] [--mine @name] [--json]
 smd tasks <files|dirs> [--all] [--mine @name] --csv [-o tasks.csv]                 spreadsheet export
 smd tasks <files|dirs> [--all] [--mine @name] --gantt [--smd] [--title "…"] [-o <file>]   Mermaid Gantt chart

@@ -52,21 +52,26 @@ Tool (Node 18+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (
 
 These are the rules the validator and renderers depend on. `references/syntax.md` has the complete reference with every attribute and allowed value; read it before using a construct you're not sure about.
 
-1. **Front matter first:** `smd: 1`, `title`, a precise one- or two-sentence `summary`, `status` (`draft` · `review` · `approved` · `deprecated` · `archived`), `owners`, and `updated` (`YYYY-MM-DD`). Don't repeat the title as a `# H1`; start the body at `##`.
+1. **Front matter first:** `smd: 1`, `title`, a precise one- or two-sentence `summary`, `status` (`draft` · `review` · `approved` · `deprecated` · `archived`), `owners`, and `updated` (`YYYY-MM-DD`). Don't repeat the title as a `# H1`; start the body at `##`. A document written in another language adds `lang:` (`de`, `es`, `fr`, `ja`, `pt`, `zh`, or a tag like `pt-BR`) so rendered labels such as callout titles and "Figure 2" match it.
 2. **Blocks** are `:::name{attrs} Title` … `:::`. Attributes go directly after the name with no space. A bare `:::` closes the innermost block. Write outer containers with more colons (`::::tabs`) for readability.
 3. **Only known names:**
-   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `decision` `risk` `risk-matrix` `api` `agent` `human`.
-   - Inline: `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention`.
+   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `figure` `glossary` `quote` `decision` `risk` `risk-matrix` `changelog` `api` `agent` `human` `include`.
+   - Inline: `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention` `:ref`.
 4. **Enumerated values exactly as specified:**
    - decision `status`: proposed, accepted, rejected, superseded, deprecated
    - risk `impact`/`likelihood`: low, medium, high, critical
    - api `method`: GET, POST, PUT, PATCH, DELETE…; `path` is required
+   - figure `kind`: figure, table, listing (`:ref[id]` needs a figure with that `{#id}`)
+   - glossary items: `- **Term**: definition`, every item of the list (otherwise it stays a plain list)
+   - changelog releases: headings `## 1.2.0 — 2026-03-01`, newest first, each followed by its notes
+   - quote: `:::quote{author="…" source="…" cite="https://…"}` with the quoted text as the body (`cite` only http(s) or relative)
    - priority: P0–P4
    - dates: `YYYY-MM-DD`
 5. **Named colors only** (red orange amber yellow green teal cyan blue indigo purple pink gray muted accent) unless a brand hex is required.
 6. **Tasks:** `- [ ] Verb-first task :priority[P1] @owner :due[2026-10-15]`. One owner per task where possible.
-7. **Code:** always give fences a language. Use `title="path"` for file names, `{2,5-7}` to highlight lines, and `file="../src/x.ts" lines="10-24"` (empty body) to embed real source instead of pasting it.
+7. **Code:** always give fences a language. Use `title="path"` for file names, `{2,5-7}` to highlight lines, and `file="../src/x.ts" lines="10-24"` (empty body) to embed real source instead of pasting it. Text shared by several documents goes in one `.smd` file, included with `:::include{file="shared/terms.smd" section="Pricing"}` and a link to the file as the body (fallback for older tools) before the closing `:::`.
 8. **Diagrams:** ```` ```mermaid ```` with a valid first line (`flowchart LR`, `sequenceDiagram`, `gantt`, …).
+9. **Facts that repeat** (version, product name, release date) go in the front matter once and appear in the text as `{{version}}` (nested keys: `{{release.date}}`). Quote versions (`version: "2.10"`). Only defined keys are replaced; write `\{{name}}` or a code span for literal braces.
 
 ## Writing for both audiences
 
