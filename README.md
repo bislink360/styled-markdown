@@ -180,11 +180,11 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-1.5.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+1. Download **`styled-markdown-1.6.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
 2. Install it:
 
    ```bash
-   code --install-extension styled-markdown-1.5.0.vsix
+   code --install-extension styled-markdown-1.6.0.vsix
    ```
 
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
@@ -197,8 +197,8 @@ History and research. People see it; agents skip it.
 Install the package straight from the release:
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.5.0/styled-markdown-1.5.0.tgz   # the smd command
-npm install https://github.com/bislink360/styled-markdown/releases/download/v1.5.0/styled-markdown-1.5.0.tgz      # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.6.0/styled-markdown-1.6.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v1.6.0/styled-markdown-1.6.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -223,7 +223,7 @@ Full instructions, building from source and troubleshooting: **[docs/INSTALL.md]
 ### Agent skills
 
 ```bash
-curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.5.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.6.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs skills install --global
 ```
 
@@ -273,7 +273,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v1.5.0
+      - uses: bislink360/styled-markdown/validate@v1.6.0
         with:
           paths: docs        # one per line; default: the whole repository
           fail-on: warning   # error (default), warning or never
@@ -362,7 +362,7 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-1.5.0.vsix
+npm run package        # → styled-markdown-1.6.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
 ```
 
