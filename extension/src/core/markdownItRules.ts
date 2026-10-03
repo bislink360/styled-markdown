@@ -242,7 +242,7 @@ function pushDirective(state: StateInline, name: string, content: string, attrs:
   }
   const text = ctx.variables ? substituteLine(content, envVariables(state.env)) : content;
   const token = state.push('html_inline', '', 0);
-  token.content = renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today);
+  token.content = renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today, ctx.messages(state.env));
 }
 
 // ---------------------------------------------------------------------------

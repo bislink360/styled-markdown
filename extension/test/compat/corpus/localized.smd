@@ -1,0 +1,86 @@
+---
+smd: 1
+title: Einführung des neuen Bezahlvorgangs
+summary: Exercises the 1.6 localized labels (lang in the front matter) so later releases are compared against them.
+status: review
+owners: ["@maya"]
+tags: [checkout]
+audience: both
+version: 2
+updated: 2026-10-01
+lang: de
+toc: true
+---
+
+## Überblick
+
+:::note
+Ein Hinweis ohne eigenen Titel zeigt den Typ als Titel.
+:::
+
+:::warning Eigener Titel
+Mit eigenem Titel hören Screenreader den Typ vorab.
+:::
+
+Der Ablauf steht in :ref[fig-ablauf], die Grenzen in :ref[tbl-grenzen].[^quelle]
+
+:::figure{#fig-ablauf} Ablauf vom Warenkorb bis zur Bestätigung
+```mermaid
+flowchart LR
+  Warenkorb --> Zahlung --> Bestätigung
+```
+:::
+
+:::figure{#tbl-grenzen kind=table} Grenzen pro Tarif
+
+| Tarif | Anfragen pro Minute |
+| ----- | ------------------: |
+| Free  |                  60 |
+
+:::
+
+## Aufgaben
+
+- [ ] Zahlungsanbieter anbinden :priority[high] :due[2026-01-15] :mention[@maya]
+- [ ] Texte prüfen :priority[P2] :due[2099-12-31]
+- [x] Entwurf schreiben :due[2026-01-01]
+
+Stand: :status[]{color=green} :progress{value=40} :metric[98%]{label="Erfolgsquote" delta="+2%"}
+
+## Entscheidungen und Risiken
+
+:::decision{status=accepted date=2026-09-20 owner=@maya} Wir nutzen einen Anbieter
+Ein Anbieter hält den Aufwand klein.
+:::
+
+:::risk{impact=high likelihood=medium owner=@ops status=open} Ausfall des Anbieters
+Gegenmaßnahme: zweiten Anbieter vorbereiten.
+:::
+
+:::risk-matrix Risiken
+:::
+
+::::tabs
+:::tab
+Ein Tab ohne Titel.
+:::
+::::
+
+:::details
+Mehr Details.
+:::
+
+:::agent
+Für Agenten: nur die Aufgaben lesen.
+:::
+
+:::quote{author="Ada Lovelace" source="Notizen"}
+Die Maschine kann nur tun, was wir ihr zu befehlen wissen.
+:::
+
+<!-- smd-disable-next-line attrs/required -->
+:::include
+Ohne Datei bleibt dieser Text stehen.
+:::
+
+[^quelle]: Eine Fußnote mit Rückverweis.

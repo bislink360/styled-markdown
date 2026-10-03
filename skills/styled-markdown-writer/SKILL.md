@@ -52,7 +52,7 @@ Tool (Node 18+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (
 
 These are the rules the validator and renderers depend on. `references/syntax.md` has the complete reference with every attribute and allowed value; read it before using a construct you're not sure about.
 
-1. **Front matter first:** `smd: 1`, `title`, a precise one- or two-sentence `summary`, `status` (`draft` · `review` · `approved` · `deprecated` · `archived`), `owners`, and `updated` (`YYYY-MM-DD`). Don't repeat the title as a `# H1`; start the body at `##`.
+1. **Front matter first:** `smd: 1`, `title`, a precise one- or two-sentence `summary`, `status` (`draft` · `review` · `approved` · `deprecated` · `archived`), `owners`, and `updated` (`YYYY-MM-DD`). Don't repeat the title as a `# H1`; start the body at `##`. A document written in another language adds `lang:` (`de`, `es`, `fr`, `ja`, `pt`, `zh`, or a tag like `pt-BR`) so rendered labels such as callout titles and "Figure 2" match it.
 2. **Blocks** are `:::name{attrs} Title` … `:::`. Attributes go directly after the name with no space. A bare `:::` closes the innermost block. Write outer containers with more colons (`::::tabs`) for readability.
 3. **Only known names:**
    - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `figure` `glossary` `quote` `decision` `risk` `risk-matrix` `changelog` `api` `agent` `human` `include`.

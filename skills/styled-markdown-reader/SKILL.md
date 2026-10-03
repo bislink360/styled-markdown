@@ -57,6 +57,7 @@ Catching up on a changed document:
 | `<quote author="…" source="…" cite="…">` | A quotation: the words are the author's, not the document's own claims |
 | `<figure id="fig-x"> Figure 2: caption`, `Figure 2 (fig-x)` | A numbered figure (or Table/Listing) and a reference to it; the id in parentheses names the `<figure>` meant |
 | front matter `status:` | `approved` is authoritative, `draft`/`review` is tentative, `deprecated`/`archived` is history |
+| front matter `lang:` | The language the document is written in. It only changes labels in rendered HTML; the agent view's labels stay English |
 | `[P1]`, `@name`, `(due …, OVERDUE)` | Task priority, owner, due date |
 | Values such as a version in the text | The source may write them as `{{version}}`, a front matter variable the view fills in. To change one everywhere, edit the front matter key, not the `[L…]` line. |
 | `[^1]` … `[^1]: text` | A footnote reference and its definition, as written. In a `--section` excerpt, `Footnotes referenced above:` lists the definitions it needs. |

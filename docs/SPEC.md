@@ -60,6 +60,7 @@ A YAML mapping between `---` lines at the very start of the file. It is parsed w
 | `accent` | color | Accent color for headings, links, badges (see §5) |
 | `toc` | boolean | `true` renders a table of contents after the header |
 | `related` | list | Paths or URLs of related documents |
+| `lang` | string | Language of the labels the renderer adds (callout titles, "Figure 2", "overdue"…), a BCP 47 tag such as `de` or `pt-BR`; see §2.2. Default English |
 
 Unknown keys are allowed and preserved (reported as *hints* so typos are caught, except keys the body shows with `{{key}}`).
 
@@ -68,6 +69,22 @@ Any key, standard or custom, can be shown in the text with `{{key}}` (§4.7).
 The table is published as a JSON Schema: [`extension/schemas/smd-frontmatter.schema.json`](https://raw.githubusercontent.com/bislink360/styled-markdown/main/extension/schemas/smd-frontmatter.schema.json), also shipped on npm as `styled-markdown/frontmatter.schema.json`. The validator and editor completion read the same schema, and YAML tools or pipelines can use it to check document metadata.
 
 A document is **stale** when `updated` is more than 180 days before today (tools may make this configurable) and `status` is not `archived` or `deprecated`.
+
+### 2.2 Localization
+
+The renderer adds a few words of its own around a document's text: callout titles (`Note`, `Warning`), "Figure 2", "overdue", the hidden "Footnotes" heading, header labels such as "Owners" and "Updated", status names, the risk matrix headers and the static site's navigation. `lang` in the front matter picks their language:
+
+```yaml
+lang: de        # Hinweis, Abbildung 2, überfällig, Fußnoten …
+```
+
+- **Value**: a BCP 47 language tag. It is matched by lookup, dropping subtags from the end: `pt-BR` uses `pt`, `zh-Hant-TW` uses `zh`. Case does not matter, and `_` reads as `-`.
+- **Languages with labels**: `en` (the default), `de`, `es`, `fr`, `ja`, `pt`, `zh`. A label a language lacks is shown in English.
+- **Other languages**: an unsupported or malformed `lang` renders English labels; `smd validate` reports it as `frontmatter/lang` (info, never an error) with the supported list. A well-formed tag is still put on the page, so a `lang: ko` document is marked as Korean for screen readers and browsers.
+- **What changes**: rendered HTML only. The article gets `lang="…"` (and the page `<html lang="…">`) and the labels the page script shows (copy buttons, diagram messages) travel with it in `data-smd-labels`. Values the author wrote are translated only where they are vocabulary: `status: draft`, `:priority[high]`, `impact=high`, `color=green` with no text. Dates, numbers, titles and all other text stay as written.
+- **What does not change**: agent views, `smd outline`, `smd to-md` (including its "Figure 2" labels), validator messages and JSON outputs stay English. They are read by agents and tools, for which stable, compact output matters more than the reader's language.
+- **English**: a document without `lang`, or with `lang: en` (or any `en-…` tag), renders exactly as it did before `lang` existed.
+- **Fallback**: renderers may take a language for documents that don't name one: `renderSmd(text, { lang })`, the markdown-it plugin's `lang` option or a render's `env.lang`, and `--lang` on `smd render`, `smd pdf` and `smd build`. The document's own `lang` always wins. `smd build` labels its navigation, search and dashboard in `--lang`, else the home document's `lang`, else English.
 
 ---
 
@@ -415,6 +432,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `frontmatter/duplicate-title` | hint | First `# H1` repeats the front matter title |
 | `frontmatter/value` | warning | A value outside the schema's allowed values for keys without their own rule (e.g. `theme`; fix when one allowed value is close) |
 | `frontmatter/stale` | info | `updated` is older than the stale threshold and the document is not archived or deprecated |
+| `frontmatter/lang` | info | `lang` is not a language tag, or names a language without labels (they render in English); lists the supported languages |
 | `container/unknown` | warning | Unknown container name (fix: closest name) |
 | `container/unclosed` | error | Missing closing `:::` (fix: add it at the end of the document, for an unindented container) |
 | `container/stray-close` | warning | `:::` with nothing open |
@@ -553,3 +571,5 @@ How the 1.6 changelog (§3.6) and quote (§3.7) blocks read where they are not s
 Nothing in a document without a `:::changelog` or `:::quote` block changes: it renders, validates and converts byte for byte as before.
 
 Front matter variables (§4.7) degrade to their source: tools before 1.6, GitHub and other Markdown renderers show `{{version}}` as written, which reads as a placeholder, and `\{{version}}` as `{{version}}` (a backslash before punctuation is an escape in CommonMark), so an escaped brace looks the same everywhere. `smd to-md` writes the values for renderers that don't know them. A document written before 1.6 that has `{{key}}` in prose, outside code, for a key its own front matter defines now shows the value there; write `\{{key}}` or a code span to keep the braces. Every other `{{…}}` renders as before. Older validators don't resolve variables in directive content, so they report `:due[{{key}}]` as an invalid date (`attrs/value`), and a suppression comment naming `variable/…` as `rules/unknown`.
+
+Localized labels (§2.2) degrade to English: tools before 1.6 don't know `lang`, so they render every label in English, report `lang` as `frontmatter/unknown-key` (a hint) and keep it as metadata. GitHub and other Markdown renderers add no labels of their own. A document's text is never changed by `lang`, so it reads the same everywhere apart from those labels.

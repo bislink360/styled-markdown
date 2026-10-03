@@ -46,6 +46,7 @@ updated: 2026-09-26
 accent: indigo            # accent color for headings, links, mentions
 toc: true                 # table of contents
 theme: auto               # auto | light | dark
+lang: de                  # language of the rendered labels (optional, default English)
 ---
 ```
 
@@ -56,6 +57,29 @@ theme: auto               # auto | light | dark
 - **Status workflow:** in VS Code the status bar shows `status` and changes it, bumping `updated`; see [section 13](#13-vs-code-editing-assistance).
 - **Variables:** any key can be shown in the text with `{{key}}`, e.g. `Version {{version}}`; see [Front matter variables](#front-matter-variables).
 - **Staleness:** a live document whose `updated` date is more than 180 days old gets a `frontmatter/stale` hint. Bump `updated` after a review, or set `status: archived`. The threshold is set with `smd.validation.staleAfterDays` or `smd validate --stale-after <days>`, where `0` turns it off.
+- **Language:** `lang` sets the language of the labels the renderer adds; see [Localized labels](#localized-labels).
+
+### Localized labels
+
+The words the renderer adds around your text follow the document's `lang:`, a BCP 47 tag. Labels ship in English, German (`de`), Spanish (`es`), French (`fr`), Japanese (`ja`), Portuguese (`pt`) and Chinese (`zh`); regional tags use their language (`pt-BR` → `pt`, `zh-Hant` → `zh`).
+
+```yaml
+lang: de
+```
+
+| English | `lang: de` |
+|---|---|
+| Note, Warning (callout titles) | Hinweis, Warnung |
+| Figure 2, Table 1 | Abbildung 2, Tabelle 1 |
+| 📅 2026-01-15 · overdue | 📅 2026-01-15 · überfällig |
+| Owners · Updated 2026-10-01 · draft | Verantwortlich · Aktualisiert am 2026-10-01 · Entwurf |
+| Impact **high** · Likelihood **medium** | Auswirkung **hoch** · Wahrscheinlichkeit **mittel** |
+
+- **Covered:** the document header (labels, status and audience), the table of contents title, callout titles and their screen-reader prefix, `:::details`, tabs, `:::agent`/`:::human` labels, decisions and their status, risks (labels, levels, status) and the risk matrix, figure labels and `:ref[…]`, the footnotes heading and back links, include notes, quote attributions, `:priority[high]` and other word priorities, `:due[…]` notes, metric and status-dot words, progress bar names, copy buttons and diagram messages, and the `smd build` site's navigation, search and dashboard.
+- **Not translated:** your text, dates and numbers, and anything for agents and tools: the agent view, `smd to-md` (its figure labels stay "Figure 2"), `smd outline` and validator messages stay English.
+- **English stays as it was:** without `lang`, or with `lang: en`, output is byte for byte what it was before 1.6.
+- **Other languages:** a well-formed tag without labels (say `lang: ko`) renders English labels but marks the page as that language; `smd validate` reports it as `frontmatter/lang` (info) with the supported list.
+- **Fallback for documents without `lang`:** `smd render --lang de`, `smd pdf --lang de` and `smd build --lang de` (which also sets the site's navigation; without it the home document's `lang` is used), `renderSmd(text, { lang: 'de' })`, and the markdown-it plugin's `lang` option or `env.lang`.
 
 ## 2. Callouts and collapsibles
 
@@ -837,7 +861,7 @@ Rendered pages (the preview, `smd render`, `smd build` sites and `smd risks --ht
 
 - **Contrast:** text has at least 4.5:1 against its background, and focus rings and status dots 3:1, in the light and the dark theme. Named colors, badges, pills, callouts, due dates and risk matrix bands are checked by a test that reads the colors from `smd.css`.
 - **Keyboard:** every control has a visible focus ring. Tabs follow the WAI-ARIA tabs pattern: Tab enters the tab list, **←/→** move between tabs (wrapping), **Home/End** jump to the first and last, and the panel is next in the Tab order. Collapsibles (`:::details`, collapsible callouts, `:::agent`) are native `<details>` and open with **Enter** or **Space**. Copy buttons appear on keyboard focus and announce "Code copied". Code blocks, tables and diagrams that scroll sideways can be focused and scrolled with the arrow keys. Sites have a "Skip to content" link, and **Escape** closes the sidebar menu (back to its button) and the search results.
-- **Screen readers:** pages declare `lang="en"` and use `main`, `header` and named `nav` landmarks. Task checkboxes are named by their text, table header cells have `scope`, progress bars have a name and value, and status dots are hidden behind their text. Meaning carried by color also comes in words: a callout with its own title starts with its type ("Warning:"), overdue dates say "overdue" (and due-soon dates "due soon" to screen readers), and metric deltas say "up, good". Search announces the number of results.
+- **Screen readers:** pages declare their language (`lang="en"`, or the document's `lang:`; see [Localized labels](#localized-labels)) and use `main`, `header` and named `nav` landmarks. Task checkboxes are named by their text, table header cells have `scope`, progress bars have a name and value, and status dots are hidden behind their text. Meaning carried by color also comes in words: a callout with its own title starts with its type ("Warning:"), overdue dates say "overdue" (and due-soon dates "due soon" to screen readers), and metric deltas say "up, good". Search announces the number of results.
 - **Images and diagrams:** `![alt](…)` becomes the image's alt text; an empty alt marks a decorative image. Name a Mermaid diagram with `accTitle:` and `accDescr:` lines, which Mermaid turns into the SVG's title and description. Math is rendered with MathML for screen readers.
 - **Motion:** with the system's "reduce motion" setting, transitions and smooth scrolling are turned off.
 

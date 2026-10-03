@@ -300,6 +300,16 @@
           ],
           "description": "updated is older than the stale limit and the document is not archived or deprecated"
         },
+        "frontmatter/lang": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "lang is not a language tag, or names a language without labels (they render in English)"
+        },
         "container/unknown": {
           "enum": [
             "off",

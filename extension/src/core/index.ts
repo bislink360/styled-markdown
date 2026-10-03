@@ -2,6 +2,7 @@ export * from './spec';
 export { parseFrontMatter } from './frontmatter';
 export { FRONTMATTER_SCHEMA, frontMatterValues } from './frontmatterSchema';
 export { renderSmd, renderStandaloneHtml, slugify } from './render';
+export { SUPPORTED_LANGUAGES, matchLanguage } from './i18n';
 export type { RenderOptions, RenderResult, Heading } from './render';
 export { parseSmd } from './parse';
 export type { ParseResult } from './parse';

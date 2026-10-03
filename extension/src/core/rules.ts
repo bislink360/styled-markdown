@@ -14,6 +14,7 @@ export const RULE_CODES: Record<string, string> = {
   'frontmatter/date': 'Front matter date is not YYYY-MM-DD',
   'frontmatter/duplicate-title': 'The first `# heading` repeats the front matter title',
   'frontmatter/stale': '`updated` is older than the stale limit and the document is not archived or deprecated',
+  'frontmatter/lang': '`lang` is not a language tag, or names a language without labels (they render in English)',
   'container/unknown': 'Unknown container name',
   'container/unclosed': 'Container is never closed',
   'container/stray-close': 'Closing `:::` with nothing open',

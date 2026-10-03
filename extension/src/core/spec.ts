@@ -211,6 +211,7 @@ export const FRONTMATTER_KEYS: Record<string, string> = {
   accent: 'Accent color used for headings and links (named color or #hex)',
   toc: 'true to render a table of contents after the header',
   related: 'List of related documents (paths or URLs)',
+  lang: 'Language of the rendered labels (callout titles, "Figure 2", "overdue"…), a BCP 47 tag such as de or pt-BR. Default English',
 };
 
 export const STATUS_VALUES = ['draft', 'review', 'approved', 'deprecated', 'archived'];

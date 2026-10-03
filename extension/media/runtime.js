@@ -82,6 +82,21 @@
   }
 
   /** An id not used in the document yet (panes rendered by older versions have none). */
+  /**
+   * A label in the document's language: from the nearest data-smd-labels (JSON the renderer adds to documents with
+   * a non-English `lang`), else the English text given.
+   */
+  function uiLabel(el, key, english) {
+    const host = el && el.closest ? el.closest('[data-smd-labels]') : null;
+    if (!host) return english;
+    try {
+      const text = JSON.parse(host.getAttribute('data-smd-labels'))[key];
+      return typeof text === 'string' && text ? text : english;
+    } catch {
+      return english;
+    }
+  }
+
   function freshId(doc, prefix) {
     let n = 1;
     while (doc.getElementById(prefix + n)) n++;
@@ -142,7 +157,7 @@
 
   if (typeof document === 'undefined') {
     if (typeof module === 'object' && module.exports) {
-      module.exports = { mapLine, pickAnchor, findLine, stableKeys, lruCache, diagramKey, tabKeyTarget, buildTabs };
+      module.exports = { mapLine, pickAnchor, findLine, stableKeys, lruCache, diagramKey, tabKeyTarget, buildTabs, uiLabel };
     }
     return;
   }
@@ -264,15 +279,16 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'smd-copy';
-      btn.textContent = 'Copy';
-      btn.setAttribute('aria-label', 'Copy code');
+      const copy = uiLabel(block, 'copy', 'Copy');
+      btn.textContent = copy;
+      btn.setAttribute('aria-label', uiLabel(block, 'copyCode', 'Copy code'));
       btn.addEventListener('click', () => {
         const code = block.querySelector('code');
         if (!code || !navigator.clipboard) return;
         navigator.clipboard.writeText(code.textContent || '').then(() => {
-          btn.textContent = 'Copied';
-          announce('Code copied');
-          setTimeout(() => (btn.textContent = 'Copy'), 1200);
+          btn.textContent = uiLabel(block, 'copied', 'Copied');
+          announce(uiLabel(block, 'codeCopied', 'Code copied'));
+          setTimeout(() => (btn.textContent = copy), 1200);
         });
       });
       block.appendChild(btn);
@@ -373,7 +389,7 @@
     const hosts = Array.from(scope.querySelectorAll('.smd-diagram'));
     if (!hosts.length) return;
     if (typeof mermaid === 'undefined') {
-      hosts.forEach((h) => h.setAttribute('title', 'Mermaid is not loaded — showing diagram source.'));
+      hosts.forEach((h) => h.setAttribute('title', uiLabel(h, 'mermaidMissing', 'Mermaid is not loaded — showing diagram source.')));
       return;
     }
     const theme = currentTheme();
@@ -416,7 +432,7 @@
         if (stray) stray.remove();
         host.innerHTML =
           '<pre class="smd-mermaid">' + escapeHtml(src) + '</pre>' +
-          '<span class="smd-error">Diagram error: ' + escapeHtml((err && err.message) || err) + '</span>';
+          '<span class="smd-error">' + escapeHtml(uiLabel(host, 'diagramError', 'Diagram error')) + ': ' + escapeHtml((err && err.message) || err) + '</span>';
       }
       host.classList.remove('smd-diagram-pending');
       host.style.height = '';

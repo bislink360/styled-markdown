@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { renderSmd, type RenderOptions } from './core';
+import { escapeHtml } from './core/attrs';
 import { taskCheckbox } from './editing';
 import { readerFor } from './files';
 
@@ -196,7 +197,7 @@ class Preview {
       `script-src 'nonce-${nonce}'`,
     ].join('; ');
     return `<!DOCTYPE html>
-<html lang="en" data-smd-theme-pref="${themePreference(result.frontMatter)}">
+<html lang="${escapeHtml(result.lang ?? 'en')}" data-smd-theme-pref="${themePreference(result.frontMatter)}">
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">

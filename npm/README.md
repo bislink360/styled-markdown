@@ -69,6 +69,7 @@ import {
 const { html, frontMatter, headings } = renderSmd(source, {
   agentBlocks: 'collapsed',                  // how :::agent blocks show to humans: collapsed | expanded | hidden
   readFile: (path) => fs.readFileSync(path, 'utf8'), // enables ```ts file="…" embeds (sandbox it yourself)
+  lang: 'de',                                // labels ("Hinweis", "Abbildung 2") for documents without their own `lang:`
 });
 
 // Complete standalone page (styles + runtime for tabs, Mermaid, theme switching)
@@ -112,6 +113,7 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 | `agentBlocks` | `'collapsed'` | How `:::agent` blocks show to humans: `collapsed`, `expanded` or `hidden` |
 | `readFile` | none | `(path, env) => string \| undefined` for ```` ```ts file="…" ```` embeds; `env` is what you passed to `md.render` (sandbox it yourself) |
 | `today` | current date | `YYYY-MM-DD` for `:due[]` states |
+| `lang` | English | Language of the labels the plugin adds ("Note", "Figure 2", "overdue"…), a BCP 47 tag: `de`, `es`, `fr`, `ja`, `pt`, `zh` (`pt-BR` → `pt`; others are English). A render's `env.lang` overrides it, and with `frontMatter` the document's `lang:` overrides both (since 1.6) |
 
 Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Figures are numbered per `md.render` call, and `:ref[id]` resolves against the figures of that call (they are kept on the `env` as `smdFigures`). Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
 
@@ -142,7 +144,7 @@ file.data.smd;          // { frontMatter, headings }
 | `header` | `true` | the title/status/owners header from front matter; `false` when the site layout already shows the title |
 | `frontMatter` | see below | `(file) => object`: front matter the host already removed from the source |
 | `readFile` | none | `(relativePath, file) => string \| undefined`, for ```` ```ts file="…" ```` embeds (resolve against `file.path`, sandbox it yourself) |
-| `allowHtml`, `agentBlocks`, `today` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML |
+| `allowHtml`, `agentBlocks`, `today`, `lang` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML |
 
 **Front matter.** When the source still starts with `---` (plain unified, with or without remark-frontmatter), the plugin reads it like `renderSmd`. When the host removed it first, the plugin looks for the parsed data in `file.data.astro.frontmatter` (Astro), `file.data.matter` (vfile-matter) or `file.data.frontmatter`, or uses your `frontMatter` option. Front matter nodes (`yaml`, `toml`) and MDX `import`/`export` nodes stay in the tree.
 

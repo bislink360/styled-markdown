@@ -74,7 +74,7 @@ test('footnotes: every render numbers from 1, with a fresh or a reused env', () 
 test('footnotes: documents without definitions render byte for byte as with footnotes off', () => {
   const docs = ['examples', path.join('extension', 'test', 'compat', 'corpus')]
     .flatMap((dir) => fs.readdirSync(path.join(__dirname, '..', '..', dir)).filter((f) => f.endsWith('.smd')).map((f) => path.join(__dirname, '..', '..', dir, f)))
-    .filter((f) => !f.endsWith('footnotes.smd'));
+    .filter((f) => !/^\[\^[^\]\n]+\]:/m.test(fs.readFileSync(f, 'utf8')));
   assert.ok(docs.length >= 5);
   const options = { codeFrames: true, headingIds: true, sourceLines: true, frontMatter: true, today: '2026-01-01' };
   const on = new MarkdownIt({ html: true, linkify: true, typographer: true }).use(smd, options);
