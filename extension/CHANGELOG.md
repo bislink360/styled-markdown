@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.6.0 — 2026-10-02
+## 1.6.0 — 2026-10-05
 
 New syntax, all additive: footnotes, transclusion with `:::include`, numbered figures with `:ref` references, front matter variables in text, glossaries, `:::changelog` and `:::quote` blocks, and localized labels with front matter `lang`. Rendered pages meet WCAG 2.2 AA. Documents, CLI commands and flags, diagnostic codes and messages, library exports, extension commands and settings from 1.5.0 all keep working, and documents that use none of the new syntax render, convert and validate as before; the few places where existing text can now read differently are listed under Changed. New checks are warnings or information, never errors, so documents that passed `smd validate` still pass; `--strict` turns the new warnings into failures.
 
