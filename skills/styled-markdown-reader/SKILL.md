@@ -52,9 +52,18 @@ Catching up on a changed document:
 | `<risk impact=… likelihood=…>` | Design around it or test for it |
 | `[risk matrix: …]` | A grid of the document's risks for people; the risks themselves are the `<risk>` blocks |
 | `API POST /v1/x — …` | Endpoint definition; the following lines describe it |
+| `<glossary>` … `</glossary>` | The document's defined terms and abbreviations, listed once; the text uses them as written (not expanded) |
+| `<changelog>` with `## 1.2.0 (2026-03-01)` lines | Release history, newest first: each line is a version and its release date, followed by what changed in it |
+| `<quote author="…" source="…" cite="…">` | A quotation: the words are the author's, not the document's own claims |
+| `<figure id="fig-x"> Figure 2: caption`, `Figure 2 (fig-x)` | A numbered figure (or Table/Listing) and a reference to it; the id in parentheses names the `<figure>` meant |
 | front matter `status:` | `approved` is authoritative, `draft`/`review` is tentative, `deprecated`/`archived` is history |
+| front matter `lang:` | The language the document is written in. It only changes labels in rendered HTML; the agent view's labels stay English |
 | `[P1]`, `@name`, `(due …, OVERDUE)` | Task priority, owner, due date |
+| Values such as a version in the text | The source may write them as `{{version}}`, a front matter variable the view fills in. To change one everywhere, edit the front matter key, not the `[L…]` line. |
+| `[^1]` … `[^1]: text` | A footnote reference and its definition, as written. In a `--section` excerpt, `Footnotes referenced above:` lists the definitions it needs. |
 | `[code: path lines a-b …]` | Real source embedded by the doc. Read that file range if you need it (or rerun with `--embed`). |
+| `<included file="shared/terms.smd" section="…">…</included>` | Text included from another document, part of this one. `[L…]` refs inside point into that file, so edit it there. |
+| `[include: shared/terms.smd § Pricing — …]` | An include that wasn't expanded (`--no-includes`, or it can't be read). Run `smd agent shared/terms.smd --section "Pricing"` if you need it. |
 | `[diagram: …]`, `[details: … omitted]` | Condensed by `--brief`. Read the given lines if you need them. |
 | `[section omitted: ## X, L90-L128, ≈231 tokens — smd agent …]` | Left out by `--max-tokens`. Run the given command if the question needs that section. |
 

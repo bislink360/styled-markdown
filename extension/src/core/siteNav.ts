@@ -1,4 +1,5 @@
 import { escapeHtml } from './attrs';
+import { EN, type Messages } from './i18n';
 import { dirOf, type Linker } from './siteLinks';
 
 /**
@@ -118,7 +119,7 @@ function contains(folder: NavFolder, output: string): boolean {
 }
 
 /** Home › folders › page. A folder links to its overview page when it has one. */
-export function breadcrumbsHtml(tree: NavFolder, page: SitePage, home: SitePage, linker: Linker): string {
+export function breadcrumbsHtml(tree: NavFolder, page: SitePage, home: SitePage, linker: Linker, m: Messages = EN): string {
   if (page.output === home.output) return '';
   const crumbs = [`<a href="${escapeHtml(linker.href(page.output, home.output))}">${escapeHtml(home.title)}</a>`];
   let folder = tree;
@@ -129,15 +130,16 @@ export function breadcrumbsHtml(tree: NavFolder, page: SitePage, home: SitePage,
     crumbs.push(folder.index ? `<a href="${escapeHtml(linker.href(page.output, folder.index.output))}">${escapeHtml(folderTitle(folder))}</a>` : `<span>${escapeHtml(folder.name)}</span>`);
   }
   crumbs.push(`<span aria-current="page">${escapeHtml(page.title)}</span>`);
-  return `<nav class="smd-site-crumbs" aria-label="Breadcrumb">${crumbs.join('<span class="smd-site-sep" aria-hidden="true">›</span>')}</nav>`;
+  return `<nav class="smd-site-crumbs" aria-label="${escapeHtml(m['site.breadcrumb'])}">${crumbs.join('<span class="smd-site-sep" aria-hidden="true">›</span>')}</nav>`;
 }
 
 /** Links to the previous and next page in reading order. */
-export function pagerHtml(order: SitePage[], page: SitePage, linker: Linker): string {
+export function pagerHtml(order: SitePage[], page: SitePage, linker: Linker, m: Messages = EN): string {
   const i = order.findIndex((p) => p.output === page.output);
   if (i < 0) return '';
   const link = (target: SitePage | undefined, rel: 'prev' | 'next', label: string) => (target
     ? `<a class="smd-site-${rel}" rel="${rel}" href="${escapeHtml(linker.href(page.output, target.output))}"><span>${label}</span>${escapeHtml(target.title)}</a>`
     : '<span></span>');
-  return `<nav class="smd-site-pager" aria-label="Previous and next">${link(order[i - 1], 'prev', 'Previous')}${link(order[i + 1], 'next', 'Next')}</nav>`;
+  return `<nav class="smd-site-pager" aria-label="${escapeHtml(m['site.pager'])}">`
+    + `${link(order[i - 1], 'prev', m['site.previous'])}${link(order[i + 1], 'next', m['site.next'])}</nav>`;
 }

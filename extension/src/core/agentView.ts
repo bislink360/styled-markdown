@@ -1,13 +1,23 @@
 import { parseAttrs } from './attrs';
+import { changelogEntries, versionLabel, type ChangelogEntry } from './changelog';
 import {
   omissionOrder, omissionPointer, omittableSections, withOmitted, type BudgetResult, type BudgetSection, type Tokenizer,
 } from './budget';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
+import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
+import { findFootnotes, type FootnoteDefinition } from './footnotes';
 import { parseFrontMatter, asStringList } from './frontmatter';
-import { parseSmd } from './parse';
-import { dueState, HEADING_ATTRS, slugify, type Heading } from './render';
+import {
+  includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
+} from './include';
+import { includedLines, includeSource } from './includeText';
+import { figureIndex, parseSmd, type FigureIndex } from './parse';
+import { dueState, HEADING_ATTRS, type Heading } from './render';
+import { matchesHeading, sectionsOf, type Section } from './sections';
+import { quoteCite } from './quote';
 import { CALLOUT_TYPES } from './spec';
+import { documentVariables, substituteVariables, type Variables } from './variables';
 
 /**
  * Agent view: a compact, meaning-preserving rendering of an .smd document for LLMs.
@@ -29,6 +39,12 @@ export interface AgentViewOptions {
   lineRefs?: boolean;
   /** Inline `file="…"` code embeds instead of referencing the path (default false). */
   embed?: boolean;
+  /**
+   * Show `:::include` blocks as the included text in an `<included file="…">` block (default true; needs
+   * `readFile`). False: a one-line pointer to the file instead, to save tokens.
+   */
+  includes?: boolean;
+  /** Reads code embeds and includes, relative to the document. */
   readFile?: (relativePath: string) => string | undefined;
   today?: string;
   /**
@@ -67,22 +83,65 @@ function riskMatrixPointer(title: string): string {
   return `[${label} — impact × likelihood of this document's risks except closed ones; each is a <risk> block]`;
 }
 
-const TAGS: Record<string, string> ={ ...Object.fromEntries(CALLOUT_TYPES.map((c) => [c, c])) };
+/** What a container's opening line becomes: a line to emit, and a line that closes it. */
+interface ContainerHead { line?: string; close?: string }
+
+interface HeadSource {
+  /** The title as plain words. */
+  title: string;
+  values: Record<string, string>;
+  id?: string;
+  /** The `:::figure` that opens on this line. */
+  figure?: Figure;
+}
+
+const titleAttr = (title: string) => (title ? ` title="${title}"` : '');
+const titleAfter = (title: string, sep = ' ') => (title ? `${sep}${title}` : '');
+const attrList = (values: Record<string, string>, keys: string[]) => keys.filter((k) => values[k]).map((k) => ` ${k}="${values[k]}"`).join('');
+
+/** `<tag title="…">` … `</tag>` */
+const tagged = (tag: string) => ({ title }: HeadSource): ContainerHead => ({ line: `<${tag}${titleAttr(title)}>`, close: `</${tag}>` });
+
+function apiHead({ title, values: v }: HeadSource): ContainerHead {
+  return { line: `API ${(v.method ?? 'GET').toUpperCase()} ${v.path ?? ''}${titleAfter(title, ' — ')}${v.auth ? ` (auth: ${v.auth})` : ''}` };
+}
+
+/** `<figure id="fig-checkout"> Figure 1: Caption` … `</figure>`, numbered as the rendered document numbers it. */
+function figureHead({ title, id, figure }: HeadSource): ContainerHead {
+  const label = (figure?.label ?? 'Figure') + titleAfter(title, ': ');
+  return { line: `<figure${id ? ` id="${id}"` : ''}> ${label}`, close: '</figure>' };
+}
+
+/** `<quote author="…" source="…" cite="…">` … `</quote>`: attribution as plain words, and only a cite URL that renders. */
+function quoteHead({ values }: HeadSource): ContainerHead {
+  const plainValues = { author: inlineText(values.author ?? '').trim(), source: inlineText(values.source ?? '').trim(), cite: quoteCite(values.cite) ?? '' };
+  return { line: `<quote${attrList(plainValues, ['author', 'source', 'cite'])}>`, close: '</quote>' };
+}
+
+/**
+ * The agent view of each container's opening line. `:::human` (unless included) and `:::details` in brief
+ * views are dropped before this. tabs, columns, column, box, steps, timeline and unknown containers: content only.
+ */
+const CONTAINER_HEADS = new Map<string, (c: HeadSource) => ContainerHead>([
+  ['agent', tagged('agent-instructions')],
+  ...CALLOUT_TYPES.map((c) => [c, tagged(c)] as const),
+  ['decision', ({ title, values }) => ({ line: `<decision${attrList(values, ['status', 'date', 'owner'])}>${titleAfter(title)}`, close: '</decision>' })],
+  ['risk', ({ title, values }) => ({ line: `<risk${attrList(values, ['impact', 'likelihood', 'owner', 'status'])}>${titleAfter(title)}`, close: '</risk>' })],
+  ['risk-matrix', ({ title }) => ({ line: riskMatrixPointer(title) })],
+  ['api', apiHead],
+  ['details', tagged('details')],
+  ['human', tagged('human')],
+  ['tab', ({ title }) => ({ line: `Tab "${title || 'Tab'}":` })],
+  ['card', ({ title }) => (title ? { line: `${title}:` } : {})],
+  ['figure', figureHead],
+  // Listed once, as written; uses of the terms in the text are not expanded.
+  ['glossary', tagged('glossary')],
+  // Its entry headings become `## 1.2.0 (2026-03-01)` lines (see entryHeading).
+  ['changelog', tagged('changelog')],
+  ['quote', quoteHead],
+]);
+
 const NOISE_KEYS = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
-
-interface Section { heading: Heading; start: number; end: number }
-
-function sectionsOf(headings: Heading[], lineCount: number): Section[] {
-  return headings.map((h, i) => {
-    const next = headings.slice(i + 1).find((n) => n.level <= h.level);
-    return { heading: h, start: h.line, end: (next ? next.line : lineCount) - 1 };
-  });
-}
-
-function matches(h: Heading, query: string): boolean {
-  const q = query.trim().toLowerCase().replace(/^#+\s*/, '');
-  return h.slug === slugify(q) || h.slug === q || h.text.toLowerCase().includes(q);
-}
 
 interface ViewScope {
   data: Record<string, unknown>;
@@ -114,27 +173,49 @@ function selectSections(sections: Section[], queries: string[] | undefined): { s
   if (!queries?.length) return { selected: null, missingSections };
   const selected: Section[] = [];
   for (const q of queries) {
-    const hit = sections.filter((s) => matches(s.heading, q));
+    const hit = sections.filter((s) => matchesHeading(s.heading, q));
     if (hit.length) selected.push(...hit); else missingSections.push(q);
   }
   return { selected, missingSections };
 }
 
-interface ViewHead { header: string; external: string }
+interface ViewHead { header: string; external: string; footnotes: string }
 
-/** The header, plus :::agent blocks outside the selected sections (they still apply). */
+/**
+ * The header, plus :::agent blocks outside the selected sections (they still apply) and the footnotes
+ * the sections reference but that are defined elsewhere.
+ */
 function viewHead(scope: ViewScope, options: AgentViewOptions): ViewHead {
   const { selected, lines, bodyStart, inScope } = scope;
   let external = '';
+  let footnotes = '';
   if (selected) {
     const outside = transform(lines, bodyStart, (l) => !inScope(l), { ...options, onlyAgentBlocks: true });
     if (outside.trim()) external = `Document-wide agent instructions:\n${outside.trim()}\n\n`;
+    footnotes = outsideFootnotes(scope, options);
   }
-  return { header: header(scope.data, selected ? selected.map((s) => s.heading.text) : null), external };
+  return { header: header(scope.data, selected ? selected.map((s) => s.heading.text) : null), external, footnotes };
+}
+
+/**
+ * Footnotes are kept as written: `[^1]` references in the text and `[^1]: …` definitions where they
+ * are. An excerpt lists the definitions its references need once after it, unless a skipped section
+ * holds them.
+ */
+function outsideFootnotes(scope: ViewScope, options: AgentViewOptions): string {
+  const { definitions, references } = findFootnotes(scope.lines.join('\n'));
+  const wanted = new Set(references.filter((r) => scope.inScope(r.line)).map((r) => r.label));
+  const first = new Map<string, FootnoteDefinition>();
+  for (const d of definitions) if (wanted.has(d.label) && !first.has(d.label)) first.set(d.label, d);
+  const inSkipped = (line: number) => scope.skipped.some((s) => line >= s.start && line <= s.end);
+  const ranges = [...first.values()].filter((d) => !scope.inScope(d.line) && !inSkipped(d.line)).map((d) => [d.line, d.endLine]);
+  if (!ranges.length) return '';
+  const view = transform(scope.lines, scope.bodyStart, (l) => ranges.some(([a, b]) => l >= a && l <= b), options);
+  return view.trim() ? `Footnotes referenced above:\n${view.trim()}` : '';
 }
 
 function assemble(head: ViewHead, body: string): string {
-  return [head.header, head.external + body]
+  return [head.header, head.external + body, head.footnotes]
     .filter((s) => s.trim())
     .join('\n\n')
     .replace(/\n{3,}/g, '\n\n')
@@ -249,13 +330,25 @@ function header(data: Record<string, unknown>, sections: string[] | null): strin
 
 interface TransformOptions extends AgentViewOptions {
   onlyAgentBlocks?: boolean;
+  /** The document's figures, when `lines` are not the whole document (see agentViewOfRange). */
+  figures?: FigureIndex;
+  /** The document's changelog entry headings by line, when `lines` are not the whole document. */
+  changelogs?: ReadonlyMap<number, ChangelogEntry>;
+  /** The document's front matter, for `{{name}}`; read from `lines` when left out. */
+  variables?: Variables;
   /** Receives every emitted line with the source line it came from. */
   collect?: Array<[at: number, line: string]>;
+  /** Inside an included document: where its own includes resolve. */
+  includeScope?: IncludeScope;
 }
 
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
+  const figures = options.figures ?? figureIndex(lines.join('\n'));
+  const variables = options.variables ?? documentVariables(lines);
+  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, variables);
+  const changelogs = options.changelogs ?? changelogEntries(lines);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
   const dropping = () => stack.some((f) => f.drop);
@@ -322,9 +415,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     const info = open ? parseContainerInfo(open[3] + open[4]) : null;
     if (open && info) {
       flushDone(i);
-      const title = info.title ? inlineText(info.title, options.today) : '';
-      const v = info.attrs.values;
-      const attr = (keys: string[]) => keys.filter((k) => v[k]).map((k) => ` ${k}="${v[k]}"`).join('');
+      const title = info.title ? text(info.title) : '';
       const frame: Frame = { name: info.name, drop: false, start: i };
       stack.push(frame);
       if (info.name === 'human' && !options.includeHuman) { frame.drop = true; continue; }
@@ -333,31 +424,14 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
         frame.drop = true;
         continue;
       }
-      if (info.name === 'agent') {
-        emit(`<agent-instructions${title ? ` title="${title}"` : ''}>`, i);
-        frame.close = '</agent-instructions>';
-      } else if (TAGS[info.name]) {
-        emit(`<${info.name}${title ? ` title="${title}"` : ''}>`, i);
-        frame.close = `</${info.name}>`;
-      } else if (info.name === 'decision') {
-        emit(`<decision${attr(['status', 'date', 'owner'])}>${title ? ` ${title}` : ''}`, i);
-        frame.close = '</decision>';
-      } else if (info.name === 'risk') {
-        emit(`<risk${attr(['impact', 'likelihood', 'owner', 'status'])}>${title ? ` ${title}` : ''}`, i);
-        frame.close = '</risk>';
-      } else if (info.name === 'risk-matrix') {
-        emit(riskMatrixPointer(title), i);
-      } else if (info.name === 'api') {
-        emit(`API ${(v.method ?? 'GET').toUpperCase()} ${v.path ?? ''}${title ? ` — ${title}` : ''}${v.auth ? ` (auth: ${v.auth})` : ''}`, i);
-      } else if (info.name === 'details' || info.name === 'human') {
-        emit(`<${info.name}${title ? ` title="${title}"` : ''}>`, i);
-        frame.close = `</${info.name}>`;
-      } else if (info.name === 'tab') {
-        emit(`Tab "${title || 'Tab'}":`, i);
-      } else if (info.name === 'card' && title) {
-        emit(`${title}:`, i);
+      if (info.name === 'include') {
+        includeView(info, lines, options).forEach((l) => emit(l, i));
+        frame.drop = true; // the body is fallback text for renderers that can't include
+        continue;
       }
-      // tabs, columns, column, box, steps, timeline and unknown containers: content only.
+      const head = CONTAINER_HEADS.get(info.name)?.({ title, values: info.attrs.values, id: info.attrs.id, figure: figures.byLine.get(i) }) ?? {};
+      if (head.line !== undefined) emit(head.line, i);
+      frame.close = head.close;
       continue;
     }
 
@@ -365,7 +439,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     const h = /^(\s{0,3}#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
     if (h) {
       flushDone(i);
-      emit(`${h[1].trim()} ${inlineText(h[2].replace(HEADING_ATTRS, ''), options.today)}${lineRefs ? `  [L${i + 1}]` : ''}`, i);
+      emit(`${h[1].trim()} ${headingText(h[2], changelogs.get(i), text)}${lineRefs ? `  [L${i + 1}]` : ''}`, i);
       continue;
     }
 
@@ -383,11 +457,11 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     if (/^\s*\|.*\|\s*$/.test(line)) {
       const cells = line.trim().slice(1, -1).split('|').map((c) => c.trim());
       const isDelimiter = cells.every((c) => /^:?-{1,}:?$/.test(c));
-      emit(isDelimiter ? `|${cells.map(() => '-').join('|')}|` : `|${cells.map((c) => inlineText(c, options.today)).join('|')}|`, i);
+      emit(isDelimiter ? `|${cells.map(() => '-').join('|')}|` : `|${cells.map((c) => text(c)).join('|')}|`, i);
       continue;
     }
 
-    const converted = inlineText(line, options.today, task ? task[2] === ' ' : false);
+    const converted = text(line, task ? task[2] === ' ' : false);
     emit(converted.trimEnd(), i);
   }
   flushDone(lines.length - 1);
@@ -396,7 +470,48 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
-  return transform(lines.slice(0, end + 1), start, () => true, options).trim();
+  const whole = { figures: figureIndex(lines.join('\n')), changelogs: changelogEntries(lines), variables: documentVariables(lines) };
+  return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
+}
+
+/** A heading's words; a changelog release in brief, `1.2.0 (2026-03-01)`, the version without its link. */
+function headingText(raw: string, entry: ChangelogEntry | undefined, text: (s: string) => string): string {
+  if (!entry) return text(raw.replace(HEADING_ATTRS, ''));
+  const version = text(versionLabel(entry.version));
+  return entry.date ? `${version} (${text(entry.date)})` : version;
+}
+
+/**
+ * `:::include` in the agent view: the included text inside `<included file="…" section="…">` (line references in it
+ * are lines of that file), or a one-line pointer when it isn't expanded or can't be read.
+ */
+function includeView(info: ContainerInfo, lines: string[], options: TransformOptions): string[] {
+  const request = includeRequest(info.attrs.values);
+  if (!request) return ['[include: no file given]'];
+  const scope = options.includeScope ?? rootScope(lines.join('\n'));
+  const label = includeLabel(includePath(scope.dir, request.file), request.section);
+  if (options.includes === false) return [`[include: ${label} — read that file for the content]`];
+  const result = loadInclude(request, scope, includeSource(options.readFile));
+  if (!result.ok) {
+    const problem = includeProblemText(result);
+    const reason = result.problem === 'unavailable' ? 'read that file for the content' : problem[0].toLowerCase() + problem.slice(1);
+    return [`[include: ${label} — ${reason}]`];
+  }
+  const inc = result.include;
+  // Included text uses this document's front matter variables, as the rendered HTML does.
+  const inner = { ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines) };
+  const body = transform(includedLines(inc).slice(0, inc.end + 1), inc.start, () => true, inner);
+  const section = request.section ? ` section="${request.section}"` : '';
+  return [`<included file="${inc.path}"${section}>`, ...withoutBlankEnds(body.split('\n')), '</included>'];
+}
+
+/** Lines without the blank ones at the start and at the end. */
+function withoutBlankEnds(lines: string[]): string[] {
+  const first = lines.findIndex((l) => l.trim());
+  if (first < 0) return [];
+  let last = lines.length - 1;
+  while (!lines[last].trim()) last--;
+  return lines.slice(first, last + 1);
 }
 
 function renderFence(fence: { start: number; body: string[]; info: string }, endLine: number, options: TransformOptions): string[] {
@@ -430,16 +545,32 @@ function renderFence(fence: { start: number; body: string[]; info: string }, end
 
 const STATUS_WORDS: Record<string, string> = { green: 'ok', teal: 'ok', red: 'bad', pink: 'bad', orange: 'warn', amber: 'warn', yellow: 'warn' };
 
-/** Strip styling syntax from one line, keeping the words. Code spans are left untouched. */
-export function inlineText(line: string, today?: string, openTask = false): string {
+/**
+ * Strip styling syntax from one line, keeping the words. Code spans are left untouched. With the
+ * document's figures by id, `:ref[id]` becomes `Figure 2 (id)`; with its front matter, `{{name}}`
+ * becomes the value of `name`.
+ */
+export function inlineText(
+  line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables,
+): string {
   return line
     .split(/(`+[^`]*`+)/)
-    .map((part, idx) => (idx % 2 === 1 ? part : plain(part, today, openTask)))
+    .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, variables), today, openTask, figures)))
     .join('');
 }
 
-function plain(s: string, today: string | undefined, openTask: boolean): string {
-  return s
+/** `:ref[id]` → `Figure 2 (id)`; references to unknown ids stay as written. */
+function refText(s: string, figures: ReadonlyMap<string, FigureNumber> | undefined): string {
+  if (!figures?.size) return s;
+  return s.replace(REF_DIRECTIVE, (m, pre: string, raw: string) => {
+    const id = raw.trim();
+    const figure = figures.get(id);
+    return figure ? `${pre}${figure.label} (${id})` : m;
+  });
+}
+
+function plain(s: string, today: string | undefined, openTask: boolean, figures?: ReadonlyMap<string, FigureNumber>): string {
+  return refText(s, figures)
     .replace(/!\[([^\]\n]*)\]\([^)\n]*\)/g, (_m, alt) => (alt ? `[image: ${alt}]` : ''))
     .replace(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]\n]*)\])?(?:\{([^{}\n]*)\})?/g, (m, pre, name, content = '', rawAttrs = '') => {
       const v = parseAttrs(rawAttrs)?.values ?? {};
@@ -472,7 +603,8 @@ function plain(s: string, today: string | undefined, openTask: boolean): string 
  * transformed once and each range is cut from the result, so an outline stays linear in document
  * size. Brief views count completed tasks per scope, so they are transformed per range.
  */
-function sectionViews(lines: string[], from: number, options: TransformOptions): (start: number, end: number) => string {
+function sectionViews(lines: string[], from: number, documentOptions: TransformOptions): (start: number, end: number) => string {
+  const options = { ...documentOptions, figures: figureIndex(lines.join('\n')), changelogs: changelogEntries(lines), variables: documentVariables(lines) };
   if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);
   const emitted: Array<[number, string]> = [];
   transform(lines, from, () => true, { ...options, collect: emitted });

@@ -48,7 +48,7 @@ test('priority, due and metric directives', () => {
   assert.match(html, /smd-due-overdue/);
   assert.match(html, /smd-due-soon/);
   assert.match(html, /smd-due-later/);
-  assert.match(html, /smd-metric-good">▲ \+3%/);
+  assert.match(html, /smd-metric-good"><span aria-hidden="true">▲<\/span> \+3%<span class="smd-sr-only"> \(up, good\)<\/span>/);
   assert.ok(codes(':due[next week]').includes('attrs/value'));
   assert.ok(codes(':priority[urgent]').includes('attrs/value'));
   assert.ok(codes(':metric[3]').includes('attrs/required'));

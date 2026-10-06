@@ -166,6 +166,14 @@
           "https://example.com/spec"
         ]
       ]
+    },
+    "lang": {
+      "description": "Language of the rendered labels (callout titles, \"Figure 2\", \"overdue\"…), a BCP 47 tag such as de or pt-BR. Default English",
+      "type": "string",
+      "examples": [
+        "de",
+        "pt-BR"
+      ]
     }
   },
   "additionalProperties": true

@@ -104,13 +104,13 @@ History and research. People see it; agents skip it.
 | **Foundation** | 100% CommonMark + GFM (tables, task lists, autolinks) · YAML front matter with a status header, owners, tags, TOC and accent color |
 | **Callouts** | `note` `info` `tip` `success` `warning` `danger` `question`, optionally collapsible · `details` |
 | **Styling** | 14 theme-aware named colors · `[text]{color bg border size weight font style}` · `==highlight==` |
-| **Inline** | `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention` · inline and display math (KaTeX) |
+| **Inline** | `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention` · inline and display math (KaTeX) · front matter values in text with `{{version}}` |
 | **Layout** | `tabs` · `columns` · `card` · `box` · `steps` · `timeline` (nest to any depth) |
 | **Project management** | `decision` (ADR records) · `risk` (impact × likelihood) · tasks with owner, priority and due date · overdue detection |
-| **Developers** | `api` endpoint blocks · code titles · line highlights `{2,5-7}` · live source embeds `file="…" lines="…"` · syntax highlighting |
+| **Developers** | `api` endpoint blocks · code titles · line highlights `{2,5-7}` · live source embeds `file="…" lines="…"` · shared text included from other documents `:::include{file="…" section="…"}` · syntax highlighting |
 | **Diagrams** | Every Mermaid type (flowchart, sequence, gantt, ER, state, class, pie, mindmap, timeline, xychart…), themed to match the document |
 | **Audience** | `:::agent` (instructions for AI) · `:::human` (people only) · `## Heading {agent=skip}` |
-| **Safety** | No scripts, whitelisted CSS values, sandboxed file embeds, strict Mermaid |
+| **Safety** | No scripts, whitelisted CSS values, sandboxed file embeds and includes, strict Mermaid |
 
 </details>
 
@@ -128,7 +128,7 @@ History and research. People see it; agents skip it.
 - **Document status** in the status bar: click it to move a document from `draft` to `review` to `approved` (or `deprecated`, `archived`); only the front matter `status:` (and `updated:`) changes, as one undoable edit
 - **Workspace symbols** (`Ctrl+T`) across every `.smd` heading, decision, risk and API endpoint (`POST /v1/orders`), and **hover previews** of linked sections, linked documents and `file="…"` code embeds
 - **Editing comfort:** Enter continues task lists (unchecked, keeping `@owner`), bullets and numbered lists; paste or drop images to save them in `docs/images/` with a relative link; **Set Up Spell Checking** teaches cSpell to skip directives, attributes and code
-- **Outline, folding** and **35 snippets** (`prd`-style blocks, `decision`, `risk`, `api`, `mermaid`, `gantt`, `task`, `embed`…)
+- **Outline, folding** and **41 snippets** (`prd`-style blocks, `decision`, `risk`, `api`, `figure`, `glossary`, `changelog`, `quote`, `mermaid`, `gantt`, `task`, `embed`, `transclude`…)
 - **Agent view** (🤖 button), **brief agent view**, **copy for an agent** (whole doc or picked sections), and a **status-bar token counter**
 - **Export** to standalone HTML or plain GitHub Markdown · **Convert** `.md` → `.smd` · **Validate workspace**
 - **Built-in Markdown preview:** `.md` files that use `.smd` syntax (callouts, directives, attribute lists, Mermaid, code titles) render in VS Code's own preview too; turn it off with `smd.markdownPreview.enabled`
@@ -180,11 +180,11 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-1.5.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+1. Download **`styled-markdown-1.6.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
 2. Install it:
 
    ```bash
-   code --install-extension styled-markdown-1.5.0.vsix
+   code --install-extension styled-markdown-1.6.0.vsix
    ```
 
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
@@ -197,8 +197,8 @@ History and research. People see it; agents skip it.
 Install the package straight from the release:
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.5.0/styled-markdown-1.5.0.tgz   # the smd command
-npm install https://github.com/bislink360/styled-markdown/releases/download/v1.5.0/styled-markdown-1.5.0.tgz      # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.6.0/styled-markdown-1.6.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v1.6.0/styled-markdown-1.6.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -223,7 +223,7 @@ Full instructions, building from source and troubleshooting: **[docs/INSTALL.md]
 ### Agent skills
 
 ```bash
-curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.5.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.6.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs skills install --global
 ```
 
@@ -273,7 +273,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v1.5.0
+      - uses: bislink360/styled-markdown/validate@v1.6.0
         with:
           paths: docs        # one per line; default: the whole repository
           fail-on: warning   # error (default), warning or never
@@ -362,7 +362,7 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-1.5.0.vsix
+npm run package        # → styled-markdown-1.6.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
 ```
 

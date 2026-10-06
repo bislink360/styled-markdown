@@ -20,6 +20,9 @@ export const PRIORITY_VALUES = ['P0', 'P1', 'P2', 'P3', 'P4', 'critical', 'high'
 
 export const CALLOUT_TYPES = ['note', 'info', 'tip', 'success', 'warning', 'danger', 'question'] as const;
 
+/** `:::figure{kind=…}` values. Each kind has its own label and counter: Figure 1, Table 1, Listing 1. */
+export const FIGURE_KINDS = ['figure', 'table', 'listing'];
+
 export interface ContainerSpec {
   description: string;
   /** Attribute keys accepted on the opening line, beyond the shared style keys. */
@@ -62,6 +65,12 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
     attrs: ['title', 'priority'],
   },
   human: { description: 'Content addressed only to human readers. Agents may skip it.', title: true, attrs: ['title'] },
+  include: {
+    description: 'Transclusion: the body of another .smd file, or one section of it, in place of this block. ' +
+      'file="…" is relative to this document; section="…" is a heading\'s text or id; level=N makes its top heading level N. ' +
+      'The block\'s own body is fallback text (e.g. a link to the file) for renderers that cannot include.',
+    attrs: ['file', 'section', 'level'],
+  },
 
   // Product / project management
   decision: {
@@ -82,6 +91,28 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
     attrs: ['title'],
   },
   timeline: { description: 'Renders the list inside as a vertical timeline (start items with a date).' },
+  changelog: {
+    description: 'Release history: each heading inside is a release, "## 1.2.0 — 2026-03-01" (newest first), followed by its notes. ' +
+      'Rendered as a timeline of versions with dates. Title after the name.',
+    title: true,
+    attrs: ['title'],
+  },
+  figure: {
+    description: 'Numbered figure around an image, diagram, table or code block. Title = the caption; give it an {#id} to refer to it with :ref[id].',
+    title: true,
+    attrs: ['title', 'kind'],
+    values: { kind: FIGURE_KINDS },
+  },
+  quote: {
+    description: 'Quotation with attribution: the body is the quoted text. author="…" and source="…" make the "— Author, Source" line; ' +
+      'cite="…" is the http(s) or relative URL it comes from. Not numbered as a figure.',
+    attrs: ['author', 'source', 'cite'],
+  },
+  glossary: {
+    description: 'Glossary: a list of **Term**: definition items, rendered as a definition list. The first use of each term in a section shows its definition on hover and links to it.',
+    title: true,
+    attrs: ['title'],
+  },
 
   // Developer
   api: {
@@ -147,7 +178,22 @@ export const INLINE_DIRECTIVES: Record<string, InlineDirectiveSpec> = {
     values: { trend: ['up', 'down', 'flat'], good: ['up', 'down'] },
     example: ':metric[42%]{label="Activation" delta="+3%" trend=up}',
   },
+  ref: {
+    description: 'Numbered reference to a :::figure by its id: renders "Figure 2" as a link to it',
+    content: true,
+    attrs: [],
+    example: ':ref[fig-checkout]',
+  },
 };
+
+/**
+ * Front matter variables (spec §4.7): `{{name}}` in text shows the value of the front matter key `name`.
+ * Only names the front matter defines are replaced; `\{{name}}` and code keep the braces.
+ */
+export const VARIABLE_SYNTAX = {
+  description: 'Front matter variable: shows the value of this front matter key (nested keys with dots, e.g. {{owner.name}}). Names the front matter does not define stay as written.',
+  example: 'Version {{version}}',
+} as const;
 
 /** Known front-matter keys. Unknown keys are allowed but reported as hints. */
 export const FRONTMATTER_KEYS: Record<string, string> = {
@@ -165,6 +211,7 @@ export const FRONTMATTER_KEYS: Record<string, string> = {
   accent: 'Accent color used for headings and links (named color or #hex)',
   toc: 'true to render a table of contents after the header',
   related: 'List of related documents (paths or URLs)',
+  lang: 'Language of the rendered labels (callout titles, "Figure 2", "overdue"…), a BCP 47 tag such as de or pt-BR. Default English',
 };
 
 export const STATUS_VALUES = ['draft', 'review', 'approved', 'deprecated', 'archived'];

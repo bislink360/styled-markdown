@@ -295,6 +295,67 @@
       ":::"
     ]
   },
+  "Figure": {
+    "prefix": [
+      "figure",
+      "caption"
+    ],
+    "description": "Numbered figure with a caption around an image, diagram, table (kind=table) or code (kind=listing)",
+    "body": [
+      ":::figure{#${1:fig-id}} ${2:Caption}",
+      "${0:![Alt text](image.png)}",
+      ":::"
+    ]
+  },
+  "Figure reference": {
+    "prefix": [
+      "ref",
+      "figref"
+    ],
+    "description": "Numbered reference to a figure by id: renders \"Figure 2\" as a link to it",
+    "body": ":ref[${1:fig-id}]"
+  },
+  "Glossary": {
+    "prefix": [
+      "glossary",
+      "abbr"
+    ],
+    "description": "Glossary of terms and abbreviations: each defined term shows its definition on hover where it is used",
+    "body": [
+      ":::glossary ${1:Glossary}",
+      "- **${2:API}**: ${3:Application Programming Interface}",
+      "${0}",
+      ":::"
+    ]
+  },
+  "Changelog": {
+    "prefix": [
+      "changelog",
+      "release"
+    ],
+    "description": "Release history: one heading per version with its date, newest first, then its notes",
+    "body": [
+      ":::changelog ${1:Release history}",
+      "## ${2:1.1.0} — ${3:$CURRENT_YEAR-$CURRENT_MONTH-$CURRENT_DATE}",
+      "- ${0:Added …}",
+      "",
+      "## ${4:1.0.0} — ${5:2026-01-15}",
+      "- First release",
+      ":::"
+    ]
+  },
+  "Quote": {
+    "prefix": [
+      "quote",
+      "cite"
+    ],
+    "description": "Quotation with attribution: — Author, Source (cite is the URL it comes from)",
+    "body": [
+      ":::quote{author=\"${1:Ada Lovelace}\" source=\"${2:Notes}\" cite=\"${3:https://example.com}\"}",
+      "${0:The quoted text.}",
+      ":::"
+    ]
+  },
   "Priority": {
     "prefix": "priority",
     "body": [
@@ -330,6 +391,18 @@
     "body": [
       "```${1:ts} file=\"${2:../src/index.ts}\" lines=\"${3:1-20}\"",
       "```"
+    ]
+  },
+  "Include another document": {
+    "prefix": [
+      "transclude",
+      "include-doc"
+    ],
+    "body": [
+      ":::include{file=\"${1:shared/terms.smd}\" section=\"${2:Pricing}\"}",
+      "See [${2:Pricing}](${1:shared/terms.smd}).",
+      ":::",
+      "$0"
     ]
   },
   "Section hidden from agents": {

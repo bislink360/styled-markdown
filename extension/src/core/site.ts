@@ -1,5 +1,7 @@
 import { SMD_CSS, SMD_RUNTIME_JS, SMD_SITE_CSS, SMD_SITE_JS } from './assets';
 import { escapeHtml } from './attrs';
+import { parseFrontMatter } from './frontmatter';
+import { documentLanguage, isEnglishMessages, label, messagesFor, siteScriptLabels, term, type Messages } from './i18n';
 import { renderSmd, type Heading } from './render';
 import { dashboardHtml } from './siteDashboard';
 import { linker as makeLinker, PAGE_SOURCE, pageOutput, rewriteLinks, siteBacklinks, type Linker } from './siteLinks';
@@ -25,10 +27,15 @@ export interface SiteOptions {
   base?: string;
   /** YYYY-MM-DD for due dates and overdue tasks; defaults to the current date. */
   today?: string;
-  /** The file reader for a document's code embeds (```lang file="…"```). */
+  /** The file reader for a document's code embeds (```lang file="…"```) and `:::include` blocks. */
   readFile?: (source: string) => ((relativePath: string) => string | undefined) | undefined;
   /** Stylesheets and scripts to write to `_smd/` (default: the bundled ones). */
   assets?: Partial<SiteAssets>;
+  /**
+   * The language of the site's navigation, search and dashboard, and of the labels in documents without a `lang:`
+   * of their own: a BCP 47 tag such as `de`. Default: the home document's `lang`, else English.
+   */
+  lang?: string;
 }
 
 /** A file of the site: `path` relative to the site folder. */
@@ -55,6 +62,8 @@ interface BuiltPage extends SitePage {
   headings: Heading[];
   html: string;
   theme: string;
+  /** The document's language tag. */
+  lang: string;
 }
 
 interface Site {
@@ -65,6 +74,9 @@ interface Site {
   order: SitePage[];
   linker: Linker;
   assets: SiteAssets;
+  /** The site's language tag, and its labels. */
+  lang: string;
+  m: Messages;
 }
 
 /** Build the site: every document rendered, linked and wrapped in the site's navigation. */
@@ -73,21 +85,28 @@ export function buildSite(sources: SiteSource[], options: SiteOptions = {}): Sit
   const linker = makeLinker(options.base);
   const homePath = homeOf(chosen);
   const homeSource = chosen.find((s) => s.path === homePath);
+  const lang = documentLanguage(options.lang, homeSource && parseFrontMatter(homeSource.text).data.lang);
+  const m = messagesFor(lang);
   const outputs = new Map(chosen.map((s) => [s.path, s === homeSource ? 'index.html' : pageOutput(s.path)]));
   const assets = new Set<string>();
-  const pages = chosen.map((s) => buildPage(s, outputs, linker, options, assets));
+  const pages = chosen.map((s) => buildPage(s, outputs, linker, { ...options, lang }, assets));
   const homePage = pages.find((p) => p.source === homeSource?.path);
-  const title = options.title?.trim() || homePage?.title || 'Documentation';
+  const title = options.title?.trim() || homePage?.title || m['site.documentation'];
   const taken = new Set(pages.map((p) => p.output));
-  const dashboard: SitePage = { source: '', output: taken.has('dashboard.html') ? 'smd-dashboard.html' : 'dashboard.html', title: 'Dashboard' };
+  const dashboardOutput = taken.has('dashboard.html') ? 'smd-dashboard.html' : 'dashboard.html';
+  const dashboard: SitePage = { source: '', output: dashboardOutput, title: m['site.dashboard'] };
   const home: SitePage = homePage ?? { source: '', output: 'index.html', title };
   const tree = navTree(pages, homePage);
-  const site: Site = { title, home, dashboard, tree, order: navOrder(tree, home), linker, assets: { ...defaultAssets(), ...options.assets } };
+  const site: Site = {
+    title, home, dashboard, tree, order: navOrder(tree, home), linker, assets: { ...defaultAssets(), ...options.assets }, lang, m,
+  };
   const backlinks = siteBacklinks(chosen);
   const bySource = new Map(pages.map((p) => [p.source, p]));
-  const files: SiteFile[] = pages.map((p) => ({ path: p.output, content: pageShell(site, p, p.html, backlinksHtml(p, backlinks, bySource, linker), p.theme) }));
+  const files: SiteFile[] = pages.map((p) => ({
+    path: p.output, content: pageShell(site, p, p.html, backlinksHtml(p, backlinks, bySource, site), { theme: p.theme, lang: p.lang }),
+  }));
   if (!homePage) files.push({ path: home.output, content: pageShell(site, home, homeIndexHtml(site), '') });
-  const dashboardBody = dashboardHtml(pages, { linker, output: dashboard.output, today: options.today });
+  const dashboardBody = dashboardHtml(pages, { linker, output: dashboard.output, today: options.today, messages: m });
   files.push({ path: dashboard.output, content: pageShell(site, dashboard, dashboardBody, '') }, ...assetFiles(site, pages, options.today));
   return { files, assets: [...assets].sort(compareText), pages: site.order, skipped };
 }
@@ -121,7 +140,7 @@ function homeOf(sources: SiteSource[]): string | undefined {
 
 function buildPage(source: SiteSource, outputs: Map<string, string>, linker: Linker, options: SiteOptions, assets: Set<string>): BuiltPage {
   const output = outputs.get(source.path)!;
-  const result = renderSmd(source.text, { readFile: options.readFile?.(source.path), today: options.today });
+  const result = renderSmd(source.text, { readFile: options.readFile?.(source.path), today: options.today, lang: options.lang });
   const rewritten = rewriteLinks(result.html, source.path, output, { pages: outputs, linker });
   rewritten.assets.forEach((a) => assets.add(a));
   const data = result.frontMatter;
@@ -135,6 +154,7 @@ function buildPage(source: SiteSource, outputs: Map<string, string>, linker: Lin
     headings: result.headings,
     html: rewritten.html,
     theme: ['light', 'dark'].includes(String(data.theme)) ? String(data.theme) : 'auto',
+    lang: result.lang ?? 'en',
   };
 }
 
@@ -145,21 +165,23 @@ function pageTitle(data: Record<string, unknown>, headings: Heading[], path: str
   return h1?.text ?? path.slice(path.lastIndexOf('/') + 1).replace(PAGE_SOURCE, '');
 }
 
-function backlinksHtml(page: BuiltPage, backlinks: Map<string, string[]>, bySource: Map<string, BuiltPage>, linker: Linker): string {
+function backlinksHtml(page: BuiltPage, backlinks: Map<string, string[]>, bySource: Map<string, BuiltPage>, site: Site): string {
+  const { linker, m } = site;
   const from = (backlinks.get(page.source) ?? []).map((s) => bySource.get(s)).filter((p): p is BuiltPage => p !== undefined);
   if (!from.length) return '';
   const items = from
     .sort((a, b) => compareText(a.title.toLowerCase(), b.title.toLowerCase()) || compareText(a.source, b.source))
     .map((p) => `<li><a href="${escapeHtml(linker.href(page.output, p.output))}">${escapeHtml(p.title)}</a></li>`);
-  return `<aside class="smd-site-backlinks" aria-label="Linked from"><h2>Linked from</h2><ul>${items.join('')}</ul></aside>`;
+  const title = m['site.linkedFrom'];
+  return `<aside class="smd-site-backlinks" aria-label="${escapeHtml(title)}"><h2>${title}</h2><ul>${items.join('')}</ul></aside>`;
 }
 
 /** The generated home page when there is no index or README: every document by folder, with summary and status. */
 function homeIndexHtml(site: Site): string {
   const count = site.order.filter((p) => p.source).length;
-  const dashboard = `<a href="${escapeHtml(site.linker.href(site.home.output, site.dashboard.output))}">Dashboard</a>`;
+  const dashboard = `<a href="${escapeHtml(site.linker.href(site.home.output, site.dashboard.output))}">${site.m['site.dashboard']}</a>`;
   return `<article class="smd-doc smd-site-home"><h1 id="top">${escapeHtml(site.title)}</h1>`
-    + `<p class="smd-site-lead">${count} document(s) · ${dashboard}</p>${folderIndex(site, site.tree, 2)}</article>`;
+    + `<p class="smd-site-lead">${label(site.m, 'site.documentCount', { count })} · ${dashboard}</p>${folderIndex(site, site.tree, 2)}</article>`;
 }
 
 function folderIndex(site: Site, folder: NavFolder, level: number): string {
@@ -171,14 +193,14 @@ function folderIndex(site: Site, folder: NavFolder, level: number): string {
 }
 
 function indexItem(site: Site, page: SitePage): string {
-  const status = page.status ? statusBadge(page.status) : '';
+  const status = page.status ? statusBadge(page.status, site.m) : '';
   const summary = page.summary ? `<div class="smd-site-summary">${escapeHtml(page.summary)}</div>` : '';
   return `<li><a href="${escapeHtml(site.linker.href(site.home.output, page.output))}">${escapeHtml(page.title)}</a>${status}${summary}</li>`;
 }
 
-function statusBadge(status: string): string {
+function statusBadge(status: string, m: Messages): string {
   const known = STATUS_VALUES.includes(status) ? status : 'unknown';
-  return ` <span class="smd-doc-status smd-doc-status-${known}">${escapeHtml(status)}</span>`;
+  return ` <span class="smd-doc-status smd-doc-status-${known}">${escapeHtml(term(m, 'docStatus', status))}</span>`;
 }
 
 /** The search index and the shared stylesheets and scripts. */
@@ -193,15 +215,25 @@ function assetFiles(site: Site, pages: BuiltPage[], today?: string): SiteFile[] 
   ];
 }
 
+/** A page's theme preference and language tag (by default `auto` and the site's language). */
+interface ShellOptions { theme?: string; lang?: string }
+
+/** The labels the site script reads, on `<body>` when the site's language has them. */
+function siteLabels(m: Messages): string {
+  return isEnglishMessages(m) ? '' : ` data-smd-labels="${escapeHtml(JSON.stringify(siteScriptLabels(m)))}"`;
+}
+
 /** A page of the site: header with search, sidebar, breadcrumbs, the content, backlinks and previous/next. */
-function pageShell(site: Site, page: SitePage, body: string, backlinks: string, theme = 'auto'): string {
+function pageShell(site: Site, page: SitePage, body: string, backlinks: string, shell: ShellOptions = {}): string {
+  const { m } = site;
+  const theme = shell.theme ?? 'auto';
   const href = (to: string) => escapeHtml(site.linker.href(page.output, to));
   const root = escapeHtml(site.linker.href(page.output, 'index.html').replace(/index\.html$/, ''));
   const title = page === site.home ? site.title : `${page.title} · ${site.title}`;
   const katex = body.includes('class="katex') ? '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">\n' : '';
   const mermaid = body.includes('class="smd-mermaid"') ? '<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>\n' : '';
   return `<!DOCTYPE html>
-<html lang="en" data-smd-theme-pref="${theme}">
+<html lang="${escapeHtml(shell.lang ?? site.lang)}" data-smd-theme-pref="${theme}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -210,20 +242,20 @@ function pageShell(site: Site, page: SitePage, body: string, backlinks: string, 
 ${katex}<link rel="stylesheet" href="${href(`${ASSET_DIR}/smd.css`)}">
 <link rel="stylesheet" href="${href(`${ASSET_DIR}/site.css`)}">
 </head>
-<body class="smd-body smd-site" data-smd-root="${root}">
-<a class="smd-site-skip" href="#smd-root">Skip to content</a>
+<body class="smd-body smd-site" data-smd-root="${root}"${siteLabels(m)}>
+<a class="smd-site-skip" href="#smd-root">${m['site.skip']}</a>
 <header class="smd-site-bar">
-<button type="button" class="smd-site-menu" aria-controls="smd-site-nav" aria-expanded="false"><span aria-hidden="true">☰</span><span class="smd-site-sr">Menu</span></button>
+<button type="button" class="smd-site-menu" aria-controls="smd-site-nav" aria-expanded="false"><span aria-hidden="true">☰</span><span class="smd-site-sr">${m['site.menu']}</span></button>
 <a class="smd-site-title" href="${href(site.home.output)}">${escapeHtml(site.title)}</a>
-<div class="smd-site-search" role="search"><input type="search" id="smd-site-q" placeholder="Search" aria-label="Search the documentation" autocomplete="off" spellcheck="false"><div id="smd-site-results" class="smd-site-results" hidden></div></div>
-<a class="smd-site-dash" href="${href(site.dashboard.output)}">Dashboard</a>
+<div class="smd-site-search" role="search"><input type="search" id="smd-site-q" placeholder="${escapeHtml(m['site.search'])}" aria-label="${escapeHtml(m['site.searchLabel'])}" autocomplete="off" spellcheck="false"><div id="smd-site-results" class="smd-site-results" hidden></div></div>
+<a class="smd-site-dash" href="${href(site.dashboard.output)}">${m['site.dashboard']}</a>
 </header>
 <div class="smd-site-layout">
-<nav id="smd-site-nav" class="smd-site-nav" aria-label="Documents">${sidebarHtml(site.tree, page.output, site.linker)}</nav>
+<nav id="smd-site-nav" class="smd-site-nav" aria-label="${escapeHtml(m['site.documents'])}">${sidebarHtml(site.tree, page.output, site.linker)}</nav>
 <div class="smd-site-content">
-${breadcrumbsHtml(site.tree, page, site.home, site.linker)}
-<main id="smd-root">${body}</main>
-${backlinks}${pagerHtml(site.order, page, site.linker)}
+${breadcrumbsHtml(site.tree, page, site.home, site.linker, m)}
+<main id="smd-root" tabindex="-1">${body}</main>
+${backlinks}${pagerHtml(site.order, page, site.linker, m)}
 </div>
 </div>
 ${mermaid}<script src="${href(`${ASSET_DIR}/runtime.js`)}"></script>

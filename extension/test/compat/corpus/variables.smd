@@ -1,0 +1,39 @@
+---
+smd: 1
+title: Front matter variables
+summary: Exercises the 1.6 front matter variables ({{name}} in text, nested keys, escapes, code and links left alone) so later releases are compared against them.
+status: draft
+version: "2.10"
+updated: 2026-10-01
+release:
+  date: 2026-10-20
+  codename: Juniper
+owners: ["@platform", "@docs-team"]
+---
+
+## What's new in {{version}}
+
+Version {{version}} ("{{ release.codename }}") ships on {{release.date}}; owners: {{owners}}.
+
+:::note Upgrading to {{version}}
+Read the notes for :badge[v{{version}}]{color=indigo} before you upgrade.
+:::
+
+- [ ] Announce {{release.codename}} @docs-team :due[{{release.date}}]
+
+| Release     | Code name            |
+| ----------- | -------------------- |
+| {{version}} | {{release.codename}} |
+
+## Left as written
+
+Write \{{version}} to show the braces, or use code: `{{version}}`.
+
+```handlebars
+<h1>{{title}}</h1>
+```
+
+Links keep their targets: [notes for {{version}}](https://example.com/releases/{{version}}).
+
+<!-- smd-disable-next-line variable/undefined -->
+A name the front matter doesn't define stays as written: {{customer}}.

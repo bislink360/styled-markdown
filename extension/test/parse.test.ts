@@ -66,6 +66,7 @@ test('incremental parsing matches a full parse through random edits', () => {
     '```', '```js', '~~~', '$$', 'x^2', '$$', '<!-- note', '-->', '<pre>', '</pre>', '<div id="raw">', '</div>',
     '- item', '  continued', '    indented code', '> quote', '[ref]: other.smd', '## [Title][ref]', '## [Other][nope]',
     'A [span]{#s1} and <a name="n1"></a>', '| a | b |', '| - | - |', 'plain text', ':::card{#card} Card',
+    'See[^n] and[^M].', '[^n]: Note [in]{#in-note} and[^m]', '    continued [more]{#in-more}', '[^m]: Other.', '## Heading[^n]',
   ];
   const base = allDocuments().map((f) => fs.readFileSync(f, 'utf8')).join('\n\n');
   // Seeded, so a failure is reproducible. 102 once caught a `$$` inserted far below the math it closed.

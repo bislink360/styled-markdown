@@ -9,6 +9,7 @@ import {
   type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic, type DiffResult, type ReportDocument, type Selector,
   type Tokenizer,
 } from './core';
+import { languageTag, SUPPORTED_LANGUAGES } from './core/i18n';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { exportPdf, loadPdfEngine, PdfError, pdfOptions, pdfPath } from './pdf';
@@ -39,12 +40,14 @@ Reading (token-efficient, for agents):
   smd outline <file.smd> [--related] [--tokenizer <name>]
       Sections with line ranges and token costs, open tasks, where agent instructions are.
       --related    also list the front matter "related:" documents: title, status, summary and cost
-  smd agent <file.smd> [--section "<heading>"]... [--brief] [--include-human] [--embed] [--no-lines]
-                       [--max-tokens <n>] [--tokenizer <name>]
+  smd agent <file.smd> [--section "<heading>"]... [--brief] [--include-human] [--embed] [--no-includes]
+                       [--no-lines] [--max-tokens <n>] [--tokenizer <name>]
       Compact agent view: styling, layout and human-only content removed; meaning kept.
       --section    only these sections (repeatable; agent instructions elsewhere are still included)
       --brief      also condense diagrams, long code, :::details and completed tasks
       --embed      inline file="…" code embeds instead of referencing the file
+      --no-includes a one-line pointer for each :::include instead of the included text (by default
+                   it is shown in an <included file="…"> block; line references in it are that file's)
       --max-tokens fit the view into n tokens: condense as --brief, then replace the least important
                    sections with one-line pointers (never the header, agent instructions or --section)
       --tokenizer  exact counts next to the ≈ estimate (also on outline, and used by --max-tokens) for an
@@ -129,12 +132,15 @@ Checking and converting:
       --stdout  print the formatted file instead of writing it (one file)
       validate and fmt take any number of files: use them as a pre-commit hook (see docs/INSTALL.md).
       After --, every argument is a file, even one that starts with "-".
-  smd render <file.smd> [-o out.html]      Standalone HTML page (prints well: it has a print stylesheet)
-  smd pdf <file.smd> [-o out.pdf] [--format A4|Letter] [--landscape]
+  smd render <file.smd> [-o out.html] [--lang <tag>]
+      Standalone HTML page (prints well: it has a print stylesheet)
+      --lang   language of the labels it adds ("Note", "Figure 2", "overdue"…) when the document has no
+               "lang:" of its own, e.g. de or pt-BR (${SUPPORTED_LANGUAGES.join(', ')}; others are English)
+  smd pdf <file.smd> [-o out.pdf] [--format A4|Letter] [--landscape] [--lang <tag>]
       PDF of the rendered page (default: next to the file), with diagrams as vectors. Needs Playwright or
       Puppeteer in your project or installed globally; smd doesn't bundle a browser. Without one, use
       smd render -o page.html and the browser's Print → Save as PDF.
-  smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
+  smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD] [--lang <tag>]
       Static docs site: a page per .smd file in the same folders (links between documents rewritten,
       linked images copied), a sidebar, breadcrumbs, previous/next, backlinks, client-side search and
       a dashboard of open tasks, decisions and open risks. Opens from disk or any static web server.
@@ -142,6 +148,8 @@ Checking and converting:
       --base   deployment path for absolute links, e.g. /docs/ (default: relative links)
       --md     also publish .md files; the home page is <dir>/index.smd or README, else a generated index
       --clean  first delete the files of the previous build (only those listed in its .smd-site.json)
+      --lang   language of the navigation, search and dashboard, and of documents without "lang:"
+               (default: the home document's "lang:", else English)
   smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
   smd init <file.smd> [--template <name>] [--title "My doc"]
@@ -181,6 +189,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
   '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary', '--out', '--base',
+  '--lang',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -252,7 +261,9 @@ function main(argv: string[]): number | Promise<number> {
       return build(positional, args);
     case 'render': {
       const file = requireFile(positional[0]);
-      return write(value('-o'), renderPage(read(file), { readFile: readerFor(file) }));
+      const lang = langOption(value('--lang'));
+      if (lang === null) return fail(LANG_USAGE);
+      return write(value('-o'), renderPage(read(file), { readFile: readerFor(file), lang }));
     }
     case 'pdf':
       return pdf(requireFile(positional[0]), args);
@@ -557,6 +568,7 @@ function printAgentView(file: string, args: Args, extra: Pick<AgentViewOptions, 
     brief: args.flags.has('--brief'),
     includeHuman: args.flags.has('--include-human'),
     embed: args.flags.has('--embed'),
+    includes: !args.flags.has('--no-includes'),
     lineRefs: !args.flags.has('--no-lines'),
     readFile: readerFor(file),
     file,
@@ -626,16 +638,27 @@ function index(targets: string[], out: string | undefined, compact: boolean, tod
   return write(out, json + '\n');
 }
 
+const LANG_USAGE = '--lang needs a language tag such as de or pt-BR.';
+
+/** The `--lang` value: undefined when not given, null when it is not a language tag. */
+function langOption(value: string | undefined): string | undefined | null {
+  if (value === undefined) return undefined;
+  return languageTag(value) ?? null;
+}
+
 /** `smd build <dir>`: the static site; see siteBuild.ts for what it may write and delete. */
 function build(positional: string[], args: Args): number {
   if (positional.length !== 1) return fail('Usage: smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean]');
   const value = (name: string) => args.values.get(name)?.[0];
+  const lang = langOption(value('--lang'));
+  if (lang === null) return fail(LANG_USAGE);
   return runBuild({
     dir: positional[0],
     out: value('--out') ?? 'site',
     title: value('--title'),
     base: value('--base'),
     today: value('--today'),
+    lang,
     md: args.flags.has('--md'),
     clean: args.flags.has('--clean'),
     generator: `smd ${pkg.version}`,
@@ -889,7 +912,9 @@ async function pdf(file: string, args: Args): Promise<number> {
     const options = pdfOptions(args.values.get('--format')?.[0], args.flags.has('--landscape'));
     const engine = loadPdfEngine();
     const out = args.values.get('-o')?.[0] ?? pdfPath(file);
-    const html = renderPage(read(file), { readFile: readerFor(file) });
+    const lang = langOption(args.values.get('--lang')?.[0]);
+    if (lang === null) return fail(LANG_USAGE);
+    const html = renderPage(read(file), { readFile: readerFor(file), lang });
     await exportPdf(file, html, out, options, { engine, warn: (message) => console.error(message) });
     console.error(`Wrote ${out} (printed with ${engine.name})`);
     return 0;

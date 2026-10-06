@@ -5,15 +5,18 @@
  */
 import {
   CONTAINERS, FONT_VALUES, FRONTMATTER_SCHEMA, INLINE_DIRECTIVES, MERMAID_TYPES, NAMED_COLORS, SIZE_VALUES, STYLE_KEYS, ALIGN_VALUES,
-  TEXT_STYLE_VALUES, WEIGHT_VALUES, frontMatterValues, parseFrontMatter,
+  TEXT_STYLE_VALUES, VARIABLE_SYNTAX, WEIGHT_VALUES, frontMatterValues, parseFrontMatter,
 } from './core';
+import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from './core/footnotes';
 import { frontMatterProperty } from './core/frontmatterSchema';
-import { anchorTargets, findLinks, isDocumentPath, linkAt, linkCompletionContext, splitTarget, type LinkCompletionContext } from './core/links';
+import { anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext } from './core/links';
+import { termHover } from './core/glossary';
 import { documentPreview, embedPreview, sectionExcerpt } from './core/symbols';
+import { variableCompletion, variableHover } from './core/variables';
 
 /** LSP CompletionItemKind values used here. */
 export const COMPLETION_KIND = {
-  function: 3, module: 9, property: 10, value: 12, keyword: 14, color: 16, file: 17, reference: 18, folder: 19, enumMember: 20,
+  function: 3, variable: 6, module: 9, property: 10, value: 12, keyword: 14, color: 16, file: 17, reference: 18, folder: 19, enumMember: 20,
 } as const;
 
 export interface AssistItem {
@@ -74,7 +77,8 @@ type Provider = (cursor: Cursor, env: AssistEnv) => Completion | undefined;
 
 /** In order: the first provider that recognizes the context answers. */
 const PROVIDERS: Provider[] = [
-  linkCompletion, frontMatterCompletion, attributeCompletion, containerCompletion, fenceCompletion, directiveCompletion, mermaidCompletion,
+  linkCompletion, footnoteCompletion, frontMatterCompletion, variableCompletionProvider, attributeCompletion, containerCompletion, fenceCompletion, directiveCompletion,
+  mermaidCompletion,
 ];
 
 /** Completions at a zero-based line and UTF-16 column, or undefined when nothing fits there. */
@@ -88,9 +92,9 @@ export function completionsAt(text: string, line: number, column: number, env: A
   return undefined;
 }
 
-/** Paths and `#anchors` for links, `related:` entries and `file="…"` embeds. */
+/** Paths and `#anchors` for links, `related:` entries, `file="…"` embeds and `:::include` files. */
 function linkCompletion(cursor: Cursor, env: AssistEnv): Completion | undefined {
-  const ctx = linkCompletionContext(cursor.text, cursor.line, cursor.column);
+  const ctx = pathCompletionContext(cursor.text, cursor.line, cursor.column);
   if (!ctx) return undefined;
   const hash = ctx.kind === 'embed' ? -1 : ctx.target.indexOf('#');
   if (hash >= 0) {
@@ -103,6 +107,14 @@ function linkCompletion(cursor: Cursor, env: AssistEnv): Completion | undefined 
   // An empty link target can also point into this document.
   if (ctx.kind === 'link' && ctx.target === '') items.push(...anchorItems(cursor.text, '#'));
   return { from: ctx.column + slash + 1, items };
+}
+
+/** The document's footnote labels after `[^`. */
+function footnoteCompletion(cursor: Cursor): Completion | undefined {
+  const typed = footnoteLabelPrefix(cursor.prefix);
+  if (typed === undefined) return undefined;
+  const items = footnoteLabels(cursor.text).map((label) => ({ label, kind: COMPLETION_KIND.reference }));
+  return items.length ? { from: cursor.column - typed.length, items } : undefined;
 }
 
 function linkedText(rel: string, env: AssistEnv): string | undefined {
@@ -167,6 +179,17 @@ function frontMatterValueItems(key: string, env: AssistEnv): AssistItem[] {
   }
   const kind = key === 'accent' ? COMPLETION_KIND.color : COMPLETION_KIND.enumMember;
   return frontMatterValues(key).map((label) => ({ label, kind }));
+}
+
+/** Front matter names after `{{` in the body, each with its value. */
+function variableCompletionProvider(cursor: Cursor): Completion | undefined {
+  const found = variableCompletion(cursor.text, cursor.line, cursor.column);
+  if (!found) return undefined;
+  const items = found.names.map(({ name, text }, i) => ({
+    label: name, kind: COMPLETION_KIND.variable, detail: text, documentation: VARIABLE_SYNTAX.description,
+    insertText: found.close ? `${name}}}` : name, sortText: String(i).padStart(4, '0'),
+  }));
+  return { from: found.from, items };
 }
 
 /** Attribute keys and values inside `{…}` on a container line or after an inline directive. */
@@ -263,10 +286,11 @@ export interface AssistHover {
   end?: number;
 }
 
-/** What the text at a zero-based line and UTF-16 column is: a container, directive, link or code embed. */
+/** What the text at a zero-based line and UTF-16 column is: a front matter variable, container, directive, glossary term, link or code embed. */
 export function hoverAt(text: string, line: number, column: number, env: AssistEnv = {}): AssistHover | undefined {
   const lineText = text.split(/\r?\n/)[line] ?? '';
-  return containerHover(lineText, column) ?? directiveHover(lineText, column) ?? linkHover(text, line, column, env) ?? embedHover(lineText, env);
+  return variableHover(text, line, column) ?? containerHover(lineText, column) ?? directiveHover(lineText, column) ?? footnoteHover(text, line, column)
+    ?? termHover(text, line, column) ?? linkHover(text, line, column, env) ?? embedHover(lineText, env);
 }
 
 function containerHover(lineText: string, column: number): AssistHover | undefined {
@@ -346,6 +370,13 @@ function openingBracket(lineText: string, from: number): number {
     else if (lineText[i] === '[') depth--;
   }
   return -1;
+}
+
+/** A footnote reference `[^1]` previews its definition. */
+function footnoteHover(text: string, line: number, column: number): AssistHover | undefined {
+  const hit = footnoteAt(text, line, column);
+  if (!hit) return undefined;
+  return { markdown: `**[^${escapeMarkdown(hit.definition.raw)}]**\n\n${footnoteText(text, hit.definition)}`, start: hit.start, end: hit.end };
 }
 
 /** Preview the code a ```lang file="…" lines="…"``` fence embeds. */
