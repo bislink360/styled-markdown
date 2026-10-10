@@ -1,0 +1,66 @@
+---
+smd: 1
+title: Welcome to the Styled Markdown playground
+summary: Edit on the left. The **Preview**, **Agent view**, **Diagnostics** and **Markdown** tabs update as you type.
+status: draft
+owners: ["@you"]
+tags: [playground, example]
+---
+
+## Try it
+
+:::tip Share what you write
+**Copy link** puts this whole document in the link, after the `#`. That part of a link is never sent to a server.
+:::
+
+Style text with [named colors]{color=blue}, ==highlights== and badges: :badge[Shipped]{color=green} :badge[Beta]{color=amber} · press :kbd[Ctrl+Enter] · progress :progress{value=60}
+
+- [x] Open the playground
+- [ ] Break something and check **Diagnostics** :priority[P1] @you
+- [ ] Copy a link and open it in a private window
+
+## Diagrams and math
+
+```mermaid
+flowchart LR
+    A[Write .smd] --> B{Valid?}
+    B -- no --> A
+    B -- yes --> C[Share]
+```
+
+The area under $x^2$ from 0 to 1:
+
+$$
+\int_0^1 x^2\,dx = \frac{1}{3}
+$$
+
+## Layout
+
+::::tabs
+:::tab npm
+```bash
+npm install -g styled-markdown
+```
+:::
+:::tab VS Code
+```bash
+code --install-extension bislink360.styled-markdown
+```
+:::
+::::
+
+```ts title="greet.ts"
+export function greet(name: string): string {
+  return `Hello, ${name}!`;
+}
+```
+
+:::decision{status=accepted date=2026-10-01 owner=@you} Keep shared documents in the link
+Nothing to host, and nothing stored on a server.
+:::
+
+## For agents
+
+:::agent Notes for AI agents
+The **Agent view** tab shows what an agent reads: this block is kept, styling is dropped, and headings get line references.
+:::

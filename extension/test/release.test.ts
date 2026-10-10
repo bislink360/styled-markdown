@@ -85,7 +85,7 @@ test('releaseNotes puts the downloads table first when asked', () => {
   const notes = releaseNotes('1.5.0', 'Body', { downloads: true });
   assert.ok(notes.startsWith('## Downloads\n'));
   assert.ok(notes.endsWith('\n\nBody\n'));
-  for (const asset of ['styled-markdown-1.5.0.vsix', 'styled-markdown-1.5.0.tgz', 'styled-markdown-reader.zip', 'styled-markdown-writer.zip']) {
+  for (const asset of ['styled-markdown-1.5.0.vsix', 'styled-markdown-1.5.0.tgz', 'styled-markdown-reader.zip', 'styled-markdown-writer.zip', 'styled-markdown-playground.zip']) {
     assert.ok(downloadsTable('1.5.0').includes(`\`${asset}\``), asset);
   }
 });

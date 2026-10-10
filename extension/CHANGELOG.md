@@ -5,6 +5,8 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- **Web playground** (`playground/`): a static page that runs the engine in the browser. Edit `.smd` on the left; the preview (with tabs, copy buttons, math and Mermaid), the agent view with its token estimate, diagnostics (click one to select it in the editor) and the Markdown export update on the right as you type. **Copy link** shares the document in the URL fragment (`#smd=`, deflate-raw and base64url, never sent to a server), with a warning over 8 KB; the last draft is kept in `localStorage`. Light and dark themes follow the system or a chosen setting, and below 768 px the panes stack. Shared documents are treated as untrusted: the preview renders in an `<iframe srcdoc>` sandboxed without `allow-same-origin`, under a Content Security Policy that runs only the playground's own scripts (by hash inside the frame) and loads nothing remote; `:::include` blocks and code embeds show their fallback notes. Build it with `npm run build:playground` (→ `extension/dist/playground/`, opens from `file://` or any static host); the threat model is in `playground/README.md`. Hosting is not set up.
+- Release: each GitHub Release attaches the built playground as `styled-markdown-playground.zip`.
 
 ### Changed
 

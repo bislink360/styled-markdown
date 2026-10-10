@@ -107,6 +107,10 @@ jobs:
             git diff --stat -- skills
             exit 1
           fi
+      - name: Build and zip the web playground
+        run: |
+          (cd extension && npm run build:playground)
+          (cd extension/dist && zip -r -q -X ../../release-assets/styled-markdown-playground.zip playground)
       - name: Zip the agent skills
         working-directory: skills
         run: |
@@ -120,7 +124,7 @@ jobs:
           ls -l
           vsix="styled-markdown-$VERSION.vsix"
           tgz="styled-markdown-$VERSION.tgz"
-          for zip in "$vsix" styled-markdown-reader.zip styled-markdown-writer.zip; do
+          for zip in "$vsix" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip; do
             unzip -tq "$zip"   # a real zip archive, not a tar named .zip
           done
           unzip -l "$vsix" | grep -E ' extension/LICENSE(\.txt)?$' > /dev/null || { echo "::error::$vsix has no LICENSE (Open VSX and the Marketplace show it)"; exit 1; }
@@ -129,6 +133,9 @@ jobs:
           tar -xOzf "$tgz" package/package.json | node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8')); if (p.version!==process.env.VERSION) { console.error('::error::.tgz version '+p.version); process.exit(1); }"
           unzip -l styled-markdown-reader.zip | grep ' styled-markdown-reader/SKILL.md$' > /dev/null
           unzip -l styled-markdown-writer.zip | grep ' styled-markdown-writer/SKILL.md$' > /dev/null
+          unzip -l styled-markdown-playground.zip | grep ' playground/vendor/mermaid-source.js$' > /dev/null
+          # The build writes the CSP, with the hashes of the preview's inline scripts, into index.html.
+          unzip -p styled-markdown-playground.zip playground/index.html | grep "script-src 'self' 'sha256-" > /dev/null || { echo "::error::the playground's index.html has no CSP"; exit 1; }
           sha256sum -- *
       - name: Release notes from the changelog
         run: node extension/scripts/release/changelog-excerpt.mjs "$VERSION" --downloads -o release-assets/release-notes.md
@@ -158,7 +165,7 @@ jobs:
         working-directory: release-assets
         run: |
           set -euo pipefail
-          assets=("styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip)
+          assets=("styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip)
           cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
           if [ "$DRY_RUN" = "true" ]; then
             echo "::notice title=GitHub Release::Dry run: would create $TAG with ${assets[*]} (notes in the job summary)."
@@ -178,10 +185,10 @@ jobs:
         run: |
           set -euo pipefail
           names=$(gh release view "$TAG" --json assets --jq '.assets[].name')
-          for asset in "styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip; do
+          for asset in "styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip; do
             grep -qxF -- "$asset" <<< "$names" || { echo "::error::Release $TAG has no $asset"; exit 1; }
           done
-          echo "Release $TAG lists all four assets."
+          echo "Release $TAG lists all five assets."
 
   # The publish jobs check out only the release scripts (no dependencies are installed) and
   # publish the exact files attached to the GitHub Release. The `release` environment is

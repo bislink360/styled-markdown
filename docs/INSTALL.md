@@ -11,6 +11,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 - [Install the `smd` CLI](#install-the-smd-cli)
 - [Use `smd` in CI](#use-smd-in-ci)
 - [Pre-commit hooks](#pre-commit-hooks)
+- [Web playground](#web-playground)
 - [Update or uninstall](#update-or-uninstall)
 - [Build from source](#build-from-source)
 - [Troubleshooting](#troubleshooting)
@@ -235,6 +236,15 @@ staged | xargs -0 smd validate --
 ```
 
 It checks the files as they are in the working tree and doesn't change them; `--` keeps a file name that starts with `-` from being read as an option. The hook lives only in your clone: to share it, commit it (e.g. as `.githooks/pre-commit`) and run `git config core.hooksPath .githooks`.
+
+## Web playground
+
+The playground needs no installation: it is a static page that runs the engine in the browser (see [FEATURES.md §19](FEATURES.md#19-web-playground)).
+
+- **From a release:** download `styled-markdown-playground.zip`, unzip it and open `index.html` in a browser.
+- **From source:** `cd extension && npm ci && npm run build:playground`, then open `extension/dist/playground/index.html`.
+
+It works from `file://` and from any static web server. It needs a current browser (Chrome or Edge 103+, Firefox 113+, Safari 16.4+) for the compressed share links. It is not hosted anywhere yet; publishing it (for example on GitHub Pages) is a separate maintainer decision.
 
 ## Update or uninstall
 

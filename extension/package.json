@@ -445,7 +445,8 @@
     "test:vscode": "npm run build && node test/integration/run.mjs",
     "package": "npm run build && vsce package --no-dependencies",
     "vscode:prepublish": "npm run build",
-    "build:npm": "npm run build && node scripts/build-npm.mjs && tsc -p tsconfig.npm.json"
+    "build:npm": "npm run build && node scripts/build-npm.mjs && tsc -p tsconfig.npm.json",
+    "build:playground": "node scripts/build-playground.mjs"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
