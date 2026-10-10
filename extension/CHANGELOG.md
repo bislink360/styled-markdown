@@ -11,6 +11,7 @@
 ### Deprecated
 
 ### Fixed
+- Agent view and `smd to-md`: figures in included text are numbered together with the including document's, one counter per kind in document order, as rendered output numbers them, and `:ref[id]` resolves to included figures (and, in included text, to the including document's). They used to number an included file's figures within that file and leave such references as written. A loaded include's fallback body no longer counts toward the numbers, since it isn't shown. Documents without includes, or whose included text has no figures, convert as before.
 - Agent view and `smd to-md`: `{{name}}` in an indented code block (four spaces, also inside lists and in included text) stays as written, as in rendered output; they used to show the front matter value there. Library: `parseSmd(text).code` lists the lines markdown-it reads as code.
 
 ## 1.6.0 — 2026-10-05
