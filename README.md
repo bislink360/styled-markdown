@@ -297,6 +297,10 @@ export default { markdown: { remarkPlugins: [remarkSmd] } };
 
 They work with `.md` files (MDX parses `.smd` attribute lists as JSX, so `.mdx` files are not supported). Setup for Astro, Docusaurus and Next.js, and what the page must load: [package README](npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
 
+### MkDocs
+
+The `mkdocs-styled-markdown` plugin turns the `.smd` files in an MkDocs site into pages, in your theme, with its table of contents, links between pages and dark mode; `validate: true` makes `mkdocs build --strict` fail on `.smd` errors. It needs Node.js 18+. Install the wheel from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and add `- styled-markdown` to `plugins:`: [plugin README](integrations/mkdocs/README.md).
+
 ## Token-efficient reading for agents
 
 Measured on [`examples/checkout-redesign.smd`](examples/checkout-redesign.smd), a realistic ≈2,400-token PRD:
@@ -351,6 +355,7 @@ styled-markdown/
 │   ├── styled-markdown-reader/   agent skill: token-efficient reading
 │   └── styled-markdown-writer/   agent skill: authoring, with templates and references
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
+├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
 ├── playground/           the web playground: a static page that runs the engine in the browser
 ├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)

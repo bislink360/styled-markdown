@@ -1,6 +1,6 @@
 # Installation guide
 
-This guide covers the **VS Code extension**, the **`smd` command-line tool**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
+This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
 
 ## Contents
 
@@ -11,6 +11,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 - [Install the `smd` CLI](#install-the-smd-cli)
 - [Use `smd` in CI](#use-smd-in-ci)
 - [Pre-commit hooks](#pre-commit-hooks)
+- [MkDocs plugin](#mkdocs-plugin)
 - [Web playground](#web-playground)
 - [Update or uninstall](#update-or-uninstall)
 - [Build from source](#build-from-source)
@@ -22,6 +23,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 |---|---|
 | VS Code extension | VS Code **1.90 or newer**, or a VS Code-compatible editor that installs `.vsix` files (Cursor, VSCodium, Windsurf) |
 | CLI and agent skills | **Node.js 18 or newer** |
+| MkDocs plugin | Python 3.9+, MkDocs 1.6+ and **Node.js 18 or newer** on `PATH` |
 | Building from source | Node.js 18+, npm, Git |
 
 ## Install the VS Code extension
@@ -237,6 +239,28 @@ staged | xargs -0 smd validate --
 
 It checks the files as they are in the working tree and doesn't change them; `--` keeps a file name that starts with `-` from being read as an option. The hook lives only in your clone: to share it, commit it (e.g. as `.githooks/pre-commit`) and run `git config core.hooksPath .githooks`.
 
+## MkDocs plugin
+
+`mkdocs-styled-markdown` makes the `.smd` files in an [MkDocs](https://www.mkdocs.org) site's `docs_dir` pages, rendered by the same engine as `smd render`, inside the site's theme. It is a Python package that ships the engine as a Node.js script, so the machine that builds the site needs Node.js 18+ on `PATH` (no npm install).
+
+Until it is on PyPI, install the wheel from the GitHub release (each release attaches `mkdocs_styled_markdown-X.Y.Z-py3-none-any.whl` and the `.tar.gz` source):
+
+```bash
+pip install https://github.com/bislink360/styled-markdown/releases/download/v1.7.0/mkdocs_styled_markdown-1.7.0-py3-none-any.whl
+```
+
+Then add it to `mkdocs.yml`:
+
+```yaml
+plugins:
+  - search
+  - styled-markdown:
+      validate: true      # smd errors become MkDocs warnings (mkdocs build --strict fails on them)
+      md_syntax: false    # true: .md pages may use .smd syntax too
+```
+
+Options, links, the table of contents, dark mode and includes: [plugin README](../integrations/mkdocs/README.md).
+
 ## Web playground
 
 The playground needs no installation: it is a static page that runs the engine in the browser (see [FEATURES.md §19](FEATURES.md#19-web-playground)).
@@ -258,7 +282,7 @@ It works from `file://` and from any static web server. It needs a current brows
 cd extension
 npm install
 npm run build          # esbuild bundles dist/extension.js and dist/cli.js, copies Mermaid/KaTeX into media/vendor,
-                       # and refreshes skills/*/scripts/smd.cjs
+                       # and refreshes skills/*/scripts/smd.cjs and the MkDocs plugin's bridge.cjs
 npm test               # unit tests
 npm run test:vscode    # integration tests in a real VS Code (uses your installed VS Code, isolated profile)
 npm run package        # styled-markdown-1.6.0.vsix

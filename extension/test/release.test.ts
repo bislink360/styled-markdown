@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { changelogExcerpt, downloadsTable, dropEmptyHeadings, releaseNotes, versionFromTag } from '../scripts/release/changelog-excerpt.mjs';
-import { checkRelease, isReleaseBranch } from '../scripts/release/check-versions.mjs';
+import { checkRelease, isReleaseBranch, pyprojectVersion } from '../scripts/release/check-versions.mjs';
 import { isListed, listedVersions, registryRequest, waitForVersion } from '../scripts/release/wait-for-version.mjs';
 import { publishDecision } from '../scripts/release/publish-gate.mjs';
 
@@ -85,7 +85,11 @@ test('releaseNotes puts the downloads table first when asked', () => {
   const notes = releaseNotes('1.5.0', 'Body', { downloads: true });
   assert.ok(notes.startsWith('## Downloads\n'));
   assert.ok(notes.endsWith('\n\nBody\n'));
-  for (const asset of ['styled-markdown-1.5.0.vsix', 'styled-markdown-1.5.0.tgz', 'styled-markdown-reader.zip', 'styled-markdown-writer.zip', 'styled-markdown-playground.zip']) {
+  const assets = [
+    'styled-markdown-1.5.0.vsix', 'styled-markdown-1.5.0.tgz', 'styled-markdown-reader.zip', 'styled-markdown-writer.zip',
+    'styled-markdown-playground.zip', 'mkdocs_styled_markdown-1.5.0-py3-none-any.whl', 'mkdocs_styled_markdown-1.5.0.tar.gz',
+  ];
+  for (const asset of assets) {
     assert.ok(downloadsTable('1.5.0').includes(`\`${asset}\``), asset);
   }
 });
@@ -97,7 +101,7 @@ test('isReleaseBranch accepts main and release/* only', () => {
   }
 });
 
-const good = { tag: 'v1.5.0', extensionVersion: '1.5.0', lockVersion: '1.5.0', npmVersion: '1.5.0', changelog };
+const good = { tag: 'v1.5.0', extensionVersion: '1.5.0', lockVersion: '1.5.0', npmVersion: '1.5.0', pythonVersion: '1.5.0', changelog };
 
 test('checkRelease passes a consistent release', () => {
   assert.deepEqual(checkRelease(good), []);
@@ -105,13 +109,26 @@ test('checkRelease passes a consistent release', () => {
 });
 
 test('checkRelease reports every mismatch', () => {
-  const problems = checkRelease({ ...good, tag: 'v1.3.0', npmVersion: undefined, branches: ['origin/feat/x'] });
-  assert.equal(problems.length, 5);
+  const problems = checkRelease({ ...good, tag: 'v1.3.0', npmVersion: undefined, pythonVersion: '1.2.0', branches: ['origin/feat/x'] });
+  assert.equal(problems.length, 6);
   assert.match(problems[0], /extension\/package\.json has version 1\.5\.0, the tag is v1\.3\.0/);
   assert.match(problems[2], /npm\/package\.json has version \(none\)/);
-  assert.match(problems[3], /no "## 1\.3\.0" section/);
-  assert.match(problems[4], /not on main or a release\/\* branch \(found on: origin\/feat\/x\)/);
+  assert.match(problems[3], /integrations\/mkdocs\/pyproject\.toml has version 1\.2\.0/);
+  assert.match(problems[4], /no "## 1\.3\.0" section/);
+  assert.match(problems[5], /not on main or a release\/\* branch \(found on: origin\/feat\/x\)/);
   assert.match(checkRelease({ ...good, branches: [] })[0], /found on: no branch/);
+});
+
+test('pyprojectVersion reads the [project] version only', () => {
+  assert.equal(pyprojectVersion('[build-system]\nrequires = []\n\n[project]\nname = "x"\nversion = "1.5.0"\n'), '1.5.0');
+  assert.equal(pyprojectVersion('[tool.x]\r\nversion = "9"\r\n[project]\r\nversion = \'1.5.0\'\r\n'), '1.5.0');
+  assert.equal(pyprojectVersion('[project]\nname = "x"\n[tool.y]\nversion = "1.5.0"\n'), undefined);
+});
+
+test('the MkDocs plugin has the extension version', () => {
+  const root = join(__dirname, '..', '..');
+  const python = pyprojectVersion(readFileSync(join(root, 'integrations', 'mkdocs', 'pyproject.toml'), 'utf8'));
+  assert.equal(python, JSON.parse(readFileSync(join(root, 'extension', 'package.json'), 'utf8')).version);
 });
 
 test('checkRelease rejects tags that are not vX.Y.Z', () => {
@@ -124,7 +141,8 @@ test('registryRequest builds the public lookup for each registry', () => {
   const marketplace = registryRequest('marketplace', '1.5.0');
   assert.equal(marketplace?.init.method, 'POST');
   assert.match(String(marketplace?.init.body), /"value":"bislink360\.styled-markdown"/);
-  assert.equal(registryRequest('pypi', '1.5.0'), undefined);
+  assert.equal(registryRequest('pypi', '1.5.0')?.url, 'https://pypi.org/pypi/mkdocs-styled-markdown/1.5.0/json');
+  assert.equal(registryRequest('crates', '1.5.0'), undefined);
 });
 
 test('listedVersions reads each registry response', () => {
@@ -133,6 +151,8 @@ test('listedVersions reads each registry response', () => {
   const gallery = { results: [{ extensions: [{ versions: [{ version: '1.5.0' }, { version: '1.4.0' }] }] }] };
   assert.deepEqual(listedVersions('marketplace', gallery), ['1.5.0', '1.4.0']);
   assert.deepEqual(listedVersions('marketplace', { results: [{ extensions: [] }] }), []);
+  assert.deepEqual(listedVersions('pypi', { info: { version: '1.5.0' } }), ['1.5.0']);
+  assert.deepEqual(listedVersions('pypi', { message: 'Not Found' }), []);
 });
 
 const reply = (ok: boolean, json: unknown) => async () => ({ ok, json: async () => json }) as Response;
@@ -165,4 +185,5 @@ test('publishDecision publishes only with a token, outside a dry run, when not l
   assert.equal(missing.ready, false);
   assert.match(String(missing.notice), /^NPM_TOKEN is not set, so 1\.5\.0 was not published to npm\./);
   assert.deepEqual(publishDecision({ ...gate, registry: 'marketplace', listed: true }), { ready: false, notice: 'VS Code Marketplace already lists 1.5.0; nothing to publish.' });
+  assert.match(String(publishDecision({ ...gate, registry: 'pypi', secret: 'PYPI_TOKEN', hasToken: false }).notice), /^PYPI_TOKEN is not set, so 1\.5\.0 was not published to PyPI\./);
 });
