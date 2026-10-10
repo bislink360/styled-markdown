@@ -199,7 +199,7 @@ class ConfluenceWriter {
       const tag = header && n === 0 ? 'th' : 'td';
       return `<tr>${cells.map((c) => `<${tag}><p>${this.inlines(c)}</p></${tag}>`).join('')}</tr>`;
     };
-    return `<table><tbody>${rows.map(row).join('')}</tbody></table>`;
+    return `<table><tbody>${rows.map((cells, n) => row(cells, n)).join('')}</tbody></table>`;
   }
 
   /** Inline content; neighbours with the same link share one link element. */

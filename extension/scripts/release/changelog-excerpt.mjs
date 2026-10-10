@@ -74,6 +74,7 @@ export function downloadsTable(version) {
     `| \`styled-markdown-${version}.tgz\` | npm package (library + \`smd\` CLI), the same file as on npm | \`npm install -g ./styled-markdown-${version}.tgz\` |`,
     `| \`styled-markdown-writer.zip\` | Agent skill: create and edit \`.smd\` following the rules | Unzip into \`~/.claude/skills/\` or upload in Claude → Settings → Capabilities → Skills ([guide](${docs}/SKILLS.md)) |`,
     '| `styled-markdown-reader.zip` | Agent skill: token-efficient reading | Same as above |',
+    `| \`styled-markdown-playground.zip\` | Web playground: edit, preview and share \`.smd\` in the browser | Unzip and open \`playground/index.html\`, or serve the folder ([guide](${docs}/INSTALL.md#web-playground)) |`,
     `| \`mkdocs_styled_markdown-${version}-py3-none-any.whl\` | MkDocs plugin (Python wheel; needs Node.js 18+) | \`pip install ./mkdocs_styled_markdown-${version}-py3-none-any.whl\` ([guide](${docs}/INSTALL.md#mkdocs-plugin)) |`,
     `| \`mkdocs_styled_markdown-${version}.tar.gz\` | MkDocs plugin source distribution | \`pip install ./mkdocs_styled_markdown-${version}.tar.gz\` |`,
   ].join('\n');

@@ -193,6 +193,10 @@ History and research. People see it; agents skip it.
 
 > Listings on the VS Code Marketplace, [Open VSX](https://open-vsx.org) (for VSCodium, Cursor, Windsurf and Gitpod) and npm are coming once published. Until they are live, every release on GitHub has the `.vsix`, the npm package and the skills.
 
+### Web playground
+
+Try `.smd` in the browser without installing anything: edit on the left; the preview, the agent view with its token estimate, diagnostics and the Markdown export update on the right, and **Copy link** shares the document in the link itself (after the `#`, so it never reaches a server). Build it with `npm run build:playground` in `extension/` and open `extension/dist/playground/index.html`, or unzip `styled-markdown-playground.zip` from a release and open its `index.html`. It is a static page with no backend; previews run in a sandboxed frame. See [playground/README.md](playground/README.md) for how it works and its threat model. It is not hosted anywhere yet.
+
 ### npm library and `smd` CLI
 
 Install the package straight from the release:
@@ -353,6 +357,7 @@ styled-markdown/
 │   └── styled-markdown-writer/   agent skill: authoring, with templates and references
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
 ├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
+├── playground/           the web playground: a static page that runs the engine in the browser
 ├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)
 ├── docs/                 guides, specification, gallery and screenshots
@@ -370,6 +375,7 @@ npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
 npm run package        # → styled-markdown-1.6.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
+npm run build:playground  # → dist/playground (the web playground; open its index.html)
 ```
 
 Press **F5** in `extension/` to launch an Extension Development Host with the examples open. See [CONTRIBUTING.md](CONTRIBUTING.md).

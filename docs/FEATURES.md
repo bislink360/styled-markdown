@@ -26,6 +26,7 @@ Every Styled Markdown feature, with its syntax, what it renders, what an AI agen
 16. [Export and conversion](#16-export-and-conversion)
 17. [CLI reference](#17-cli-reference)
 18. [Templates](#18-templates)
+19. [Web playground](#19-web-playground)
 
 ---
 
@@ -1115,3 +1116,22 @@ These are OpenAI encodings. There is no public tokenizer for current Claude mode
 | `onboarding` | Buddy and manager, Start-here tip, Day 1 setup (tasks, steps, code), Week 1, First 90 days (timeline), Key links, People to meet, Team history (agent-skip), Rules (agent) |
 | `test-plan` | Scope, Strategy (table), Environments (table), Test cases (table), Entry and exit criteria (columns), Risks, Schedule (timeline), Testing rules (agent) |
 | `pr-description` | Links and risk, Summary, Changes, Testing, Risk and rollback (warning), Checklist, Screenshots (agent-skip), Review focus (agent) |
+
+## 19. Web playground
+
+A static page that runs the engine in the browser: edit `.smd` on the left, and see four views on the right, updated as you type.
+
+| Tab | What it shows |
+|---|---|
+| **Preview** | The rendered document with `smd.css` and the page runtime: tabs, copy buttons, KaTeX math and Mermaid diagrams (Mermaid loads the first time a document has a diagram) |
+| **Agent view** | What `smd agent` gives an AI agent, with its token estimate next to the source's |
+| **Diagnostics** | `smd validate`'s problems; clicking one selects its range in the editor |
+| **Markdown** | The plain Markdown export (`smd to-md`), with a copy button |
+
+**Copy link** compresses the document into the link, after `#smd=`. That part of a URL is never sent to a server, so sharing needs no backend; links over 8 KB get a warning because some apps cut them off. Opening a link loads its document, and the last draft is kept in the browser. The theme follows the system, or pick light or dark. Below 768 px the editor and the views stack.
+
+The editor is a plain text area: Tab and Shift+Tab indent and outdent (Esc, then Tab, moves focus on), with line numbers. There is no file system, so `:::include` blocks and `file="…"` code embeds show their fallback notes.
+
+Shared documents are untrusted: the preview renders in a sandboxed frame with an opaque origin, under a Content Security Policy that runs only the playground's own scripts and loads nothing remote (not even images). The threat model is in [playground/README.md](../playground/README.md).
+
+Build it with `npm run build:playground` in `extension/` and open `extension/dist/playground/index.html` (it works from `file://` and from any static host), or unzip `styled-markdown-playground.zip` from a GitHub Release. The playground is not hosted anywhere yet; publishing it, for example on GitHub Pages, is a separate decision.
