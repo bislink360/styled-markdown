@@ -44,6 +44,7 @@ A shared link carries a document written by someone else, and `.smd` allows raw 
 5. **Links can't take over the preview.** `http`, `https` and `mailto` links open in a new tab (`rel="noopener noreferrer"`); other links (relative files, `javascript:`, `data:`) do nothing. If the frame does navigate away, it is rebuilt on the next edit.
 6. **No file access.** The playground has no file reader, so `:::include` blocks and `file="…"` code embeds show their fallback notes and read nothing.
 7. **Bounded decoding.** A link's document is decompressed to at most 2 MB, so a small crafted link can't expand into gigabytes; damaged or foreign fragments show a message instead of failing.
+8. **Updates can't follow the frame elsewhere.** The page sends the preview a private `MessageChannel` port once, when the preview document loads, and every later update goes through that port, never through `window.postMessage`. A port belongs to the document that received it, so if a document's raw HTML ever navigates the frame away (a `<meta http-equiv="refresh">`), the edits a user makes afterwards don't reach the new page, even one that never finishes loading. The CSP's `frame-src 'self'` already stops the frame from loading other origins; the port also covers same-origin pages on a shared host, without relying on how a browser treats navigation in a sandboxed frame.
 
 **Accepted risks:**
 

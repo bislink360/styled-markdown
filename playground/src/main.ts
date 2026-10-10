@@ -50,6 +50,8 @@ let latest: Panes | undefined;
 let built: FrameState | undefined;
 let frameReady = false;
 let expectingLoad = false;
+/** The private channel to the current preview document; updates go only through it (see openPreviewPort). */
+let previewPort: MessagePort | undefined;
 let loadedFromLink = false;
 let renderTimer: ReturnType<typeof setTimeout> | undefined;
 let draftTimer: ReturnType<typeof setTimeout> | undefined;
@@ -93,25 +95,43 @@ function showPreview(preview: PreviewPane): void {
   if (preview.mermaid && !assets.mermaid) requestMermaid();
   if (needsRebuild(built, preview, Boolean(assets.mermaid))) {
     built = { lang: preview.lang, mermaid: Boolean(preview.mermaid && assets.mermaid) };
-    frameReady = false;
+    closePreviewPort();
     expectingLoad = true;
     frame.setAttribute('sandbox', PREVIEW_SANDBOX);
     frame.srcdoc = previewDocument(preview, pref, assets);
     return;
   }
-  // The frame has an opaque origin, so '*' is the only target origin that reaches it. The message holds the
-  // rendered document, which the frame shows anyway.
-  if (frameReady) frame.contentWindow?.postMessage(updateMessage(preview, pref), '*');
+  if (frameReady) previewPort?.postMessage(updateMessage(preview, pref));
+}
+
+function closePreviewPort(): void {
+  previewPort?.close();
+  previewPort = undefined;
+  frameReady = false;
+}
+
+/**
+ * Hands the preview document that just loaded a private MessageChannel port; every update goes through it, never
+ * through window.postMessage. A port is bound to the document that received it, so if the frame later navigates
+ * away (a shared document may hold raw HTML such as a meta refresh), updates stop reaching it instead of following
+ * it to another site, even when that site never finishes loading. The handshake itself carries only the port.
+ */
+function openPreviewPort(): void {
+  const channel = new MessageChannel();
+  previewPort = channel.port1;
+  // The frame has an opaque origin, so '*' is the only target origin that reaches it; the message holds no content.
+  frame.contentWindow?.postMessage({ type: 'smd-port' }, '*', [channel.port2]); // NOSONAR(typescript:S2819): see above
 }
 
 frame.addEventListener('load', () => {
   if (!expectingLoad) {
     // The frame navigated away from the preview on its own: rebuild it on the next render.
     built = undefined;
-    frameReady = false;
+    closePreviewPort();
     return;
   }
   expectingLoad = false;
+  openPreviewPort();
   frameReady = true;
   if (latest) showPreview(latest.preview);
 });

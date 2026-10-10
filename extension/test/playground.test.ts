@@ -13,7 +13,7 @@ import {
   PREVIEW_SANDBOX, needsRebuild, previewDocument, previewTheme, updateMessage, type FrameAssets,
 } from '../../playground/src/frame';
 import { diagnosticsSummary, renderPanes } from '../../playground/src/panes';
-import { linkAction } from '../../playground/src/previewLinks';
+import { isPortHandshake, linkAction } from '../../playground/src/previewLinks';
 import { readStored, themeSetting, writeStored, type KeyValueStore } from '../../playground/src/storage';
 import { appBundleOptions, indexHtml, playgroundAssets, scriptHash } from '../scripts/build-playground.mjs';
 
@@ -246,6 +246,22 @@ test('the playground page never puts document text into its own markup', () => {
     assert.ok(!main.includes(sink), sink);
   }
   assert.match(main, /frame\.setAttribute\('sandbox', PREVIEW_SANDBOX\)/);
+});
+
+test('preview updates go over a private port, never as window messages that could follow the frame away', () => {
+  const main = readFileSync(join(PLAYGROUND, 'src', 'main.ts'), 'utf8');
+  const windowPosts = [...main.matchAll(/contentWindow\?\.postMessage\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.equal(windowPosts.length, 1, 'one window message: the handshake');
+  assert.match(windowPosts[0], /^\{ type: 'smd-port' \}, '\*', \[channel\.port2\]$/);
+  assert.match(main, /previewPort\?\.postMessage\(updateMessage\(/);
+  const { port1, port2 } = new MessageChannel();
+  assert.equal(isPortHandshake({ type: 'smd-port' }, [port2], true), true);
+  assert.equal(isPortHandshake({ type: 'smd-port' }, [port2], false), false, 'only from the playground page');
+  assert.equal(isPortHandshake({ type: 'update' }, [port2], true), false);
+  assert.equal(isPortHandshake({ type: 'smd-port' }, [], true), false);
+  assert.equal(isPortHandshake(null, [port2], true), false);
+  port1.close();
+  port2.close();
 });
 
 // ---- Editor helpers and storage --------------------------------------------------------

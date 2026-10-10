@@ -29,3 +29,22 @@ function onClick(event: MouseEvent): void {
 }
 
 if (typeof document !== 'undefined') document.addEventListener('click', onClick, true);
+
+/**
+ * Updates from the playground arrive over a MessageChannel port it hands this document once, when it loads
+ * (main.ts, openPreviewPort), never as window messages, so they can't follow the frame to another page. Each one
+ * is passed on to the page runtime as the window message it already handles.
+ */
+export function isPortHandshake(data: unknown, ports: readonly MessagePort[], fromParent: boolean): boolean {
+  return fromParent && ports.length === 1 && (data as { type?: unknown } | null)?.type === 'smd-port';
+}
+
+let port: MessagePort | undefined;
+
+function onMessage(event: MessageEvent): void {
+  if (port || !isPortHandshake(event.data, event.ports, event.source === window.parent)) return;
+  port = event.ports[0];
+  port.onmessage = (update) => window.dispatchEvent(new MessageEvent('message', { data: update.data }));
+}
+
+if (typeof window !== 'undefined') window.addEventListener('message', onMessage);
