@@ -264,6 +264,17 @@ test('preview updates go over a private port, never as window messages that coul
   port2.close();
 });
 
+test('the preview takes its update port only from the playground page\'s origin', async () => {
+  const { frame } = await assets();
+  const preview = renderPanes('# Hi\n').preview;
+  assert.match(previewDocument(preview, 'auto', frame, 'http://localhost:8767'), /data-smd-parent-origin="http:\/\/localhost:8767"/);
+  assert.match(previewDocument(preview, 'auto', frame), /data-smd-parent-origin="null"/, 'file:// pages have the origin "null"');
+  const main = readFileSync(join(PLAYGROUND, 'src', 'main.ts'), 'utf8');
+  assert.match(main, /previewDocument\(preview, pref, assets, location\.origin\)/);
+  const links = readFileSync(join(PLAYGROUND, 'src', 'previewLinks.ts'), 'utf8');
+  assert.match(links, /event\.origin !== PARENT_ORIGIN \|\| event\.source !== window\.parent/);
+});
+
 // ---- Editor helpers and storage --------------------------------------------------------
 
 test('Tab indents the caret or every selected line; Shift+Tab outdents', () => {

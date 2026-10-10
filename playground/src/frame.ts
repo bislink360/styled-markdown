@@ -51,11 +51,14 @@ function inlineScript(text: string): string {
   return `<script>${text}</script>\n`;
 }
 
-/** The frame's whole document. Mermaid (large) is inlined only for documents with diagrams. */
-export function previewDocument(preview: PreviewPane, theme: ThemeSetting, assets: FrameAssets): string {
+/**
+ * The frame's whole document. Mermaid (large) is inlined only for documents with diagrams. `parentOrigin` is the
+ * playground page's origin (`"null"` from file://): the frame takes its update port only from there.
+ */
+export function previewDocument(preview: PreviewPane, theme: ThemeSetting, assets: FrameAssets, parentOrigin = 'null'): string {
   const mermaid = preview.mermaid && assets.mermaid ? inlineScript(assets.mermaid) : '';
   return `<!DOCTYPE html>
-<html lang="${escapeAttr(preview.lang)}" data-smd-theme-pref="${theme}">
+<html lang="${escapeAttr(preview.lang)}" data-smd-theme-pref="${theme}" data-smd-parent-origin="${escapeAttr(parentOrigin)}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

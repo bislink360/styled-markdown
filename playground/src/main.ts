@@ -98,7 +98,7 @@ function showPreview(preview: PreviewPane): void {
     closePreviewPort();
     expectingLoad = true;
     frame.setAttribute('sandbox', PREVIEW_SANDBOX);
-    frame.srcdoc = previewDocument(preview, pref, assets);
+    frame.srcdoc = previewDocument(preview, pref, assets, location.origin);
     return;
   }
   if (frameReady) previewPort?.postMessage(updateMessage(preview, pref));

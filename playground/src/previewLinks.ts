@@ -41,8 +41,12 @@ export function isPortHandshake(data: unknown, ports: readonly MessagePort[], fr
 
 let port: MessagePort | undefined;
 
+/** The playground page's origin, written into the frame by previewDocument. */
+const PARENT_ORIGIN = typeof document === 'undefined' ? undefined : document.documentElement.dataset.smdParentOrigin;
+
 function onMessage(event: MessageEvent): void {
-  if (port || !isPortHandshake(event.data, event.ports, event.source === window.parent)) return;
+  if (event.origin !== PARENT_ORIGIN || event.source !== window.parent) return;
+  if (port || !isPortHandshake(event.data, event.ports, true)) return;
   port = event.ports[0];
   port.onmessage = (update) => window.dispatchEvent(new MessageEvent('message', { data: update.data }));
 }
