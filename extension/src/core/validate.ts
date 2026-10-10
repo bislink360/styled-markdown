@@ -194,7 +194,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   // Release headings and glossary terms are read with their `{{name}}` values in, as they render.
   const expanded = lines.map((l) => substituteLine(l, fm.data));
   const terms = checkGlossary({ lines, expanded }, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
-  if (terms.length) checkTermIds(terms, text, lines, fm.bodyStartLine, push);
+  checkTermIds(terms, text, lines, fm.bodyStartLine, push);
   for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
   checkVariables(lines, fm.bodyStartLine, fm.data, push);
@@ -733,6 +733,7 @@ interface IdOwner { line: number; what: 'heading' | 'element' }
  * instead: the author gives the other element its own `{#id}` or renames one of them.
  */
 function checkTermIds(terms: GlossaryEntry[], text: string, lines: string[], bodyStart: number, push: Push): void {
+  if (!terms.length) return;
   const owners = termLikeIds(parseSmd(text).headings, lines, bodyStart);
   for (const entry of terms) {
     const owner = owners.get(entry.id);

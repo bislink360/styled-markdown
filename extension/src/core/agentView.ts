@@ -356,10 +356,8 @@ interface TransformOptions extends AgentViewOptions {
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
-  const figures = options.figures ?? expandedFigures(lines.join('\n'), viewReader(options));
-  const ownFigures = figuresOf(figures, options.figureKey ?? '');
+  const { figures, ownFigures, code } = documentContext(lines, options);
   const variables = options.variables ?? documentVariables(lines);
-  const code = options.codeLines ?? codeLines(lines.join('\n'));
   // `{{name}}` is never replaced in code, as in rendering; indented code reaches the line handling below.
   let lineVariables: Variables | undefined = variables;
   const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, lineVariables);
@@ -482,6 +480,18 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   }
   flushDone(lines.length - 1);
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
+interface DocumentContext { figures: ExpandedFigures; ownFigures: ReadonlyMap<number, Figure>; code: ReadonlySet<number> }
+
+/**
+ * The figures (numbered with the rest of the expanded document), this document's own figures by line, and the lines
+ * of code, from `options` when the caller has them, else from `lines`.
+ */
+function documentContext(lines: string[], options: TransformOptions): DocumentContext {
+  const text = lines.join('\n');
+  const figures = options.figures ?? expandedFigures(text, viewReader(options));
+  return { figures, ownFigures: figuresOf(figures, options.figureKey ?? ''), code: options.codeLines ?? codeLines(text) };
 }
 
 /** The front matter variables `{{name}}` stands for on a line: none on a line of code. */
