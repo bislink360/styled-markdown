@@ -31,6 +31,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | Styled Markdown: Show Agent View / Show Brief Agent View | 🤖 in the title bar |
 | Styled Markdown: Copy Agent View / Copy Sections for an Agent… | — |
 | Styled Markdown: Export to HTML / Export to Plain Markdown (.md) | — |
+| Styled Markdown: Export to Word (.docx) (needs [Pandoc](https://pandoc.org/installing.html)) | — |
 | Styled Markdown: Convert Markdown File to .smd | Explorer context menu |
 | Styled Markdown: Validate All .smd Files in Workspace | — |
 | Styled Markdown: Set Up Spell Checking (cSpell) | — |
@@ -50,6 +51,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | `smd.validation.staleAfterDays` | `180` | Flag a document as stale when `updated` is older than this and its status isn't archived or deprecated (`0`: off) |
 | `smd.editor.continueLists` | `true` | Enter continues task lists (unchecked, keeping `@owner`), bullets and numbered lists; Enter on an empty item ends the list |
 | `smd.images.folder` | `docs/images` | Where pasted and dropped images are saved, relative to the workspace folder |
+| `smd.export.pandocPath` | `""` | Pandoc for Export to Word (.docx), when it isn't on the `PATH` (user setting; empty: `SMD_PANDOC`, then the `PATH`) |
 | `smd.status.updateDate` | `true` | Set Document Status also sets the front matter `updated` date to today, when the document has that key |
 
 ## Syntax at a glance

@@ -9,10 +9,12 @@ import {
   type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic, type DiffResult, type ReportDocument, type Selector,
   type Tokenizer,
 } from './core';
+import { smdToPandocHtml } from './core/pandoc';
 import { languageTag, SUPPORTED_LANGUAGES } from './core/i18n';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { exportPdf, loadPdfEngine, PdfError, pdfOptions, pdfPath } from './pdf';
+import { DocxError, docxPath, exportDocx, findPandoc } from './docx';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { runMcpServer } from './mcp';
 import { runLanguageServer } from './lsp';
@@ -140,6 +142,14 @@ Checking and converting:
       PDF of the rendered page (default: next to the file), with diagrams as vectors. Needs Playwright or
       Puppeteer in your project or installed globally; smd doesn't bundle a browser. Without one, use
       smd render -o page.html and the browser's Print → Save as PDF.
+  smd docx <file.smd> [-o out.docx] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only] [--lang <tag>]
+      Word document (default: next to the file), converted by Pandoc 3, which smd doesn't bundle: it is
+      found at --pandoc, the SMD_PANDOC environment variable or on the PATH (https://pandoc.org/installing.html).
+      Headings, tables, figure captions, footnotes and math become Word's own; callouts and decisions are
+      quotes under a bold title, tabs and details are expanded, Mermaid diagrams keep their source.
+      --reference-doc  a .docx whose styles to use (fonts, headings, captions, quotes)
+      --html-only      write the HTML smd hands Pandoc instead (to -o or stdout), to run Pandoc yourself:
+                       pandoc page.html -f html -t docx -o page.docx, in the document's folder (for images)
   smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD] [--lang <tag>]
       Static docs site: a page per .smd file in the same folders (links between documents rewritten,
       linked images copied), a sidebar, breadcrumbs, previous/next, backlinks, client-side search and
@@ -189,7 +199,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
   '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary', '--out', '--base',
-  '--lang',
+  '--lang', '--pandoc', '--reference-doc',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -267,6 +277,8 @@ function main(argv: string[]): number | Promise<number> {
     }
     case 'pdf':
       return pdf(requireFile(positional[0]), args);
+    case 'docx':
+      return docx(requireFile(positional[0]), args);
     case 'to-md':
       return write(value('-o'), smdToMarkdown(read(requireFile(positional[0])), { readFile: readerFor(positional[0]) }));
     case 'from-md': {
@@ -921,6 +933,27 @@ async function pdf(file: string, args: Args): Promise<number> {
   } catch (err) {
     if (err instanceof PdfError) return fail(err.message);
     console.error(`Printing failed: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+}
+
+/** `smd docx`: the Pandoc profile of the document, converted by Pandoc; exit 2 when Pandoc is missing. */
+async function docx(file: string, args: Args): Promise<number> {
+  const option = (name: string) => args.values.get(name)?.[0];
+  const lang = langOption(option('--lang'));
+  if (lang === null) return fail(LANG_USAGE);
+  const html = smdToPandocHtml(read(file), { readFile: readerFor(file), lang });
+  if (args.flags.has('--html-only')) return write(option('-o'), html);
+  const out = option('-o') ?? docxPath(file);
+  try {
+    const pandoc = findPandoc({ explicit: option('--pandoc') });
+    const warnings = await exportDocx(pandoc, html, { out, resourcePath: path.dirname(path.resolve(file)), referenceDoc: option('--reference-doc') });
+    if (warnings) console.error(warnings);
+    console.error(`Wrote ${out} (converted with ${pandoc})`);
+    return 0;
+  } catch (err) {
+    if (err instanceof DocxError) return fail(err.message);
+    console.error(`Converting to .docx failed: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
 }

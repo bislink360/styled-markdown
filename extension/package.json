@@ -150,6 +150,11 @@
         "category": "Styled Markdown"
       },
       {
+        "command": "smd.exportDocx",
+        "title": "Export to Word (.docx)",
+        "category": "Styled Markdown"
+      },
+      {
         "command": "smd.convertFromMarkdown",
         "title": "Convert Markdown File to .smd",
         "category": "Styled Markdown"
@@ -273,6 +278,11 @@
           "group": "smd"
         },
         {
+          "command": "smd.exportDocx",
+          "when": "editorLangId == smd",
+          "group": "smd"
+        },
+        {
           "command": "smd.copyAgentView",
           "when": "editorLangId == smd",
           "group": "smd"
@@ -301,6 +311,10 @@
         },
         {
           "command": "smd.exportMarkdown",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.exportDocx",
           "when": "editorLangId == smd"
         },
         {
@@ -391,6 +405,12 @@
           "type": "boolean",
           "default": true,
           "description": "Render raw HTML embedded in .smd files. Scripts never run in the preview."
+        },
+        "smd.export.pandocPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Path to the Pandoc executable for **Export to Word (.docx)**, when Pandoc is not on the `PATH` VS Code sees. Empty: the `SMD_PANDOC` environment variable, then the `PATH`. [Install Pandoc](https://pandoc.org/installing.html)."
         },
         "smd.markdownPreview.enabled": {
           "type": "boolean",

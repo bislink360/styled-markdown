@@ -13,6 +13,8 @@ export { RULE_CODES, applyRuleSettings, readRuleConfig } from './rules';
 export type { RuleSetting, RuleSettings } from './rules';
 export type { Diagnostic, Fix, Severity, ValidateOptions } from './validate';
 export { smdToMarkdown } from './toMarkdown';
+export { smdToPandocHtml } from './pandoc';
+export type { PandocHtmlOptions } from './pandoc';
 export { getDocumentInfo, extractTasks } from './meta';
 export type { SmdDocumentInfo, TaskInfo, DecisionInfo, RiskInfo } from './meta';
 export { tasksToCsv, tasksToGantt, ganttDocument, ganttDate, TASK_CSV_COLUMNS } from './taskExport';

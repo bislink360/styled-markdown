@@ -5,6 +5,8 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- **Word export: `smd docx <file.smd> [-o out.docx] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only] [--lang <tag>]`** and **Styled Markdown: Export to Word (.docx)** in VS Code (command palette and editor context menu). The document is converted by [Pandoc](https://pandoc.org/installing.html) 3.0 or newer, which smd does not bundle (the npm package keeps zero runtime dependencies): smd finds it at `--pandoc`, the `SMD_PANDOC` environment variable or on the `PATH` (the extension reads the new machine-scoped `smd.export.pandocPath` setting first). Without Pandoc the CLI exits with code 2 and an install link, and the extension shows an **Install Pandoc** button. smd hands Pandoc a "pandoc" profile of the rendered HTML, so the Word document has real headings, tables, figure and table captions, footnotes and equations (from the TeX); callouts, decisions and risks become block quotes under a bold title; `:::details`, cards and tabs are expanded (each tab under a heading); tasks start with ☐/☑; badges, priorities and statuses are bold text; Mermaid diagrams keep their source; agent blocks are left out, as in print. The front matter becomes the title, subtitle, authors and keywords, and `toc: true` a table of contents. `--reference-doc` applies a house style, and `--html-only` writes the HTML for running Pandoc yourself. See "Word (.docx)" in `docs/FEATURES.md`.
+- Library: **`smdToPandocHtml(text, options)`** returns that HTML page (options as for `renderSmd`; agent blocks hidden unless `agentBlocks` says otherwise). There is no .docx writer in the library: Pandoc stays a tool you install, like the browser for `smd pdf`.
 
 ### Changed
 

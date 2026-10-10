@@ -22,6 +22,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 | VS Code extension | VS Code **1.90 or newer**, or a VS Code-compatible editor that installs `.vsix` files (Cursor, VSCodium, Windsurf) |
 | CLI and agent skills | **Node.js 18 or newer** |
 | Building from source | Node.js 18+, npm, Git |
+| Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd docx` and **Export to Word (.docx)** |
 
 ## Install the VS Code extension
 
@@ -119,6 +120,19 @@ smd --version       # smd 1.6.0 (Styled Markdown spec v1)
 ```
 
 **Without linking:** `node extension/dist/cli.js <command>`.
+
+### Optional: Pandoc for Word export
+
+`smd docx` and the extension's **Export to Word (.docx)** hand the document to [Pandoc](https://pandoc.org/installing.html), which smd does not bundle (the CLI and the npm package keep zero dependencies). Install Pandoc 3.0 or newer only if you want `.docx` files:
+
+```bash
+winget install JohnMacFarlane.Pandoc   # Windows (or the installer or zip from pandoc.org)
+brew install pandoc                    # macOS
+sudo apt install pandoc                # Debian/Ubuntu (check pandoc --version: 3.0 or newer)
+pandoc --version
+```
+
+smd finds Pandoc at `--pandoc <path>`, then the `SMD_PANDOC` environment variable, then on the `PATH`; the extension reads the `smd.export.pandocPath` setting first (a user setting, so a workspace can't point it at another program). Without Pandoc, `smd docx` exits with code 2 and says how to install it, and the extension shows the same with an **Install Pandoc** button. `smd docx <file.smd> --html-only -o page.html` writes the HTML smd would give Pandoc, to convert yourself: `pandoc page.html -f html -t docx -o page.docx`.
 
 
 ## Use `smd` in CI

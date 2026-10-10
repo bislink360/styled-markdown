@@ -10,6 +10,7 @@ import { extendMarkdownIt } from './markdownPreview';
 import { PreviewManager, renderOptions } from './preview';
 import { registerStatusWorkflow } from './statusWorkflow';
 import { registerTasksView } from './tasksView';
+import { registerDocxExport } from './docxExport';
 
 /** The API VS Code's built-in Markdown preview uses (see markdownPreview.ts). */
 export interface SmdExtensionApi {
@@ -23,6 +24,7 @@ export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
   registerEditorFeatures(context);
   registerTasksView(context);
   registerStatusWorkflow(context);
+  registerDocxExport(context);
 
   const activeSmd = (): vscode.TextDocument | undefined => {
     const doc = vscode.window.activeTextEditor?.document;
