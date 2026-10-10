@@ -49,8 +49,9 @@ export function findPandoc(options: FindPandocOptions = {}): string {
   const platform = options.platform ?? process.platform;
   // Only an executable: Node can't start Windows .cmd and .bat files without a shell.
   const name = platform === 'win32' ? 'pandoc.exe' : 'pandoc';
-  const delimiter = platform === 'win32' ? ';' : ':';
-  const found = (env.PATH ?? env.Path ?? '').split(delimiter).filter(Boolean).map((dir) => path.join(dir, name)).find(isFile);
+  // The searched platform's own rules, not the host's (they differ in tests and when paths come from elsewhere).
+  const { delimiter, join } = platform === 'win32' ? path.win32 : path.posix;
+  const found = (env.PATH ?? env.Path ?? '').split(delimiter).filter(Boolean).map((dir) => join(dir, name)).find(isFile);
   if (!found) throw new DocxError(DOCX_MISSING_PANDOC);
   return found;
 }
