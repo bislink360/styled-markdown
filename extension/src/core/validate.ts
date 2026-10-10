@@ -189,9 +189,9 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
   checkFigures(text, lines, fm.bodyStartLine, push, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, push);
-  checkGlossary(lines, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
-  // Release headings are read with their `{{name}}` values in, as they render.
+  // Release headings and glossary terms are read with their `{{name}}` values in, as they render.
   const expanded = lines.map((l) => substituteLine(l, fm.data));
+  checkGlossary({ lines, expanded }, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
   for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
   checkVariables(lines, fm.bodyStartLine, fm.data, push);
@@ -688,9 +688,11 @@ function unknownRef(ref: FigureRef, ids: string[], push: Push): void {
 
 /**
  * Glossary entries are `**Term**: definition` items, each term is defined once, and each is used in the text;
- * `included` gives the terms used in included text (rendering it only when a term is not used otherwise).
+ * `included` gives the terms used in included text (rendering it only when a term is not used otherwise). A use in
+ * a `{{name}}` value counts, as rendering marks it: uses are found in the lines as written and with the values in.
  */
-function checkGlossary(lines: string[], bodyStart: number, push: Push, included: () => Set<string>): void {
+function checkGlossary(text: { lines: string[]; expanded: string[] }, bodyStart: number, push: Push, included: () => Set<string>): void {
+  const { lines, expanded } = text;
   const glossary = findGlossary(lines, bodyStart);
   for (const problem of glossary.problems) glossaryProblem(problem, push);
   const first = new Map<string, GlossaryEntry>();
@@ -705,6 +707,9 @@ function checkGlossary(lines: string[], bodyStart: number, push: Push, included:
   }
   if (!first.size) return;
   const used = new Set(findTermUses(lines, bodyStart, glossary).map((u) => u.entry.id));
+  if (expanded.some((l, i) => l !== lines[i])) {
+    for (const use of findTermUses(expanded, bodyStart, glossary)) used.add(use.entry.id);
+  }
   const unused = [...first.values()].filter((e) => !used.has(e.id));
   const usedInIncludes = unused.length ? included() : new Set<string>();
   for (const entry of unused) {
