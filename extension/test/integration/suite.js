@@ -30,7 +30,7 @@ const checks = {
 
   async 'all commands are registered'() {
     const all = await vscode.commands.getCommands(true);
-    for (const c of ['smd.openPreview', 'smd.openPreviewToSide', 'smd.exportHtml', 'smd.exportMarkdown', 'smd.exportConfluence', 'smd.exportNotion', 'smd.convertFromMarkdown', 'smd.validateWorkspace']) {
+    for (const c of ['smd.openPreview', 'smd.openPreviewToSide', 'smd.exportHtml', 'smd.exportMarkdown', 'smd.exportConfluence', 'smd.exportNotion', 'smd.exportDocx', 'smd.convertFromMarkdown', 'smd.validateWorkspace']) {
       assert.ok(all.includes(c), `missing command ${c}`);
     }
   },

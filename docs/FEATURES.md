@@ -794,6 +794,7 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 |---|---|
 | **Export to HTML** / `smd render` | A standalone page (Mermaid and KaTeX from a CDN) you can share with anyone. It has a print stylesheet |
 | `smd pdf` | A PDF of that page, printed by a headless browser you install (below) |
+| **Export to Word (.docx)** / `smd docx` | A Word document converted by Pandoc, which you install (below): headings, tables, figure captions, footnotes and equations become Word's own |
 | **Export to Plain Markdown** / `smd to-md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Convert Markdown File to .smd** / `smd from-md` | Adds front matter and turns GitHub alerts into callouts |
 | **Export to Confluence (Storage Format)** / `smd export --to confluence` | A Confluence page body: callouts, code, expands, task lists and statuses as Confluence's own macros (below) |
@@ -911,6 +912,33 @@ smd looks for `playwright`, then `@playwright/test`, then `puppeteer`, in the cu
 
 It waits until the page has finished rendering: the runtime sets `data-smd-ready` on `<html>` once Mermaid diagrams are drawn and fonts are loaded (after 60 s it prints anyway, with a warning). So **diagrams are in the PDF as vector SVG**, and math as KaTeX text. Mermaid and the KaTeX stylesheet still load from the CDN, so diagrams need a network connection. The page is printed from a temporary file beside the document (removed afterwards), so relative image paths resolve. PDFs always use the light theme.
 
+### Word (.docx): `smd docx`
+
+**`smd docx plan.smd [-o plan.docx] [--reference-doc house-style.docx]`** writes `plan.docx` (by default next to the document) with [Pandoc](https://pandoc.org/installing.html) 3.0 or newer, which smd does not bundle: install it as described in [INSTALL.md](INSTALL.md#optional-pandoc-for-word-export). smd uses `--pandoc <path>`, else the `SMD_PANDOC` environment variable, else `pandoc` on the `PATH`; without one it exits with code 2 and an install link. In VS Code, **Styled Markdown: Export to Word (.docx)** (command palette and editor context menu) does the same, reading the `smd.export.pandocPath` setting first and offering **Install Pandoc** when it is missing.
+
+smd renders the document as for the preview, reshapes the HTML into a form Pandoc's HTML reader maps well to Word (the library's `smdToPandocHtml`), and runs `pandoc -f html -t docx` on it, with the document's folder as the place to find images. The Word document follows the printout:
+
+| In the document | In Word |
+|---|---|
+| Front matter | `title` → the Title, `summary` → the Subtitle, `owners` → authors, `tags` → keywords (document properties); status, version, `updated` and audience are the first paragraph; `toc: true` adds a table of contents |
+| Headings, lists, tables, links, images, `==marks==` | Word's own; links between sections and to figures (`:ref`) are internal links |
+| Callouts, decisions, risks | Block quotes, starting with the title in bold ("Warning: Breaking change"), the decision's status, date and owner, or the risk's impact and likelihood |
+| `:::details`, collapsible callouts, cards, boxes, columns, `:::human` | Expanded: the title in bold, then the content |
+| `:::tabs` | Each tab as a heading one level below the current section, then its content |
+| `:::figure` | A Word caption ("Figure 1: …", localized); a table figure's caption is the table's caption |
+| `[^1]` footnotes | Real Word footnotes |
+| `$…$`, `$$…$$`, math fences | Word equations (from the TeX) |
+| Code blocks | Code with Pandoc's syntax highlighting; titles in bold above |
+| Mermaid diagrams | Their source as a code block (Pandoc can't draw them; export to HTML or PDF for the picture) |
+| Tasks | ☐ / ☑ before the text; done tasks drop "overdue" |
+| `:badge`, `:priority`, `:status` | Bold text: **[Shipped]**, **[P1]**, **On track**; `:progress` its percentage, `:metric` value, label and change, `:kbd` code |
+| `[text]{…}` | Bold, italic, underline, strikethrough and monospace are kept; colours, backgrounds and sizes are dropped |
+| `:::agent` | Left out, as in print (`.no-print` blocks too) |
+
+Styles come from Pandoc's default template; **`--reference-doc`** takes a `.docx` whose styles to use instead (fonts, heading colours, "Block Text" for quotes, "Image Caption" and "Table Caption"), for example one made with `pandoc -o custom-reference.docx --print-default-data-file reference.docx` and edited in Word. `--lang <tag>` sets the language of the labels for documents without `lang:`, as for `smd render`.
+
+**`--html-only`** writes that HTML instead (to `-o` or stdout), to run Pandoc yourself or with other options: `smd docx plan.smd --html-only -o plan.html`, then `pandoc plan.html -f html -t docx -o plan.docx` in the document's folder. The HTML has no scripts, classes or styles beyond what Pandoc reads.
+
 ### Accessibility
 
 Rendered pages (the preview, `smd render`, `smd build` sites and `smd risks --html`) aim at WCAG 2.2 AA:
@@ -947,6 +975,7 @@ smd validate <files|dirs> --format github [--summary <file>] [...]   GitHub anno
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
 smd render <file> [-o out.html]                     standalone page, with a print stylesheet
 smd pdf <file> [-o out.pdf] [--format A4|Letter] [--landscape]   PDF; needs Playwright or Puppeteer (section 16)
+smd docx <file> [-o out.docx] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only]   Word; needs Pandoc (section 16)
 smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
                  static docs site: pages, sidebar, search, backlinks, dashboard (section 16)
 smd to-md <file> [-o out.md]
