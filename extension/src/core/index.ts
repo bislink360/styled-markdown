@@ -13,6 +13,8 @@ export { RULE_CODES, applyRuleSettings, readRuleConfig } from './rules';
 export type { RuleSetting, RuleSettings } from './rules';
 export type { Diagnostic, Fix, Severity, ValidateOptions } from './validate';
 export { smdToMarkdown } from './toMarkdown';
+export { smdToPandocHtml } from './pandoc';
+export type { PandocHtmlOptions } from './pandoc';
 export { getDocumentInfo, extractTasks } from './meta';
 export type { SmdDocumentInfo, TaskInfo, DecisionInfo, RiskInfo } from './meta';
 export { tasksToCsv, tasksToGantt, ganttDocument, ganttDate, TASK_CSV_COLUMNS } from './taskExport';
@@ -57,3 +59,7 @@ export type {
 } from './issues';
 export { remarkSmd, rehypeSmd, renderSmdFile } from './unified';
 export type { SmdPluginOptions, SmdFileData, SmdVFile, SmdTree, SmdNode } from './unified';
+export { smdToConfluence } from './confluence';
+export { smdToNotion, notionRequests, NOTION_LIMITS } from './notion';
+export type { NotionAnnotations, NotionBlock, NotionRequest, NotionRichText } from './notion';
+export type { ExportOptions } from './exportTree';

@@ -1,11 +1,11 @@
 # Release: a pushed vX.Y.Z tag builds the artifacts from the tag, creates the GitHub Release
-# and publishes to the VS Code Marketplace, Open VSX and npm (smd-release skill, §6–7).
+# and publishes to the VS Code Marketplace, Open VSX, npm and PyPI (smd-release skill, §6–7).
 #
 # - Run it by hand (Actions → Release → Run workflow) with a tag to rebuild, finish a release
 #   that failed half-way, or rehearse it: `dry_run` (default on) builds and verifies everything
 #   but creates no release and publishes nothing.
-# - Each publish job skips with a notice while its secret (VSCE_PAT, OVSX_PAT, NPM_TOKEN) is
-#   missing, so the workflow is safe before the registries are set up.
+# - Each publish job skips with a notice while its secret (VSCE_PAT, OVSX_PAT, NPM_TOKEN, PYPI_TOKEN)
+#   is missing, so the workflow is safe before the registries are set up.
 # - Publishing a version that a registry already lists is skipped, so re-running is safe.
 name: Release
 
@@ -37,6 +37,10 @@ env:
   # Publishing tools, pinned. Keep VSCE_VERSION in step with @vscode/vsce in extension/package-lock.json.
   VSCE_VERSION: 3.9.2
   OVSX_VERSION: 1.2.0
+  # The MkDocs plugin (integrations/mkdocs): its build frontend and upload tool, pinned.
+  PYTHON_VERSION: '3.12'
+  PYTHON_BUILD_VERSION: 1.2.2.post1
+  TWINE_VERSION: 6.1.0
 
 jobs:
   verify:
@@ -100,13 +104,24 @@ jobs:
         run: |
           (cd extension && npm run build:npm)
           (cd npm && npm pack --pack-destination ../release-assets)
-      - name: Bundled skill CLIs match the tag
+      - name: Bundled skill CLIs and the MkDocs plugin's bridge match the tag
         run: |
-          if ! git diff --quiet -- skills; then
-            echo "::error::skills/*/scripts/smd.cjs at $TAG differs from a fresh build. Rebuild and commit it, then tag again."
-            git diff --stat -- skills
+          if ! git diff --quiet -- skills integrations/mkdocs; then
+            echo "::error::skills/*/scripts/smd.cjs or integrations/mkdocs/mkdocs_styled_markdown/bridge.cjs at $TAG differs from a fresh build. Rebuild and commit it, then tag again."
+            git diff --stat -- skills integrations/mkdocs
             exit 1
           fi
+      - name: Build and zip the web playground
+        run: |
+          (cd extension && npm run build:playground)
+          (cd extension/dist && zip -r -q -X ../../release-assets/styled-markdown-playground.zip playground)
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Build the MkDocs plugin (wheel and sdist)
+        run: |
+          python -m pip install --disable-pip-version-check "build==$PYTHON_BUILD_VERSION"
+          python -m build integrations/mkdocs --outdir release-assets
       - name: Zip the agent skills
         working-directory: skills
         run: |
@@ -120,7 +135,9 @@ jobs:
           ls -l
           vsix="styled-markdown-$VERSION.vsix"
           tgz="styled-markdown-$VERSION.tgz"
-          for zip in "$vsix" styled-markdown-reader.zip styled-markdown-writer.zip; do
+          whl="mkdocs_styled_markdown-$VERSION-py3-none-any.whl"
+          sdist="mkdocs_styled_markdown-$VERSION.tar.gz"
+          for zip in "$vsix" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip "$whl"; do
             unzip -tq "$zip"   # a real zip archive, not a tar named .zip
           done
           unzip -l "$vsix" | grep -E ' extension/LICENSE(\.txt)?$' > /dev/null || { echo "::error::$vsix has no LICENSE (Open VSX and the Marketplace show it)"; exit 1; }
@@ -129,6 +146,12 @@ jobs:
           tar -xOzf "$tgz" package/package.json | node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8')); if (p.version!==process.env.VERSION) { console.error('::error::.tgz version '+p.version); process.exit(1); }"
           unzip -l styled-markdown-reader.zip | grep ' styled-markdown-reader/SKILL.md$' > /dev/null
           unzip -l styled-markdown-writer.zip | grep ' styled-markdown-writer/SKILL.md$' > /dev/null
+          unzip -l styled-markdown-playground.zip | grep ' playground/vendor/mermaid-source.js$' > /dev/null
+          # The build writes the CSP, with the hashes of the preview's inline scripts, into index.html.
+          unzip -p styled-markdown-playground.zip playground/index.html | grep "script-src 'self' 'sha256-" > /dev/null || { echo "::error::the playground's index.html has no CSP"; exit 1; }
+          unzip -l "$whl" | grep ' mkdocs_styled_markdown/bridge.cjs$' > /dev/null || { echo "::error::$whl has no bridge.cjs"; exit 1; }
+          unzip -p "$whl" "mkdocs_styled_markdown-$VERSION.dist-info/METADATA" | grep -x "Version: $VERSION" > /dev/null || { echo "::error::$whl is not version $VERSION"; exit 1; }
+          tar -tzf "$sdist" | grep -x "mkdocs_styled_markdown-$VERSION/mkdocs_styled_markdown/bridge.cjs" > /dev/null || { echo "::error::$sdist has no bridge.cjs"; exit 1; }
           sha256sum -- *
       - name: Release notes from the changelog
         run: node extension/scripts/release/changelog-excerpt.mjs "$VERSION" --downloads -o release-assets/release-notes.md
@@ -158,7 +181,8 @@ jobs:
         working-directory: release-assets
         run: |
           set -euo pipefail
-          assets=("styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip)
+          assets=("styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip
+            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz")
           cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
           if [ "$DRY_RUN" = "true" ]; then
             echo "::notice title=GitHub Release::Dry run: would create $TAG with ${assets[*]} (notes in the job summary)."
@@ -178,10 +202,11 @@ jobs:
         run: |
           set -euo pipefail
           names=$(gh release view "$TAG" --json assets --jq '.assets[].name')
-          for asset in "styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip; do
+          for asset in "styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip \
+            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz"; do
             grep -qxF -- "$asset" <<< "$names" || { echo "::error::Release $TAG has no $asset"; exit 1; }
           done
-          echo "Release $TAG lists all four assets."
+          echo "Release $TAG lists all seven assets."
 
   # The publish jobs check out only the release scripts (no dependencies are installed) and
   # publish the exact files attached to the GitHub Release. The `release` environment is
@@ -300,3 +325,48 @@ jobs:
         run: |
           node extension/scripts/release/wait-for-version.mjs npm "$VERSION" --attempts 20 --delay 15
           npm view "styled-markdown@$VERSION" version
+
+  publish-pypi:
+    name: Publish the MkDocs plugin to PyPI
+    needs: [verify, github-release]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          sparse-checkout: extension/scripts/release
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Ready to publish?
+        id: gate
+        env:
+          TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: node extension/scripts/release/publish-gate.mjs pypi "$VERSION" PYPI_TOKEN --output "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          name: release-assets
+          path: release-assets
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: twine upload
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          python -m pip install --disable-pip-version-check "twine==$TWINE_VERSION"
+          python -m twine upload --non-interactive \
+            "release-assets/mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "release-assets/mkdocs_styled_markdown-$VERSION.tar.gz"
+      - name: Verify PyPI lists the version
+        if: steps.gate.outputs.ready == 'true'
+        run: node extension/scripts/release/wait-for-version.mjs pypi "$VERSION" --attempts 20 --delay 15

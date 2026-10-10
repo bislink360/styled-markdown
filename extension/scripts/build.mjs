@@ -41,6 +41,8 @@ const common = {
 const builds = [
   { ...common, entryPoints: [join(root, 'src', 'extension.ts')], outfile: join(root, 'dist', 'extension.js'), external: ['vscode'] },
   { ...common, entryPoints: [join(root, 'src', 'cli.ts')], outfile: join(root, 'dist', 'cli.js'), banner: { js: '#!/usr/bin/env node' } },
+  // The MkDocs plugin's renderer (integrations/mkdocs), shipped in its Python package.
+  { ...common, entryPoints: [join(root, 'src', 'mkdocsBridgeMain.ts')], outfile: join(root, 'dist', 'mkdocs-bridge.cjs'), sourcemap: false },
   // Mermaid's parser for syntax diagnostics, loaded on demand by the extension and CLI.
   {
     ...common,
@@ -67,4 +69,6 @@ if (!watch) {
     mkdirSync(dir, { recursive: true });
     cpSync(join(root, 'dist', 'cli.js'), join(dir, 'smd.cjs'));
   }
+  // The MkDocs plugin's Python package ships the bridge (CI checks that the committed copy is up to date).
+  cpSync(join(root, 'dist', 'mkdocs-bridge.cjs'), join(root, '..', 'integrations', 'mkdocs', 'mkdocs_styled_markdown', 'bridge.cjs'));
 }
