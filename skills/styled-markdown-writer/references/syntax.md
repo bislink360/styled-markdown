@@ -167,7 +167,7 @@ Every API call counts against the SLO.
 
 - Every item of the list is `**Term**: definition` (or `**Term:** definition`); one item in another form turns the whole list back into a plain list (`glossary/entry`).
 - The first use of each term in every section shows its definition on hover and links to it. Write the terms in the text exactly as defined: abbreviations (`API`) only match as written; other terms may change the case of their first letter. Plurals and compounds (`APIs`, `API-first`) don't match.
-- Headings, code, links and URLs are never marked. Define each term once (`glossary/duplicate`); a term no text uses is reported as `glossary/unused` (info).
+- Headings, code, links and URLs are never marked. Define each term once (`glossary/duplicate`), and don't give a heading or element the id `term-{slug}` of a term (`glossary/duplicate-id`; `## Term limits` clashes with the term *Limits*); a term no text uses is reported as `glossary/unused` (info).
 - One glossary near the end of the document is usual; put terms an agent must know in it rather than expanding them in every paragraph.
 
 ### Quotes with attribution

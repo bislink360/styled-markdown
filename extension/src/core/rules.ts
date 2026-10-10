@@ -53,6 +53,7 @@ export const RULE_CODES: Record<string, string> = {
   'footnote/duplicate': 'Second definition of a footnote label (the first one is used)',
   'glossary/entry': 'List item in a `:::glossary` that is not `**Term**: definition`, or has no definition',
   'glossary/duplicate': 'A `:::glossary` term is defined again; its uses link to the first definition',
+  'glossary/duplicate-id': 'The id of a `:::glossary` term (`term-…`) is also the id of a heading or another element',
   'glossary/unused': 'A `:::glossary` term is never used in the text',
   'changelog/date': 'A `:::changelog` release heading has a date that is not YYYY-MM-DD',
   'changelog/order': 'A `:::changelog` lists a newer version below an older one (releases go newest first)',

@@ -690,6 +690,16 @@
           ],
           "description": "A :::glossary term is defined again; its uses link to the first definition"
         },
+        "glossary/duplicate-id": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The id of a :::glossary term (term-…) is also the id of a heading or another element"
+        },
         "glossary/unused": {
           "enum": [
             "off",
