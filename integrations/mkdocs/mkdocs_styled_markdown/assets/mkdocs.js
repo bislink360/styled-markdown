@@ -5,14 +5,14 @@
   var html = document.documentElement;
   function themeMode() {
     var body = document.body;
-    var dark = html.getAttribute('data-bs-theme') === 'dark' ||
-      (body && body.getAttribute('data-md-color-scheme') === 'slate');
+    var dark = html.dataset.bsTheme === 'dark' ||
+      (body && body.dataset.mdColorScheme === 'slate');
     return dark ? 'dark' : 'light';
   }
   function sync() {
     var mode = themeMode();
-    if (html.getAttribute('data-smd-theme-pref') === mode) return;
-    html.setAttribute('data-smd-theme-pref', mode);
+    if (html.dataset.smdThemePref === mode) return;
+    html.dataset.smdThemePref = mode;
     // The runtime re-applies the theme (and redraws diagrams) when the body's classes change.
     if (document.body) document.body.classList.toggle('smd-theme-sync');
   }

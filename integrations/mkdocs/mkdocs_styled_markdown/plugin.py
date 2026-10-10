@@ -22,6 +22,8 @@ from .bridge import NodeBridge
 log = get_plugin_logger(__name__)
 
 ASSET_DIR = "assets/styled-markdown"
+SMD_CSS, RUNTIME_JS = "smd.css", "runtime.js"
+MKDOCS_CSS, MKDOCS_JS = "mkdocs.css", "mkdocs.js"
 STATIC = Path(__file__).with_name("assets")
 KATEX_CSS = '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">'
 MERMAID_JS = '<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>'
@@ -96,10 +98,10 @@ class StyledMarkdownPlugin(BasePlugin):
     # -- build lifecycle -------------------------------------------------------------------------------------
 
     def on_config(self, config: MkDocsConfig) -> MkDocsConfig:
-        for name in ("smd.css", "mkdocs.css"):
+        for name in (SMD_CSS, MKDOCS_CSS):
             _add_once(config.extra_css, f"{ASSET_DIR}/{name}")
         # mkdocs.js first: it tells the runtime which theme (light or dark) the page shows.
-        for name in ("mkdocs.js", "runtime.js"):
+        for name in (MKDOCS_JS, RUNTIME_JS):
             _add_once(config.extra_javascript, f"{ASSET_DIR}/{name}")
         return config
 
@@ -108,10 +110,10 @@ class StyledMarkdownPlugin(BasePlugin):
         self._bridge = NodeBridge(self.config["node"])
         assets = self._bridge.call("assets")
         contents = {
-            "smd.css": assets["css"],
-            "runtime.js": assets["runtimeJs"],
-            "mkdocs.css": (STATIC / "mkdocs.css").read_text(encoding="utf-8"),
-            "mkdocs.js": (STATIC / "mkdocs.js").read_text(encoding="utf-8"),
+            SMD_CSS: assets["css"],
+            RUNTIME_JS: assets["runtimeJs"],
+            MKDOCS_CSS: (STATIC / MKDOCS_CSS).read_text(encoding="utf-8"),
+            MKDOCS_JS: (STATIC / MKDOCS_JS).read_text(encoding="utf-8"),
         }
         for name, content in contents.items():
             _replace(files, File.generated(config, f"{ASSET_DIR}/{name}", content=content))
