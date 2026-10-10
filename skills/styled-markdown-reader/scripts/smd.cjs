@@ -2287,13 +2287,13 @@ The forces at play: requirements, constraints, and what is true today that makes
 How we will notice, and what we would do.
 :::
 
-## Discussion notes {agent=skip}
-
-Meeting notes, links to threads, and history that led here.
-
 :::agent Rules this decision implies
 - Concrete rules code must follow because of this decision.
 :::
+
+## Discussion notes {agent=skip}
+
+Meeting notes, links to threads, and history that led here.
 `;var Oy=`---
 smd: 1
 title: "RFC: {{title}}"
@@ -2412,14 +2412,14 @@ kubectl get pods -n <namespace>
 | No recovery after 15 minutes | :mention[@service-owner] |
 | Customer data at risk        | :mention[@security]      |
 
-## History {agent=skip}
-
-Past incidents that used this runbook, with links to post-mortems.
-
 :::agent Rules for automated responders
 - Only run read-only commands without human approval.
 - Never delete data or scale to zero.
 :::
+
+## History {agent=skip}
+
+Past incidents that used this runbook, with links to post-mortems.
 `;var $y=`---
 smd: 1
 title: "{{title}} API"
