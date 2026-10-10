@@ -49,11 +49,11 @@ kubectl get pods -n <namespace>
 | No recovery after 15 minutes | :mention[@service-owner] |
 | Customer data at risk        | :mention[@security]      |
 
-## History {agent=skip}
-
-Past incidents that used this runbook, with links to post-mortems.
-
 :::agent Rules for automated responders
 - Only run read-only commands without human approval.
 - Never delete data or scale to zero.
 :::
+
+## History {agent=skip}
+
+Past incidents that used this runbook, with links to post-mortems.
