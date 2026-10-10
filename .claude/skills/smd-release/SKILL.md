@@ -64,7 +64,7 @@ Every new syntax feature must also add a document exercising it to `extension/te
 
 ### 4. Finish the release on `release/vX.Y.Z`
 
-1. The release branch was opened at its version when the train was planned: `plan-release.mjs` runs `bump-version.mjs`, which updates `extension/package.json`, `extension/package-lock.json` and `npm/package.json` and adds the CHANGELOG heading. Each feature PR added its own changelog bullets under that heading. If the version must change (e.g. a breaking change turned up and it must become a major), run:
+1. The release branch was opened at its version when the train was planned: `plan-release.mjs` runs `bump-version.mjs`, which updates `extension/package.json`, `extension/package-lock.json`, `npm/package.json` and the Obsidian plugin's `integrations/obsidian/manifest.json` and `versions.json`, and adds the CHANGELOG heading. Each feature PR added its own changelog bullets under that heading. If the version must change (e.g. a breaking change turned up and it must become a major), run:
 
    ```bash
    node .claude/skills/smd-release/scripts/bump-version.mjs <patch|minor|major|X.Y.Z>
@@ -105,7 +105,7 @@ Don't proceed until the human approves in chat. For a major release, get approva
 
    | Job | What it does |
    |---|---|
-   | verify | `check-versions.mjs`: the tag equals the version in `extension/package.json`, `package-lock.json` and `npm/package.json`; the CHANGELOG has a non-empty `## X.Y.Z` section; the tagged commit is on `main` or a `release/*` branch. Then typecheck and unit tests. |
+   | verify | `check-versions.mjs`: the tag equals the version in `extension/package.json`, `package-lock.json`, `npm/package.json`, `integrations/mkdocs/pyproject.toml` and `integrations/obsidian/manifest.json`; the CHANGELOG has a non-empty `## X.Y.Z` section; the tagged commit is on `main` or a `release/*` branch. Then typecheck and unit tests. |
    | build | `.vsix` (`npm run package`), npm `.tgz` (`npm run build:npm`, `npm pack`) and skill zips (`zip -r`). Checks they are real zips with the LICENSE and the right version, and that `skills/*/scripts/smd.cjs` match a fresh build. Notes: `changelog-excerpt.mjs --downloads` (downloads table + the changelog section). All uploaded as the `release-assets` workflow artifact. |
    | github-release | Creates the GitHub Release with those notes and the four assets. If the release already exists, it keeps its notes and attaches only missing assets. Verifies the release lists all four. |
    | publish-marketplace, publish-openvsx, publish-npm | Publish the exact `.vsix` / `.tgz` attached to the release (`vsce publish --packagePath`, `ovsx publish`, `npm publish --provenance`), then poll the registry until it lists X.Y.Z (`wait-for-version.mjs`). |

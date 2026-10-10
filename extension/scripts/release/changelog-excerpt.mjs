@@ -76,6 +76,7 @@ export function downloadsTable(version) {
     '| `styled-markdown-reader.zip` | Agent skill: token-efficient reading | Same as above |',
     `| \`mkdocs_styled_markdown-${version}-py3-none-any.whl\` | MkDocs plugin (Python wheel; needs Node.js 18+) | \`pip install ./mkdocs_styled_markdown-${version}-py3-none-any.whl\` ([guide](${docs}/INSTALL.md#mkdocs-plugin)) |`,
     `| \`mkdocs_styled_markdown-${version}.tar.gz\` | MkDocs plugin source distribution | \`pip install ./mkdocs_styled_markdown-${version}.tar.gz\` |`,
+    `| \`styled-markdown-obsidian-${version}.zip\` | Obsidian plugin (a \`styled-markdown\` folder with \`main.js\`, \`manifest.json\` and \`styles.css\`) | Unzip into your vault's \`.obsidian/plugins/\`, then turn it on in Settings → Community plugins ([guide](${docs}/INSTALL.md#obsidian-plugin)) |`,
   ].join('\n');
 }
 

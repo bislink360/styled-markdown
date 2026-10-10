@@ -297,6 +297,10 @@ They work with `.md` files (MDX parses `.smd` attribute lists as JSX, so `.mdx` 
 
 The `mkdocs-styled-markdown` plugin turns the `.smd` files in an MkDocs site into pages, in your theme, with its table of contents, links between pages and dark mode; `validate: true` makes `mkdocs build --strict` fail on `.smd` errors. It needs Node.js 18+. Install the wheel from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and add `- styled-markdown` to `plugins:`: [plugin README](integrations/mkdocs/README.md).
 
+### Obsidian
+
+The Styled Markdown plugin for [Obsidian](https://obsidian.md) renders `:::` containers, inline directives and styled spans in your notes' reading view, follows your theme in light and dark mode, renders ```` ```smd ```` blocks in Live Preview too, and opens `.smd` files as notes. Unzip `styled-markdown-obsidian-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) into your vault's `.obsidian/plugins/` and turn it on: [plugin README](integrations/obsidian/README.md).
+
 ## Token-efficient reading for agents
 
 Measured on [`examples/checkout-redesign.smd`](examples/checkout-redesign.smd), a realistic ≈2,400-token PRD:
@@ -352,6 +356,7 @@ styled-markdown/
 │   └── styled-markdown-writer/   agent skill: authoring, with templates and references
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
 ├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
+├── integrations/obsidian/ the Obsidian plugin (id `styled-markdown`)
 ├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)
 ├── docs/                 guides, specification, gallery and screenshots

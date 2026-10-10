@@ -124,6 +124,11 @@ jobs:
           for skill in styled-markdown-reader styled-markdown-writer; do
             zip -r -q -X "../release-assets/$skill.zip" "$skill"
           done
+      - name: Build and zip the Obsidian plugin
+        run: |
+          (cd integrations/obsidian && npm ci --no-audit --no-fund && npm run typecheck)
+          node integrations/obsidian/scripts/build.mjs --out obsidian-plugin/styled-markdown
+          (cd obsidian-plugin && zip -r -q -X "../release-assets/styled-markdown-obsidian-$VERSION.zip" styled-markdown)
       - name: Check the artifacts
         working-directory: release-assets
         run: |
@@ -133,7 +138,8 @@ jobs:
           tgz="styled-markdown-$VERSION.tgz"
           whl="mkdocs_styled_markdown-$VERSION-py3-none-any.whl"
           sdist="mkdocs_styled_markdown-$VERSION.tar.gz"
-          for zip in "$vsix" styled-markdown-reader.zip styled-markdown-writer.zip "$whl"; do
+          obsidian="styled-markdown-obsidian-$VERSION.zip"
+          for zip in "$vsix" styled-markdown-reader.zip styled-markdown-writer.zip "$whl" "$obsidian"; do
             unzip -tq "$zip"   # a real zip archive, not a tar named .zip
           done
           unzip -l "$vsix" | grep -E ' extension/LICENSE(\.txt)?$' > /dev/null || { echo "::error::$vsix has no LICENSE (Open VSX and the Marketplace show it)"; exit 1; }
@@ -145,6 +151,10 @@ jobs:
           unzip -l "$whl" | grep ' mkdocs_styled_markdown/bridge.cjs$' > /dev/null || { echo "::error::$whl has no bridge.cjs"; exit 1; }
           unzip -p "$whl" "mkdocs_styled_markdown-$VERSION.dist-info/METADATA" | grep -x "Version: $VERSION" > /dev/null || { echo "::error::$whl is not version $VERSION"; exit 1; }
           tar -tzf "$sdist" | grep -x "mkdocs_styled_markdown-$VERSION/mkdocs_styled_markdown/bridge.cjs" > /dev/null || { echo "::error::$sdist has no bridge.cjs"; exit 1; }
+          for file in main.js manifest.json styles.css; do
+            unzip -l "$obsidian" | grep " styled-markdown/$file$" > /dev/null || { echo "::error::$obsidian has no styled-markdown/$file"; exit 1; }
+          done
+          unzip -p "$obsidian" styled-markdown/manifest.json | node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8')); if (p.version!==process.env.VERSION) { console.error('::error::Obsidian plugin version '+p.version); process.exit(1); }"
           sha256sum -- *
       - name: Release notes from the changelog
         run: node extension/scripts/release/changelog-excerpt.mjs "$VERSION" --downloads -o release-assets/release-notes.md
@@ -175,7 +185,7 @@ jobs:
         run: |
           set -euo pipefail
           assets=("styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip
-            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz")
+            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz" "styled-markdown-obsidian-$VERSION.zip")
           cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
           if [ "$DRY_RUN" = "true" ]; then
             echo "::notice title=GitHub Release::Dry run: would create $TAG with ${assets[*]} (notes in the job summary)."
@@ -196,10 +206,10 @@ jobs:
           set -euo pipefail
           names=$(gh release view "$TAG" --json assets --jq '.assets[].name')
           for asset in "styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip \
-            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz"; do
+            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz" "styled-markdown-obsidian-$VERSION.zip"; do
             grep -qxF -- "$asset" <<< "$names" || { echo "::error::Release $TAG has no $asset"; exit 1; }
           done
-          echo "Release $TAG lists all six assets."
+          echo "Release $TAG lists all seven assets."
 
   # The publish jobs check out only the release scripts (no dependencies are installed) and
   # publish the exact files attached to the GitHub Release. The `release` environment is

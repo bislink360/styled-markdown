@@ -4,6 +4,7 @@
 //   node .claude/skills/smd-release/scripts/bump-version.mjs <major|minor|patch|X.Y.Z>
 //
 // Updates: extension/package.json, extension/package-lock.json, npm/package.json,
+// integrations/obsidian/manifest.json and versions.json,
 // extension/CHANGELOG.md (new "## X.Y.Z — YYYY-MM-DD" section with empty headings).
 // Does not commit, tag or publish.
 
@@ -31,6 +32,11 @@ const setVersion = (path, update) => {
 setVersion(extPkgPath, (j) => { j.version = next; });
 setVersion(join(ROOT, 'extension', 'package-lock.json'), (j) => { j.version = next; if (j.packages?.['']) j.packages[''].version = next; });
 setVersion(join(ROOT, 'npm', 'package.json'), (j) => { j.version = next; });
+// The Obsidian plugin: its manifest, and versions.json (plugin version → minimum Obsidian version, read by the
+// community plugin list).
+let minAppVersion;
+setVersion(join(ROOT, 'integrations', 'obsidian', 'manifest.json'), (j) => { j.version = next; minAppVersion = j.minAppVersion; });
+if (minAppVersion) setVersion(join(ROOT, 'integrations', 'obsidian', 'versions.json'), (j) => { j[next] = minAppVersion; });
 
 const changelogPath = join(ROOT, 'extension', 'CHANGELOG.md');
 const changelog = readFileSync(changelogPath, 'utf8');
