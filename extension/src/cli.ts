@@ -3,11 +3,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  agentView, applyFixes, DECISION_STATUS_FILTERS, decisionLog, decisionLogMarkdown, diffSmd, formatRelated, formatSmd, ganttDate, ganttDocument,
-  getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderPage, renderRiskPage, RISK_STATUS, riskRegister, riskRegisterSummary,
-  riskRegisterText, SelectorError, SMD_VERSION, smdIndex, smdToMarkdown, statusChanges, statusReportMarkdown, suggest, tasksToCsv, tasksToGantt,
-  type AgentViewOptions, type AgentViewResult, type BudgetResult, type Diagnostic, type DiffResult, type ReportDocument, type Selector,
-  type Tokenizer,
+  agentView, applyFixes, DECISION_STATUS_FILTERS, decisionLog, decisionLogMarkdown, diffSmd, formatRelated, formatSmd, ganttDate,
+  ganttDocument, getDocumentInfo, markdownToSmd, notionRequests, outline, parseSelector, relatedDocs, renderPage, renderRiskPage,
+  RISK_STATUS, riskRegister, riskRegisterSummary, riskRegisterText, SelectorError, SMD_VERSION, smdIndex, smdToConfluence, smdToMarkdown,
+  smdToNotion, statusChanges, statusReportMarkdown, suggest, tasksToCsv, tasksToGantt, type AgentViewOptions, type AgentViewResult,
+  type BudgetResult, type Diagnostic, type DiffResult, type ExportOptions, type ReportDocument, type Selector, type Tokenizer,
 } from './core';
 import { smdToPandocHtml } from './core/pandoc';
 import { languageTag, SUPPORTED_LANGUAGES } from './core/i18n';
@@ -161,6 +161,16 @@ Checking and converting:
       --lang   language of the navigation, search and dashboard, and of documents without "lang:"
                (default: the home document's "lang:", else English)
   smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
+  smd export --to confluence|notion <file.smd> [-o <file>] [--lang <tag>]
+      A page for a wiki, written to -o or printed. smd only writes it: no network, no credentials.
+      confluence  Confluence storage format (body.storage in the REST API, or Insert markup), built-in
+                  macros only: callouts → info/note/tip/warning, code → code, :::details, tabs and agent
+                  blocks → expand, tasks → task lists, badges and statuses → status, :due → dates.
+                  Images by URL; relative ones as page attachments of the same name (upload them too).
+                  Raw HTML is reduced to its text.
+      notion      Notion API blocks as a JSON array of request bodies for PATCH /v1/blocks/{id}/children,
+                  to send in order (each at most 100 top-level and 1000 blocks). Text is split at 2000
+                  characters and nesting past two levels flattened; links within the page become text.
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
   smd init <file.smd> [--template <name>] [--title "My doc"]
       New document from a template: ${Object.keys(TEMPLATES).join(', ')} (default: prd)
@@ -199,7 +209,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
   '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary', '--out', '--base',
-  '--lang', '--pandoc', '--reference-doc',
+  '--lang', '--to', '--pandoc', '--reference-doc',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -281,6 +291,8 @@ function main(argv: string[]): number | Promise<number> {
       return docx(requireFile(positional[0]), args);
     case 'to-md':
       return write(value('-o'), smdToMarkdown(read(requireFile(positional[0])), { readFile: readerFor(positional[0]) }));
+    case 'export':
+      return exportFile(positional[0], args);
     case 'from-md': {
       const file = requireFile(positional[0]);
       return write(value('-o'), markdownToSmd(read(file), path.basename(file, path.extname(file))));
@@ -656,6 +668,25 @@ const LANG_USAGE = '--lang needs a language tag such as de or pt-BR.';
 function langOption(value: string | undefined): string | undefined | null {
   if (value === undefined) return undefined;
   return languageTag(value) ?? null;
+}
+
+const EXPORT_USAGE = 'Usage: smd export --to confluence|notion <file.smd> [-o <file>] [--lang <tag>]';
+
+/** `smd export --to …` formats: each writes the whole document as text. */
+const EXPORTERS = new Map<string, (text: string, options: ExportOptions) => string>([
+  ['confluence', smdToConfluence],
+  ['notion', (text, options) => `${JSON.stringify(notionRequests(smdToNotion(text, options)), null, 2)}\n`],
+]);
+
+/** `smd export --to confluence|notion`: the document in a wiki's own format, to -o or stdout. */
+function exportFile(file: string | undefined, args: Args): number {
+  const to = args.values.get('--to')?.[0];
+  const exporter = to === undefined ? undefined : EXPORTERS.get(to.toLowerCase());
+  if (!exporter) return fail(to === undefined ? EXPORT_USAGE : `Unknown export format "${to}".\n${EXPORT_USAGE}`);
+  const lang = langOption(args.values.get('--lang')?.[0]);
+  if (lang === null) return fail(LANG_USAGE);
+  const source = requireFile(file);
+  return write(args.values.get('-o')?.[0], exporter(read(source), { readFile: readerFor(source), lang }));
 }
 
 /** `smd build <dir>`: the static site; see siteBuild.ts for what it may write and delete. */

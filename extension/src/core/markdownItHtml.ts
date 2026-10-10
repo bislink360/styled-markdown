@@ -396,7 +396,8 @@ function progress({ content, values, color, m }: Directive): string {
   return `<span class="smd-progress" role="progressbar" aria-label="${name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${value}"><span class="smd-progress-track"><span class="smd-progress-bar" style="${escapeHtml(barStyle)}"></span></span><span class="smd-progress-label">${escapeHtml(label)}</span></span>`;
 }
 
-const PRIORITY_COLORS = new Map(Object.entries({
+/** The named colour of each priority, for the :priority pill and the exporters. */
+export const PRIORITY_COLORS = new Map(Object.entries({
   p0: 'red', critical: 'red', p1: 'orange', high: 'orange', p2: 'amber', medium: 'amber', p3: 'blue', low: 'gray', p4: 'gray',
 }));
 

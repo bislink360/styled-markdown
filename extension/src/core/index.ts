@@ -59,3 +59,7 @@ export type {
 } from './issues';
 export { remarkSmd, rehypeSmd, renderSmdFile } from './unified';
 export type { SmdPluginOptions, SmdFileData, SmdVFile, SmdTree, SmdNode } from './unified';
+export { smdToConfluence } from './confluence';
+export { smdToNotion, notionRequests, NOTION_LIMITS } from './notion';
+export type { NotionAnnotations, NotionBlock, NotionRequest, NotionRichText } from './notion';
+export type { ExportOptions } from './exportTree';

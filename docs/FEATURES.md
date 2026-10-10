@@ -26,6 +26,7 @@ Every Styled Markdown feature, with its syntax, what it renders, what an AI agen
 16. [Export and conversion](#16-export-and-conversion)
 17. [CLI reference](#17-cli-reference)
 18. [Templates](#18-templates)
+19. [Web playground](#19-web-playground)
 
 ---
 
@@ -567,7 +568,7 @@ Every API call counts against the SLO. When the error budget is spent, deploys s
 - **`:::glossary`** renders its `- **Term**: definition` list as a definition list, each term with its own anchor (`#term-api`, `#term-error-budget`).
 - **Hover definitions:** the first use of each term in every section (between two headings) gets a dotted underline, shows its definition on hover and links to it, so keyboard and screen-reader users reach it too. Abbreviations are `<abbr title="…">`. Later uses in the same section stay plain, so paragraphs don't fill with underlines.
 - **Matching:** whole words only. An abbreviation (capitals, no lower-case letters: `API`, `SLO`, `P99`) matches exactly as written; other terms also match with a small or capital first letter (`Error budget`, `error budget`). Headings (their ids never change), code, math, links, URLs and attribute values are left alone, and so are `API-first` and `API.md`.
-- The validator warns about list items in a glossary that aren't `**Term**: definition` (`glossary/entry`: that list then renders as a plain list) and about terms defined twice (`glossary/duplicate`), and notes terms never used (`glossary/unused`, info).
+- The validator warns about list items in a glossary that aren't `**Term**: definition` (`glossary/entry`: that list then renders as a plain list) about terms defined twice (`glossary/duplicate`) and about a term whose id `term-…` a heading or another element also has (`glossary/duplicate-id`), and notes terms never used (`glossary/unused`, info).
 - **Agent view:** `<glossary title="Glossary">` with the entries as written, once; uses in the text are not expanded, so they cost no extra tokens. **GitHub** (`smd to-md`): a bold title and the list as it is.
 - **Includes and footnotes:** included text counts as part of the document both ways: `:::include` a shared glossary to use its terms, and the document's terms are marked in included text too. Footnotes are never marked.
 - **Editor:** hover a term anywhere in the text, or in its entry, to see its definition (VS Code and the language server; the document's own glossaries); the `glossary` snippet starts a block.
@@ -607,6 +608,8 @@ People-only content anywhere in the document.
 | `:::agent` | Collapsed "For agents" panel (configurable) | `<agent-instructions>`, **always included**, even when only one section is requested |
 | `:::human` | "For humans" panel | omitted (unless `--include-human`) |
 | `## … {agent=skip}` | "humans only" tag on the heading | whole section omitted |
+
+An `:::agent` block inside a section marked `{agent=skip}` is omitted with the section, so agents never read it; the validator warns about it (`container/agent-in-skip`).
 
 ## 11. Headings, links and anchors
 
@@ -679,6 +682,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[x]{colr=red}` | `attrs/unknown` | → `color` |
 | `:::api{method=POST}` | `attrs/required` | — |
 | unclosed `:::` | `container/unclosed` | adds the closing `:::` at the end |
+| `:::agent` under a `## … {agent=skip}` heading | `container/agent-in-skip` | — (move the block out, or drop `agent=skip`) |
 | unclosed ```` ``` ```` | `fence/unclosed` | adds the closing fence at the end |
 | ```` ```mermaid flowchat ```` | `mermaid/type` | → `flowchart` |
 | `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |
@@ -695,6 +699,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[^old]: …` that nothing references, `[^1]: …` twice | `footnote/unused` (info), `footnote/duplicate` | — |
 | `- API: …` in a `:::glossary` | `glossary/entry` | — (write `- **API**: …`) |
 | two `- **API**: …` entries | `glossary/duplicate` | — |
+| a term **Limits** (`#term-limits`) and a heading `## Term limits` | `glossary/duplicate-id` | — (give the heading `{#…}`, or rename one) |
 | a term no text uses | `glossary/unused` (info) | — |
 | `{{verison}}` with `version:` in the front matter | `variable/undefined` (info) | → `{{version}}` |
 | `{{owner}}` where `owner:` is a mapping | `variable/not-text` | — |
@@ -792,6 +797,8 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 | **Export to Word (.docx)** / `smd docx` | A Word document converted by Pandoc, which you install (below): headings, tables, figure captions, footnotes and equations become Word's own |
 | **Export to Plain Markdown** / `smd to-md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Convert Markdown File to .smd** / `smd from-md` | Adds front matter and turns GitHub alerts into callouts |
+| **Export to Confluence (Storage Format)** / `smd export --to confluence` | A Confluence page body: callouts, code, expands, task lists and statuses as Confluence's own macros (below) |
+| **Export to Notion (JSON)** / `smd export --to notion` | Notion API blocks, cut into the request bodies the API takes (below) |
 | `smd build <dir> --out site` | A static docs site: every document as a page, with navigation, search, backlinks and a dashboard |
 
 ### Publish a docs site: `smd build`
@@ -810,6 +817,53 @@ smd build docs --out site --md --title "Handbook" --base /handbook/ --clean
 - **Offline:** the stylesheet and scripts are written once to `_smd/`. Only pages with Mermaid diagrams or math load Mermaid and the KaTeX stylesheet from a CDN, as `smd render` does.
 - **Safe output:** `--out` (default `site`) must be outside the source folder and must not contain it. An existing folder is only written to when it is empty or a previous build, which `smd build` recognizes by the `.smd-site.json` it writes (the list of files it created). `--clean` first deletes exactly those files, never anything else; without it, files of documents you removed stay until the next `--clean`.
 
+### Confluence and Notion: `smd export`
+
+```bash
+smd export --to confluence docs/plan.smd -o plan.xml   # Confluence storage format
+smd export --to notion docs/plan.smd -o plan.json      # Notion API request bodies
+```
+
+Both write a file (or print it without `-o`) and nothing else: smd never calls the Confluence or Notion API and needs no credentials. In VS Code, **Export to Confluence (Storage Format)** and **Export to Notion (JSON)** save `plan.confluence.xml` or `plan.notion.json` next to the document. In code, `smdToConfluence(text, options)` returns the XML and `smdToNotion(text, options)` the blocks, with `notionRequests(blocks)` to cut them into requests. Options: `readFile` (for `:::include` and code embeds; the CLI and VS Code read files as rendering does), `agentBlocks` (`collapsed` by default, as in the preview), `lang` (labels such as "Note" and "Figure 2" for documents without `lang:`) and `header: false` to leave out the front matter lines.
+
+Both start from the same parse as `smd render`, so includes, figure numbers, footnotes, variables and glossaries come out as rendered, and the human view applies: `:::agent` blocks are collapsed (or `expanded`, or `hidden`), `:::human` blocks and `{agent=skip}` sections stay. The front matter title is the page's own title, so it is not repeated; status, version, updated date, summary, owners and tags start the page. The output is the same every time for the same input (due dates are written as dates, never as "overdue").
+
+| `.smd` | Confluence storage format | Notion blocks |
+|---|---|---|
+| Headings, paragraphs, lists, quotes, rules, tables | `<h1>`–`<h6>`, `<p>`, `<ul>`/`<ol>`, `<blockquote>`, `<hr />`, `<table>` | `heading_1`–`heading_3` (`####` and deeper are `heading_3`), `paragraph`, `bulleted_list_item`/`numbered_list_item`, `quote`, `divider`, `table` |
+| `**bold**`, `*italic*`, `~~strike~~`, `` `code` ``, `==mark==`, `[text]{color=… bg=… weight=bold style=… font=mono}` | `<strong>`, `<em>`, `<u>`, `<code>`, `<span style="…">` for colour, background and strikethrough (size, border and alignment are dropped) | `rich_text` annotations: bold, italic, strikethrough, underline, code, colour (`yellow_background` for marks) |
+| Links | `<a href>`; `#id` links become `<ac:link ac:anchor>`, and the heading or figure they point at gets an `anchor` macro | Absolute http(s) URLs only; links within the page and relative links are plain text |
+| Callouts | `info` (note, info, question), `tip` (tip, success), `note` (warning: Confluence's yellow panel), `warning` (danger: its red one), titled; `{collapsible}` inside an `expand` | `callout` with an emoji and a background colour |
+| Code fences and `file="…"` embeds | `code` macro with `language` and `title` (the code in CDATA) | `code` with `language` (Notion's list; others are `plain text`) and the title as caption |
+| Mermaid | A `code` macro titled "Mermaid diagram" (no app needed) | `code` with language `mermaid`, which Notion draws |
+| Math | Inline: `<code>`; display: a `code` macro titled LaTeX | `equation`, inline and as a block |
+| `:::details`, tabs, collapsed `:::agent` | `expand` macros (one per tab) | `toggle` blocks |
+| `:::card`, `:::human`, expanded `:::agent`, `:::decision`, `:::risk`, `:::api` | `panel` macros; decisions and risks open with their facts (the status as a `status` macro) | `callout` with 🗂️ 👤 🤖 ⚖️ 🚩 🔌 |
+| Task lists | `<ac:task-list>` with complete and incomplete tasks | `to_do` with `checked` |
+| `:badge`, `:status`, `:priority` | `status` macro (Grey, Red, Yellow, Green, Blue, Purple) | Coloured code text |
+| `:due[2026-10-01]`, decision and changelog dates | `<time datetime="2026-10-01" />` | A date mention |
+| `:kbd`, `:mention`, `:progress`, `:metric` | Code, text, `65%`, **42%** Activation ▲ +3% | The same, as text |
+| `:::figure` and `:ref[id]` | An anchor, the content, then **Figure 1:** *caption*; references link to the anchor | The content and the caption; references are text |
+| Footnotes | A linked superscript number; the notes in a numbered list at the end, with anchors | `[1]` in the text; a divider and a numbered list at the end |
+| Images | By URL, `<ac:image><ri:url>`; a relative path as an `<ri:attachment>` of the same file name (upload the file to the page); `data:` URIs and absolute paths keep their alt text | An `image` block for a paragraph that is only an image with an http(s) URL; otherwise the alt text |
+| `:::risk-matrix` | A table of the risks by impact and likelihood | The same table |
+| `:::glossary` | A list of **Term**: definition | The same list |
+| Columns, steps, timeline, `:::box`, changelog | Their content in order (the layout is dropped) | The same |
+
+**Raw HTML is never passed through.** Confluence storage format is XHTML, so HTML in a document could add elements or attributes to the page; both exporters drop the tags instead and keep the text (an HTML block becomes paragraphs of its text; comments, scripts and styles disappear). Text is escaped for XML (or JSON), characters XML can't hold are dropped, and code goes in CDATA sections with `]]>` split.
+
+**Notion's limits.** Notion takes at most 2000 characters in a rich text object, 100 rich text objects in a block, 100 blocks in a `children` array, two levels of nesting and 1000 blocks in one request. The export keeps within them: long text and code are split into several objects (never inside an emoji), a block with more than 100 objects continues in another of the same type, more than 100 children follow their block instead of nesting in it, a table of more than 100 rows continues in another table under the same header, and blocks nested deeper than two levels follow their parent (a table that deep becomes a paragraph per row). `smd export --to notion` writes a JSON array of request bodies, each at most 100 top-level and 1000 blocks. Send them in order to the page, for example:
+
+```bash
+jq -c '.[]' plan.json | while read -r body; do
+  curl -sS -X PATCH "https://api.notion.com/v1/blocks/$PAGE_ID/children" \
+    -H "Authorization: Bearer $NOTION_TOKEN" -H "Notion-Version: 2022-06-28" \
+    -H "Content-Type: application/json" --data "$body"
+done
+```
+
+For Confluence, put the file's content in `body.storage.value` (with `"representation": "storage"`) of a create or update page request, or paste it into the editor with **Insert markup** → Confluence storage format.
+
 ### Use in other tools
 
 Static site generators built on remark/rehype can render `.smd` content with the npm package's plugins. They render the whole file with `renderSmd`, so the HTML is the same as `smd render`'s:
@@ -824,6 +878,8 @@ Static site generators built on remark/rehype can render `.smd` content with the
 - Front matter works whether the source still has it or the host removed it (Astro's `file.data.astro.frontmatter` is read); `header: false` leaves out the title header when the site layout shows the title.
 
 Configuration for Astro, Docusaurus and Next.js, and which hosts are tested: [npm package README](../npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
+
+**MkDocs.** The `mkdocs-styled-markdown` plugin builds the `.smd` files of an MkDocs site as pages in its theme: front matter `title` is the page title, the theme's table of contents comes from the document's headings and ids, links between `.smd` and `.md` pages point at the built pages, `smd.css` and the runtime are added, and `.smd` blocks follow the theme's light or dark mode. `:::include` and code embeds read only inside `docs_dir`. `validate: true` reports `smd validate`'s problems in the build log, with errors as MkDocs warnings so `mkdocs build --strict` fails on them; `md_syntax: true` renders `.smd` syntax in `.md` pages too. It needs Node.js 18+ on `PATH`. Install and options: [INSTALL.md](INSTALL.md#mkdocs-plugin) and the [plugin README](../integrations/mkdocs/README.md).
 
 **Use in other tools.** Anything that renders Markdown with [markdown-it](https://github.com/markdown-it/markdown-it) can render `.smd` syntax with the npm package's plugin, `md.use(require('styled-markdown/markdown-it'))`, styled by `styled-markdown/smd.css`. It adds rules to the host's own instance and leaves plain Markdown alone; options are in the [package README](../npm/README.md#markdown-it-plugin). Other tools can call `renderSmd()` from the same package or run `smd render`.
 
@@ -923,6 +979,7 @@ smd docx <file> [-o out.docx] [--pandoc <path>] [--reference-doc <file.docx>] [-
 smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
                  static docs site: pages, sidebar, search, backlinks, dashboard (section 16)
 smd to-md <file> [-o out.md]
+smd export --to confluence|notion <file> [-o <file>] [--lang <tag>]   Confluence storage format or Notion API blocks (section 16)
 smd from-md <file.md> [-o out.smd]
 smd init <file> [--template <name>] [--title "…"]
 smd templates
@@ -1092,3 +1149,22 @@ These are OpenAI encodings. There is no public tokenizer for current Claude mode
 | `onboarding` | Buddy and manager, Start-here tip, Day 1 setup (tasks, steps, code), Week 1, First 90 days (timeline), Key links, People to meet, Team history (agent-skip), Rules (agent) |
 | `test-plan` | Scope, Strategy (table), Environments (table), Test cases (table), Entry and exit criteria (columns), Risks, Schedule (timeline), Testing rules (agent) |
 | `pr-description` | Links and risk, Summary, Changes, Testing, Risk and rollback (warning), Checklist, Screenshots (agent-skip), Review focus (agent) |
+
+## 19. Web playground
+
+A static page that runs the engine in the browser: edit `.smd` on the left, and see four views on the right, updated as you type.
+
+| Tab | What it shows |
+|---|---|
+| **Preview** | The rendered document with `smd.css` and the page runtime: tabs, copy buttons, KaTeX math and Mermaid diagrams (Mermaid loads the first time a document has a diagram) |
+| **Agent view** | What `smd agent` gives an AI agent, with its token estimate next to the source's |
+| **Diagnostics** | `smd validate`'s problems; clicking one selects its range in the editor |
+| **Markdown** | The plain Markdown export (`smd to-md`), with a copy button |
+
+**Copy link** compresses the document into the link, after `#smd=`. That part of a URL is never sent to a server, so sharing needs no backend; links over 8 KB get a warning because some apps cut them off. Opening a link loads its document, and the last draft is kept in the browser. The theme follows the system, or pick light or dark. Below 768 px the editor and the views stack.
+
+The editor is a plain text area: Tab and Shift+Tab indent and outdent (Esc, then Tab, moves focus on), with line numbers. There is no file system, so `:::include` blocks and `file="…"` code embeds show their fallback notes.
+
+Shared documents are untrusted: the preview renders in a sandboxed frame with an opaque origin, under a Content Security Policy that runs only the playground's own scripts and loads nothing remote (not even images). The threat model is in [playground/README.md](../playground/README.md).
+
+Build it with `npm run build:playground` in `extension/` and open `extension/dist/playground/index.html` (it works from `file://` and from any static host), or unzip `styled-markdown-playground.zip` from a GitHub Release. The playground is not hosted anywhere yet; publishing it, for example on GitHub Pages, is a separate decision.

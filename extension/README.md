@@ -31,6 +31,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | Styled Markdown: Show Agent View / Show Brief Agent View | 🤖 in the title bar |
 | Styled Markdown: Copy Agent View / Copy Sections for an Agent… | — |
 | Styled Markdown: Export to HTML / Export to Plain Markdown (.md) | — |
+| Styled Markdown: Export to Confluence (Storage Format) / Export to Notion (JSON) | — |
 | Styled Markdown: Export to Word (.docx) (needs [Pandoc](https://pandoc.org/installing.html)) | — |
 | Styled Markdown: Convert Markdown File to .smd | Explorer context menu |
 | Styled Markdown: Validate All .smd Files in Workspace | — |

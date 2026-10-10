@@ -129,6 +129,34 @@ test('variables: included text uses the including document\'s front matter', () 
   assert.match(smdToMarkdown(text, { readFile }), /^Included 2.10\.$/m);
 });
 
+test('variables: indented code keeps {{name}} as written in the agent view and smd to-md, as in rendering', () => {
+  const text = doc('Text {{version}}.', '', '    indented {{version}}', '    | cell {{version}} |', '', '- item', '', '        nested {{version}}', '', 'After {{version}}.');
+  const html = renderSmd(text).html;
+  assert.match(html, /<pre data-line="10"><code>indented \{\{version\}\}\n\| cell \{\{version\}\} \|\n<\/code><\/pre>/);
+  assert.match(html, /<code> {2}nested \{\{version\}\}\n<\/code>/);
+  const view = agentView(text).text;
+  assert.match(view, /^Text 2\.10\.$/m);
+  assert.match(view, /^ {4}indented \{\{version\}\}$/m);
+  assert.match(view, /^\|cell \{\{version\}\}\|$/m);
+  assert.match(view, /^ {8}nested \{\{version\}\}$/m);
+  assert.match(view, /^After 2\.10\.$/m);
+  const md = smdToMarkdown(text);
+  assert.match(md, /^ {4}indented \{\{version\}\}$/m);
+  assert.match(md, /^ {4}\| cell \{\{version\}\} \|$/m);
+  assert.match(md, /^ {8}nested \{\{version\}\}$/m);
+  assert.match(md, /^After 2\.10\.$/m);
+  // In included text too, by where the included lines are code.
+  const readFile = (p: string) => (p === 'part.smd' ? 'Included {{version}}.\n\n    code {{version}}\n' : undefined);
+  const including = doc(':::include{file="part.smd"}', ':::');
+  assert.match(renderSmd(including, { readFile }).html, /<code>code \{\{version\}\}\n<\/code>/);
+  assert.match(agentView(including, { readFile }).text, /^Included 2\.10\.\n\n {4}code \{\{version\}\}$/m);
+  assert.match(smdToMarkdown(including, { readFile }), /^Included 2\.10\.\n\n {4}code \{\{version\}\}$/m);
+  // Four spaces that continue a paragraph or a list item are not code.
+  const lazy = doc('Paragraph', '    continued {{version}}', '', '- item', '    more {{version}}');
+  assert.match(agentView(lazy).text, /continued 2\.10\n.*\n.*\n {4}more 2\.10/);
+  assert.match(smdToMarkdown(lazy), /continued 2\.10[\s\S]*more 2\.10/);
+});
+
 test('variables: values are substituted before glossary terms are marked', () => {
   const html = renderSmd('---\nproduct: the API gateway\n---\n## Intro\n\nWe ship {{product}}.\n\n:::glossary\n- **API**: Application Programming Interface\n:::\n').html;
   assert.match(html, /We ship the <a class="smd-term" href="#term-api"><abbr title="Application Programming Interface">API<\/abbr><\/a> gateway\./);

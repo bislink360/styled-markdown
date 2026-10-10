@@ -3,7 +3,7 @@ import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules
 import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem, type Attrs } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
-import { dueState, HEADING_ATTRS } from './render';
+import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
 import { checkIncludes, documentIds, includedFigureIds, includedTermIds } from './includeCheck';
@@ -13,6 +13,8 @@ import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, v
 import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
 import { parseSmd } from './parse';
+import { sectionsOf, type Section } from './sections';
+import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
 import { suggest } from './util';
 import {
@@ -189,12 +191,14 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
   checkFigures(text, lines, fm.bodyStartLine, push, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, push);
-  checkGlossary(lines, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
-  // Release headings are read with their `{{name}}` values in, as they render.
+  // Release headings and glossary terms are read with their `{{name}}` values in, as they render.
   const expanded = lines.map((l) => substituteLine(l, fm.data));
+  const terms = checkGlossary({ lines, expanded }, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
+  checkTermIds(terms, text, lines, fm.bodyStartLine, push);
   for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
   checkVariables(lines, fm.bodyStartLine, fm.data, push);
+  checkAgentInSkipped(text, lines, fm.bodyStartLine, push);
 
   let result = applySuppressions(text, diagnostics);
   if (options.rules) result = applyRuleSettings(result, options.rules);
@@ -688,9 +692,11 @@ function unknownRef(ref: FigureRef, ids: string[], push: Push): void {
 
 /**
  * Glossary entries are `**Term**: definition` items, each term is defined once, and each is used in the text;
- * `included` gives the terms used in included text (rendering it only when a term is not used otherwise).
+ * `included` gives the terms used in included text (rendering it only when a term is not used otherwise). A use in
+ * a `{{name}}` value counts, as rendering marks it: uses are found in the lines as written and with the values in.
  */
-function checkGlossary(lines: string[], bodyStart: number, push: Push, included: () => Set<string>): void {
+function checkGlossary(text: { lines: string[]; expanded: string[] }, bodyStart: number, push: Push, included: () => Set<string>): GlossaryEntry[] {
+  const { lines, expanded } = text;
   const glossary = findGlossary(lines, bodyStart);
   for (const problem of glossary.problems) glossaryProblem(problem, push);
   const first = new Map<string, GlossaryEntry>();
@@ -703,8 +709,11 @@ function checkGlossary(lines: string[], bodyStart: number, push: Push, included:
       first.set(entry.id, entry);
     }
   }
-  if (!first.size) return;
+  if (!first.size) return [];
   const used = new Set(findTermUses(lines, bodyStart, glossary).map((u) => u.entry.id));
+  if (expanded.some((l, i) => l !== lines[i])) {
+    for (const use of findTermUses(expanded, bodyStart, glossary)) used.add(use.entry.id);
+  }
   const unused = [...first.values()].filter((e) => !used.has(e.id));
   const usedInIncludes = unused.length ? included() : new Set<string>();
   for (const entry of unused) {
@@ -712,6 +721,74 @@ function checkGlossary(lines: string[], bodyStart: number, push: Push, included:
       push(entry.line, entry.column, entry.endColumn, 'info', 'glossary/unused', `"${entry.term}" is defined in the glossary but never used in the text.`);
     }
   }
+  return [...first.values()];
+}
+
+/** Where an id is given to something other than a glossary term: the zero-based line, and what has it. */
+interface IdOwner { line: number; what: 'heading' | 'element' }
+
+/**
+ * A term's definition has the id `term-{slug}`. When a heading or another element has the same id, links to it and
+ * the term's uses may go to the wrong one. Ids never change silently (inbound links keep working), so this warns
+ * instead: the author gives the other element its own `{#id}` or renames one of them.
+ */
+function checkTermIds(terms: GlossaryEntry[], text: string, lines: string[], bodyStart: number, push: Push): void {
+  if (!terms.length) return;
+  const owners = termLikeIds(parseSmd(text).headings, lines, bodyStart);
+  for (const entry of terms) {
+    const owner = owners.get(entry.id);
+    if (!owner) continue;
+    push(entry.line, entry.column, entry.endColumn, 'warning', 'glossary/duplicate-id',
+      `The definition of "${entry.term}" gets the id "${entry.id}", which the ${owner.what} on line ${owner.line + 1} also has, so links to #${entry.id} and the uses of "${entry.term}" may lead there. Give the ${owner.what} its own id with {#…}, or rename one of them.`);
+  }
+}
+
+/** Ids starting with `term-` that headings, attribute lists or raw HTML give, outside code, with their first owner. */
+function termLikeIds(headings: Heading[], lines: string[], bodyStart: number): Map<string, IdOwner> {
+  const owners = new Map<string, IdOwner>();
+  const add = (id: string, owner: IdOwner) => {
+    if (id.startsWith('term-') && !owners.has(id)) owners.set(id, owner);
+  };
+  for (const h of headings) add(h.slug, { line: h.line, what: 'heading' });
+  for (const [i, fence] of outsideCode(lines, bodyStart, lines.length - 1)) {
+    if (fence || !lines[i].includes('term-')) continue;
+    for (const id of explicitIds(lines[i])) add(id, { line: i, what: 'element' });
+  }
+  return owners;
+}
+
+/** The ids a line gives in attribute lists (`{#id}`) and raw HTML (`id="…"`), outside inline code. */
+function explicitIds(raw: string): string[] {
+  const line = raw.replaceAll(/(`+)[\s\S]*?\1/g, (m) => ' '.repeat(m.length));
+  const fromAttrs = [...line.matchAll(/\{([^{}]*)\}/g)].flatMap((m) => [...m[1].matchAll(/(?:^|\s)#([^\s{}]+)/g)].map((id) => id[1]));
+  const fromHtml = line.includes('<') ? [...line.matchAll(/\s(?:id|name)=["']([^"']+)["']/g)].map((m) => m[1]) : [];
+  return [...fromAttrs, ...fromHtml];
+}
+
+/**
+ * `:::agent` instructions inside a section whose heading has `{agent=skip}`: the agent view leaves the whole section
+ * out, so agents never read them. A warning only; rendering is not affected.
+ */
+function checkAgentInSkipped(text: string, lines: string[], bodyStart: number, push: Push): void {
+  const skipped = sectionsOf(parseSmd(text).headings, lines.length).filter((s) => s.heading.agent === 'skip');
+  if (!skipped.length) return;
+  for (const [i, fence] of outsideCode(lines, bodyStart, lines.length - 1)) {
+    const section = fence ? undefined : skippedSection(lines[i], i, skipped);
+    if (section) agentInSkipped(lines[i], i, section, push);
+  }
+}
+
+/** The outermost skipped section that the `:::agent` opening on `line` is in, if it opens one. */
+function skippedSection(raw: string, line: number, skipped: Section[]): Section | undefined {
+  const open = CONTAINER_OPEN.exec(raw);
+  if (!open || parseContainerInfo(open[3] + open[4])?.name !== 'agent') return undefined;
+  return skipped.find((s) => line > s.start && line <= s.end);
+}
+
+function agentInSkipped(raw: string, line: number, section: Section, push: Push): void {
+  const column = raw.indexOf('agent');
+  push(line, column, column + 'agent'.length, 'warning', 'container/agent-in-skip',
+    `This :::agent block is in the section "${section.heading.text}" (line ${section.start + 1}), whose heading has {agent=skip}, so agent views leave it out and agents never read these instructions. Move the block out of that section, or remove agent=skip from the heading.`);
 }
 
 function glossaryProblem(problem: GlossaryProblem, push: Push): void {

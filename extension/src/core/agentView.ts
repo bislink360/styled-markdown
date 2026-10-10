@@ -11,8 +11,10 @@ import { parseFrontMatter, asStringList } from './frontmatter';
 import {
   includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
-import { includedLines, includeSource } from './includeText';
-import { figureIndex, parseSmd, type FigureIndex } from './parse';
+import {
+  expandedFigures, figuresOf, includedCodeLines, includedLines, includeKey, includeSource, type ExpandedFigures,
+} from './includeText';
+import { codeLines, parseSmd } from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { quoteCite } from './quote';
@@ -141,6 +143,9 @@ const CONTAINER_HEADS = new Map<string, (c: HeadSource) => ContainerHead>([
   ['quote', quoteHead],
 ]);
 
+/** What the view reads included files with: nothing when includes are only pointers. */
+const viewReader = (options: AgentViewOptions) => (options.includes === false ? undefined : options.readFile);
+
 const NOISE_KEYS = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
 
 interface ViewScope {
@@ -222,7 +227,9 @@ function assemble(head: ViewHead, body: string): string {
     .trim() + '\n';
 }
 
-export function agentView(text: string, options: AgentViewOptions = {}): AgentViewResult {
+export function agentView(text: string, viewOptions: AgentViewOptions = {}): AgentViewResult {
+  // Figures are numbered once, for every pass over the document.
+  const options: TransformOptions = { ...viewOptions, figures: expandedFigures(text, viewReader(viewOptions)) };
   const scope = viewScope(text, options);
   if (options.maxTokens !== undefined) return budgetedView(text, scope, options);
   const body = transform(scope.lines, scope.bodyStart, scope.inScope, options);
@@ -330,12 +337,16 @@ function header(data: Record<string, unknown>, sections: string[] | null): strin
 
 interface TransformOptions extends AgentViewOptions {
   onlyAgentBlocks?: boolean;
-  /** The document's figures, when `lines` are not the whole document (see agentViewOfRange). */
-  figures?: FigureIndex;
+  /** The figures of the document and of what it includes, numbered together; found from `lines` when left out. */
+  figures?: ExpandedFigures;
+  /** Which document of `figures` the lines are: an included one's key (see includeKey), `''` for the root document. */
+  figureKey?: string;
   /** The document's changelog entry headings by line, when `lines` are not the whole document. */
   changelogs?: ReadonlyMap<number, ChangelogEntry>;
   /** The document's front matter, for `{{name}}`; read from `lines` when left out. */
   variables?: Variables;
+  /** The lines of `lines` that are code, where `{{name}}` is never replaced; found in `lines` when left out. */
+  codeLines?: ReadonlySet<number>;
   /** Receives every emitted line with the source line it came from. */
   collect?: Array<[at: number, line: string]>;
   /** Inside an included document: where its own includes resolve. */
@@ -345,9 +356,11 @@ interface TransformOptions extends AgentViewOptions {
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
-  const figures = options.figures ?? figureIndex(lines.join('\n'));
+  const { figures, ownFigures, code } = documentContext(lines, options);
   const variables = options.variables ?? documentVariables(lines);
-  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, variables);
+  // `{{name}}` is never replaced in code, as in rendering; indented code reaches the line handling below.
+  let lineVariables: Variables | undefined = variables;
+  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, lineVariables);
   const changelogs = options.changelogs ?? changelogEntries(lines);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
@@ -370,6 +383,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
   for (let i = from; i < lines.length; i++) {
     const raw = lines[i];
+    lineVariables = variablesOn(i, code, variables);
 
     // ---- fenced code ----
     if (fence) {
@@ -425,11 +439,11 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
         continue;
       }
       if (info.name === 'include') {
-        includeView(info, lines, options).forEach((l) => emit(l, i));
+        includeView(info, lines, i, { ...options, figures }).forEach((l) => emit(l, i));
         frame.drop = true; // the body is fallback text for renderers that can't include
         continue;
       }
-      const head = CONTAINER_HEADS.get(info.name)?.({ title, values: info.attrs.values, id: info.attrs.id, figure: figures.byLine.get(i) }) ?? {};
+      const head = CONTAINER_HEADS.get(info.name)?.({ title, values: info.attrs.values, id: info.attrs.id, figure: ownFigures.get(i) }) ?? {};
       if (head.line !== undefined) emit(head.line, i);
       frame.close = head.close;
       continue;
@@ -468,9 +482,27 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
+interface DocumentContext { figures: ExpandedFigures; ownFigures: ReadonlyMap<number, Figure>; code: ReadonlySet<number> }
+
+/**
+ * The figures (numbered with the rest of the expanded document), this document's own figures by line, and the lines
+ * of code, from `options` when the caller has them, else from `lines`.
+ */
+function documentContext(lines: string[], options: TransformOptions): DocumentContext {
+  const text = lines.join('\n');
+  const figures = options.figures ?? expandedFigures(text, viewReader(options));
+  return { figures, ownFigures: figuresOf(figures, options.figureKey ?? ''), code: options.codeLines ?? codeLines(text) };
+}
+
+/** The front matter variables `{{name}}` stands for on a line: none on a line of code. */
+function variablesOn(line: number, code: ReadonlySet<number>, variables: Variables): Variables | undefined {
+  return code.has(line) ? undefined : variables;
+}
+
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
-  const whole = { figures: figureIndex(lines.join('\n')), changelogs: changelogEntries(lines), variables: documentVariables(lines) };
+  const text = lines.join('\n');
+  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), codeLines: codeLines(text) };
   return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
 }
 
@@ -485,7 +517,7 @@ function headingText(raw: string, entry: ChangelogEntry | undefined, text: (s: s
  * `:::include` in the agent view: the included text inside `<included file="…" section="…">` (line references in it
  * are lines of that file), or a one-line pointer when it isn't expanded or can't be read.
  */
-function includeView(info: ContainerInfo, lines: string[], options: TransformOptions): string[] {
+function includeView(info: ContainerInfo, lines: string[], line: number, options: TransformOptions): string[] {
   const request = includeRequest(info.attrs.values);
   if (!request) return ['[include: no file given]'];
   const scope = options.includeScope ?? rootScope(lines.join('\n'));
@@ -499,7 +531,11 @@ function includeView(info: ContainerInfo, lines: string[], options: TransformOpt
   }
   const inc = result.include;
   // Included text uses this document's front matter variables, as the rendered HTML does.
-  const inner = { ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines) };
+  const inner = {
+    ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines), codeLines: includedCodeLines(inc),
+    // Its figures are numbered with the including document's, and `:ref` resolves across both, as in rendered output.
+    figureKey: includeKey(options.figureKey ?? '', line),
+  };
   const body = transform(includedLines(inc).slice(0, inc.end + 1), inc.start, () => true, inner);
   const section = request.section ? ` section="${request.section}"` : '';
   return [`<included file="${inc.path}"${section}>`, ...withoutBlankEnds(body.split('\n')), '</included>'];
@@ -604,7 +640,10 @@ function plain(s: string, today: string | undefined, openTask: boolean, figures?
  * size. Brief views count completed tasks per scope, so they are transformed per range.
  */
 function sectionViews(lines: string[], from: number, documentOptions: TransformOptions): (start: number, end: number) => string {
-  const options = { ...documentOptions, figures: figureIndex(lines.join('\n')), changelogs: changelogEntries(lines), variables: documentVariables(lines) };
+  const text = lines.join('\n');
+  const options = {
+    ...documentOptions, figures: expandedFigures(text, viewReader(documentOptions)), changelogs: changelogEntries(lines), variables: documentVariables(lines), codeLines: codeLines(text),
+  };
   if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);
   const emitted: Array<[number, string]> = [];
   transform(lines, from, () => true, { ...options, collect: emitted });

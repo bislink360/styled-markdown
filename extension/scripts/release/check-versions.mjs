@@ -4,7 +4,8 @@
 //   node extension/scripts/release/check-versions.mjs <vX.Y.Z> [--branches [--commit <rev>]] [--output <file>]
 //
 // - the tag is a plain vX.Y.Z
-// - extension/package.json, extension/package-lock.json and npm/package.json have version X.Y.Z
+// - extension/package.json, extension/package-lock.json, npm/package.json and the MkDocs plugin's
+//   integrations/mkdocs/pyproject.toml have version X.Y.Z
 // - extension/CHANGELOG.md has a non-empty "## X.Y.Z" section
 // - with --branches: the tagged commit (or --commit, e.g. HEAD before tagging) is on origin/main
 //   or an origin/release/* branch
@@ -24,10 +25,10 @@ export function isReleaseBranch(name) {
 
 /**
  * Problems with a release, as messages; empty when it may ship. Without `branches`, the branch isn't checked.
- * @param {{ tag: string, extensionVersion?: string, lockVersion?: string, npmVersion?: string, changelog?: string, branches?: string[] }} release
+ * @param {{ tag: string, extensionVersion?: string, lockVersion?: string, npmVersion?: string, pythonVersion?: string, changelog?: string, branches?: string[] }} release
  * @returns {string[]}
  */
-export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, changelog, branches }) {
+export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, pythonVersion, changelog, branches }) {
   const version = versionFromTag(tag);
   if (!version) return [`"${tag}" is not a release tag (expected vX.Y.Z).`];
   const problems = [];
@@ -35,6 +36,7 @@ export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, c
     ['extension/package.json', extensionVersion],
     ['extension/package-lock.json', lockVersion],
     ['npm/package.json', npmVersion],
+    ['integrations/mkdocs/pyproject.toml', pythonVersion],
   ];
   for (const [file, found] of manifests) {
     if (found !== version) problems.push(`${file} has version ${found ?? '(none)'}, the tag is v${version}.`);
@@ -50,6 +52,22 @@ export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, c
 
 function readJsonVersion(path) {
   return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).version : undefined;
+}
+
+/** The `version` of the `[project]` table in a pyproject.toml, or undefined. */
+export function pyprojectVersion(text) {
+  let table = '';
+  for (const line of text.split('\n').map((l) => l.trim())) {
+    const header = /^\[([^\]]+)\]$/.exec(line);
+    if (header) table = header[1].trim();
+    const version = table === 'project' ? /^version *= *["']([^"']+)["']/.exec(line) : null;
+    if (version) return version[1];
+  }
+  return undefined;
+}
+
+function readPyprojectVersion(path) {
+  return existsSync(path) ? pyprojectVersion(readFileSync(path, 'utf8')) : undefined;
 }
 
 /** Remote branches that contain the commit, from the clone's own git; empty when it can't tell. */
@@ -85,6 +103,7 @@ function main(argv) {
     extensionVersion: readJsonVersion(join(root, 'extension', 'package.json')),
     lockVersion: readJsonVersion(join(root, 'extension', 'package-lock.json')),
     npmVersion: readJsonVersion(join(root, 'npm', 'package.json')),
+    pythonVersion: readPyprojectVersion(join(root, 'integrations', 'mkdocs', 'pyproject.toml')),
     changelog: readFileSync(join(root, 'extension', 'CHANGELOG.md'), 'utf8'),
     branches: options.branches ? branchesContaining(options.commit ?? `${options.tag}^{commit}`) : undefined,
   });
