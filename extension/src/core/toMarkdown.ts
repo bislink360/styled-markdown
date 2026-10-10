@@ -6,7 +6,7 @@ import {
   containerEnd, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
 import { includedLines, includeSource } from './includeText';
-import { figureIndex } from './parse';
+import { codeLines, figureIndex } from './parse';
 import { quoteCite } from './quote';
 import { HEADING_ATTRS } from './render';
 import { riskMatrixMarkdown } from './risks';
@@ -33,6 +33,8 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
   const out: string[] = [];
   const figures = figureIndex(text);
   const variables = variablesOf(options, lines);
+  // Indented code reaches the line handling below; `{{name}}` is never replaced there, as in rendering.
+  const code = codeLines(text);
   interface Frame { len: number; prefix: string; close?: string; end?: string[] }
   const stack: Frame[] = [];
   const prefix = () => stack.map((f) => f.prefix).join('');
@@ -111,7 +113,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       continue;
     }
     const content = /^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line;
-    emit(convertInline(substituteLine(content, variables), figures.byId));
+    emit(convertInline(substituteLine(content, variablesOn(i, code, variables)), figures.byId));
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
@@ -121,6 +123,8 @@ const includeScopes = new WeakMap<ToMarkdownOptions, IncludeScope>();
 /** The front matter variables of the including document, for included documents. */
 const includeVariables = new WeakMap<ToMarkdownOptions, Variables>();
 const variablesOf = (options: ToMarkdownOptions, lines: string[]) => includeVariables.get(options) ?? documentVariables(lines);
+/** The variables `{{name}}` stands for on a line: none on a line of code. */
+const variablesOn = (line: number, code: ReadonlySet<number>, variables: Variables) => (code.has(line) ? undefined : variables);
 
 interface IncludeAt {
   lines: string[];

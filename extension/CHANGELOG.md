@@ -11,6 +11,7 @@
 ### Deprecated
 
 ### Fixed
+- Agent view and `smd to-md`: `{{name}}` in an indented code block (four spaces, also inside lists and in included text) stays as written, as in rendered output; they used to show the front matter value there. Library: `parseSmd(text).code` lists the lines markdown-it reads as code.
 
 ## 1.6.0 — 2026-10-05
 

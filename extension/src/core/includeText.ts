@@ -1,6 +1,6 @@
 import { dirOf, outsideCode, rebaseFenceFile, rebaseUrl, shiftedLevel, type IncludeSource, type LoadedInclude } from './include';
 import { findLinks } from './links';
-import { parseSmd } from './parse';
+import { codeLines, parseSmd } from './parse';
 
 /** `:::include` for the line-based views (agent view, plain Markdown, validation), which read text rather than tokens. */
 
@@ -21,6 +21,20 @@ export function includedLines(include: LoadedInclude): string[] {
     lines[i] = fence ? rebaseFenceFile(lines[i], dir) : shiftHeading(lines[i], include.shift);
   }
   return lines;
+}
+
+/**
+ * The included lines as text on their own, as rendering parses them, and what to add to a line of it for the
+ * line of the included file. A leading blank line keeps a body that starts with `---` from reading as front matter.
+ */
+export function includedText(include: LoadedInclude): { text: string; offset: number } {
+  return { text: ['', ...include.lines.slice(include.start, include.end + 1)].join('\n'), offset: include.start - 1 };
+}
+
+/** The lines of the included file (zero-based, in that file) that are code where it is included. */
+export function includedCodeLines(include: LoadedInclude): Set<number> {
+  const { text, offset } = includedText(include);
+  return codeLines(text, offset);
 }
 
 /** Links, images, reference definitions and HTML href/src; `:::include` paths stay, as nested includes resolve them. */

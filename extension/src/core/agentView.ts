@@ -11,8 +11,8 @@ import { parseFrontMatter, asStringList } from './frontmatter';
 import {
   includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
-import { includedLines, includeSource } from './includeText';
-import { figureIndex, parseSmd, type FigureIndex } from './parse';
+import { includedCodeLines, includedLines, includeSource } from './includeText';
+import { codeLines, figureIndex, parseSmd, type FigureIndex } from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { quoteCite } from './quote';
@@ -336,6 +336,8 @@ interface TransformOptions extends AgentViewOptions {
   changelogs?: ReadonlyMap<number, ChangelogEntry>;
   /** The document's front matter, for `{{name}}`; read from `lines` when left out. */
   variables?: Variables;
+  /** The lines of `lines` that are code, where `{{name}}` is never replaced; found in `lines` when left out. */
+  codeLines?: ReadonlySet<number>;
   /** Receives every emitted line with the source line it came from. */
   collect?: Array<[at: number, line: string]>;
   /** Inside an included document: where its own includes resolve. */
@@ -347,7 +349,10 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   const lineRefs = options.lineRefs ?? true;
   const figures = options.figures ?? figureIndex(lines.join('\n'));
   const variables = options.variables ?? documentVariables(lines);
-  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, variables);
+  const code = options.codeLines ?? codeLines(lines.join('\n'));
+  // `{{name}}` is never replaced in code, as in rendering; indented code reaches the line handling below.
+  let lineVariables: Variables | undefined = variables;
+  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, lineVariables);
   const changelogs = options.changelogs ?? changelogEntries(lines);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
@@ -370,6 +375,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
   for (let i = from; i < lines.length; i++) {
     const raw = lines[i];
+    lineVariables = variablesOn(i, code, variables);
 
     // ---- fenced code ----
     if (fence) {
@@ -468,9 +474,15 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
+/** The front matter variables `{{name}}` stands for on a line: none on a line of code. */
+function variablesOn(line: number, code: ReadonlySet<number>, variables: Variables): Variables | undefined {
+  return code.has(line) ? undefined : variables;
+}
+
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
-  const whole = { figures: figureIndex(lines.join('\n')), changelogs: changelogEntries(lines), variables: documentVariables(lines) };
+  const text = lines.join('\n');
+  const whole = { figures: figureIndex(text), changelogs: changelogEntries(lines), variables: documentVariables(lines), codeLines: codeLines(text) };
   return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
 }
 
@@ -499,7 +511,9 @@ function includeView(info: ContainerInfo, lines: string[], options: TransformOpt
   }
   const inc = result.include;
   // Included text uses this document's front matter variables, as the rendered HTML does.
-  const inner = { ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines) };
+  const inner = {
+    ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines), codeLines: includedCodeLines(inc),
+  };
   const body = transform(includedLines(inc).slice(0, inc.end + 1), inc.start, () => true, inner);
   const section = request.section ? ` section="${request.section}"` : '';
   return [`<included file="${inc.path}"${section}>`, ...withoutBlankEnds(body.split('\n')), '</included>'];
@@ -604,7 +618,10 @@ function plain(s: string, today: string | undefined, openTask: boolean, figures?
  * size. Brief views count completed tasks per scope, so they are transformed per range.
  */
 function sectionViews(lines: string[], from: number, documentOptions: TransformOptions): (start: number, end: number) => string {
-  const options = { ...documentOptions, figures: figureIndex(lines.join('\n')), changelogs: changelogEntries(lines), variables: documentVariables(lines) };
+  const text = lines.join('\n');
+  const options = {
+    ...documentOptions, figures: figureIndex(text), changelogs: changelogEntries(lines), variables: documentVariables(lines), codeLines: codeLines(text),
+  };
   if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);
   const emitted: Array<[number, string]> = [];
   transform(lines, from, () => true, { ...options, collect: emitted });

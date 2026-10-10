@@ -31,6 +31,11 @@ export interface ParseResult {
   frontMatter: Record<string, unknown>;
   /** The `:::figure` blocks in document order, numbered as the rendered HTML numbers them. */
   figures: Figure[];
+  /**
+   * The lines of code blocks, indented and fenced, nested ones included, as markdown-it reads them:
+   * [first, end) zero-based, the end exclusive. Text there is never substituted or styled.
+   */
+  code: Array<[number, number]>;
 }
 
 /** A `:::figure` before numbering, with a body-relative line. */
@@ -49,6 +54,8 @@ interface Block {
   /** Ids other than heading ids, outside footnote definitions. */
   ids: string[];
   figures: FigureSource[];
+  /** Code blocks in the block (nested ones too), [first, end) with body-relative lines. */
+  code: Array<[number, number]>;
   /** Definitions after the previous block, up to the end of this one (inside it too). */
   definitions: Definition[];
   /** Footnote definitions in the block, with the ids inside each: they render only if the footnote does. */
@@ -168,7 +175,8 @@ export function parseSmd(text: string): ParseResult {
     if (typeof value === 'string') collectIds(parser().parseInline(value, newEnv(0, labelsOf(state))), ids);
   }
 
-  const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine) };
+  const code = state.blocks.flatMap((b) => b.code).map(([start, end]): [number, number] => [start + fm.bodyStartLine, end + fm.bodyStartLine]);
+  const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code };
   results.unshift({ text, result });
   results.length = Math.min(results.length, 3);
   return result;
@@ -183,6 +191,15 @@ export interface FigureIndex {
 export function figureIndex(text: string): FigureIndex {
   const figures = parseSmd(text).figures;
   return { byLine: new Map(figures.map((f) => [f.line, f])), byId: figureTargets(figures) };
+}
+
+/** The zero-based lines of a document that are code (see ParseResult.code), plus `offset`. */
+export function codeLines(text: string, offset = 0): Set<number> {
+  const lines = new Set<number>();
+  for (const [start, end] of parseSmd(text).code) {
+    for (let line = start; line < end; line++) lines.add(line + offset);
+  }
+  return lines;
 }
 
 /** Every block's figures in order, numbered per kind, with lines in the whole document. */
@@ -285,6 +302,7 @@ function shift(block: Block, delta: number): Block {
     end: block.end + delta,
     headings: block.headings.map((h) => ({ ...h, line: h.line + delta })),
     figures: block.figures.map((f) => ({ ...f, line: f.line + delta })),
+    code: block.code.map(([start, end]) => [start + delta, end + delta]),
     definitions: block.definitions.map((d) => ({ ...d, line: d.line + delta })),
   };
 }
@@ -329,7 +347,7 @@ function parseRange(
   let d = 0;
   for (const g of groups) {
     const block: Block = {
-      start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), definitions: [], notes: [], noteRefs: [],
+      start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), code: codeIn(g.tokens, from), definitions: [], notes: [], noteRefs: [],
     };
     while (h < env.headings.length && env.headings[h].line < g.end) {
       if (env.headings[h].line >= g.start) { block.headings.push(env.headings[h]); block.bases.push(env.bases![h]); }
@@ -419,6 +437,13 @@ function figuresIn(tokens: Token[], from: number): FigureSource[] {
       const meta = t.meta as ContainerMeta;
       return { id: meta.attrs.id, kind: meta.attrs.values.kind, line: from + (t.map?.[0] ?? 0) };
     });
+}
+
+/** The lines of the indented and fenced code blocks among a block's tokens, nested ones too, body-relative. */
+function codeIn(tokens: Token[], from: number): Array<[number, number]> {
+  return tokens
+    .filter((t) => t.map && (t.type === 'code_block' || t.type === 'fence'))
+    .map((t): [number, number] => [from + t.map![0], from + t.map![1]]);
 }
 
 function collectIds(tokens: Token[], out: Set<string> | string[], skipHeadings = false): void {
