@@ -12,6 +12,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 - [Use `smd` in CI](#use-smd-in-ci)
 - [Pre-commit hooks](#pre-commit-hooks)
 - [MkDocs plugin](#mkdocs-plugin)
+- [Web playground](#web-playground)
 - [Update or uninstall](#update-or-uninstall)
 - [Build from source](#build-from-source)
 - [Troubleshooting](#troubleshooting)
@@ -259,6 +260,15 @@ plugins:
 ```
 
 Options, links, the table of contents, dark mode and includes: [plugin README](../integrations/mkdocs/README.md).
+
+## Web playground
+
+The playground needs no installation: it is a static page that runs the engine in the browser (see [FEATURES.md §19](FEATURES.md#19-web-playground)).
+
+- **From a release:** download `styled-markdown-playground.zip`, unzip it and open `index.html` in a browser.
+- **From source:** `cd extension && npm ci && npm run build:playground`, then open `extension/dist/playground/index.html`.
+
+It works from `file://` and from any static web server. It needs a current browser (Chrome or Edge 103+, Firefox 113+, Safari 16.4+) for the compressed share links. It is not hosted anywhere yet; publishing it (for example on GitHub Pages) is a separate maintainer decision.
 
 ## Update or uninstall
 
