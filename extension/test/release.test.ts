@@ -87,7 +87,7 @@ test('releaseNotes puts the downloads table first when asked', () => {
   assert.ok(notes.endsWith('\n\nBody\n'));
   const assets = [
     'styled-markdown-1.5.0.vsix', 'styled-markdown-1.5.0.tgz', 'styled-markdown-reader.zip', 'styled-markdown-writer.zip',
-    'mkdocs_styled_markdown-1.5.0-py3-none-any.whl', 'mkdocs_styled_markdown-1.5.0.tar.gz',
+    'styled-markdown-playground.zip', 'mkdocs_styled_markdown-1.5.0-py3-none-any.whl', 'mkdocs_styled_markdown-1.5.0.tar.gz',
   ];
   for (const asset of assets) {
     assert.ok(downloadsTable('1.5.0').includes(`\`${asset}\``), asset);
