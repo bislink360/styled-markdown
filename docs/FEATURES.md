@@ -568,7 +568,7 @@ Every API call counts against the SLO. When the error budget is spent, deploys s
 - **`:::glossary`** renders its `- **Term**: definition` list as a definition list, each term with its own anchor (`#term-api`, `#term-error-budget`).
 - **Hover definitions:** the first use of each term in every section (between two headings) gets a dotted underline, shows its definition on hover and links to it, so keyboard and screen-reader users reach it too. Abbreviations are `<abbr title="…">`. Later uses in the same section stay plain, so paragraphs don't fill with underlines.
 - **Matching:** whole words only. An abbreviation (capitals, no lower-case letters: `API`, `SLO`, `P99`) matches exactly as written; other terms also match with a small or capital first letter (`Error budget`, `error budget`). Headings (their ids never change), code, math, links, URLs and attribute values are left alone, and so are `API-first` and `API.md`.
-- The validator warns about list items in a glossary that aren't `**Term**: definition` (`glossary/entry`: that list then renders as a plain list) and about terms defined twice (`glossary/duplicate`), and notes terms never used (`glossary/unused`, info).
+- The validator warns about list items in a glossary that aren't `**Term**: definition` (`glossary/entry`: that list then renders as a plain list) about terms defined twice (`glossary/duplicate`) and about a term whose id `term-…` a heading or another element also has (`glossary/duplicate-id`), and notes terms never used (`glossary/unused`, info).
 - **Agent view:** `<glossary title="Glossary">` with the entries as written, once; uses in the text are not expanded, so they cost no extra tokens. **GitHub** (`smd to-md`): a bold title and the list as it is.
 - **Includes and footnotes:** included text counts as part of the document both ways: `:::include` a shared glossary to use its terms, and the document's terms are marked in included text too. Footnotes are never marked.
 - **Editor:** hover a term anywhere in the text, or in its entry, to see its definition (VS Code and the language server; the document's own glossaries); the `glossary` snippet starts a block.
@@ -608,6 +608,8 @@ People-only content anywhere in the document.
 | `:::agent` | Collapsed "For agents" panel (configurable) | `<agent-instructions>`, **always included**, even when only one section is requested |
 | `:::human` | "For humans" panel | omitted (unless `--include-human`) |
 | `## … {agent=skip}` | "humans only" tag on the heading | whole section omitted |
+
+An `:::agent` block inside a section marked `{agent=skip}` is omitted with the section, so agents never read it; the validator warns about it (`container/agent-in-skip`).
 
 ## 11. Headings, links and anchors
 
@@ -680,6 +682,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[x]{colr=red}` | `attrs/unknown` | → `color` |
 | `:::api{method=POST}` | `attrs/required` | — |
 | unclosed `:::` | `container/unclosed` | adds the closing `:::` at the end |
+| `:::agent` under a `## … {agent=skip}` heading | `container/agent-in-skip` | — (move the block out, or drop `agent=skip`) |
 | unclosed ```` ``` ```` | `fence/unclosed` | adds the closing fence at the end |
 | ```` ```mermaid flowchat ```` | `mermaid/type` | → `flowchart` |
 | `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |
@@ -696,6 +699,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[^old]: …` that nothing references, `[^1]: …` twice | `footnote/unused` (info), `footnote/duplicate` | — |
 | `- API: …` in a `:::glossary` | `glossary/entry` | — (write `- **API**: …`) |
 | two `- **API**: …` entries | `glossary/duplicate` | — |
+| a term **Limits** (`#term-limits`) and a heading `## Term limits` | `glossary/duplicate-id` | — (give the heading `{#…}`, or rename one) |
 | a term no text uses | `glossary/unused` (info) | — |
 | `{{verison}}` with `version:` in the front matter | `variable/undefined` (info) | → `{{version}}` |
 | `{{owner}}` where `owner:` is a mapping | `variable/not-text` | — |

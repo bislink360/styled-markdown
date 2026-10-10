@@ -108,55 +108,70 @@ const checks = {
     await vscode.commands.executeCommand('smd.openPreviewToSide');
     const status = () => vscode.commands.executeCommand('smd._previewStatus', doc.uri.toString());
     await waitFor(async () => (await status())?.diagrams === 2, 'first render', 20000);
+    // Status is reported per render. Append a line at the end, which moves nothing above it, and wait for its render.
+    const touch = async () => {
+      const renders = (await status())?.renders ?? 0;
+      const change = new vscode.WorkspaceEdit();
+      change.insert(doc.uri, doc.lineAt(doc.lineCount - 1).range.end, '\nEnd.\n');
+      await vscode.workspace.applyEdit(change);
+      return waitFor(async () => {
+        const s = await status();
+        return s && s.renders > renders ? s : undefined;
+      }, 'a re-render after an edit');
+    };
+    // Scroll sync from the editor reaches the preview when it does (later under load), so rather than waiting a fixed
+    // time, render until two renders in a row report the same anchor: the preview has stopped moving.
+    const steady = async (ok, what) => {
+      let last = await touch();
+      for (let tries = 0; tries < 20; tries++) {
+        await wait(300);
+        const next = await touch();
+        if (ok(next) && next.top === last.top) return next;
+        last = next;
+      }
+      throw new Error(`Timed out waiting for ${what}; last status ${JSON.stringify(last)}`);
+    };
 
     // Scroll the editor (the preview follows), then make an edit that moves nothing.
     editor.revealRange(new vscode.Range(100, 0, 100, 0), vscode.TextEditorRevealType.AtTop);
-    await wait(800);
-    let edit = new vscode.WorkspaceEdit();
-    edit.insert(doc.uri, doc.lineAt(doc.lineCount - 1).range.end, '\nEnd.\n');
-    await vscode.workspace.applyEdit(edit);
-    const before = await waitFor(async () => {
-      const s = await status();
-      return s && s.reused === 2 && s.top > 50 ? s : undefined;
-    }, 're-render with cached diagrams');
+    await waitFor(() => (editor.visibleRanges[0]?.start.line ?? 0) >= 90, 'the editor to scroll');
+    const before = await steady((s) => s.reused === 2 && s.top > 50, 'the preview to follow the editor, with cached diagrams');
 
     // Insert three lines at the top: the same content stays at the top of the preview.
-    edit = new vscode.WorkspaceEdit();
+    let edit = new vscode.WorkspaceEdit();
     edit.insert(doc.uri, new vscode.Position(0, 0), 'Intro.\n\n\n');
     await vscode.workspace.applyEdit(edit);
     const after = await waitFor(async () => {
       const s = await status();
-      return s && s.top !== before.top ? s : undefined;
+      return s && s.renders > before.renders ? s : undefined;
     }, 're-render after inserting lines above');
     console.log(`      anchor line ${before.top} -> ${after.top}`);
     assert.equal(after.top, before.top + 3);
     assert.equal(after.reused, 2, 'unchanged diagrams reuse their SVG');
 
     // Let the editor's scroll sync settle, then take the position the preview is at.
-    await wait(800);
-    edit = new vscode.WorkspaceEdit();
-    edit.insert(doc.uri, doc.lineAt(doc.lineCount - 1).range.end, '\nEnd.\n');
-    await vscode.workspace.applyEdit(edit);
-    const settled = await waitFor(async () => {
-      const s = await status();
-      return s && s.renders > after.renders ? s : undefined;
-    }, 're-render after scroll sync');
-    await wait(800);
+    const settled = await steady(() => true, 'the preview to settle after scroll sync');
 
     // Hide the preview behind another editor, edit above while it's hidden, then bring it back.
+    const previewTab = () => vscode.window.tabGroups.all.flatMap((g) => g.tabs)
+      .find((t) => t.input instanceof vscode.TabInputWebview && t.label.includes('long.smd'));
     const other = await vscode.workspace.openTextDocument({ language: 'smd', content: '# Other\n' });
     await vscode.window.showTextDocument(other, vscode.ViewColumn.Two);
-    await wait(500);
+    await waitFor(() => previewTab()?.isActive === false, 'the preview to be hidden');
     edit = new vscode.WorkspaceEdit();
     edit.insert(doc.uri, new vscode.Position(0, 0), 'More.\n\n');
     await vscode.workspace.applyEdit(edit);
+    // Usually long enough for the debounced refresh (200 ms) to reach the hidden page. The check below doesn't depend
+    // on it: if the page comes back before the refresh, it re-renders with the edit once the refresh runs.
     await wait(500);
     await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
     await vscode.commands.executeCommand('smd.openPreviewToSide');
     const restored = await waitFor(async () => {
       const s = await status();
-      return s && s.renders !== settled.renders ? s : undefined;
-    }, 'preview restored after being hidden', 20000);
+      return s && s.renders > settled.renders && s.top === settled.top + 2 ? s : undefined;
+    }, 'preview restored after being hidden', 20000).catch(async (e) => {
+      throw new Error(`${e.message}: expected anchor line ${settled.top + 2}, last status ${JSON.stringify(await status())}`);
+    });
     console.log(`      after hide/restore ${settled.top} -> ${restored.top}`);
     assert.equal(restored.top, settled.top + 2);
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
