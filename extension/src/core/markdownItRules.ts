@@ -188,6 +188,8 @@ export function styledSpan(state: StateInline, silent: boolean): boolean {
     open.attrSet('class', classes.join(' '));
     if (style) open.attrSet('style', style);
     if (attrs.id) open.attrSet('id', attrs.id);
+    // The attributes as written, for the exporters (exportTree.ts), which map them rather than read the CSS.
+    open.meta = { values: attrs.values } satisfies SpanMeta;
     const oldMax = state.posMax;
     state.pos = start + 1;
     state.posMax = labelEnd;
@@ -243,7 +245,22 @@ function pushDirective(state: StateInline, name: string, content: string, attrs:
   const text = ctx.variables ? substituteLine(content, envVariables(state.env)) : content;
   const token = state.push('html_inline', '', 0);
   token.content = renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today, ctx.messages(state.env));
+  token.meta = { directive: name, content: text, values: attrs.values } satisfies DirectiveMeta;
 }
+
+/** What an `smd_span_open` token keeps of `[text]{attrs}`. */
+export interface SpanMeta { values: Record<string, string> }
+
+/** What the `html_inline` token of an inline directive keeps of its source, for hosts that don't want its HTML. */
+export interface DirectiveMeta {
+  directive: string;
+  /** The content, front matter variables replaced. */
+  content: string;
+  values: Record<string, string>;
+}
+
+/** The meta of the checkbox token that taskLists puts in front of a task's text. */
+export interface TaskBoxMeta { taskBox: true; checked: boolean }
 
 // ---------------------------------------------------------------------------
 // Front matter variables  ({{name}})
@@ -601,6 +618,7 @@ function markTask(state: StateCore, i: number, checked: boolean): void {
   // A task from an included document lives in another file, so the preview can't toggle it.
   const where = includedFrom(item) ? ' disabled' : ` data-task-line="${line}"`;
   const box = new state.Token('html_inline', '', 0);
+  box.meta = { taskBox: true, checked } satisfies TaskBoxMeta;
   // The task's text names its checkbox (no id: ids in the HTML are the document's anchors).
   const label = taskLabel(inline.children!, checked);
   box.content = `<input type="checkbox" class="smd-task-box"${where}${checked ? ' checked' : ''}${label ? ` aria-label="${escapeHtml(label)}"` : ''}>`;

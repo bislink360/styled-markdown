@@ -41,6 +41,8 @@ smd render docs/spec.smd -o spec.html # standalone HTML page (prints well: Print
 smd pdf docs/spec.smd                 # spec.pdf, if Playwright or Puppeteer is installed (not bundled)
 smd build docs/ --out site            # static docs site: navigation, search, backlinks, task/decision/risk dashboard
 smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
+smd export --to confluence docs/spec.smd -o spec.xml  # Confluence storage format (built-in macros)
+smd export --to notion docs/spec.smd -o spec.json     # Notion API blocks, as request bodies
 smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
 smd mcp                               # MCP server (stdio) with outline, section, agent, tasks, validate, query
@@ -56,7 +58,8 @@ The package also installs **`smd-language-server`**, the same as `smd lsp`: poin
 ```ts
 import {
   renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
-  smdToMarkdown, markdownToSmd, getDocumentInfo, extractTasks, querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
+  smdToMarkdown, smdToConfluence, smdToNotion, notionRequests, markdownToSmd, getDocumentInfo, extractTasks,
+  querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
   decisionLog, decisionLogMarkdown, statusChanges, statusReportMarkdown, statusReport,
   riskRegister, riskRegisterText, renderRiskPage, buildSite,
 } from 'styled-markdown';
@@ -265,6 +268,8 @@ The agent view drops styling, layout, `:::human` blocks and `{agent=skip}` secti
 
 ```ts
 smdToMarkdown(source);                    // GitHub-flavored Markdown
+smdToConfluence(source, { readFile });    // Confluence storage format (XHTML with built-in macros); raw HTML reduced to text
+notionRequests(smdToNotion(source));      // Notion blocks, cut into PATCH /v1/blocks/{id}/children bodies (within Notion's limits)
 markdownToSmd(markdown, 'Fallback title'); // add front matter, GitHub alerts → callouts
 formatSmd(source);                        // the `smd fmt` layout: fence colons, attribute order, tables, blank lines
 

@@ -796,6 +796,8 @@ Without codes, a comment silences every rule. Codes can be separated by spaces o
 | `smd pdf` | A PDF of that page, printed by a headless browser you install (below) |
 | **Export to Plain Markdown** / `smd to-md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Convert Markdown File to .smd** / `smd from-md` | Adds front matter and turns GitHub alerts into callouts |
+| **Export to Confluence (Storage Format)** / `smd export --to confluence` | A Confluence page body: callouts, code, expands, task lists and statuses as Confluence's own macros (below) |
+| **Export to Notion (JSON)** / `smd export --to notion` | Notion API blocks, cut into the request bodies the API takes (below) |
 | `smd build <dir> --out site` | A static docs site: every document as a page, with navigation, search, backlinks and a dashboard |
 
 ### Publish a docs site: `smd build`
@@ -813,6 +815,53 @@ smd build docs --out site --md --title "Handbook" --base /handbook/ --clean
 - **Dashboard:** `dashboard.html` collects open tasks (overdue first, then by priority and due date), decisions (newest first) and open risks (with the impact × likelihood matrix) from every document, each linked to its section. `--today YYYY-MM-DD` sets the date for overdue tasks.
 - **Offline:** the stylesheet and scripts are written once to `_smd/`. Only pages with Mermaid diagrams or math load Mermaid and the KaTeX stylesheet from a CDN, as `smd render` does.
 - **Safe output:** `--out` (default `site`) must be outside the source folder and must not contain it. An existing folder is only written to when it is empty or a previous build, which `smd build` recognizes by the `.smd-site.json` it writes (the list of files it created). `--clean` first deletes exactly those files, never anything else; without it, files of documents you removed stay until the next `--clean`.
+
+### Confluence and Notion: `smd export`
+
+```bash
+smd export --to confluence docs/plan.smd -o plan.xml   # Confluence storage format
+smd export --to notion docs/plan.smd -o plan.json      # Notion API request bodies
+```
+
+Both write a file (or print it without `-o`) and nothing else: smd never calls the Confluence or Notion API and needs no credentials. In VS Code, **Export to Confluence (Storage Format)** and **Export to Notion (JSON)** save `plan.confluence.xml` or `plan.notion.json` next to the document. In code, `smdToConfluence(text, options)` returns the XML and `smdToNotion(text, options)` the blocks, with `notionRequests(blocks)` to cut them into requests. Options: `readFile` (for `:::include` and code embeds; the CLI and VS Code read files as rendering does), `agentBlocks` (`collapsed` by default, as in the preview), `lang` (labels such as "Note" and "Figure 2" for documents without `lang:`) and `header: false` to leave out the front matter lines.
+
+Both start from the same parse as `smd render`, so includes, figure numbers, footnotes, variables and glossaries come out as rendered, and the human view applies: `:::agent` blocks are collapsed (or `expanded`, or `hidden`), `:::human` blocks and `{agent=skip}` sections stay. The front matter title is the page's own title, so it is not repeated; status, version, updated date, summary, owners and tags start the page. The output is the same every time for the same input (due dates are written as dates, never as "overdue").
+
+| `.smd` | Confluence storage format | Notion blocks |
+|---|---|---|
+| Headings, paragraphs, lists, quotes, rules, tables | `<h1>`–`<h6>`, `<p>`, `<ul>`/`<ol>`, `<blockquote>`, `<hr />`, `<table>` | `heading_1`–`heading_3` (`####` and deeper are `heading_3`), `paragraph`, `bulleted_list_item`/`numbered_list_item`, `quote`, `divider`, `table` |
+| `**bold**`, `*italic*`, `~~strike~~`, `` `code` ``, `==mark==`, `[text]{color=… bg=… weight=bold style=… font=mono}` | `<strong>`, `<em>`, `<u>`, `<code>`, `<span style="…">` for colour, background and strikethrough (size, border and alignment are dropped) | `rich_text` annotations: bold, italic, strikethrough, underline, code, colour (`yellow_background` for marks) |
+| Links | `<a href>`; `#id` links become `<ac:link ac:anchor>`, and the heading or figure they point at gets an `anchor` macro | Absolute http(s) URLs only; links within the page and relative links are plain text |
+| Callouts | `info` (note, info, question), `tip` (tip, success), `note` (warning: Confluence's yellow panel), `warning` (danger: its red one), titled; `{collapsible}` inside an `expand` | `callout` with an emoji and a background colour |
+| Code fences and `file="…"` embeds | `code` macro with `language` and `title` (the code in CDATA) | `code` with `language` (Notion's list; others are `plain text`) and the title as caption |
+| Mermaid | A `code` macro titled "Mermaid diagram" (no app needed) | `code` with language `mermaid`, which Notion draws |
+| Math | Inline: `<code>`; display: a `code` macro titled LaTeX | `equation`, inline and as a block |
+| `:::details`, tabs, collapsed `:::agent` | `expand` macros (one per tab) | `toggle` blocks |
+| `:::card`, `:::human`, expanded `:::agent`, `:::decision`, `:::risk`, `:::api` | `panel` macros; decisions and risks open with their facts (the status as a `status` macro) | `callout` with 🗂️ 👤 🤖 ⚖️ 🚩 🔌 |
+| Task lists | `<ac:task-list>` with complete and incomplete tasks | `to_do` with `checked` |
+| `:badge`, `:status`, `:priority` | `status` macro (Grey, Red, Yellow, Green, Blue, Purple) | Coloured code text |
+| `:due[2026-10-01]`, decision and changelog dates | `<time datetime="2026-10-01" />` | A date mention |
+| `:kbd`, `:mention`, `:progress`, `:metric` | Code, text, `65%`, **42%** Activation ▲ +3% | The same, as text |
+| `:::figure` and `:ref[id]` | An anchor, the content, then **Figure 1:** *caption*; references link to the anchor | The content and the caption; references are text |
+| Footnotes | A linked superscript number; the notes in a numbered list at the end, with anchors | `[1]` in the text; a divider and a numbered list at the end |
+| Images | By URL, `<ac:image><ri:url>`; a relative path as an `<ri:attachment>` of the same file name (upload the file to the page); `data:` URIs and absolute paths keep their alt text | An `image` block for a paragraph that is only an image with an http(s) URL; otherwise the alt text |
+| `:::risk-matrix` | A table of the risks by impact and likelihood | The same table |
+| `:::glossary` | A list of **Term**: definition | The same list |
+| Columns, steps, timeline, `:::box`, changelog | Their content in order (the layout is dropped) | The same |
+
+**Raw HTML is never passed through.** Confluence storage format is XHTML, so HTML in a document could add elements or attributes to the page; both exporters drop the tags instead and keep the text (an HTML block becomes paragraphs of its text; comments, scripts and styles disappear). Text is escaped for XML (or JSON), characters XML can't hold are dropped, and code goes in CDATA sections with `]]>` split.
+
+**Notion's limits.** Notion takes at most 2000 characters in a rich text object, 100 rich text objects in a block, 100 blocks in a `children` array, two levels of nesting and 1000 blocks in one request. The export keeps within them: long text and code are split into several objects (never inside an emoji), a block with more than 100 objects continues in another of the same type, more than 100 children follow their block instead of nesting in it, a table of more than 100 rows continues in another table under the same header, and blocks nested deeper than two levels follow their parent (a table that deep becomes a paragraph per row). `smd export --to notion` writes a JSON array of request bodies, each at most 100 top-level and 1000 blocks. Send them in order to the page, for example:
+
+```bash
+jq -c '.[]' plan.json | while read -r body; do
+  curl -sS -X PATCH "https://api.notion.com/v1/blocks/$PAGE_ID/children" \
+    -H "Authorization: Bearer $NOTION_TOKEN" -H "Notion-Version: 2022-06-28" \
+    -H "Content-Type: application/json" --data "$body"
+done
+```
+
+For Confluence, put the file's content in `body.storage.value` (with `"representation": "storage"`) of a create or update page request, or paste it into the editor with **Insert markup** → Confluence storage format.
 
 ### Use in other tools
 
@@ -901,6 +950,7 @@ smd pdf <file> [-o out.pdf] [--format A4|Letter] [--landscape]   PDF; needs Play
 smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
                  static docs site: pages, sidebar, search, backlinks, dashboard (section 16)
 smd to-md <file> [-o out.md]
+smd export --to confluence|notion <file> [-o <file>] [--lang <tag>]   Confluence storage format or Notion API blocks (section 16)
 smd from-md <file.md> [-o out.smd]
 smd init <file> [--template <name>] [--title "…"]
 smd templates

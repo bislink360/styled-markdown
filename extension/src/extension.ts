@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { markdownToSmd, renderStandaloneHtml, smdToMarkdown } from './core';
+import { markdownToSmd, notionRequests, renderStandaloneHtml, smdToConfluence, smdToMarkdown, smdToNotion } from './core';
 import { registerLanguageFeatures } from './language';
 import { readerFor } from './files';
 import { registerAgentView } from './agentViewUi';
@@ -74,6 +74,20 @@ export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
       await vscode.window.showTextDocument(target, { viewColumn: vscode.ViewColumn.Beside });
     }),
 
+    vscode.commands.registerCommand('smd.exportConfluence', async () => {
+      const doc = activeSmd();
+      if (!doc) return;
+      const xml = smdToConfluence(doc.getText(), { readFile: readerFor(doc) });
+      await exportBeside(doc, '.confluence.xml', { 'Confluence storage format': ['xml'] }, xml);
+    }),
+
+    vscode.commands.registerCommand('smd.exportNotion', async () => {
+      const doc = activeSmd();
+      if (!doc) return;
+      const requests = notionRequests(smdToNotion(doc.getText(), { readFile: readerFor(doc) }));
+      await exportBeside(doc, '.notion.json', { 'Notion API blocks': ['json'] }, `${JSON.stringify(requests, null, 2)}\n`);
+    }),
+
     vscode.commands.registerCommand('smd.convertFromMarkdown', async (uri?: vscode.Uri) => {
       const source = uri ?? vscode.window.activeTextEditor?.document.uri;
       if (!source || path.extname(source.fsPath).toLowerCase() !== '.md') {
@@ -111,6 +125,14 @@ export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
 }
 
 export function deactivate(): void {}
+
+/** Save an export next to the document (the user picks the name), then open it beside the editor. */
+async function exportBeside(doc: vscode.TextDocument, ext: string, filters: Record<string, string[]>, content: string): Promise<void> {
+  const target = await vscode.window.showSaveDialog({ defaultUri: siblingUri(doc.uri, ext), filters });
+  if (!target) return;
+  await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
+  await vscode.window.showTextDocument(target, { viewColumn: vscode.ViewColumn.Beside });
+}
 
 function siblingUri(uri: vscode.Uri, ext: string): vscode.Uri {
   const parsed = path.parse(uri.fsPath);
