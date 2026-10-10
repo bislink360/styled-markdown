@@ -19,6 +19,7 @@ export const RULE_CODES: Record<string, string> = {
   'container/unclosed': 'Container is never closed',
   'container/stray-close': 'Closing `:::` with nothing open',
   'container/parent': 'Container used outside its required parent (`tab` outside `tabs`…)',
+  'container/agent-in-skip': '`:::agent` block inside a section marked `{agent=skip}`, which agent views leave out',
   'attrs/syntax': 'Malformed `{…}` attribute list',
   'attrs/unknown': 'Attribute not accepted in this position',
   'attrs/value': 'Invalid attribute value',

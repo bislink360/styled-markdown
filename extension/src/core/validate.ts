@@ -13,6 +13,8 @@ import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, v
 import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
 import { parseSmd } from './parse';
+import { sectionsOf, type Section } from './sections';
+import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
 import { suggest } from './util';
 import {
@@ -195,6 +197,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
   checkVariables(lines, fm.bodyStartLine, fm.data, push);
+  checkAgentInSkipped(text, lines, fm.bodyStartLine, push);
 
   let result = applySuppressions(text, diagnostics);
   if (options.rules) result = applyRuleSettings(result, options.rules);
@@ -717,6 +720,32 @@ function checkGlossary(text: { lines: string[]; expanded: string[] }, bodyStart:
       push(entry.line, entry.column, entry.endColumn, 'info', 'glossary/unused', `"${entry.term}" is defined in the glossary but never used in the text.`);
     }
   }
+}
+
+/**
+ * `:::agent` instructions inside a section whose heading has `{agent=skip}`: the agent view leaves the whole section
+ * out, so agents never read them. A warning only; rendering is not affected.
+ */
+function checkAgentInSkipped(text: string, lines: string[], bodyStart: number, push: Push): void {
+  const skipped = sectionsOf(parseSmd(text).headings, lines.length).filter((s) => s.heading.agent === 'skip');
+  if (!skipped.length) return;
+  for (const [i, fence] of outsideCode(lines, bodyStart, lines.length - 1)) {
+    const section = fence ? undefined : skippedSection(lines[i], i, skipped);
+    if (section) agentInSkipped(lines[i], i, section, push);
+  }
+}
+
+/** The outermost skipped section that the `:::agent` opening on `line` is in, if it opens one. */
+function skippedSection(raw: string, line: number, skipped: Section[]): Section | undefined {
+  const open = CONTAINER_OPEN.exec(raw);
+  if (!open || parseContainerInfo(open[3] + open[4])?.name !== 'agent') return undefined;
+  return skipped.find((s) => line > s.start && line <= s.end);
+}
+
+function agentInSkipped(raw: string, line: number, section: Section, push: Push): void {
+  const column = raw.indexOf('agent');
+  push(line, column, column + 'agent'.length, 'warning', 'container/agent-in-skip',
+    `This :::agent block is in the section "${section.heading.text}" (line ${section.start + 1}), whose heading has {agent=skip}, so agent views leave it out and agents never read these instructions. Move the block out of that section, or remove agent=skip from the heading.`);
 }
 
 function glossaryProblem(problem: GlossaryProblem, push: Push): void {

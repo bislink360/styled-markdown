@@ -437,6 +437,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `container/unclosed` | error | Missing closing `:::` (fix: add it at the end of the document, for an unindented container) |
 | `container/stray-close` | warning | `:::` with nothing open |
 | `container/parent` | warning | `tab` outside `tabs`, `column` outside `columns` |
+| `container/agent-in-skip` | warning | An `agent` block inside a section whose heading has `{agent=skip}`: the agent view leaves the section out, so agents never read the instructions |
 | `attrs/syntax` | error | Malformed `{…}` |
 | `attrs/unknown` | warning | Attribute not accepted in this position (fix when one accepted name is close and not already set) |
 | `attrs/value` | error | Invalid color, size, width, progress value… (fix when one allowed value is close, or a year-first date needs `-` separators) |

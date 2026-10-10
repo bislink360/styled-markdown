@@ -608,6 +608,8 @@ People-only content anywhere in the document.
 | `:::human` | "For humans" panel | omitted (unless `--include-human`) |
 | `## … {agent=skip}` | "humans only" tag on the heading | whole section omitted |
 
+An `:::agent` block inside a section marked `{agent=skip}` is omitted with the section, so agents never read it; the validator warns about it (`container/agent-in-skip`).
+
 ## 11. Headings, links and anchors
 
 - `## Title {#custom-id}` sets a stable anchor, and `{.lead}` adds a class (`{.page-break}` starts a new page when printed: [section 16](#pdf-and-printing)).
@@ -679,6 +681,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[x]{colr=red}` | `attrs/unknown` | → `color` |
 | `:::api{method=POST}` | `attrs/required` | — |
 | unclosed `:::` | `container/unclosed` | adds the closing `:::` at the end |
+| `:::agent` under a `## … {agent=skip}` heading | `container/agent-in-skip` | — (move the block out, or drop `agent=skip`) |
 | unclosed ```` ``` ```` | `fence/unclosed` | adds the closing fence at the end |
 | ```` ```mermaid flowchat ```` | `mermaid/type` | → `flowchart` |
 | `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |

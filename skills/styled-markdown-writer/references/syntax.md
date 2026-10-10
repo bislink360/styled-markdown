@@ -357,7 +357,7 @@ The owner (`@name` or `:mention[@name]`), priority and due date are extracted by
 ## Summary {.lead}
 ```
 
-`agent=skip` omits the section, up to the next heading of the same or higher level, from agent views. It's the only allowed `agent` value.
+`agent=skip` omits the section, up to the next heading of the same or higher level, from agent views. It's the only allowed `agent` value. Keep `:::agent` blocks out of such sections: they would be omitted too (`container/agent-in-skip` warns).
 
 ## 11. Diagrams
 

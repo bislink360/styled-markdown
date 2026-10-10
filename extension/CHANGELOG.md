@@ -5,6 +5,7 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- Validation: **`container/agent-in-skip`** (warning, never an error) for an `:::agent` block inside a section whose heading has `{agent=skip}`. The agent view leaves the whole section out, so those instructions never reached agents and nothing said so. Move the block out of the section, or remove `agent=skip`. Only documents with such a block get the warning.
 
 ### Changed
 

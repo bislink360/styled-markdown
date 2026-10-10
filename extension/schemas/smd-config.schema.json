@@ -350,6 +350,16 @@
           ],
           "description": "Container used outside its required parent (tab outside tabs…)"
         },
+        "container/agent-in-skip": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": ":::agent block inside a section marked {agent=skip}, which agent views leave out"
+        },
         "attrs/syntax": {
           "enum": [
             "off",
