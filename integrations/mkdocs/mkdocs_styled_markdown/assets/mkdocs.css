@@ -1,0 +1,6 @@
+/* Styled Markdown inside an MkDocs theme: the page width and margins are the theme's, the blocks are smd's. */
+.smd-doc {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}

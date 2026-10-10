@@ -873,6 +873,8 @@ Static site generators built on remark/rehype can render `.smd` content with the
 
 Configuration for Astro, Docusaurus and Next.js, and which hosts are tested: [npm package README](../npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
 
+**MkDocs.** The `mkdocs-styled-markdown` plugin builds the `.smd` files of an MkDocs site as pages in its theme: front matter `title` is the page title, the theme's table of contents comes from the document's headings and ids, links between `.smd` and `.md` pages point at the built pages, `smd.css` and the runtime are added, and `.smd` blocks follow the theme's light or dark mode. `:::include` and code embeds read only inside `docs_dir`. `validate: true` reports `smd validate`'s problems in the build log, with errors as MkDocs warnings so `mkdocs build --strict` fails on them; `md_syntax: true` renders `.smd` syntax in `.md` pages too. It needs Node.js 18+ on `PATH`. Install and options: [INSTALL.md](INSTALL.md#mkdocs-plugin) and the [plugin README](../integrations/mkdocs/README.md).
+
 **Use in other tools.** Anything that renders Markdown with [markdown-it](https://github.com/markdown-it/markdown-it) can render `.smd` syntax with the npm package's plugin, `md.use(require('styled-markdown/markdown-it'))`, styled by `styled-markdown/smd.css`. It adds rules to the host's own instance and leaves plain Markdown alone; options are in the [package README](../npm/README.md#markdown-it-plugin). Other tools can call `renderSmd()` from the same package or run `smd render`.
 
 ### PDF and printing

@@ -42,17 +42,42 @@ jobs:
         run: node dist/cli.js validate ../examples ../docs/gallery
       - name: Examples are formatted
         run: node dist/cli.js fmt --check ../examples ../docs/gallery
-      - name: Bundled skill CLIs are up to date
+      - name: Bundled skill CLIs and the MkDocs plugin's bridge are up to date
         shell: bash
         run: |
-          if ! git diff --quiet -- ../skills; then
-            echo "::error::skills/*/scripts/smd.cjs is stale. Run 'npm run build' in extension/ and commit the result."
-            git diff --stat -- ../skills
+          if ! git diff --quiet -- ../skills ../integrations/mkdocs; then
+            echo "::error::skills/*/scripts/smd.cjs or integrations/mkdocs/mkdocs_styled_markdown/bridge.cjs is stale. Run 'npm run build' in extension/ and commit the result."
+            git diff --stat -- ../skills ../integrations/mkdocs
             exit 1
           fi
       - name: npm package contents
         working-directory: npm
         run: npm pack --dry-run
+
+  # The MkDocs plugin (integrations/mkdocs) with the committed bridge.cjs (the test job checks that it is up to
+  # date): real `mkdocs build` runs of a small site, on the oldest supported Python and a current one.
+  mkdocs:
+    name: MkDocs plugin (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.9', '3.13']
+    defaults:
+      run:
+        working-directory: integrations/mkdocs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install the plugin with its test extras
+        run: python -m pip install --disable-pip-version-check ".[test]"
+      - run: python -m pytest -q
 
   # Dogfoods the GitHub Action in validate/ from this checkout with the committed bundled CLI
   # (the test job checks that it is up to date), on Linux and on Windows (Git Bash).
