@@ -7,3 +7,8 @@
 skills/*/scripts/smd.cjs linguist-generated
 examples/*.html linguist-generated
 extension/package-lock.json linguist-generated
+integrations/tree-sitter-smd/src/parser.c linguist-generated
+integrations/tree-sitter-smd/src/grammar.json linguist-generated
+integrations/tree-sitter-smd/src/node-types.json linguist-generated
+integrations/tree-sitter-smd/src/tree_sitter/** linguist-generated
+integrations/tree-sitter-smd/package-lock.json linguist-generated

@@ -266,6 +266,8 @@ vim.lsp.enable('smd')
 
 Neovim (also with nvim-lspconfig), Helix and Zed setups: **[docs/EDITORS.md](docs/EDITORS.md)** (written from each editor's documented configuration, not yet tested in those editors).
 
+For syntax highlighting, those editors can use the **Tree-sitter grammar** in [integrations/tree-sitter-smd](integrations/tree-sitter-smd/README.md). It highlights containers, directives, spans, math and the other `.smd` syntax, and leaves Markdown to the editor's Markdown grammar.
+
 ### GitHub Action
 
 Validate `.smd` files on every pull request, with each problem annotated on its line and a summary on the run page:
@@ -340,7 +342,7 @@ Each has a rendered `.html` version next to it that you can open in a browser. M
 | [docs/INSTALL.md](docs/INSTALL.md) | Installing, updating and building the extension and CLI |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature guide: every construct with syntax, rendering, agent view and plain-Markdown fallback |
 | [docs/SKILLS.md](docs/SKILLS.md) | Importing the agent skills into Claude Code, Claude.ai, the API/Agent SDK and other agents |
-| [docs/EDITORS.md](docs/EDITORS.md) | Using `.smd` in Neovim, Helix, Zed and other editors with the language server |
+| [docs/EDITORS.md](docs/EDITORS.md) | Using `.smd` in Neovim, Helix, Zed and other editors with the language server and Tree-sitter highlighting |
 | [docs/AGENTS.md](docs/AGENTS.md) | One-page guide to paste into any agent's instructions |
 | [docs/SPEC.md](docs/SPEC.md) | The formal specification (v1) and validation rules |
 
@@ -358,6 +360,7 @@ styled-markdown/
 │   └── styled-markdown-writer/   agent skill: authoring, with templates and references
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
 ├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
+├── integrations/tree-sitter-smd/  Tree-sitter grammar and queries for Neovim, Helix and Zed
 ├── playground/           the web playground: a static page that runs the engine in the browser
 ├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)
