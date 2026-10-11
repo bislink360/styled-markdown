@@ -1,0 +1,231 @@
+================================================================================
+Inline directives
+================================================================================
+:badge[Shipped]{color=green} :kbd[Ctrl+Shift+P] :progress{value=60}
+:metric[42%]{label="Activation" delta="+3%" trend=up} (:ref[fig-1])
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (directive
+      (directive_name)
+      (directive_content)
+      (attribute_list
+        (attribute
+          (attribute_name)
+          (attribute_value))))
+    (directive
+      (directive_name)
+      (directive_content))
+    (directive
+      (directive_name)
+      (attribute_list
+        (attribute
+          (attribute_name)
+          (attribute_value)))))
+  (line
+    (directive
+      (directive_name)
+      (directive_content)
+      (attribute_list
+        (attribute
+          (attribute_name)
+          (attribute_value))
+        (attribute
+          (attribute_name)
+          (attribute_value))
+        (attribute
+          (attribute_name)
+          (attribute_value))))
+    (directive
+      (directive_name)
+      (directive_content))))
+
+================================================================================
+Unknown directive names still parse
+================================================================================
+New :sparkline[1,2,3]{color=blue} here.
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (directive
+      (directive_name)
+      (directive_content)
+      (attribute_list
+        (attribute
+          (attribute_name)
+          (attribute_value))))))
+
+================================================================================
+Nested brackets in directive content
+================================================================================
+:badge[a [b] c]
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (directive
+      (directive_name)
+      (directive_content))))
+
+================================================================================
+Colons that are not directives
+================================================================================
+At 10:30 note:[x] and http://x.y/:badge[z] or :Badge[x], :badge alone, ::badge[x].
+--------------------------------------------------------------------------------
+
+(document
+  (line))
+
+================================================================================
+Incomplete directives are text
+================================================================================
+:badge[open and :status[x]{color=red and :kbd{
+--------------------------------------------------------------------------------
+
+(document
+  (line))
+
+================================================================================
+Styled spans
+================================================================================
+Make [this red]{color=red weight=bold} and [[nested]]{.x}.
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (span
+      (span_content)
+      (attribute_list
+        (attribute
+          (attribute_name)
+          (attribute_value))
+        (attribute
+          (attribute_name)
+          (attribute_value))))
+    (span
+      (span_content)
+      (attribute_list
+        (attribute_class)))))
+
+================================================================================
+Brackets that are not spans
+================================================================================
+A [link](https://x.y), [ref][1], ![img](a.png) and [open{x}.
+--------------------------------------------------------------------------------
+
+(document
+  (line))
+
+================================================================================
+Highlight
+================================================================================
+This is ==important== but == not == this, ==a=b== and a===b.
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (mark
+      (mark_content))
+    (mark
+      (mark_content))))
+
+================================================================================
+Front matter variables
+================================================================================
+Version {{version}} on {{ release.date }} by {{owners.0}}.
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (variable
+      (variable_name))
+    (variable
+      (variable_name))
+    (variable
+      (variable_name))))
+
+================================================================================
+Braces that are not variables
+================================================================================
+Handlebars {{{raw}}}, \{{escaped}}, {{#each}} and {{a.}}.
+--------------------------------------------------------------------------------
+
+(document
+  (line))
+
+================================================================================
+Footnotes
+================================================================================
+Capped at five[^retries].
+
+[^retries]: Five covers it.
+   [^x]: Indented definition.
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (footnote_reference))
+  (blank_line)
+  (line
+    (footnote_label))
+  (line
+    (footnote_label)))
+
+================================================================================
+Task lists
+================================================================================
+- [ ] Open :priority[P0] @api-team :due[2026-10-03]
+- [x] Done
+  * [X] Nested
+1. [ ] Numbered
+- [x]no blank
+- plain
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (task_unchecked)
+    (directive
+      (directive_name)
+      (directive_content))
+    (directive
+      (directive_name)
+      (directive_content)))
+  (line
+    (task_checked))
+  (line
+    (task_checked))
+  (line
+    (task_unchecked))
+  (line)
+  (line))
+
+================================================================================
+Heading attributes at the end of a line
+================================================================================
+## Rollout {#rollout agent=skip}
+A {mid-line} brace is text, a {trailing} one an attribute list {x}
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (attribute_list
+      (attribute_id)
+      (attribute
+        (attribute_name)
+        (attribute_value))))
+  (line
+    (attribute_list
+      (attribute
+        (attribute_name)))))
+
+================================================================================
+Escapes
+================================================================================
+\:badge[x] \[x]{y} \==x==
+--------------------------------------------------------------------------------
+
+(document
+  (line))

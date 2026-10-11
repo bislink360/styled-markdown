@@ -350,6 +350,16 @@
           ],
           "description": "Container used outside its required parent (tab outside tabs…)"
         },
+        "container/agent-in-skip": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": ":::agent block inside a section marked {agent=skip}, which agent views leave out"
+        },
         "attrs/syntax": {
           "enum": [
             "off",
@@ -679,6 +689,16 @@
             "hint"
           ],
           "description": "A :::glossary term is defined again; its uses link to the first definition"
+        },
+        "glossary/duplicate-id": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The id of a :::glossary term (term-…) is also the id of a heading or another element"
         },
         "glossary/unused": {
           "enum": [

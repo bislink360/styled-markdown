@@ -1,0 +1,40 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "smd",
+      "camelcase": "Smd",
+      "title": "Styled Markdown",
+      "scope": "text.smd",
+      "path": ".",
+      "file-types": [
+        "smd"
+      ],
+      "injection-regex": "^(smd|styled-markdown)$",
+      "highlights": "queries/highlights.scm",
+      "injections": "queries/injections.scm"
+    }
+  ],
+  "metadata": {
+    "version": "1.7.0",
+    "license": "MIT",
+    "description": "Styled Markdown (.smd) grammar for tree-sitter: the syntax .smd adds to Markdown",
+    "authors": [
+      {
+        "name": "Roshan Alwis"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/bislink360/styled-markdown"
+    }
+  },
+  "bindings": {
+    "c": false,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false,
+    "zig": false
+  }
+}

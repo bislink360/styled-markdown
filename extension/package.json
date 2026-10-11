@@ -2,7 +2,7 @@
   "name": "styled-markdown",
   "displayName": "Styled Markdown (.smd)",
   "description": "Markdown for humans and AI agents: callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "publisher": "bislink360",
   "author": {
     "name": "Roshan Alwis"
@@ -150,6 +150,21 @@
         "category": "Styled Markdown"
       },
       {
+        "command": "smd.exportConfluence",
+        "title": "Export to Confluence (Storage Format)",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.exportNotion",
+        "title": "Export to Notion (JSON)",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.exportDocx",
+        "title": "Export to Word (.docx)",
+        "category": "Styled Markdown"
+      },
+      {
         "command": "smd.convertFromMarkdown",
         "title": "Convert Markdown File to .smd",
         "category": "Styled Markdown"
@@ -273,6 +288,21 @@
           "group": "smd"
         },
         {
+          "command": "smd.exportConfluence",
+          "when": "editorLangId == smd",
+          "group": "smd"
+        },
+        {
+          "command": "smd.exportNotion",
+          "when": "editorLangId == smd",
+          "group": "smd"
+        },
+        {
+          "command": "smd.exportDocx",
+          "when": "editorLangId == smd",
+          "group": "smd"
+        },
+        {
           "command": "smd.copyAgentView",
           "when": "editorLangId == smd",
           "group": "smd"
@@ -301,6 +331,18 @@
         },
         {
           "command": "smd.exportMarkdown",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.exportConfluence",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.exportNotion",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.exportDocx",
           "when": "editorLangId == smd"
         },
         {
@@ -432,6 +474,12 @@
           "type": "boolean",
           "default": true,
           "description": "When the document status is changed from the status bar (Set Document Status), also set the front matter \"updated\" date to today. Only documents that already have an \"updated\" key are changed."
+        },
+        "smd.export.pandocPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Path to the Pandoc executable for **Export to Word (.docx)**, when Pandoc is not on the `PATH` VS Code sees. Empty: the `SMD_PANDOC` environment variable, then the `PATH`. [Install Pandoc](https://pandoc.org/installing.html)."
         }
       }
     }
@@ -445,7 +493,8 @@
     "test:vscode": "npm run build && node test/integration/run.mjs",
     "package": "npm run build && vsce package --no-dependencies",
     "vscode:prepublish": "npm run build",
-    "build:npm": "npm run build && node scripts/build-npm.mjs && tsc -p tsconfig.npm.json"
+    "build:npm": "npm run build && node scripts/build-npm.mjs && tsc -p tsconfig.npm.json",
+    "build:playground": "node scripts/build-playground.mjs"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 // Waits until a registry lists a version, so a publish job only passes once users can install it.
 //
-//   node extension/scripts/release/wait-for-version.mjs <npm|marketplace|openvsx> <X.Y.Z> [--attempts 20] [--delay 30]
+//   node extension/scripts/release/wait-for-version.mjs <npm|marketplace|openvsx|pypi> <X.Y.Z> [--attempts 20] [--delay 30]
 //
 // npm:         https://registry.npmjs.org/styled-markdown/X.Y.Z
 // marketplace: the Marketplace gallery query that `vsce show bislink360.styled-markdown` uses
 // openvsx:     https://open-vsx.org/api/bislink360/styled-markdown/X.Y.Z
+// pypi:        https://pypi.org/pypi/mkdocs-styled-markdown/X.Y.Z/json (the MkDocs plugin)
 // Exits 0 when the version is listed, 1 after the last attempt. Reads public endpoints only.
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const PACKAGE = 'styled-markdown';
 export const EXTENSION = 'bislink360.styled-markdown';
+export const PYTHON_PACKAGE = 'mkdocs-styled-markdown';
 const MARKETPLACE_QUERY = 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery';
 const INCLUDE_VERSIONS = 0x1;
 const BY_NAME = 7;
@@ -20,6 +22,7 @@ const BY_NAME = 7;
 export function registryRequest(registry, version) {
   if (registry === 'npm') return { url: `https://registry.npmjs.org/${PACKAGE}/${version}`, init: {} };
   if (registry === 'openvsx') return { url: `https://open-vsx.org/api/${EXTENSION.replace('.', '/')}/${version}`, init: {} };
+  if (registry === 'pypi') return { url: `https://pypi.org/pypi/${PYTHON_PACKAGE}/${version}/json`, init: {} };
   if (registry !== 'marketplace') return undefined;
   const body = { filters: [{ criteria: [{ filterType: BY_NAME, value: EXTENSION }] }], flags: INCLUDE_VERSIONS };
   return {
@@ -38,7 +41,8 @@ export function listedVersions(registry, json) {
     const extension = json?.results?.[0]?.extensions?.[0];
     return (extension?.versions ?? []).map((entry) => entry.version);
   }
-  return json?.version ? [json.version] : [];
+  const version = registry === 'pypi' ? json?.info?.version : json?.version;
+  return version ? [version] : [];
 }
 
 /** One lookup: true when the registry lists the version. Network and HTTP errors count as "not yet". */
@@ -82,7 +86,7 @@ async function main(argv) {
   const options = parseArgs(argv);
   const valid = /^\d+\.\d+\.\d+$/.test(options.version ?? '') && Number.isInteger(options.attempts) && options.attempts > 0 && options.delay >= 0;
   if (!valid || !registryRequest(options.registry, options.version)) {
-    console.error('Usage: wait-for-version.mjs <npm|marketplace|openvsx> <X.Y.Z> [--attempts 20] [--delay 30]');
+    console.error('Usage: wait-for-version.mjs <npm|marketplace|openvsx|pypi> <X.Y.Z> [--attempts 20] [--delay 30]');
     return 2;
   }
   const listed = await waitForVersion(options.registry, options.version, { attempts: options.attempts, delayMs: options.delay * 1000 });

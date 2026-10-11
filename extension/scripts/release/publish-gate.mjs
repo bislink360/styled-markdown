@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Decides whether a publish job of the release workflow publishes, and says why when it doesn't.
 //
-//   TOKEN=… DRY_RUN=true|false node extension/scripts/release/publish-gate.mjs <npm|marketplace|openvsx> <X.Y.Z> <SECRET_NAME> [--output <file>]
+//   TOKEN=… DRY_RUN=true|false node extension/scripts/release/publish-gate.mjs <npm|marketplace|openvsx|pypi> <X.Y.Z> <SECRET_NAME> [--output <file>]
 //
 // Skips (with a ::notice::) on a dry run, when the secret is missing (TOKEN empty), or when the
 // registry already lists the version (so re-running a release is safe). Appends "ready=true|false"
@@ -11,7 +11,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isListed, registryRequest } from './wait-for-version.mjs';
 
-export const REGISTRY_NAMES = { npm: 'npm', marketplace: 'VS Code Marketplace', openvsx: 'Open VSX' };
+export const REGISTRY_NAMES = { npm: 'npm', marketplace: 'VS Code Marketplace', openvsx: 'Open VSX', pypi: 'PyPI' };
 
 /**
  * Whether to publish, and the notice to show when not.
@@ -33,7 +33,7 @@ async function main(argv) {
   const output = outIndex >= 0 ? argv[outIndex + 1] : undefined;
   const [registry, version, secret] = outIndex >= 0 ? argv.slice(0, outIndex) : argv;
   if (!registryRequest(registry, version ?? '') || !/^\d+\.\d+\.\d+$/.test(version ?? '') || !secret) {
-    console.error('Usage: publish-gate.mjs <npm|marketplace|openvsx> <X.Y.Z> <SECRET_NAME> [--output <file>]');
+    console.error('Usage: publish-gate.mjs <npm|marketplace|openvsx|pypi> <X.Y.Z> <SECRET_NAME> [--output <file>]');
     return 2;
   }
   const dryRun = process.env.DRY_RUN === 'true';

@@ -1,6 +1,6 @@
 # Installation guide
 
-This guide covers the **VS Code extension**, the **`smd` command-line tool**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
+This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
 
 ## Contents
 
@@ -11,6 +11,9 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 - [Install the `smd` CLI](#install-the-smd-cli)
 - [Use `smd` in CI](#use-smd-in-ci)
 - [Pre-commit hooks](#pre-commit-hooks)
+- [MkDocs plugin](#mkdocs-plugin)
+- [Web playground](#web-playground)
+- [Obsidian plugin](#obsidian-plugin)
 - [Update or uninstall](#update-or-uninstall)
 - [Build from source](#build-from-source)
 - [Troubleshooting](#troubleshooting)
@@ -21,7 +24,10 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 |---|---|
 | VS Code extension | VS Code **1.90 or newer**, or a VS Code-compatible editor that installs `.vsix` files (Cursor, VSCodium, Windsurf) |
 | CLI and agent skills | **Node.js 18 or newer** |
+| MkDocs plugin | Python 3.9+, MkDocs 1.6+ and **Node.js 18 or newer** on `PATH` |
+| Obsidian plugin | Obsidian **1.4 or newer**, desktop or mobile |
 | Building from source | Node.js 18+, npm, Git |
+| Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd docx` and **Export to Word (.docx)** |
 
 ## Install the VS Code extension
 
@@ -29,13 +35,13 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, an
 
 ### Option A — from the release file (recommended)
 
-1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-1.6.0.vsix`**.
+1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-1.7.0.vsix`**.
 2. Install it with **one** of these methods.
 
    **From the terminal:**
 
    ```bash
-   code --install-extension styled-markdown-1.6.0.vsix
+   code --install-extension styled-markdown-1.7.0.vsix
    ```
 
    **From VS Code:**
@@ -55,7 +61,7 @@ git clone https://github.com/bislink360/styled-markdown.git
 cd styled-markdown/extension
 npm install
 npm run package
-code --install-extension styled-markdown-1.6.0.vsix
+code --install-extension styled-markdown-1.7.0.vsix
 ```
 
 ## Verify the installation
@@ -96,11 +102,11 @@ The CLI is a **single self-contained file** with no dependencies. Pick one metho
 **From the release's npm package (recommended):** npm installs straight from the tarball attached to the release. The npm registry listing is coming soon.
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.6.0/styled-markdown-1.6.0.tgz
-smd --version       # smd 1.6.0 (Styled Markdown spec v1)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.7.0/styled-markdown-1.7.0.tgz
+smd --version       # smd 1.7.0 (Styled Markdown spec v1)
 ```
 
-The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v1.6.0/styled-markdown-1.6.0.tgz`); see [npm/README.md](../npm/README.md).
+The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v1.7.0/styled-markdown-1.7.0.tgz`); see [npm/README.md](../npm/README.md).
 
 **Use the copy bundled with the skills (no build needed):**
 
@@ -115,10 +121,23 @@ node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs --version
 cd styled-markdown/extension
 npm install && npm run build
 npm link            # now `smd` works everywhere
-smd --version       # smd 1.6.0 (Styled Markdown spec v1)
+smd --version       # smd 1.7.0 (Styled Markdown spec v1)
 ```
 
 **Without linking:** `node extension/dist/cli.js <command>`.
+
+### Optional: Pandoc for Word export
+
+`smd docx` and the extension's **Export to Word (.docx)** hand the document to [Pandoc](https://pandoc.org/installing.html), which smd does not bundle (the CLI and the npm package keep zero dependencies). Install Pandoc 3.0 or newer only if you want `.docx` files:
+
+```bash
+winget install JohnMacFarlane.Pandoc   # Windows (or the installer or zip from pandoc.org)
+brew install pandoc                    # macOS
+sudo apt install pandoc                # Debian/Ubuntu (check pandoc --version: 3.0 or newer)
+pandoc --version
+```
+
+smd finds Pandoc at `--pandoc <path>`, then the `SMD_PANDOC` environment variable, then on the `PATH`; the extension reads the `smd.export.pandocPath` setting first (a user setting, so a workspace can't point it at another program). Without Pandoc, `smd docx` exits with code 2 and says how to install it, and the extension shows the same with an **Install Pandoc** button. `smd docx <file.smd> --html-only -o page.html` writes the HTML smd would give Pandoc, to convert yourself: `pandoc page.html -f html -t docx -o page.docx`.
 
 
 ## Use `smd` in CI
@@ -136,7 +155,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v1.6.0
+      - uses: bislink360/styled-markdown/validate@v1.7.0
         with:
           paths: |
             docs
@@ -162,7 +181,7 @@ Errors become `::error`, warnings `::warning` and info diagnostics `::notice` an
 ### Any CI
 
 ```bash
-curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.6.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.7.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs validate docs/ --strict
 ```
 
@@ -179,7 +198,7 @@ Check `.smd` files before they are committed. `smd validate` and `smd fmt` take 
 ```yaml
 repos:
   - repo: https://github.com/bislink360/styled-markdown
-    rev: v1.6.0
+    rev: v1.7.0
     hooks:
       - id: smd-fmt
       - id: smd-validate
@@ -203,7 +222,7 @@ The hooks use `language: node`: pre-commit installs this repository's root `pack
 For JavaScript projects. The `styled-markdown` package isn't on the npm registry yet, so install it from the release's `.tgz`, which also gives you the Mermaid parser:
 
 ```bash
-npm install --save-dev https://github.com/bislink360/styled-markdown/releases/download/v1.6.0/styled-markdown-1.6.0.tgz
+npm install --save-dev https://github.com/bislink360/styled-markdown/releases/download/v1.7.0/styled-markdown-1.7.0.tgz
 npm install --save-dev lint-staged husky
 npx husky init
 echo "npx lint-staged" > .husky/pre-commit
@@ -219,7 +238,7 @@ and in `package.json`:
 }
 ```
 
-lint-staged appends the staged files to each command, runs them in order and stages the formatting changes. Add `--strict` to `smd validate` to fail on warnings. To use the single-file CLI instead of the package, download it into the repository (`curl -sSLo tools/smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.6.0/skills/styled-markdown-reader/scripts/smd.cjs`) and use `"node tools/smd.cjs fmt"` and `"node tools/smd.cjs validate"`.
+lint-staged appends the staged files to each command, runs them in order and stages the formatting changes. Add `--strict` to `smd validate` to fail on warnings. To use the single-file CLI instead of the package, download it into the repository (`curl -sSLo tools/smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.7.0/skills/styled-markdown-reader/scripts/smd.cjs`) and use `"node tools/smd.cjs fmt"` and `"node tools/smd.cjs validate"`.
 
 ### With a plain Git hook
 
@@ -236,6 +255,49 @@ staged | xargs -0 smd validate --
 
 It checks the files as they are in the working tree and doesn't change them; `--` keeps a file name that starts with `-` from being read as an option. The hook lives only in your clone: to share it, commit it (e.g. as `.githooks/pre-commit`) and run `git config core.hooksPath .githooks`.
 
+## MkDocs plugin
+
+`mkdocs-styled-markdown` makes the `.smd` files in an [MkDocs](https://www.mkdocs.org) site's `docs_dir` pages, rendered by the same engine as `smd render`, inside the site's theme. It is a Python package that ships the engine as a Node.js script, so the machine that builds the site needs Node.js 18+ on `PATH` (no npm install).
+
+Until it is on PyPI, install the wheel from the GitHub release (each release attaches `mkdocs_styled_markdown-X.Y.Z-py3-none-any.whl` and the `.tar.gz` source):
+
+```bash
+pip install https://github.com/bislink360/styled-markdown/releases/download/v1.7.0/mkdocs_styled_markdown-1.7.0-py3-none-any.whl
+```
+
+Then add it to `mkdocs.yml`:
+
+```yaml
+plugins:
+  - search
+  - styled-markdown:
+      validate: true      # smd errors become MkDocs warnings (mkdocs build --strict fails on them)
+      md_syntax: false    # true: .md pages may use .smd syntax too
+```
+
+Options, links, the table of contents, dark mode and includes: [plugin README](../integrations/mkdocs/README.md).
+
+## Web playground
+
+The playground needs no installation: it is a static page that runs the engine in the browser (see [FEATURES.md §19](FEATURES.md#19-web-playground)).
+
+- **From a release:** download `styled-markdown-playground.zip`, unzip it and open `index.html` in a browser.
+- **From source:** `cd extension && npm ci && npm run build:playground`, then open `extension/dist/playground/index.html`.
+
+It works from `file://` and from any static web server. It needs a current browser (Chrome or Edge 103+, Firefox 113+, Safari 16.4+) for the compressed share links. It is not hosted anywhere yet; publishing it (for example on GitHub Pages) is a separate maintainer decision.
+
+## Obsidian plugin
+
+The Styled Markdown plugin for [Obsidian](https://obsidian.md) renders `.smd` syntax in your notes' reading view: `:::` containers, inline directives such as `:badge[…]` and `:status[…]`, and `[text]{color=…}` spans, styled to follow your theme in light and dark mode. ```` ```smd ```` code blocks render in Live Preview too, and `.smd` files open as notes. The engine is bundled into the plugin, so nothing else needs installing.
+
+Until it is in Obsidian's community plugin list, install it from the GitHub release:
+
+1. Download `styled-markdown-obsidian-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+2. Unzip it into your vault's `.obsidian/plugins/` folder, which gives `.obsidian/plugins/styled-markdown/` with `main.js`, `manifest.json` and `styles.css`.
+3. In Obsidian, **Settings → Community plugins**: turn off Restricted mode if it is on, reload the list of installed plugins and turn on **Styled Markdown**.
+
+To update, replace the three files and reload the plugin. Settings, what renders where, and the limitations (Live Preview, wikilinks and embeds inside containers, `.smd` files and Obsidian's index): [plugin README](../integrations/obsidian/README.md).
+
 ## Update or uninstall
 
 - **Update:** install the newer `.vsix` the same way. VS Code replaces the old version (add `--force` on the command line to reinstall the same version).
@@ -248,13 +310,15 @@ It checks the files as they are in the working tree and doesn't change them; `--
 cd extension
 npm install
 npm run build          # esbuild bundles dist/extension.js and dist/cli.js, copies Mermaid/KaTeX into media/vendor,
-                       # and refreshes skills/*/scripts/smd.cjs
+                       # and refreshes skills/*/scripts/smd.cjs and the MkDocs plugin's bridge.cjs
 npm test               # unit tests
 npm run test:vscode    # integration tests in a real VS Code (uses your installed VS Code, isolated profile)
-npm run package        # styled-markdown-1.6.0.vsix
+npm run package        # styled-markdown-1.7.0.vsix
 ```
 
 Press **F5** with the `extension/` folder open to start an Extension Development Host with the examples loaded.
+
+The Obsidian plugin builds with the same toolchain: after `npm install` in `extension/`, run `npm ci`, `npm run typecheck` and `npm run build` in `integrations/obsidian/` (see its [README](../integrations/obsidian/README.md#building-from-source)).
 
 ## Troubleshooting
 

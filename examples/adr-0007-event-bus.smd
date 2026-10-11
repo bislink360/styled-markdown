@@ -45,13 +45,13 @@ Consumers de-duplicate on `eventId` for 24 hours; loyalty adds a unique constrai
 Superseded by this ADR.
 :::
 
-## Discussion notes {agent=skip}
-
-Architecture review on 2026-09-16 (attendees: platform, api-team, data). Data asked for replay; EventBridge archive covers 30 days, which is enough for their backfills. Kafka was discussed at length but nobody wanted to run it.
-
 :::agent Rules this decision implies
 - Publish events only through `events.publish()` in `libs/events`; never call consumers over HTTP.
 - Every event has `eventId` (UUID v7), `type`, `occurredAt` and `version`; add fields, never rename or remove them.
 - Consumers must be idempotent on `eventId`.
 - Events must stay under 64 KB; send IDs, not full objects.
 :::
+
+## Discussion notes {agent=skip}
+
+Architecture review on 2026-09-16 (attendees: platform, api-team, data). Data asked for replay; EventBridge archive covers 30 days, which is enough for their backfills. Kafka was discussed at length but nobody wanted to run it.

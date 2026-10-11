@@ -35,6 +35,11 @@ jobs:
           cache-dependency-path: extension/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
+      # The Release workflow's verify job runs the tests before anything is built: a test of a built file has to
+      # skip then ("run npm run build first"), not fail. v1.7.0's first tag failed there.
+      - name: Unit tests without a build (as the Release workflow runs them)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm test
       - name: Build extension, CLI and npm package
         run: npm run build:npm
       - run: npm test
@@ -42,17 +47,102 @@ jobs:
         run: node dist/cli.js validate ../examples ../docs/gallery
       - name: Examples are formatted
         run: node dist/cli.js fmt --check ../examples ../docs/gallery
-      - name: Bundled skill CLIs are up to date
+      - name: Bundled skill CLIs and the MkDocs plugin's bridge are up to date
         shell: bash
         run: |
-          if ! git diff --quiet -- ../skills; then
-            echo "::error::skills/*/scripts/smd.cjs is stale. Run 'npm run build' in extension/ and commit the result."
-            git diff --stat -- ../skills
+          if ! git diff --quiet -- ../skills ../integrations/mkdocs; then
+            echo "::error::skills/*/scripts/smd.cjs or integrations/mkdocs/mkdocs_styled_markdown/bridge.cjs is stale. Run 'npm run build' in extension/ and commit the result."
+            git diff --stat -- ../skills ../integrations/mkdocs
             exit 1
           fi
       - name: npm package contents
         working-directory: npm
         run: npm pack --dry-run
+
+  # The MkDocs plugin (integrations/mkdocs) with the committed bridge.cjs (the test job checks that it is up to
+  # date): real `mkdocs build` runs of a small site, on the oldest supported Python and a current one.
+  mkdocs:
+    name: MkDocs plugin (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.9', '3.13']
+    defaults:
+      run:
+        working-directory: integrations/mkdocs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install the plugin with its test extras
+        run: python -m pip install --disable-pip-version-check ".[test]"
+      - run: python -m pytest -q
+
+  # The Obsidian plugin (integrations/obsidian): type-checked against the `obsidian` API typings and built as the
+  # release builds it (the unit tests also bundle it and run it against a mock of the API).
+  obsidian:
+    name: Obsidian plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            extension/package-lock.json
+            integrations/obsidian/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Install the API typings
+        working-directory: integrations/obsidian
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        working-directory: integrations/obsidian
+        run: npm run typecheck
+      - name: Build main.js and styles.css
+        working-directory: integrations/obsidian
+        run: |
+          node scripts/build.mjs --out ../../obsidian-plugin/styled-markdown
+          ls -l ../../obsidian-plugin/styled-markdown
+          test -s ../../obsidian-plugin/styled-markdown/main.js
+          test -s ../../obsidian-plugin/styled-markdown/styles.css
+          test -s ../../obsidian-plugin/styled-markdown/manifest.json
+
+  # The Tree-sitter grammar (integrations/tree-sitter-smd): the committed parser matches grammar.js,
+  # the corpus tests pass and every .smd file in the repository parses without errors. tree-sitter-cli
+  # is pinned in that folder's package.json and package-lock.json.
+  tree-sitter:
+    name: Tree-sitter grammar
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/tree-sitter-smd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: integrations/tree-sitter-smd/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Generated parser is up to date
+        run: |
+          npx tree-sitter generate --abi 14
+          if [ -n "$(git status --porcelain -- src)" ]; then
+            echo "::error::integrations/tree-sitter-smd/src is stale. Run 'npx tree-sitter generate --abi 14' there and commit the result."
+            git status --short -- src
+            git diff --stat -- src
+            exit 1
+          fi
+      - run: npx tree-sitter test
+      - name: Every .smd file parses without errors
+        run: node scripts/parse-all.mjs
 
   # Dogfoods the GitHub Action in validate/ from this checkout with the committed bundled CLI
   # (the test job checks that it is up to date), on Linux and on Windows (Git Bash).

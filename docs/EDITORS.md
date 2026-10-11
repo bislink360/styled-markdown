@@ -1,6 +1,6 @@
 # Styled Markdown in other editors
 
-The VS Code extension is the full experience (live preview, agent view, tasks view). For other editors, `smd lsp` is a **language server** that brings the editing features of the extension to any [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) client: Neovim, Helix, Zed, Sublime Text, Emacs and others.
+The VS Code extension is the full experience (live preview, agent view, tasks view). For other editors, `smd lsp` is a **language server** that brings the editing features of the extension to any [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) client: Neovim, Helix, Zed, Sublime Text, Emacs and others. For syntax highlighting of the `.smd` syntax itself (containers, directives, spans, math…) in editors that use Tree-sitter, there is also a [Tree-sitter grammar](#syntax-highlighting-with-tree-sitter).
 
 > [!WARNING]
 > The setups below were written from each editor's documented configuration format and checked against the server's own protocol tests. **They have not been tested in those editors here.** If one doesn't work for you, please [open an issue](https://github.com/bislink360/styled-markdown/issues) with your editor's version and log.
@@ -12,8 +12,9 @@ The VS Code extension is the full experience (live preview, agent view, tasks vi
 3. [Neovim](#neovim)
 4. [Helix](#helix)
 5. [Zed](#zed)
-6. [Other editors](#other-editors)
-7. [Troubleshooting](#troubleshooting)
+6. [Syntax highlighting with Tree-sitter](#syntax-highlighting-with-tree-sitter)
+7. [Other editors](#other-editors)
+8. [Troubleshooting](#troubleshooting)
 
 ## What the server does
 
@@ -70,6 +71,8 @@ vim.filetype.add({ extension = { smd = 'smd' } })
 -- Optional: Markdown highlighting for .smd files (Neovim 0.9+ with the markdown Tree-sitter parser).
 vim.treesitter.language.register('markdown', 'smd')
 ```
+
+The last line highlights `.smd` files as plain Markdown. To highlight the `.smd` syntax as well, use the [Tree-sitter grammar](#syntax-highlighting-with-tree-sitter) instead of that line.
 
 Then pick **one** of the three setups below.
 
@@ -154,6 +157,8 @@ Helix reads highlighting queries by language name, so for Markdown highlighting 
 ```scheme
 ; inherits: markdown
 ```
+
+That highlights `.smd` files as plain Markdown. To highlight the `.smd` syntax as well, use the [Tree-sitter grammar](#syntax-highlighting-with-tree-sitter): `grammar = "smd"` and its own queries instead of the `inherits` files.
 
 Run `hx --health smd` to check that Helix finds the server. Quick fixes are under `space a`, formatting is `:format`, the outline is `space s` and workspace symbols `space S`. To format on save, add `auto-format = true` to the `[[language]]` entry.
 
@@ -257,6 +262,18 @@ With the extension installed, `"file_types"` above is not needed, and the server
   }
 }
 ```
+
+## Syntax highlighting with Tree-sitter
+
+[`integrations/tree-sitter-smd`](../integrations/tree-sitter-smd) is a Tree-sitter grammar for `.smd` files, with highlight, injection and fold queries, for Neovim, Helix, Zed and other editors that use Tree-sitter. It highlights front matter, `:::` containers (their fences, names, attributes and titles), inline directives, styled spans, `==highlight==`, math, `{{variables}}`, footnotes, task boxes and attribute lists. Known container and directive names are highlighted differently from unknown ones, and unknown names still parse.
+
+The grammar parses only what `.smd` adds, and leaves the rest to the editor's Markdown grammars by injection, so they must be installed too:
+
+- `markdown` and `markdown_inline` for Markdown (`markdown.inline` in Helix)
+- `yaml` for front matter and `latex` for math, if you want those highlighted
+- the language of each code fence, `mermaid` included, the same way
+
+Editors build the grammar from this repository's URL, the `integrations/tree-sitter-smd` subdirectory and a release tag (1.7.0 or later). There is nothing to download from the release page. Setup snippets for Neovim (nvim-treesitter's `main` and `master` branches, with `ftdetect`), Helix (`languages.toml`) and Zed are in the [grammar's README](../integrations/tree-sitter-smd/README.md#editor-setup), which also explains the design and its limits. As with the language server setups above, they have not been tested in those editors here.
 
 ## Other editors
 

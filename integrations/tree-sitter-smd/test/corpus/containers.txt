@@ -1,0 +1,278 @@
+================================================================================
+Callout with a title
+================================================================================
+:::note Read this first
+Body text.
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name)
+      (container_title))
+    (line)
+    (container_close
+      (container_fence))))
+
+================================================================================
+Attributes and a title
+================================================================================
+:::decision{status=accepted date="2026-09-01" #adr-7 .wide} Use **Kafka**
+We chose Kafka.
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name)
+      (attribute_list
+        (attribute
+          (attribute_name)
+          (attribute_value))
+        (attribute
+          (attribute_name)
+          (attribute_value))
+        (attribute_id)
+        (attribute_class))
+      (container_title))
+    (line)
+    (container_close
+      (container_fence))))
+
+================================================================================
+Nested containers close innermost first
+================================================================================
+::::tabs
+:::tab npm
+npm i
+:::
+:::tab pnpm
+pnpm add
+:::
+::::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (container
+      (container_open
+        (container_fence)
+        (container_name)
+        (container_title))
+      (line)
+      (container_close
+        (container_fence)))
+    (container
+      (container_open
+        (container_fence)
+        (container_name)
+        (container_title))
+      (line)
+      (container_close
+        (container_fence)))
+    (container_close
+      (container_fence))))
+
+================================================================================
+Colon count is cosmetic
+================================================================================
+:::columns
+:::column{width=30%}
+Left
+::::::
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (container
+      (container_open
+        (container_fence)
+        (container_name)
+        (attribute_list
+          (attribute
+            (attribute_name)
+            (attribute_value))))
+      (line)
+      (container_close
+        (container_fence)))
+    (container_close
+      (container_fence))))
+
+================================================================================
+Unknown container names still parse
+================================================================================
+:::my-widget{bg=blue} Custom
+Text
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name)
+      (attribute_list
+        (attribute
+          (attribute_name)
+          (attribute_value)))
+      (container_title))
+    (line)
+    (container_close
+      (container_fence))))
+
+================================================================================
+Unclosed container runs to the end
+================================================================================
+:::warning
+Careful.
+
+More.
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (line)
+    (blank_line)
+    (line)))
+
+================================================================================
+Stray close fence
+================================================================================
+Text
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (line)
+  (container_close
+    (container_fence)))
+
+================================================================================
+Blanks between colons and name, indented fence
+================================================================================
+- item
+
+  :::  tip
+  Indented tip.
+  :::
+--------------------------------------------------------------------------------
+
+(document
+  (line)
+  (blank_line)
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (line)
+    (container_close
+      (container_fence))))
+
+================================================================================
+Unclosed attribute list belongs to the title
+================================================================================
+:::card{accent=blue Title
+Body
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name)
+      (container_title))
+    (line)
+    (container_close
+      (container_fence))))
+
+================================================================================
+Quoted brace inside an attribute value
+================================================================================
+:::quote{author="A}B" cite='https://x.y/{z}'}
+Quoted.
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name)
+      (attribute_list
+        (attribute
+          (attribute_name)
+          (attribute_value))
+        (attribute
+          (attribute_name)
+          (attribute_value))))
+    (line)
+    (container_close
+      (container_fence))))
+
+================================================================================
+Colons that are not fences
+================================================================================
+:::123
+::
+Time 10:30 ::: here
+--------------------------------------------------------------------------------
+
+(document
+  (line)
+  (line)
+  (line))
+
+================================================================================
+Fence inside a container keeps a colon line
+================================================================================
+:::details Code
+```text
+:::
+```
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name)
+      (container_title))
+    (fenced_code_block
+      (code_fence_delimiter)
+      (info_string
+        (language))
+      (code_content)
+      (code_fence_delimiter))
+    (container_close
+      (container_fence))))
+
+================================================================================
+Container at the end of the file without a newline
+================================================================================
+:::note
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (container_close
+      (container_fence))))

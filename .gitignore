@@ -19,3 +19,26 @@ ROADMAP.smd
 # Local SonarQube gate (.claude/skills/sonarqube-scan)
 .scannerwork/
 extension/coverage/
+
+# MkDocs plugin (integrations/mkdocs): local virtualenv and Python build output
+integrations/mkdocs/.venv/
+integrations/mkdocs/dist/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Obsidian plugin (integrations/obsidian): build output (the release workflow builds and zips it)
+integrations/obsidian/main.js
+integrations/obsidian/styles.css
+obsidian-plugin/
+# Tree-sitter grammar (integrations/tree-sitter-smd): compiled parsers and build output
+integrations/tree-sitter-smd/build/
+integrations/tree-sitter-smd/target/
+integrations/tree-sitter-smd/log.html
+*.wasm
+*.so
+*.dylib
+*.dll
+*.obj
+*.exp
+*.pdb

@@ -33,10 +33,10 @@ The forces at play: requirements, constraints, and what is true today that makes
 How we will notice, and what we would do.
 :::
 
-## Discussion notes {agent=skip}
-
-Meeting notes, links to threads, and history that led here.
-
 :::agent Rules this decision implies
 - Concrete rules code must follow because of this decision.
 :::
+
+## Discussion notes {agent=skip}
+
+Meeting notes, links to threads, and history that led here.

@@ -173,6 +173,43 @@ test('glossary: included text is part of the document: its glossary applies, and
   assert.deepEqual(codes(validateSmd(onlyIncluded)), ['6:glossary/unused:info']);
 });
 
+test('glossary: a term used only in a {{name}} value is used, as rendering marks it there', () => {
+  const glossaryCodes = (diagnostics: Diagnostic[]) => codes(diagnostics.filter((d) => d.code.startsWith('glossary/')));
+  const doc = '---\nproduct: the API gateway\nlabel: API\n---\nWe ship {{product}}.\n\n:::glossary\n- **API**: Application Programming Interface\n- **SLO**: Service level objective\n:::\n';
+  assert.match(renderSmd(doc).html, /We ship the <a class="smd-term" href="#term-api">/);
+  assert.deepEqual(glossaryCodes(validateSmd(doc)), ['8:glossary/unused:info']);
+  // Values in places where terms are never marked don't count: code, headings, and names the front matter lacks.
+  const unmarked = '---\nproduct: the API gateway\n---\n## {{product}}\n\n`{{product}}` and {{nope}} API-free.\n\n```\n{{product}}\n```\n\n:::glossary\n- **API**: Interface\n:::\n';
+  assert.ok(!renderSmd(unmarked).html.includes('smd-term'));
+  assert.deepEqual(glossaryCodes(validateSmd(unmarked)), ['12:glossary/unused:info']);
+  // A use written in the text still counts when a value is substituted next to it.
+  assert.deepEqual(glossaryCodes(validateSmd('---\nv: "2"\n---\nThe API {{v}}.\n\n:::glossary\n- **API**: Interface\n:::\n')), []);
+});
+
+test('glossary: a term id that a heading or another element also has is a warning, and no id changes', () => {
+  const doc = [
+    '## Term limits', '', 'Limits, SLO and API apply.', '', '## Term limits', '',
+    'A [span]{#term-slo} and <a id="term-api"></a>, and `{#term-code}` in code.', '',
+    ':::glossary', '- **Limits**: How far it goes.', '- **Limits 1**: The second.', '- **SLO**: Service level objective', '- **API**: Interface', '- **Code**: Not in a span',
+    '- **Other**: Unclashed', ':::', '', 'Other.', '',
+  ].join('\n');
+  const diagnostics = validateSmd(doc).filter((d) => d.code === 'glossary/duplicate-id');
+  assert.deepEqual(codes(diagnostics), ['9:glossary/duplicate-id:warning', '10:glossary/duplicate-id:warning', '11:glossary/duplicate-id:warning', '12:glossary/duplicate-id:warning']);
+  assert.deepEqual([diagnostics[0].column, diagnostics[0].endColumn], [4, 10]);
+  assert.match(diagnostics[0].message, /"Limits" gets the id "term-limits", which the heading on line 1 also has/);
+  assert.match(diagnostics[1].message, /"term-limits-1", which the heading on line 5 also has/);
+  assert.match(diagnostics[2].message, /"term-slo", which the element on line 7 also has/);
+  assert.match(diagnostics[3].message, /"term-api", which the element on line 7 also has/);
+  // Rendering keeps every id as it was: headings first, the terms' <dt> ids as always.
+  const html = renderSmd(doc).html;
+  assert.match(html, /<h2 id="term-limits"[^>]*>Term limits<\/h2>/);
+  assert.match(html, /<dt id="term-limits" data-line="9">/);
+  assert.match(html, /<dt id="term-other" data-line="14">/);
+  // A configurable warning; nothing for documents without a clash.
+  assert.deepEqual(validateSmd(doc, { rules: { 'glossary/duplicate-id': 'off' } }).filter((d) => d.code === 'glossary/duplicate-id'), []);
+  assert.deepEqual(codes(validateSmd(`The API and the SLO, the error budget.\n\n## Terms\n\n${GLOSSARY}\n`)), []);
+});
+
 test('glossary: footnote references and definitions are never marked', () => {
   const doc = 'See the note.[^api]\n\n[^api]: The API in a footnote.\n    More about the API.\n\n:::glossary\n- **API**: Interface\n:::\n';
   const html = renderSmd(doc).html;

@@ -156,7 +156,9 @@ History and research. People see it; agents skip it.
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
 | `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect; `render` pages have a print stylesheet (Print → Save as PDF) |
+| `smd export --to confluence\|notion <file> [-o out]` | A page for your wiki: Confluence storage format (callouts, code, expands, tasks and statuses as built-in macros) or Notion API blocks cut into request bodies. It only writes the file: no network, no credentials ([mapping](docs/FEATURES.md#confluence-and-notion-smd-export)) |
 | `smd pdf <file> [--format A4\|Letter] [--landscape]` | PDF with diagrams as vectors, if you have installed Playwright or Puppeteer (smd bundles no browser) |
+| `smd docx <file> [--reference-doc house.docx]` | Word document with real headings, tables, captions, footnotes and equations, if you have installed [Pandoc](https://pandoc.org/installing.html) (smd bundles none); also **Export to Word (.docx)** in VS Code |
 | `smd build <dir> --out site` | Static docs site: a page per doc, sidebar, breadcrumbs, search, backlinks and a task/decision/risk dashboard |
 | `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
 | `smd lsp --stdio` | Language server for Neovim, Helix, Zed and other LSP editors: diagnostics, quick fixes, outline, hover, completion, go to definition, formatting (also `smd-language-server`; [setup](docs/EDITORS.md)) |
@@ -180,11 +182,11 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-1.6.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+1. Download **`styled-markdown-1.7.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
 2. Install it:
 
    ```bash
-   code --install-extension styled-markdown-1.6.0.vsix
+   code --install-extension styled-markdown-1.7.0.vsix
    ```
 
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
@@ -192,13 +194,17 @@ History and research. People see it; agents skip it.
 
 > Listings on the VS Code Marketplace, [Open VSX](https://open-vsx.org) (for VSCodium, Cursor, Windsurf and Gitpod) and npm are coming once published. Until they are live, every release on GitHub has the `.vsix`, the npm package and the skills.
 
+### Web playground
+
+Try `.smd` in the browser without installing anything: edit on the left; the preview, the agent view with its token estimate, diagnostics and the Markdown export update on the right, and **Copy link** shares the document in the link itself (after the `#`, so it never reaches a server). Build it with `npm run build:playground` in `extension/` and open `extension/dist/playground/index.html`, or unzip `styled-markdown-playground.zip` from a release and open its `index.html`. It is a static page with no backend; previews run in a sandboxed frame. See [playground/README.md](playground/README.md) for how it works and its threat model. It is not hosted anywhere yet.
+
 ### npm library and `smd` CLI
 
 Install the package straight from the release:
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.6.0/styled-markdown-1.6.0.tgz   # the smd command
-npm install https://github.com/bislink360/styled-markdown/releases/download/v1.6.0/styled-markdown-1.6.0.tgz      # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.7.0/styled-markdown-1.7.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v1.7.0/styled-markdown-1.7.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -223,7 +229,7 @@ Full instructions, building from source and troubleshooting: **[docs/INSTALL.md]
 ### Agent skills
 
 ```bash
-curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.6.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.7.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs skills install --global
 ```
 
@@ -260,6 +266,8 @@ vim.lsp.enable('smd')
 
 Neovim (also with nvim-lspconfig), Helix and Zed setups: **[docs/EDITORS.md](docs/EDITORS.md)** (written from each editor's documented configuration, not yet tested in those editors).
 
+For syntax highlighting, those editors can use the **Tree-sitter grammar** in [integrations/tree-sitter-smd](integrations/tree-sitter-smd/README.md). It highlights containers, directives, spans, math and the other `.smd` syntax, and leaves Markdown to the editor's Markdown grammar.
+
 ### GitHub Action
 
 Validate `.smd` files on every pull request, with each problem annotated on its line and a summary on the run page:
@@ -273,7 +281,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v1.6.0
+      - uses: bislink360/styled-markdown/validate@v1.7.0
         with:
           paths: docs        # one per line; default: the whole repository
           fail-on: warning   # error (default), warning or never
@@ -292,6 +300,14 @@ export default { markdown: { remarkPlugins: [remarkSmd] } };
 ```
 
 They work with `.md` files (MDX parses `.smd` attribute lists as JSX, so `.mdx` files are not supported). Setup for Astro, Docusaurus and Next.js, and what the page must load: [package README](npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
+
+### MkDocs
+
+The `mkdocs-styled-markdown` plugin turns the `.smd` files in an MkDocs site into pages, in your theme, with its table of contents, links between pages and dark mode; `validate: true` makes `mkdocs build --strict` fail on `.smd` errors. It needs Node.js 18+. Install the wheel from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and add `- styled-markdown` to `plugins:`: [plugin README](integrations/mkdocs/README.md).
+
+### Obsidian
+
+The Styled Markdown plugin for [Obsidian](https://obsidian.md) renders `:::` containers, inline directives and styled spans in your notes' reading view, follows your theme in light and dark mode, renders ```` ```smd ```` blocks in Live Preview too, and opens `.smd` files as notes. Unzip `styled-markdown-obsidian-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) into your vault's `.obsidian/plugins/` and turn it on: [plugin README](integrations/obsidian/README.md).
 
 ## Token-efficient reading for agents
 
@@ -330,7 +346,7 @@ Each has a rendered `.html` version next to it that you can open in a browser. M
 | [docs/INSTALL.md](docs/INSTALL.md) | Installing, updating and building the extension and CLI |
 | [docs/FEATURES.md](docs/FEATURES.md) | Feature guide: every construct with syntax, rendering, agent view and plain-Markdown fallback |
 | [docs/SKILLS.md](docs/SKILLS.md) | Importing the agent skills into Claude Code, Claude.ai, the API/Agent SDK and other agents |
-| [docs/EDITORS.md](docs/EDITORS.md) | Using `.smd` in Neovim, Helix, Zed and other editors with the language server |
+| [docs/EDITORS.md](docs/EDITORS.md) | Using `.smd` in Neovim, Helix, Zed and other editors with the language server and Tree-sitter highlighting |
 | [docs/AGENTS.md](docs/AGENTS.md) | One-page guide to paste into any agent's instructions |
 | [docs/SPEC.md](docs/SPEC.md) | The formal specification (v1) and validation rules |
 
@@ -347,6 +363,10 @@ styled-markdown/
 │   ├── styled-markdown-reader/   agent skill: token-efficient reading
 │   └── styled-markdown-writer/   agent skill: authoring, with templates and references
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
+├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
+├── integrations/obsidian/ the Obsidian plugin (id `styled-markdown`)
+├── integrations/tree-sitter-smd/  Tree-sitter grammar and queries for Neovim, Helix and Zed
+├── playground/           the web playground: a static page that runs the engine in the browser
 ├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)
 ├── docs/                 guides, specification, gallery and screenshots
@@ -362,8 +382,9 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-1.6.0.vsix
+npm run package        # → styled-markdown-1.7.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
+npm run build:playground  # → dist/playground (the web playground; open its index.html)
 ```
 
 Press **F5** in `extension/` to launch an Extension Development Host with the examples open. See [CONTRIBUTING.md](CONTRIBUTING.md).
