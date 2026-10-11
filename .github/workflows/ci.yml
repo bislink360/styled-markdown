@@ -109,6 +109,36 @@ jobs:
           test -s ../../obsidian-plugin/styled-markdown/styles.css
           test -s ../../obsidian-plugin/styled-markdown/manifest.json
 
+  # The Tree-sitter grammar (integrations/tree-sitter-smd): the committed parser matches grammar.js,
+  # the corpus tests pass and every .smd file in the repository parses without errors. tree-sitter-cli
+  # is pinned in that folder's package.json and package-lock.json.
+  tree-sitter:
+    name: Tree-sitter grammar
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/tree-sitter-smd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: integrations/tree-sitter-smd/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Generated parser is up to date
+        run: |
+          npx tree-sitter generate --abi 14
+          if [ -n "$(git status --porcelain -- src)" ]; then
+            echo "::error::integrations/tree-sitter-smd/src is stale. Run 'npx tree-sitter generate --abi 14' there and commit the result."
+            git status --short -- src
+            git diff --stat -- src
+            exit 1
+          fi
+      - run: npx tree-sitter test
+      - name: Every .smd file parses without errors
+        run: node scripts/parse-all.mjs
+
   # Dogfoods the GitHub Action in validate/ from this checkout with the committed bundled CLI
   # (the test job checks that it is up to date), on Linux and on Windows (Git Bash).
   validate-action:

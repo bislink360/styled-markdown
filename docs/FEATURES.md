@@ -1075,6 +1075,10 @@ Cursor, VS Code and Claude Desktop settings: [AGENTS.md](AGENTS.md#mcp-server).
 
 Positions are UTF-16 columns, as LSP specifies (UTF-8 or UTF-32 when the client offers only those). Setups for Neovim, Helix and Zed: [EDITORS.md](EDITORS.md).
 
+### Syntax highlighting with Tree-sitter
+
+Editors that highlight with Tree-sitter (Neovim, Helix, Zed, Emacs 29+) can use the grammar in [`integrations/tree-sitter-smd`](../integrations/tree-sitter-smd). It highlights front matter, `:::` containers with their names, attributes and titles, inline directives, `[text]{…}` spans, `==highlight==`, `$math$` and `$$` blocks, `{{variables}}`, footnotes, task boxes and `{#id}` attribute lists, and folds containers, code, math and front matter. Known container and directive names (from `spec.ts`) are highlighted differently from unknown ones, which still parse. The grammar parses only the `.smd` syntax: the rest of each document is injected into the editor's own Markdown grammars, the front matter into YAML, math into LaTeX and fenced code into its language. Fenced code and math stay opaque, so a `:::` inside a code block never ends a container. Setup for each editor: [the grammar's README](../integrations/tree-sitter-smd/README.md#editor-setup) and [EDITORS.md](EDITORS.md#syntax-highlighting-with-tree-sitter).
+
 ### What changed: `smd diff`
 
 `smd diff` shows an agent only what changed in a document, so it can catch up without rereading it. Compare two files, or each `.smd` file with its version at a Git commit, branch or tag:

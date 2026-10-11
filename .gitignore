@@ -31,3 +31,14 @@ __pycache__/
 integrations/obsidian/main.js
 integrations/obsidian/styles.css
 obsidian-plugin/
+# Tree-sitter grammar (integrations/tree-sitter-smd): compiled parsers and build output
+integrations/tree-sitter-smd/build/
+integrations/tree-sitter-smd/target/
+integrations/tree-sitter-smd/log.html
+*.wasm
+*.so
+*.dylib
+*.dll
+*.obj
+*.exp
+*.pdb
