@@ -35,6 +35,11 @@ jobs:
           cache-dependency-path: extension/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
+      # The Release workflow's verify job runs the tests before anything is built: a test of a built file has to
+      # skip then ("run npm run build first"), not fail. v1.7.0's first tag failed there.
+      - name: Unit tests without a build (as the Release workflow runs them)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm test
       - name: Build extension, CLI and npm package
         run: npm run build:npm
       - run: npm test
