@@ -1,6 +1,6 @@
 # Installation guide
 
-This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
+This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
 
 ## Contents
 
@@ -13,6 +13,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 - [Pre-commit hooks](#pre-commit-hooks)
 - [MkDocs plugin](#mkdocs-plugin)
 - [Web playground](#web-playground)
+- [Obsidian plugin](#obsidian-plugin)
 - [Update or uninstall](#update-or-uninstall)
 - [Build from source](#build-from-source)
 - [Troubleshooting](#troubleshooting)
@@ -24,6 +25,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | VS Code extension | VS Code **1.90 or newer**, or a VS Code-compatible editor that installs `.vsix` files (Cursor, VSCodium, Windsurf) |
 | CLI and agent skills | **Node.js 18 or newer** |
 | MkDocs plugin | Python 3.9+, MkDocs 1.6+ and **Node.js 18 or newer** on `PATH` |
+| Obsidian plugin | Obsidian **1.4 or newer**, desktop or mobile |
 | Building from source | Node.js 18+, npm, Git |
 | Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd docx` and **Export to Word (.docx)** |
 
@@ -284,6 +286,18 @@ The playground needs no installation: it is a static page that runs the engine i
 
 It works from `file://` and from any static web server. It needs a current browser (Chrome or Edge 103+, Firefox 113+, Safari 16.4+) for the compressed share links. It is not hosted anywhere yet; publishing it (for example on GitHub Pages) is a separate maintainer decision.
 
+## Obsidian plugin
+
+The Styled Markdown plugin for [Obsidian](https://obsidian.md) renders `.smd` syntax in your notes' reading view: `:::` containers, inline directives such as `:badge[…]` and `:status[…]`, and `[text]{color=…}` spans, styled to follow your theme in light and dark mode. ```` ```smd ```` code blocks render in Live Preview too, and `.smd` files open as notes. The engine is bundled into the plugin, so nothing else needs installing.
+
+Until it is in Obsidian's community plugin list, install it from the GitHub release:
+
+1. Download `styled-markdown-obsidian-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+2. Unzip it into your vault's `.obsidian/plugins/` folder, which gives `.obsidian/plugins/styled-markdown/` with `main.js`, `manifest.json` and `styles.css`.
+3. In Obsidian, **Settings → Community plugins**: turn off Restricted mode if it is on, reload the list of installed plugins and turn on **Styled Markdown**.
+
+To update, replace the three files and reload the plugin. Settings, what renders where, and the limitations (Live Preview, wikilinks and embeds inside containers, `.smd` files and Obsidian's index): [plugin README](../integrations/obsidian/README.md).
+
 ## Update or uninstall
 
 - **Update:** install the newer `.vsix` the same way. VS Code replaces the old version (add `--force` on the command line to reinstall the same version).
@@ -303,6 +317,8 @@ npm run package        # styled-markdown-1.6.0.vsix
 ```
 
 Press **F5** with the `extension/` folder open to start an Extension Development Host with the examples loaded.
+
+The Obsidian plugin builds with the same toolchain: after `npm install` in `extension/`, run `npm ci`, `npm run typecheck` and `npm run build` in `integrations/obsidian/` (see its [README](../integrations/obsidian/README.md#building-from-source)).
 
 ## Troubleshooting
 

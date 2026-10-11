@@ -77,6 +77,7 @@ export function downloadsTable(version) {
     `| \`styled-markdown-playground.zip\` | Web playground: edit, preview and share \`.smd\` in the browser | Unzip and open \`playground/index.html\`, or serve the folder ([guide](${docs}/INSTALL.md#web-playground)) |`,
     `| \`mkdocs_styled_markdown-${version}-py3-none-any.whl\` | MkDocs plugin (Python wheel; needs Node.js 18+) | \`pip install ./mkdocs_styled_markdown-${version}-py3-none-any.whl\` ([guide](${docs}/INSTALL.md#mkdocs-plugin)) |`,
     `| \`mkdocs_styled_markdown-${version}.tar.gz\` | MkDocs plugin source distribution | \`pip install ./mkdocs_styled_markdown-${version}.tar.gz\` |`,
+    `| \`styled-markdown-obsidian-${version}.zip\` | Obsidian plugin (a \`styled-markdown\` folder with \`main.js\`, \`manifest.json\` and \`styles.css\`) | Unzip into your vault's \`.obsidian/plugins/\`, then turn it on in Settings → Community plugins ([guide](${docs}/INSTALL.md#obsidian-plugin)) |`,
   ].join('\n');
 }
 

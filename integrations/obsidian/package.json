@@ -1,0 +1,13 @@
+{
+  "name": "styled-markdown-obsidian",
+  "private": true,
+  "description": "Styled Markdown (.smd) syntax in Obsidian notes. Built with the extension's toolchain: run `npm ci` in extension/ first.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "node scripts/typecheck.mjs"
+  },
+  "devDependencies": {
+    "obsidian": "1.13.1"
+  }
+}
