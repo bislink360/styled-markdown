@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="%PLAYGROUND_CSP%">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Try Styled Markdown (.smd) in the browser: edit, preview, see what AI agents read, and share by link.">
+<title>Styled Markdown Playground</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="bar">
+  <h1>Styled Markdown <span>Playground</span></h1>
+  <div class="actions">
+    <button id="copy-link" type="button" class="primary">Copy link</button>
+    <button id="example" type="button">Example</button>
+    <label class="theme">Theme
+      <select id="theme">
+        <option value="auto">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  </div>
+</header>
+<p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+<main class="layout">
+  <section class="pane editor-pane" aria-label="Editor">
+    <div class="editor">
+      <pre id="gutter" class="gutter" aria-hidden="true"></pre>
+      <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" aria-label="Styled Markdown source" aria-describedby="editor-help"></textarea>
+    </div>
+    <p id="editor-help" class="help">Tab indents, Shift+Tab outdents. Press Esc, then Tab, to leave the editor.</p>
+  </section>
+  <section class="pane output-pane" aria-label="Output">
+    <div class="tabs" role="tablist" aria-label="Views">
+      <button type="button" role="tab" id="tab-preview" aria-controls="panel-preview" aria-selected="true">Preview</button>
+      <button type="button" role="tab" id="tab-agent" aria-controls="panel-agent" aria-selected="false" tabindex="-1">Agent view <span id="agent-tokens" class="count"></span></button>
+      <button type="button" role="tab" id="tab-diagnostics" aria-controls="panel-diagnostics" aria-selected="false" tabindex="-1">Diagnostics <span id="diagnostics-count" class="count"></span></button>
+      <button type="button" role="tab" id="tab-markdown" aria-controls="panel-markdown" aria-selected="false" tabindex="-1">Markdown</button>
+    </div>
+    <div class="panel" role="tabpanel" id="panel-preview" aria-labelledby="tab-preview">
+      <iframe id="preview" title="Preview" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" allow="clipboard-write" referrerpolicy="no-referrer"></iframe>
+    </div>
+    <div class="panel" role="tabpanel" id="panel-agent" aria-labelledby="tab-agent" hidden>
+      <p id="agent-meta" class="meta"></p>
+      <pre id="agent" class="text" tabindex="0"></pre>
+    </div>
+    <div class="panel" role="tabpanel" id="panel-diagnostics" aria-labelledby="tab-diagnostics" hidden>
+      <ul id="diagnostics" class="diagnostics"></ul>
+    </div>
+    <div class="panel" role="tabpanel" id="panel-markdown" aria-labelledby="tab-markdown" hidden>
+      <p class="meta">Plain Markdown for GitHub and other renderers. <button id="copy-markdown" type="button">Copy Markdown</button></p>
+      <pre id="markdown" class="text" tabindex="0"></pre>
+    </div>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

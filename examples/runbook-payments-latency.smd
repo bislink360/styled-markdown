@@ -55,13 +55,13 @@ kubectl rollout history deployment/payments-api -n payments | tail -5
 | No recovery after 15 minutes | :mention[@payments-lead]                       |
 | Suspected double charges     | :mention[@finance-ops] and :mention[@security] |
 
-## History {agent=skip}
-
-- 2026-08-02: PSP incident, 42 minutes, secondary route worked as designed.
-- 2026-06-14: pool exhaustion after the Black Friday load test; pool size raised from 40 to 60.
-
 :::agent Rules for automated responders
 - Only run read-only commands (`get`, `describe`, `logs`, `rollout history`) without human approval.
 - Scaling and feature-flag changes need an on-call human to confirm in chat.
 - Never run `delete`, `drain` or anything that restarts more than one pod.
 :::
+
+## History {agent=skip}
+
+- 2026-08-02: PSP incident, 42 minutes, secondary route worked as designed.
+- 2026-06-14: pool exhaustion after the Black Friday load test; pool size raised from 40 to 60.

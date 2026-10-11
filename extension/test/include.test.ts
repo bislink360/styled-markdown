@@ -241,3 +241,47 @@ test('include: figures in included text are numbered with the document\'s, and :
   assert.deepEqual(validateSmd(doc, { readFile }).filter((d) => d.code.startsWith('figure/')), []);
   assert.equal(validateSmd(doc).filter((d) => d.code === 'figure/unknown-ref').length, 1, 'without a reader the reference is unknown');
 });
+
+test('include: the agent view and smd to-md number figures across includes as rendering does, and :ref resolves to included ones', () => {
+  const readFile = reader({
+    'parts/b.smd': [
+      '---', 'title: B', '---', '# B', '', ':::figure{#fig-b} Included', '![b](b.png)', ':::', '',
+      ':::figure{#tbl-b kind=table} Limits', '| a |', '|---|', ':::', '', 'See :ref[fig-a] here.', '', ':::include{file="c.smd"}', ':::', '',
+    ].join('\n'),
+    'parts/c.smd': ':::figure{#fig-c} Nested\nc\n:::\n',
+    'sec.smd': '# Sec\n\n:::figure{#fig-skip} Before\nx\n:::\n\n## Part\n\n:::figure{#fig-part} In section\ny\n:::\n',
+  });
+  const doc = [
+    ':::figure{#fig-a} Own', '![a](a.png)', ':::', '', 'See :ref[fig-b], :ref[tbl-b], :ref[fig-c] and :ref[fig-part].', '',
+    ':::include{file="parts/b.smd"}', ':::figure{#fig-fallback} Fallback only', 'z', ':::', ':::', '',
+    ':::include{file="sec.smd" section="Part"}', ':::', '', ':::figure{#fig-z} Last', 'w', ':::', '',
+  ].join('\n');
+  const expected = ['fig-a Figure 1', 'fig-b Figure 2', 'tbl-b Table 1', 'fig-c Figure 3', 'fig-part Figure 4', 'fig-z Figure 5'];
+  const html = renderSmd(doc, { readFile }).html;
+  const rendered = [...html.matchAll(/<figure id="([^"]+)"[^>]*>[\s\S]*?<span class="smd-figure-label">([^<:]+):?<\/span>/g)].map((m) => `${m[1]} ${m[2]}`);
+  assert.deepEqual(rendered, expected);
+
+  const view = agentView(doc, { readFile }).text;
+  const viewed = [...view.matchAll(/^<figure id="([^"]+)"> ([A-Z][a-z]+ \d+)/gm)].map((m) => `${m[1]} ${m[2]}`);
+  assert.deepEqual(viewed, expected);
+  assert.match(view, /^See Figure 2 \(fig-b\), Table 1 \(tbl-b\), Figure 3 \(fig-c\) and Figure 4 \(fig-part\)\.$/m);
+  assert.match(view, /^See Figure 1 \(fig-a\) here\.$/m, 'a :ref in included text resolves to the including document');
+  assert.doesNotMatch(view, /fig-fallback|fig-skip/);
+
+  const md = smdToMarkdown(doc, { readFile });
+  const converted = [...md.matchAll(/<a id="([^"]+)"><\/a>[\s\S]*?\*\*([A-Z][a-z]+ \d+)/g)].map((m) => `${m[1]} ${m[2]}`);
+  assert.deepEqual(converted, expected);
+  assert.match(md, /^See \[Figure 2\]\(#fig-b\), \[Table 1\]\(#tbl-b\), \[Figure 3\]\(#fig-c\) and \[Figure 4\]\(#fig-part\)\.$/m);
+  assert.match(md, /^See \[Figure 1\]\(#fig-a\) here\.$/m);
+
+  // Without includes the fallback body is shown (to-md) or left out (agent view), and its figure counts, as rendered.
+  const fallback = ['fig-a Figure 1', 'fig-fallback Figure 2', 'fig-z Figure 3'];
+  const plain = [...renderSmd(doc).html.matchAll(/<figure id="([^"]+)"[^>]*>[\s\S]*?<span class="smd-figure-label">([^<:]+):?<\/span>/g)].map((m) => `${m[1]} ${m[2]}`);
+  assert.deepEqual(plain, fallback);
+  for (const options of [{}, { readFile, includes: false }]) {
+    const pointers = agentView(doc, options).text;
+    assert.match(pointers, /^<figure id="fig-z"> Figure 3: Last$/m);
+    assert.match(pointers, /^See :ref\[fig-b\], :ref\[tbl-b\], :ref\[fig-c\] and :ref\[fig-part\]\.$/m);
+  }
+  assert.match(smdToMarkdown(doc), /\*\*Figure 2:\*\* Fallback only[\s\S]*\*\*Figure 3:\*\* Last/);
+});

@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it';
+import type { Token } from 'markdown-it';
 import hljs from 'highlight.js/lib/common';
 import { escapeHtml, resolveColor } from './attrs';
 import { type FrontMatter, parseFrontMatter } from './frontmatter';
@@ -128,6 +129,35 @@ export type ParsedDocument = Pick<FrontMatter, 'data' | 'body' | 'bodyStartLine'
  * remark/rehype plugins run (see unified.ts). `header: false` leaves out the title/status header.
  */
 export function renderParsed(text: string, fm: ParsedDocument, options: RenderOptions = {}, header = true): RenderResult {
+  const { md, tokens, env, lang, messages } = parseTokens(text, fm, options);
+  const data = fm.data;
+  const body = md.renderer.render(tokens, md.options, env);
+
+  const accent = typeof data.accent === 'string' ? resolveColor(data.accent) : null;
+  const style = accent ? ` style="--smd-accent:${escapeHtml(accent)}"` : '';
+  const headerHtml = header ? renderHeader((s) => md.renderInline(s, { messages }), data, messages) : '';
+  const toc = data.toc === true ? renderToc(env.headings, messages) : '';
+  const html = `<article class="smd-doc"${languageAttrs(lang, messages)}${style}>${headerHtml}${toc}${body}</article>`;
+  return { html, frontMatter: data, headings: env.headings, lang };
+}
+
+/** A document parsed into the block tokens renderSmd renders, with what the rules put on the env. */
+export interface ParsedTokens {
+  md: MarkdownIt;
+  tokens: Token[];
+  env: Env;
+  /** The front matter. */
+  data: Record<string, unknown>;
+  lang: string;
+  messages: Messages;
+}
+
+/** The tokens of a whole .smd document as renderSmd parses them, for the exporters (exportTree.ts). */
+export function parseSmdTokens(text: string, options: RenderOptions = {}): ParsedTokens {
+  return parseTokens(text, parseFrontMatter(text), options);
+}
+
+function parseTokens(text: string, fm: ParsedDocument, options: RenderOptions): ParsedTokens {
   const opts: ResolvedOptions = {
     allowHtml: options.allowHtml ?? true,
     agentBlocks: options.agentBlocks ?? 'collapsed',
@@ -142,14 +172,7 @@ export function renderParsed(text: string, fm: ParsedDocument, options: RenderOp
   // markdown-it treats a lone \r as a line break, but every other tool here splits lines on \r?\n.
   // A space keeps heading lines and data-line (preview scroll sync) in step with the editor.
   const tokens = md.parse(fm.body.replace(/\r(?!\n)/g, ' '), env);
-  const body = md.renderer.render(tokens, md.options, env);
-
-  const accent = typeof data.accent === 'string' ? resolveColor(data.accent) : null;
-  const style = accent ? ` style="--smd-accent:${escapeHtml(accent)}"` : '';
-  const headerHtml = header ? renderHeader((s) => md.renderInline(s, { messages }), data, messages) : '';
-  const toc = data.toc === true ? renderToc(env.headings, messages) : '';
-  const html = `<article class="smd-doc"${languageAttrs(lang, messages)}${style}>${headerHtml}${toc}${body}</article>`;
-  return { html, frontMatter: data, headings: env.headings, lang };
+  return { md, tokens, env, data, lang, messages };
 }
 
 /**

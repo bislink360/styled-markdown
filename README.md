@@ -156,7 +156,9 @@ History and research. People see it; agents skip it.
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
 | `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect; `render` pages have a print stylesheet (Print → Save as PDF) |
+| `smd export --to confluence\|notion <file> [-o out]` | A page for your wiki: Confluence storage format (callouts, code, expands, tasks and statuses as built-in macros) or Notion API blocks cut into request bodies. It only writes the file: no network, no credentials ([mapping](docs/FEATURES.md#confluence-and-notion-smd-export)) |
 | `smd pdf <file> [--format A4\|Letter] [--landscape]` | PDF with diagrams as vectors, if you have installed Playwright or Puppeteer (smd bundles no browser) |
+| `smd docx <file> [--reference-doc house.docx]` | Word document with real headings, tables, captions, footnotes and equations, if you have installed [Pandoc](https://pandoc.org/installing.html) (smd bundles none); also **Export to Word (.docx)** in VS Code |
 | `smd build <dir> --out site` | Static docs site: a page per doc, sidebar, breadcrumbs, search, backlinks and a task/decision/risk dashboard |
 | `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
 | `smd lsp --stdio` | Language server for Neovim, Helix, Zed and other LSP editors: diagnostics, quick fixes, outline, hover, completion, go to definition, formatting (also `smd-language-server`; [setup](docs/EDITORS.md)) |
@@ -191,6 +193,10 @@ History and research. People see it; agents skip it.
 3. Open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS).
 
 > Listings on the VS Code Marketplace, [Open VSX](https://open-vsx.org) (for VSCodium, Cursor, Windsurf and Gitpod) and npm are coming once published. Until they are live, every release on GitHub has the `.vsix`, the npm package and the skills.
+
+### Web playground
+
+Try `.smd` in the browser without installing anything: edit on the left; the preview, the agent view with its token estimate, diagnostics and the Markdown export update on the right, and **Copy link** shares the document in the link itself (after the `#`, so it never reaches a server). Build it with `npm run build:playground` in `extension/` and open `extension/dist/playground/index.html`, or unzip `styled-markdown-playground.zip` from a release and open its `index.html`. It is a static page with no backend; previews run in a sandboxed frame. See [playground/README.md](playground/README.md) for how it works and its threat model. It is not hosted anywhere yet.
 
 ### npm library and `smd` CLI
 
@@ -357,6 +363,7 @@ styled-markdown/
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
 ├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
 ├── integrations/obsidian/ the Obsidian plugin (id `styled-markdown`)
+├── playground/           the web playground: a static page that runs the engine in the browser
 ├── validate/             the GitHub Action (smd validate with pull request annotations)
 ├── examples/             example documents (+ rendered HTML)
 ├── docs/                 guides, specification, gallery and screenshots
@@ -374,6 +381,7 @@ npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
 npm run package        # → styled-markdown-1.6.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
+npm run build:playground  # → dist/playground (the web playground; open its index.html)
 ```
 
 Press **F5** in `extension/` to launch an Extension Development Host with the examples open. See [CONTRIBUTING.md](CONTRIBUTING.md).

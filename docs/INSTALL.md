@@ -12,6 +12,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 - [Use `smd` in CI](#use-smd-in-ci)
 - [Pre-commit hooks](#pre-commit-hooks)
 - [MkDocs plugin](#mkdocs-plugin)
+- [Web playground](#web-playground)
 - [Obsidian plugin](#obsidian-plugin)
 - [Update or uninstall](#update-or-uninstall)
 - [Build from source](#build-from-source)
@@ -26,6 +27,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | MkDocs plugin | Python 3.9+, MkDocs 1.6+ and **Node.js 18 or newer** on `PATH` |
 | Obsidian plugin | Obsidian **1.4 or newer**, desktop or mobile |
 | Building from source | Node.js 18+, npm, Git |
+| Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd docx` and **Export to Word (.docx)** |
 
 ## Install the VS Code extension
 
@@ -123,6 +125,19 @@ smd --version       # smd 1.6.0 (Styled Markdown spec v1)
 ```
 
 **Without linking:** `node extension/dist/cli.js <command>`.
+
+### Optional: Pandoc for Word export
+
+`smd docx` and the extension's **Export to Word (.docx)** hand the document to [Pandoc](https://pandoc.org/installing.html), which smd does not bundle (the CLI and the npm package keep zero dependencies). Install Pandoc 3.0 or newer only if you want `.docx` files:
+
+```bash
+winget install JohnMacFarlane.Pandoc   # Windows (or the installer or zip from pandoc.org)
+brew install pandoc                    # macOS
+sudo apt install pandoc                # Debian/Ubuntu (check pandoc --version: 3.0 or newer)
+pandoc --version
+```
+
+smd finds Pandoc at `--pandoc <path>`, then the `SMD_PANDOC` environment variable, then on the `PATH`; the extension reads the `smd.export.pandocPath` setting first (a user setting, so a workspace can't point it at another program). Without Pandoc, `smd docx` exits with code 2 and says how to install it, and the extension shows the same with an **Install Pandoc** button. `smd docx <file.smd> --html-only -o page.html` writes the HTML smd would give Pandoc, to convert yourself: `pandoc page.html -f html -t docx -o page.docx`.
 
 
 ## Use `smd` in CI
@@ -261,6 +276,15 @@ plugins:
 ```
 
 Options, links, the table of contents, dark mode and includes: [plugin README](../integrations/mkdocs/README.md).
+
+## Web playground
+
+The playground needs no installation: it is a static page that runs the engine in the browser (see [FEATURES.md §19](FEATURES.md#19-web-playground)).
+
+- **From a release:** download `styled-markdown-playground.zip`, unzip it and open `index.html` in a browser.
+- **From source:** `cd extension && npm ci && npm run build:playground`, then open `extension/dist/playground/index.html`.
+
+It works from `file://` and from any static web server. It needs a current browser (Chrome or Edge 103+, Firefox 113+, Safari 16.4+) for the compressed share links. It is not hosted anywhere yet; publishing it (for example on GitHub Pages) is a separate maintainer decision.
 
 ## Obsidian plugin
 

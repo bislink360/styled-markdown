@@ -5,8 +5,8 @@ import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import {
   containerEnd, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
-import { includedLines, includeSource } from './includeText';
-import { figureIndex } from './parse';
+import { expandedFigures, figuresOf, includedLines, includeKey, includeSource, type ExpandedFigures } from './includeText';
+import { codeLines } from './parse';
 import { quoteCite } from './quote';
 import { HEADING_ATTRS } from './render';
 import { riskMatrixMarkdown } from './risks';
@@ -31,8 +31,11 @@ const TICK = '`';
 export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): string {
   const lines = text.split(/\r?\n/);
   const out: string[] = [];
-  const figures = figureIndex(text);
+  const numbering = figureNumbering(options, text);
+  const figures = { byId: numbering.figures.byId, own: figuresOf(numbering.figures, numbering.key) };
   const variables = variablesOf(options, lines);
+  // Indented code reaches the line handling below; `{{name}}` is never replaced there, as in rendering.
+  const code = codeLines(text);
   interface Frame { len: number; prefix: string; close?: string; end?: string[] }
   const stack: Frame[] = [];
   const prefix = () => stack.map((f) => f.prefix).join('');
@@ -100,18 +103,18 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
     if (open && info) {
       if (info.name === 'include') {
         const len = open[2].length;
-        i = includeMarkdown(info, { lines, open: i, options, emit, keepBody: () => stack.push({ len, prefix: '' }) });
+        i = includeMarkdown(info, { lines, open: i, options, numbering, emit, keepBody: () => stack.push({ len, prefix: '' }) });
         continue;
       }
       const title = info.title ? convertInline(substituteLine(info.title, variables), figures.byId) : '';
-      const head = containerMarkdown({ name: info.name, title, values: info.attrs.values, id: info.attrs.id, figure: figures.byLine.get(i), text });
+      const head = containerMarkdown({ name: info.name, title, values: info.attrs.values, id: info.attrs.id, figure: figures.own.get(i + numbering.offset), text });
       for (const l of head.before ?? []) emit(l);
       stack.push({ len: open[2].length, prefix: head.prefix, ...(head.close === undefined ? {} : { close: head.close }), ...(head.end ? { end: head.end } : {}) });
       for (const l of head.inside ?? []) emit(l);
       continue;
     }
     const content = /^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line;
-    emit(convertInline(substituteLine(content, variables), figures.byId));
+    emit(convertInline(substituteLine(content, variablesOn(i, code, variables)), figures.byId));
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
@@ -121,12 +124,24 @@ const includeScopes = new WeakMap<ToMarkdownOptions, IncludeScope>();
 /** The front matter variables of the including document, for included documents. */
 const includeVariables = new WeakMap<ToMarkdownOptions, Variables>();
 const variablesOf = (options: ToMarkdownOptions, lines: string[]) => includeVariables.get(options) ?? documentVariables(lines);
+/**
+ * How the converted text's figures are numbered: together with the whole document's, as rendered output numbers
+ * them. `key` is the document's in `figures`, and `offset` turns a line of the text into a line of that document.
+ */
+interface FigureNumbering { figures: ExpandedFigures; key: string; offset: number }
+/** The figure numbering of included documents (the root document numbers its own). */
+const includeNumbering = new WeakMap<ToMarkdownOptions, FigureNumbering>();
+const figureNumbering = (options: ToMarkdownOptions, text: string): FigureNumbering =>
+  includeNumbering.get(options) ?? { figures: expandedFigures(text, options.readFile), key: '', offset: 0 };
+/** The variables `{{name}}` stands for on a line: none on a line of code. */
+const variablesOn = (line: number, code: ReadonlySet<number>, variables: Variables) => (code.has(line) ? undefined : variables);
 
 interface IncludeAt {
   lines: string[];
   /** The line of the `:::include`. */
   open: number;
   options: ToMarkdownOptions;
+  numbering: FigureNumbering;
   emit: (line: string) => void;
   /** Convert the block's body as content, as for a box. */
   keepBody: () => void;
@@ -149,6 +164,9 @@ function includeMarkdown(info: ContainerInfo, at: IncludeAt): number {
     includeScopes.set(child, innerScope(scope, inc));
     // Included text uses this document's front matter variables, as the rendered HTML does.
     includeVariables.set(child, variablesOf(options, lines));
+    // Its figures are numbered with this document's, and `:ref` resolves across both.
+    const { numbering } = at;
+    includeNumbering.set(child, { figures: numbering.figures, key: includeKey(numbering.key, open + numbering.offset), offset: inc.start - 1 });
     // A leading blank line, so a body that starts with `---` is not taken for front matter.
     const text = ['', ...includedLines(inc).slice(inc.start, inc.end + 1)].join('\n');
     at.emit(`<!-- included from ${includeLabel(inc.path, request?.section)} -->`);

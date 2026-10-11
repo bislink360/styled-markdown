@@ -4,7 +4,7 @@
 //   node .claude/skills/smd-release/scripts/bump-version.mjs <major|minor|patch|X.Y.Z>
 //
 // Updates: extension/package.json, extension/package-lock.json, npm/package.json,
-// integrations/obsidian/manifest.json and versions.json,
+// integrations/obsidian/manifest.json and versions.json, integrations/mkdocs/pyproject.toml,
 // extension/CHANGELOG.md (new "## X.Y.Z — YYYY-MM-DD" section with empty headings).
 // Does not commit, tag or publish.
 
@@ -37,6 +37,16 @@ setVersion(join(ROOT, 'npm', 'package.json'), (j) => { j.version = next; });
 let minAppVersion;
 setVersion(join(ROOT, 'integrations', 'obsidian', 'manifest.json'), (j) => { j.version = next; minAppVersion = j.minAppVersion; });
 if (minAppVersion) setVersion(join(ROOT, 'integrations', 'obsidian', 'versions.json'), (j) => { j[next] = minAppVersion; });
+
+// The MkDocs plugin's Python package: the `version = "…"` line of pyproject.toml (check-versions.mjs requires it).
+const setTomlVersion = (path) => {
+  if (!existsSync(path)) return;
+  const toml = readFileSync(path, 'utf8');
+  if (!/^version = "[^"]*"$/m.test(toml)) throw new Error(`no version line in ${path}`);
+  writeFileSync(path, toml.replace(/^version = "[^"]*"$/m, `version = "${next}"`));
+  console.log(`updated ${path.replace(ROOT, '.')}`);
+};
+setTomlVersion(join(ROOT, 'integrations', 'mkdocs', 'pyproject.toml'));
 
 const changelogPath = join(ROOT, 'extension', 'CHANGELOG.md');
 const changelog = readFileSync(changelogPath, 'utf8');

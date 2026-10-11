@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { applyFixes, readRuleConfig, RULE_CODES, validateSmd, type Diagnostic } from '../src/core';
+import { agentView, applyFixes, readRuleConfig, RULE_CODES, validateSmd, type Diagnostic } from '../src/core';
 import { loadRuleConfig } from '../src/config';
 
 const found = (diagnostics: Diagnostic[]) => diagnostics.map((d) => `${d.line}:${d.code}:${d.severity}`);
@@ -84,4 +84,27 @@ test('loadRuleConfig uses the nearest config file and stops at the repository ro
   fs.rmSync(path.join(repo, '.git'), { recursive: true });
   assert.deepEqual(loadRuleConfig(path.join(repo, 'docs', 'plan.smd')).rules, { '*': 'off' });
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('container/agent-in-skip warns about :::agent blocks that a {agent=skip} section hides from agents', () => {
+  const doc = [
+    '# Plan', '', ':::agent Kept', 'Visible to agents.', ':::', '',
+    '## Background {agent=skip}', '', ':::agent Lost', 'Never seen.', ':::', '',
+    '### Detail', '', ':::note', ':::agent Nested', 'Also lost.', ':::', ':::', '',
+    '```md', ':::agent In code', '```', '',
+    '## Next', '', ':::agent After', 'Visible again.', ':::', '',
+  ].join('\n');
+  const diagnostics = validateSmd(doc).filter((d) => d.code === 'container/agent-in-skip');
+  assert.deepEqual(found(diagnostics), ['8:container/agent-in-skip:warning', '15:container/agent-in-skip:warning']);
+  assert.deepEqual([diagnostics[0].column, diagnostics[0].endColumn], [3, 8]);
+  assert.match(diagnostics[0].message, /in the section "Background" \(line 7\), whose heading has \{agent=skip\}, so agent views leave it out/);
+  // What the warning is about: the agent view drops those blocks and keeps the others.
+  const view = agentView(doc).text;
+  assert.match(view, /<agent-instructions title="Kept">/);
+  assert.match(view, /<agent-instructions title="After">/);
+  assert.doesNotMatch(view, /Lost|Nested/);
+  // A warning, never an error; configurable like any rule; nothing without a skipped section.
+  assert.ok(validateSmd(doc).every((d) => d.severity !== 'error'));
+  assert.deepEqual(validateSmd(doc, { rules: { 'container/agent-in-skip': 'off' } }).filter((d) => d.code === 'container/agent-in-skip'), []);
+  assert.deepEqual(validateSmd(doc.replace(' {agent=skip}', '')).filter((d) => d.code === 'container/agent-in-skip'), []);
 });
