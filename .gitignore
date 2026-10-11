@@ -26,3 +26,8 @@ integrations/mkdocs/dist/
 __pycache__/
 *.egg-info/
 .pytest_cache/
+
+# Obsidian plugin (integrations/obsidian): build output (the release workflow builds and zips it)
+integrations/obsidian/main.js
+integrations/obsidian/styles.css
+obsidian-plugin/

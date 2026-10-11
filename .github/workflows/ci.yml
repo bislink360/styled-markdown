@@ -79,6 +79,36 @@ jobs:
         run: python -m pip install --disable-pip-version-check ".[test]"
       - run: python -m pytest -q
 
+  # The Obsidian plugin (integrations/obsidian): type-checked against the `obsidian` API typings and built as the
+  # release builds it (the unit tests also bundle it and run it against a mock of the API).
+  obsidian:
+    name: Obsidian plugin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            extension/package-lock.json
+            integrations/obsidian/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Install the API typings
+        working-directory: integrations/obsidian
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        working-directory: integrations/obsidian
+        run: npm run typecheck
+      - name: Build main.js and styles.css
+        working-directory: integrations/obsidian
+        run: |
+          node scripts/build.mjs --out ../../obsidian-plugin/styled-markdown
+          ls -l ../../obsidian-plugin/styled-markdown
+          test -s ../../obsidian-plugin/styled-markdown/main.js
+          test -s ../../obsidian-plugin/styled-markdown/styles.css
+          test -s ../../obsidian-plugin/styled-markdown/manifest.json
+
   # Dogfoods the GitHub Action in validate/ from this checkout with the committed bundled CLI
   # (the test job checks that it is up to date), on Linux and on Windows (Git Bash).
   validate-action:

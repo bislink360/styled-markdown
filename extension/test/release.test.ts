@@ -87,7 +87,7 @@ test('releaseNotes puts the downloads table first when asked', () => {
   assert.ok(notes.endsWith('\n\nBody\n'));
   const assets = [
     'styled-markdown-1.5.0.vsix', 'styled-markdown-1.5.0.tgz', 'styled-markdown-reader.zip', 'styled-markdown-writer.zip',
-    'styled-markdown-playground.zip', 'mkdocs_styled_markdown-1.5.0-py3-none-any.whl', 'mkdocs_styled_markdown-1.5.0.tar.gz',
+    'styled-markdown-playground.zip', 'mkdocs_styled_markdown-1.5.0-py3-none-any.whl', 'mkdocs_styled_markdown-1.5.0.tar.gz', 'styled-markdown-obsidian-1.5.0.zip',
   ];
   for (const asset of assets) {
     assert.ok(downloadsTable('1.5.0').includes(`\`${asset}\``), asset);
@@ -101,7 +101,7 @@ test('isReleaseBranch accepts main and release/* only', () => {
   }
 });
 
-const good = { tag: 'v1.5.0', extensionVersion: '1.5.0', lockVersion: '1.5.0', npmVersion: '1.5.0', pythonVersion: '1.5.0', changelog };
+const good = { tag: 'v1.5.0', extensionVersion: '1.5.0', lockVersion: '1.5.0', npmVersion: '1.5.0', pythonVersion: '1.5.0', obsidianVersion: '1.5.0', changelog };
 
 test('checkRelease passes a consistent release', () => {
   assert.deepEqual(checkRelease(good), []);
@@ -109,13 +109,14 @@ test('checkRelease passes a consistent release', () => {
 });
 
 test('checkRelease reports every mismatch', () => {
-  const problems = checkRelease({ ...good, tag: 'v1.3.0', npmVersion: undefined, pythonVersion: '1.2.0', branches: ['origin/feat/x'] });
-  assert.equal(problems.length, 6);
+  const problems = checkRelease({ ...good, tag: 'v1.3.0', npmVersion: undefined, pythonVersion: '1.2.0', obsidianVersion: '1.4.0', branches: ['origin/feat/x'] });
+  assert.equal(problems.length, 7);
   assert.match(problems[0], /extension\/package\.json has version 1\.5\.0, the tag is v1\.3\.0/);
   assert.match(problems[2], /npm\/package\.json has version \(none\)/);
   assert.match(problems[3], /integrations\/mkdocs\/pyproject\.toml has version 1\.2\.0/);
-  assert.match(problems[4], /no "## 1\.3\.0" section/);
-  assert.match(problems[5], /not on main or a release\/\* branch \(found on: origin\/feat\/x\)/);
+  assert.match(problems[4], /integrations\/obsidian\/manifest\.json has version 1\.4\.0/);
+  assert.match(problems[5], /no "## 1\.3\.0" section/);
+  assert.match(problems[6], /not on main or a release\/\* branch \(found on: origin\/feat\/x\)/);
   assert.match(checkRelease({ ...good, branches: [] })[0], /found on: no branch/);
 });
 

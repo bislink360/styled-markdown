@@ -4,8 +4,8 @@
 //   node extension/scripts/release/check-versions.mjs <vX.Y.Z> [--branches [--commit <rev>]] [--output <file>]
 //
 // - the tag is a plain vX.Y.Z
-// - extension/package.json, extension/package-lock.json, npm/package.json and the MkDocs plugin's
-//   integrations/mkdocs/pyproject.toml have version X.Y.Z
+// - extension/package.json, extension/package-lock.json, npm/package.json, the MkDocs plugin's
+//   integrations/mkdocs/pyproject.toml and the Obsidian plugin's integrations/obsidian/manifest.json have version X.Y.Z
 // - extension/CHANGELOG.md has a non-empty "## X.Y.Z" section
 // - with --branches: the tagged commit (or --commit, e.g. HEAD before tagging) is on origin/main
 //   or an origin/release/* branch
@@ -25,10 +25,10 @@ export function isReleaseBranch(name) {
 
 /**
  * Problems with a release, as messages; empty when it may ship. Without `branches`, the branch isn't checked.
- * @param {{ tag: string, extensionVersion?: string, lockVersion?: string, npmVersion?: string, pythonVersion?: string, changelog?: string, branches?: string[] }} release
+ * @param {{ tag: string, extensionVersion?: string, lockVersion?: string, npmVersion?: string, pythonVersion?: string, obsidianVersion?: string, changelog?: string, branches?: string[] }} release
  * @returns {string[]}
  */
-export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, pythonVersion, changelog, branches }) {
+export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, pythonVersion, obsidianVersion, changelog, branches }) {
   const version = versionFromTag(tag);
   if (!version) return [`"${tag}" is not a release tag (expected vX.Y.Z).`];
   const problems = [];
@@ -37,6 +37,7 @@ export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, p
     ['extension/package-lock.json', lockVersion],
     ['npm/package.json', npmVersion],
     ['integrations/mkdocs/pyproject.toml', pythonVersion],
+    ['integrations/obsidian/manifest.json', obsidianVersion],
   ];
   for (const [file, found] of manifests) {
     if (found !== version) problems.push(`${file} has version ${found ?? '(none)'}, the tag is v${version}.`);
@@ -104,6 +105,7 @@ function main(argv) {
     lockVersion: readJsonVersion(join(root, 'extension', 'package-lock.json')),
     npmVersion: readJsonVersion(join(root, 'npm', 'package.json')),
     pythonVersion: readPyprojectVersion(join(root, 'integrations', 'mkdocs', 'pyproject.toml')),
+    obsidianVersion: readJsonVersion(join(root, 'integrations', 'obsidian', 'manifest.json')),
     changelog: readFileSync(join(root, 'extension', 'CHANGELOG.md'), 'utf8'),
     branches: options.branches ? branchesContaining(options.commit ?? `${options.tag}^{commit}`) : undefined,
   });
