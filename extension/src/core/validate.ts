@@ -12,7 +12,7 @@ import { figureTargets, findRefs, type Figure, type FigureRef } from './figures'
 import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, versionLabel, type ChangelogEntry, type Version } from './changelog';
 import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
-import { codeLines, parseSmd } from './parse';
+import { inlineMathSpans, literalLines, parseSmd } from './parse';
 import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
@@ -83,6 +83,8 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   const fm = parseFrontMatter(text);
   if (fm.error) wholeLine(fm.error.line, 'error', 'frontmatter/invalid', fm.error.message);
   if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, options);
+  // For the checks of text: nothing in code or math is syntax, so what they find there is not reported.
+  const pushText = outsideLiteral(push, literalText(text, lines, fm.bodyStartLine));
 
   // --- Body ---------------------------------------------------------------
   interface Open { name: string; len: number; line: number }
@@ -160,16 +162,16 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     // Headings
     const h1 = /^#\s+(.+?)\s*#*\s*$/.exec(raw);
     if (h1 && !firstH1) firstH1 = { text: h1[1].replace(HEADING_ATTRS, ''), line: i };
-    if (/^\s{0,3}#{1,6}\s/.test(raw)) checkHeadingAttrs(raw, i, push);
+    if (/^\s{0,3}#{1,6}\s/.test(raw)) checkHeadingAttrs(raw, i, pushText);
 
     // Open tasks that are past their due date
     const openTask = /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(raw);
     const due = openTask ? /:due\[(\d{4}-\d{2}-\d{2})\]/.exec(raw) : null;
     if (due && dueState(due[1], options.today) === 'overdue') {
-      push(i, due.index, due.index + due[0].length, 'info', 'task/overdue', `Open task is overdue (due ${due[1]}).`);
+      pushText(i, due.index, due.index + due[0].length, 'info', 'task/overdue', `Open task is overdue (due ${due[1]}).`);
     }
 
-    checkInline(raw, i, push, fm.data);
+    checkInline(raw, i, pushText, fm.data);
   }
 
   if (fence) {
@@ -187,17 +189,17 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       'The front matter title is already rendered as the document heading; this "# heading" duplicates it.');
   }
 
-  checkLinks(text, push, options);
+  checkLinks(text, pushText, options);
   checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
-  checkFigures(text, lines, fm.bodyStartLine, push, () => includedFigureIds(text, options.readFile));
-  checkFootnotes(text, push);
+  checkFigures(text, lines, fm.bodyStartLine, pushText, () => includedFigureIds(text, options.readFile));
+  checkFootnotes(text, pushText);
   // Release headings and glossary terms are read with their `{{name}}` values in, as they render.
   const expanded = lines.map((l) => substituteLine(l, fm.data));
   const terms = checkGlossary({ lines, expanded }, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
   checkTermIds(terms, text, lines, fm.bodyStartLine, push);
   for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
-  checkVariables(text, lines, fm.bodyStartLine, fm.data, push);
+  checkVariables(lines, fm.bodyStartLine, fm.data, pushText);
   checkAgentInSkipped(text, lines, fm.bodyStartLine, push);
 
   let result = applySuppressions(text, diagnostics);
@@ -206,6 +208,35 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 }
 
 type Push = (line: number, column: number, endColumn: number, severity: Severity, code: string, message: string, fix?: Fix) => void;
+
+/** Is a place in the body inside code or math? */
+type InLiteral = (line: number, column: number) => boolean;
+
+/**
+ * Where nothing is syntax, as rendering, the agent view and `smd to-md` read the document: the lines of code and
+ * display math (literalLines) and `$inline math$` on the other lines (inlineMathSpans). Found on the first ask.
+ */
+function literalText(text: string, lines: string[], bodyStart: number): InLiteral {
+  let literal: Set<number> | undefined;
+  const math = new Map<number, Array<[number, number]>>();
+  const mathOn = (line: number) => {
+    const spans = math.get(line) ?? inlineMathSpans(lines[line] ?? '');
+    math.set(line, spans);
+    return spans;
+  };
+  return (line, column) => {
+    if (line < bodyStart) return false;
+    literal ??= literalLines(text);
+    return literal.has(line) || mathOn(line).some(([start, end]) => column >= start && column < end);
+  };
+}
+
+/** `push` for the checks of text: what starts inside code or math is not reported. */
+function outsideLiteral(push: Push, inLiteral: InLiteral): Push {
+  return (line, column, ...rest) => {
+    if (!inLiteral(line, column)) push(line, column, ...rest);
+  };
+}
 type WholeLine = (line: number, severity: Severity, code: string, message: string) => void;
 type MarkKey = (key: string, severity: Severity, code: string, message: string, fix?: FrontMatterFix) => void;
 
@@ -647,12 +678,9 @@ function checkFigures(text: string, lines: string[], bodyStart: number, push: Pu
  * `{{name}}` in the body names a front matter key with a text value. Undefined names are only `info`: until
  * 1.6, `{{…}}` was plain text (templates, Handlebars or Jinja examples), so it must not start failing checks.
  */
-function checkVariables(text: string, lines: string[], bodyStart: number, data: Variables, push: Push): void {
-  const found = findVariables(lines, bodyStart);
-  if (!found.length) return;
-  // Code is never substituted, so `{{…}}` in it is code, not a variable: findVariables skips fences, this indented code.
-  const code = codeLines(text);
-  const uses = found.filter((use) => !code.has(use.line));
+function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push): void {
+  const uses = findVariables(lines, bodyStart);
+  if (!uses.length) return;
   const names = [...new Set([...Object.keys(data), ...variableNames(data).map((v) => v.name)])];
   for (const use of uses) {
     const value = lookupVariable(data, use.name);

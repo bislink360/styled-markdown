@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  agentView, extractTasks, getDocumentInfo, outline, querySmd, renderSmd, smdToMarkdown, validateSmd,
+  agentView, extractTasks, getDocumentInfo, issueTasks, outline, planIssueSync, querySmd, renderSmd, smdToMarkdown, validateSmd,
 } from '../src/core';
 import { inlineText } from '../src/core/agentView';
 import { inlineMathSpans } from '../src/core/parse';
@@ -261,6 +261,54 @@ test('inline math is found as the inline parser reads a line; tasks, meta and qu
   ]);
   assert.equal(querySmd(text, 'decision')[0].title, String.raw`Use $\sqrt[3]{d}$ here`);
   assert.equal(getDocumentInfo(text, { today: TODAY }).decisions[0].title, String.raw`Use $\sqrt[3]{d}$ here`);
+});
+
+/** What the checks of text report when it is text: a link, a reference, a footnote, a figure, an image, attributes, directives, a variable. */
+const CHECKED = '[x](#nope) [y][nope-ref] [^nope-fn] :ref[nope-fig] ![i](missing.png) [a]{color=nope} :badg[typo] :priority[P9] {{nope}}';
+const CHECKED_CODES = [
+  'link/missing-anchor', 'link/undefined-reference', 'footnote/undefined', 'figure/unknown-ref', 'link/missing-file', 'attrs/value', 'directive/unknown', 'attrs/value',
+  'variable/undefined',
+];
+const HEAD = ['---', 'smd: 1', 'title: V', '---', ''];
+const found = (text: string) => validateSmd(text, { today: TODAY, fileExists: () => false }).map((d) => `${d.line}:${d.code}`);
+
+test('validation reports nothing inside indented code or math, where nothing is syntax', () => {
+  const literal = [
+    ...HEAD, 'Code:', '', `    ${CHECKED}`, '    - [ ] task :due[2020-01-01]', '', '- item', '', `      ${CHECKED}`, '',
+    ':::note', `    ${CHECKED}`, ':::', '', String.raw`Math $${CHECKED} \sqrt[3]{x}$ and $\sqrt[3]{y}$ end.`, '',
+    '$$', String.raw`\text{[a]{color=nope} :ref[nope-fig] :badg[typo]}`, '$$',
+  ].join('\n');
+  const html = renderSmd(literal).html;
+  assert.equal(html.match(/<code>/g)?.length, 3);
+  assert.doesNotMatch(html, /smd-badge|<a |<img |smd-span/);
+  assert.deepEqual(found(literal), []);
+
+  // The same in text is reported as before: also on a four-space line that continues a paragraph, and around math.
+  const text = [
+    ...HEAD, `Text ${CHECKED}`, '', 'Paragraph', `    ${CHECKED}`, '', '- [ ] task :due[2020-01-01]', '',
+    'Ref [text $x$][nope-ref] and $y$ [b]{color=nope} $z$ [c]{color=nope}.',
+  ].join('\n');
+  assert.deepEqual(found(text), [
+    ...CHECKED_CODES.map((code) => `5:${code}`), ...CHECKED_CODES.map((code) => `8:${code}`), '10:task/overdue',
+    '12:link/undefined-reference', '12:attrs/value', '12:attrs/value',
+  ]);
+});
+
+test('tasks, meta, query and issue sync read no task in indented code, as in fenced code', () => {
+  const text = [
+    ...HEAD, '## Plan', '', '- [ ] real :due[2020-01-01]', '    - [x] nested, four spaces in', '', 'Example:', '', '    - [ ] in code acme/shop#1', '    - [x] done in code', '',
+    '- item', '', '      - [ ] code in a list', '', '```', '- [ ] fenced', '```',
+  ].join('\n');
+  assert.equal(renderSmd(text).html.match(/<code>/g)?.length, 3);
+  const tasks = ['7:real', '8:nested, four spaces in'];
+  assert.deepEqual(extractTasks(text, TODAY).map((t) => `${t.line}:${t.text}`), tasks);
+  const info = getDocumentInfo(text, { today: TODAY });
+  assert.deepEqual([info.tasks.total, info.tasks.done, info.tasks.open.length], [2, 1, 1]);
+  assert.deepEqual(querySmd(text, 'task').map((m) => `${m.line}:${m.title}`), tasks);
+  assert.deepEqual(issueTasks(text, TODAY).map((t) => `${t.line}:${t.text}`), tasks);
+  // The line of code names an issue; a sync neither reads nor creates anything for it.
+  assert.deepEqual(planIssueSync(issueTasks(text, TODAY), new Map(), { create: true }).actions.map((a) => [a.kind, a.task.line]), [['create', 7]]);
+  assert.deepEqual(found(text).filter((d) => d.endsWith('task/overdue')), ['7:task/overdue']);
 });
 
 test('outline lists sections with costs and markers', () => {
