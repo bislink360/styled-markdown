@@ -7,10 +7,12 @@
 ### Added
 
 ### Changed
+- The VS Code extension package (`.vsix`) no longer includes the MkDocs plugin's bridge script (`dist/mkdocs-bridge.cjs`, 871 KB), which only the Python package uses.
 
 ### Deprecated
 
 ### Fixed
+- Release tooling: a `.vsix` built on a developer's machine could pack a local coverage report (`coverage/`) or a downloaded VS Code (`.vscode-test/`); both are now excluded, and the release workflow fails if a `.vsix` holds sources, tests or local output. The published 1.7.0 package was built from a clean checkout and was not affected.
 
 ## 1.7.0 — 2026-10-11
 
