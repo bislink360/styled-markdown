@@ -177,6 +177,21 @@ test('agent view leaves indented code and display math as written, as rendering 
     '$$', String.raw`\sqrt[3]{z} ==m==`, '$$', '', 'Para', '    lazy [inc-lazy]', '</included>');
 });
 
+test('agent view and plain Markdown keep indented code verbatim, like fenced code: no line of it is a task, a comment or a table row', () => {
+  const code = ['    - [x] not a task', '    <!-- kept -->', '    | a | b |', '    trailing   '];
+  const text = ['Intro.', '', '- [x] done', '', 'Code:', '', ...code, '', 'After <!-- gone --> text.', '', '- [x] done too'].join('\n');
+  assert.ok(renderSmd(text).html.includes('<code>- [x] not a task\n&lt;!-- kept --&gt;\n| a | b |\n'));
+  has(agentView(text).text, 'Code:', '', ...code, '', 'After  text.');
+  // Condensed views count the two tasks of the lists, not the line of code that looks like one.
+  has(agentView(text, { brief: true }).text, '- (1 completed task omitted)', 'Code:', '', ...code, '', 'After  text.', '', '- (1 completed task omitted)');
+  has(smdToMarkdown(text), 'Code:', '', ...code, '', 'After <!-- gone --> text.');
+  // In included text, and for display math: a line of math with bars is not a table row.
+  const readFile = (p: string) => (p === 'part.smd' ? ['Included.', '', ...code, '', '$$', String.raw`|a| \le |b|`, '$$', ''].join('\n') : undefined);
+  const including = 'Before.\n\n:::include{file="part.smd"}\n:::\n';
+  has(agentView(including, { readFile, brief: true }).text, '<included file="part.smd">', 'Included.', '', ...code, '', '$$', String.raw`|a| \le |b|`, '$$', '</included>');
+  has(smdToMarkdown(including, { readFile }), 'Included.', '', ...code, '', '$$', String.raw`|a| \le |b|`, '$$');
+});
+
 test('outline lists sections with costs and markers', () => {
   const o = outline(prd, { today: TODAY });
   assert.match(o, /^Checkout Redesign — One-Page Checkout · approved · file ≈\d+ tokens/);

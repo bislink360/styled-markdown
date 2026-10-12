@@ -358,10 +358,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   const lineRefs = options.lineRefs ?? true;
   const { figures, ownFigures, literal } = documentContext(lines, options);
   const variables = options.variables ?? documentVariables(lines);
-  // Code and display math stay as written, as in rendering; indented code and math reach the line handling below.
-  const words: Words = (s, openTask) => inlineText(s, options.today, openTask, figures.byId, variables);
-  let lineWords = words;
-  const text = (s: string, openTask = false) => lineWords(s, openTask);
+  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, variables);
   const changelogs = options.changelogs ?? changelogEntries(lines);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
@@ -384,7 +381,6 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
   for (let i = from; i < lines.length; i++) {
     const raw = lines[i];
-    lineWords = wordsOn(i, literal, words);
 
     // ---- fenced code ----
     if (fence) {
@@ -400,6 +396,13 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     if (f) {
       flushDone(i);
       fence = { marker: f[1], start: i, body: [], info: f[2] };
+      continue;
+    }
+
+    // ---- indented code and display math: as written, like fenced code (no line of them is a task, a table or a comment) ----
+    if (literal.has(i)) {
+      flushDone(i);
+      emit(raw, i);
       continue;
     }
 
@@ -493,16 +496,6 @@ function documentContext(lines: string[], options: TransformOptions): DocumentCo
   const text = lines.join('\n');
   const figures = options.figures ?? expandedFigures(text, viewReader(options));
   return { figures, ownFigures: figuresOf(figures, options.figureKey ?? ''), literal: options.literalLines ?? literalLines(text) };
-}
-
-/** Text as the view shows it: inline syntax as plain words and `{{name}}` as its value (see inlineText). */
-type Words = (s: string, openTask: boolean) => string;
-
-const asWritten: Words = (s) => s;
-
-/** How the text of a line is shown: as written on a line of code or display math, where nothing is inline syntax. */
-function wordsOn(line: number, literal: ReadonlySet<number>, words: Words): Words {
-  return literal.has(line) ? asWritten : words;
 }
 
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */

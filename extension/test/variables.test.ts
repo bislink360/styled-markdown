@@ -137,7 +137,8 @@ test('variables: indented code keeps {{name}} as written in the agent view and s
   const view = agentView(text).text;
   assert.match(view, /^Text 2\.10\.$/m);
   assert.match(view, /^ {4}indented \{\{version\}\}$/m);
-  assert.match(view, /^\|cell \{\{version\}\}\|$/m);
+  // A line of code is not a table row: it stays as written, like the lines around it.
+  assert.match(view, /^ {4}\| cell \{\{version\}\} \|$/m);
   assert.match(view, /^ {8}nested \{\{version\}\}$/m);
   assert.match(view, /^After 2\.10\.$/m);
   const md = smdToMarkdown(text);
