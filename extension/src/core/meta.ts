@@ -1,6 +1,6 @@
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
-import { parseSmd } from './parse';
+import { codeLines, parseSmd } from './parse';
 import { dueState } from './render';
 import { validateSmd, type Diagnostic, type ValidateOptions } from './validate';
 import { inlineText } from './agentView';
@@ -38,13 +38,27 @@ export interface SmdDocumentInfo {
   diagnostics: { errors: number; warnings: number; items: Diagnostic[] };
 }
 
-/** Parse every task (open and done) with its owner, priority and due date. */
+/**
+ * Is a line of a document code, as markdown-it reads it (see ParseResult.code)? Fenced code is skipped before
+ * this is asked; an indented code block starts with four columns or a tab, so only such lines need the parse.
+ */
+function codeLineCheck(text: string): (index: number, line: string) => boolean {
+  let code: Set<number> | undefined;
+  return (index, line) => {
+    if (!/^(?:\s{4}|\s*\t)/.test(line)) return false;
+    code ??= codeLines(text);
+    return code.has(index);
+  };
+}
+
+/** Parse every task (open and done) with its owner, priority and due date. Fenced and indented code holds none. */
 export function extractTasks(text: string, today?: string): TaskInfo[] {
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);
   const tasks: TaskInfo[] = [];
   let section: string | null = null;
   let fence: string | null = null;
+  const inCode = codeLineCheck(text);
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
     const line = lines[i];
     const f = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
@@ -53,7 +67,8 @@ export function extractTasks(text: string, today?: string): TaskInfo[] {
     const h = /^\s{0,3}#{1,6}\s+(.*?)(?:\s+\{[^{}]*\})?\s*#*\s*$/.exec(line);
     if (h) { section = inlineText(h[1], undefined, false, undefined, fm.data); continue; }
     const m = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\]\s+(.*)$/.exec(line);
-    if (!m) continue;
+    // A line of an indented code block is code, not a task, as in rendering.
+    if (!m || inCode(i, line)) continue;
     const body = substituteLine(m[2], fm.data);
     const due = /:due\[([^\]]+)\]/.exec(body)?.[1]?.trim();
     const priority = /:priority\[([^\]]+)\]/.exec(body)?.[1]?.trim();

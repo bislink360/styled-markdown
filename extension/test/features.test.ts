@@ -5,8 +5,11 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  agentView, extractTasks, getDocumentInfo, outline, renderSmd, smdToMarkdown, validateSmd,
+  agentView, extractTasks, getDocumentInfo, issueTasks, outline, planIssueSync, querySmd, renderSmd, smdToMarkdown, validateSmd,
 } from '../src/core';
+import { inlineText } from '../src/core/agentView';
+import { inlineMathSpans } from '../src/core/parse';
+import { convertInline } from '../src/core/toMarkdown';
 import { readdirSync } from 'node:fs';
 import { fillTemplate } from '../src/core';
 
@@ -130,6 +133,184 @@ test('agent view can inline embedded source on request', () => {
   assert.match(r.text, /src\/pricing\.ts lines 7-13:\n```ts\nexport function subtotalCents/);
 });
 
+/** Indented code at the top level, in a list and in a container, and display math, next to four-space lines that are text. */
+const AS_WRITTEN = [
+  'Text :badge[top] ==mark== [red]{color=red}.', '',
+  '    code :badge[x] ==mark== [text]{color=red} ![alt](a.png) :ref[fig-a]', '',
+  'Paragraph', '    continued :badge[lazy] ==m==', '',
+  '- item', '    more :badge[item]', '',
+  '        nested :kbd[Ctrl] ==mark==', '',
+  ':::note Title :badge[t]', '    first :badge[c] ==mark==', ':::', '',
+  ':::figure{#fig-a} Caption', 'x', ':::', '',
+  '$$', String.raw`\sqrt[3]{x} ==m== :badge[b]`, '$$', '',
+  String.raw`$$\sqrt[3]{y} ==m==$$`,
+].join('\n');
+const AS_WRITTEN_PART = [
+  'Included :badge[inc].', '', '    inc code :badge[x] ==mark== [text]{color=red}', '',
+  '$$', String.raw`\sqrt[3]{z} ==m==`, '$$', '', 'Para', '    lazy :badge[inc-lazy]', '',
+].join('\n');
+const AS_WRITTEN_INCLUDING = 'Before :badge[b].\n\n:::include{file="part.smd"}\n:::\n';
+const asWrittenFile = (p: string) => (p === 'part.smd' ? AS_WRITTEN_PART : undefined);
+const has = (text: string, ...lines: string[]) => assert.ok(`\n${text}\n`.includes(`\n${lines.join('\n')}\n`), `${lines.join('\n')}\n--- not in ---\n${text}`);
+
+test('agent view leaves indented code and display math as written, as rendering shows them', () => {
+  // What rendering shows: code and math as written; a four-space line that continues a paragraph or a list item is text.
+  const html = renderSmd(AS_WRITTEN).html;
+  assert.ok(html.includes('<code>code :badge[x] ==mark== [text]{color=red} ![alt](a.png) :ref[fig-a]\n</code>'));
+  assert.ok(html.includes('<code>  nested :kbd[Ctrl] ==mark==\n</code>'));
+  assert.ok(html.includes('<code>first :badge[c] ==mark==\n</code>'));
+  assert.match(html, /continued <span class="smd-badge"[^>]*>lazy<\/span> <mark>m<\/mark>/);
+  assert.match(html, /more <span class="smd-badge"[^>]*>item<\/span>/);
+  assert.ok(html.includes(String.raw`<annotation encoding="application/x-tex">\sqrt[3]{x} ==m== :badge[b]</annotation>`));
+  assert.ok(html.includes(String.raw`<annotation encoding="application/x-tex">\sqrt[3]{y} ==m==</annotation>`));
+
+  for (const brief of [false, true]) {
+    const view = agentView(AS_WRITTEN, { brief }).text;
+    has(view, 'Text [top] mark red.');
+    has(view, '    code :badge[x] ==mark== [text]{color=red} ![alt](a.png) :ref[fig-a]');
+    has(view, 'Paragraph', '    continued [lazy] m');
+    has(view, '- item', '    more [item]', '', '        nested :kbd[Ctrl] ==mark==');
+    has(view, '<note title="Title [t]">', '    first :badge[c] ==mark==', '</note>');
+    has(view, '$$', String.raw`\sqrt[3]{x} ==m== :badge[b]`, '$$', '', String.raw`$$\sqrt[3]{y} ==m==$$`);
+  }
+  // In included text too, by where the included lines are code or math.
+  assert.ok(renderSmd(AS_WRITTEN_INCLUDING, { readFile: asWrittenFile }).html.includes('<code>inc code :badge[x] ==mark== [text]{color=red}\n</code>'));
+  has(agentView(AS_WRITTEN_INCLUDING, { readFile: asWrittenFile }).text,
+    'Before [b].', '', '<included file="part.smd">', 'Included [inc].', '', '    inc code :badge[x] ==mark== [text]{color=red}', '',
+    '$$', String.raw`\sqrt[3]{z} ==m==`, '$$', '', 'Para', '    lazy [inc-lazy]', '</included>');
+});
+
+test('agent view and plain Markdown keep indented code verbatim, like fenced code: no line of it is a task, a comment or a table row', () => {
+  const code = ['    - [x] not a task', '    <!-- kept -->', '    | a | b |', '    trailing   '];
+  const text = ['Intro.', '', '- [x] done', '', 'Code:', '', ...code, '', 'After <!-- gone --> text.', '', '- [x] done too'].join('\n');
+  assert.ok(renderSmd(text).html.includes('<code>- [x] not a task\n&lt;!-- kept --&gt;\n| a | b |\n'));
+  has(agentView(text).text, 'Code:', '', ...code, '', 'After  text.');
+  // Condensed views count the two tasks of the lists, not the line of code that looks like one.
+  has(agentView(text, { brief: true }).text, '- (1 completed task omitted)', 'Code:', '', ...code, '', 'After  text.', '', '- (1 completed task omitted)');
+  has(smdToMarkdown(text), 'Code:', '', ...code, '', 'After <!-- gone --> text.');
+  // In included text, and for display math: a line of math with bars is not a table row.
+  const readFile = (p: string) => (p === 'part.smd' ? ['Included.', '', ...code, '', '$$', String.raw`|a| \le |b|`, '$$', ''].join('\n') : undefined);
+  const including = 'Before.\n\n:::include{file="part.smd"}\n:::\n';
+  has(agentView(including, { readFile, brief: true }).text, '<included file="part.smd">', 'Included.', '', ...code, '', '$$', String.raw`|a| \le |b|`, '$$', '</included>');
+  has(smdToMarkdown(including, { readFile }), 'Included.', '', ...code, '', '$$', String.raw`|a| \le |b|`, '$$');
+});
+
+/** Inline math in a heading, a task, a table cell and a container title, inside other syntax, and dollar signs that are not math. */
+const INLINE_MATH = [
+  String.raw`## Heading $\sqrt[3]{h}$ ==mark==`, '',
+  String.raw`- [ ] Task $\sqrt[3]{t}$ :badge[b]`, '',
+  '| a | b |', '|---|---|', String.raw`| $\sqrt[3]{c}$ ==m== | $a ==b== c$ |`, '',
+  String.raw`:::note Title $\sqrt[3]{n}$ ==t==`, 'Body.', ':::', '',
+  String.raw`Around ==a $x=y$ b== and [span $\sqrt[3]{s}$]{color=red}, not in ` + '`$a ==b==$`.', '',
+  String.raw`Money $5 and $10 ==cheap==, or \$a ==b== c\$ [red]{color=red}.`,
+].join('\n');
+
+test('agent view and plain Markdown leave $inline math$ as written, as rendering reads it', () => {
+  const html = renderSmd(INLINE_MATH).html;
+  const tex = [...html.matchAll(/<annotation encoding="application\/x-tex">([^<]*)<\/annotation>/g)].map((m) => m[1]);
+  assert.deepEqual(tex, [String.raw`\sqrt[3]{h}`, String.raw`\sqrt[3]{t}`, String.raw`\sqrt[3]{c}`, 'a ==b== c', String.raw`\sqrt[3]{n}`, 'x=y', String.raw`\sqrt[3]{s}`]);
+  // Dollar signs that open no math are text, and the syntax around them is syntax.
+  assert.match(html, /Money \$5 and \$10 <mark>cheap<\/mark>, or \$a <mark>b<\/mark> c\$ <span[^>]*>red<\/span>\./);
+
+  const view = agentView(INLINE_MATH).text;
+  has(view, String.raw`## Heading $\sqrt[3]{h}$ mark  [L1]`);
+  has(view, String.raw`- [ ] Task $\sqrt[3]{t}$ [b]`);
+  has(view, String.raw`|$\sqrt[3]{c}$ m|$a ==b== c$|`);
+  has(view, String.raw`<note title="Title $\sqrt[3]{n}$ t">`);
+  has(view, String.raw`Around a $x=y$ b and span $\sqrt[3]{s}$, not in ` + '`$a ==b==$`.');
+  has(view, String.raw`Money $5 and $10 cheap, or \$a b c\$ red.`);
+
+  const md = smdToMarkdown(INLINE_MATH);
+  has(md, String.raw`## Heading $\sqrt[3]{h}$ **mark**`);
+  has(md, String.raw`- [ ] Task $\sqrt[3]{t}$ ` + '`b`');
+  has(md, String.raw`| $\sqrt[3]{c}$ **m** | $a ==b== c$ |`);
+  has(md, String.raw`> **Title $\sqrt[3]{n}$ **t****`);
+  has(md, String.raw`Around **a $x=y$ b** and span $\sqrt[3]{s}$, not in ` + '`$a ==b==$`.');
+  has(md, String.raw`Money $5 and $10 **cheap**, or \$a **b** c\$ red.`);
+
+  // In included text too.
+  const readFile = (p: string) => (p === 'part.smd' ? String.raw`Included $\sqrt[3]{i}$ ==m==.` + '\n' : undefined);
+  const including = ':::include{file="part.smd"}\n:::\n';
+  has(agentView(including, { readFile }).text, String.raw`Included $\sqrt[3]{i}$ m.`);
+  has(smdToMarkdown(including, { readFile }), String.raw`Included $\sqrt[3]{i}$ **m**.`);
+});
+
+test('inline math is found as the inline parser reads a line; tasks, meta and query keep it, and text without math is unchanged', () => {
+  const spans = (line: string) => inlineMathSpans(line).map(([start, end]) => line.slice(start, end));
+  assert.deepEqual(spans(String.raw`a $x$ b $\sqrt[3]{y}$ c`), ['$x$', String.raw`$\sqrt[3]{y}$`]);
+  // The opening and closing conditions of the rule: no space inside the `$` signs, no digit after the closing one.
+  for (const line of ['$5 and $10', 'from $5-$10', 'a $ x$ b', 'a $x $ b', 'a $$ b', 'one $ sign']) assert.deepEqual(spans(line), [], line);
+  // `\$` opens nothing and closes nothing.
+  assert.deepEqual(spans(String.raw`\$a$b$ and $c \$ d$ and \$e ==f== g\$`), ['$b$', String.raw`$c \$ d$`]);
+  // Rules that come first: code spans, link destinations and HTML tags hold no math; an image's alt text is its own text.
+  assert.deepEqual(spans('`$a$` [l](u/$b) [m](u/$c) <i title="$d$"> ![alt $e$](i.png) $f$'), ['$f$']);
+  assert.deepEqual(spans('[US$]{color=red} or [CA$]{color=blue}'), ['$]{color=red} or [CA$']);
+
+  assert.equal(inlineText(String.raw`:badge[a] $\sqrt[3]{x}$ ==m== {{v}} $y^{{v}}$`, undefined, false, undefined, { v: 2 }), String.raw`[a] $\sqrt[3]{x}$ m 2 $y^{{v}}$`);
+  assert.equal(inlineText('Pay $5 and $10 ==now== [red]{color=red} `==code==` {{v}}', undefined, false, undefined, { v: 2 }), 'Pay $5 and $10 now red `==code==` 2');
+  assert.equal(convertInline(String.raw`:badge[a] $\sqrt[3]{x}$ ==m==`), '`a` ' + String.raw`$\sqrt[3]{x}$ **m**`);
+  assert.equal(convertInline('Pay $5 and $10 ==now== [red]{color=red weight=bold}'), 'Pay $5 and $10 **now** **red**');
+
+  const text = [
+    String.raw`## Costs $\sqrt[3]{h}$ ==now==`, '', String.raw`- [ ] Check $\sqrt[3]{t}$ ==soon== :priority[P1]`, '- [ ] Pay $5 and $10 ==now== :due[2026-10-01]', '',
+    String.raw`:::decision{status=accepted} Use $\sqrt[3]{d}$ ==here==`, ':::',
+  ].join('\n');
+  const tasks = extractTasks(text, TODAY);
+  assert.deepEqual(tasks.map((t) => [t.text, t.section, t.priority ?? '', t.due ?? '']), [
+    [String.raw`Check $\sqrt[3]{t}$ soon`, String.raw`Costs $\sqrt[3]{h}$ now`, 'P1', ''], ['Pay $5 and $10 now', String.raw`Costs $\sqrt[3]{h}$ now`, '', '2026-10-01'],
+  ]);
+  assert.equal(querySmd(text, 'decision')[0].title, String.raw`Use $\sqrt[3]{d}$ here`);
+  assert.equal(getDocumentInfo(text, { today: TODAY }).decisions[0].title, String.raw`Use $\sqrt[3]{d}$ here`);
+});
+
+/** What the checks of text report when it is text: a link, a reference, a footnote, a figure, an image, attributes, directives, a variable. */
+const CHECKED = '[x](#nope) [y][nope-ref] [^nope-fn] :ref[nope-fig] ![i](missing.png) [a]{color=nope} :badg[typo] :priority[P9] {{nope}}';
+const CHECKED_CODES = [
+  'link/missing-anchor', 'link/undefined-reference', 'footnote/undefined', 'figure/unknown-ref', 'link/missing-file', 'attrs/value', 'directive/unknown', 'attrs/value',
+  'variable/undefined',
+];
+const HEAD = ['---', 'smd: 1', 'title: V', '---', ''];
+const found = (text: string) => validateSmd(text, { today: TODAY, fileExists: () => false }).map((d) => `${d.line}:${d.code}`);
+
+test('validation reports nothing inside indented code or math, where nothing is syntax', () => {
+  const literal = [
+    ...HEAD, 'Code:', '', `    ${CHECKED}`, '    - [ ] task :due[2020-01-01]', '', '- item', '', `      ${CHECKED}`, '',
+    ':::note', `    ${CHECKED}`, ':::', '', String.raw`Math $${CHECKED} \sqrt[3]{x}$ and $\sqrt[3]{y}$ end.`, '',
+    '$$', String.raw`\text{[a]{color=nope} :ref[nope-fig] :badg[typo]}`, '$$',
+  ].join('\n');
+  const html = renderSmd(literal).html;
+  assert.equal(html.match(/<code>/g)?.length, 3);
+  assert.doesNotMatch(html, /smd-badge|<a |<img |smd-span/);
+  assert.deepEqual(found(literal), []);
+
+  // The same in text is reported as before: also on a four-space line that continues a paragraph, and around math.
+  const text = [
+    ...HEAD, `Text ${CHECKED}`, '', 'Paragraph', `    ${CHECKED}`, '', '- [ ] task :due[2020-01-01]', '',
+    'Ref [text $x$][nope-ref] and $y$ [b]{color=nope} $z$ [c]{color=nope}.',
+  ].join('\n');
+  assert.deepEqual(found(text), [
+    ...CHECKED_CODES.map((code) => `5:${code}`), ...CHECKED_CODES.map((code) => `8:${code}`), '10:task/overdue',
+    '12:link/undefined-reference', '12:attrs/value', '12:attrs/value',
+  ]);
+});
+
+test('tasks, meta, query and issue sync read no task in indented code, as in fenced code', () => {
+  const text = [
+    ...HEAD, '## Plan', '', '- [ ] real :due[2020-01-01]', '    - [x] nested, four spaces in', '', 'Example:', '', '    - [ ] in code acme/shop#1', '    - [x] done in code', '',
+    '- item', '', '      - [ ] code in a list', '', '```', '- [ ] fenced', '```',
+  ].join('\n');
+  assert.equal(renderSmd(text).html.match(/<code>/g)?.length, 3);
+  const tasks = ['7:real', '8:nested, four spaces in'];
+  assert.deepEqual(extractTasks(text, TODAY).map((t) => `${t.line}:${t.text}`), tasks);
+  const info = getDocumentInfo(text, { today: TODAY });
+  assert.deepEqual([info.tasks.total, info.tasks.done, info.tasks.open.length], [2, 1, 1]);
+  assert.deepEqual(querySmd(text, 'task').map((m) => `${m.line}:${m.title}`), tasks);
+  assert.deepEqual(issueTasks(text, TODAY).map((t) => `${t.line}:${t.text}`), tasks);
+  // The line of code names an issue; a sync neither reads nor creates anything for it.
+  assert.deepEqual(planIssueSync(issueTasks(text, TODAY), new Map(), { create: true }).actions.map((a) => [a.kind, a.task.line]), [['create', 7]]);
+  assert.deepEqual(found(text).filter((d) => d.endsWith('task/overdue')), ['7:task/overdue']);
+});
+
 test('outline lists sections with costs and markers', () => {
   const o = outline(prd, { today: TODAY });
   assert.match(o, /^Checkout Redesign — One-Page Checkout · approved · file ≈\d+ tokens/);
@@ -176,6 +357,21 @@ test('plain Markdown fallbacks for new syntax', () => {
   assert.match(md, /\*\*`GET \/v1\/y`\*\* — Get Y/);
   assert.match(md, /\*\*P1\*\* 📅 2026-10-01 \*\*5\*\* Bugs/);
   assert.match(md, /\[`src\/a.ts`\]\(src\/a.ts#L1-L1\)\n\n```ts\nconst a = 1;\n```/);
+});
+
+test('plain Markdown leaves indented code and display math as written', () => {
+  const md = smdToMarkdown(AS_WRITTEN);
+  has(md, 'Text `top` **mark** red.');
+  has(md, '    code :badge[x] ==mark== [text]{color=red} ![alt](a.png) :ref[fig-a]');
+  // Four spaces that continue a paragraph or a list item are text, and still convert.
+  has(md, 'Paragraph', '    continued `lazy` **m**');
+  has(md, '- item', '    more `item`', '', '        nested :kbd[Ctrl] ==mark==');
+  has(md, '> **Title `t`**', '>', '>     first :badge[c] ==mark==');
+  has(md, '$$', String.raw`\sqrt[3]{x} ==m== :badge[b]`, '$$', '', String.raw`$$\sqrt[3]{y} ==m==$$`);
+  // In included text too.
+  has(smdToMarkdown(AS_WRITTEN_INCLUDING, { readFile: asWrittenFile }),
+    'Before `b`.', '', '<!-- included from part.smd -->', 'Included `inc`.', '', '    inc code :badge[x] ==mark== [text]{color=red}', '',
+    '$$', String.raw`\sqrt[3]{z} ==m==`, '$$', '', 'Para', '    lazy `inc-lazy`');
 });
 
 // ---------------------------------------------------------------------------

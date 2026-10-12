@@ -6,7 +6,7 @@ import {
   containerEnd, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
 import { expandedFigures, figuresOf, includedLines, includeKey, includeSource, type ExpandedFigures } from './includeText';
-import { codeLines } from './parse';
+import { aroundInlineMath, literalLines } from './parse';
 import { quoteCite } from './quote';
 import { HEADING_ATTRS } from './render';
 import { riskMatrixMarkdown } from './risks';
@@ -34,8 +34,8 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
   const numbering = figureNumbering(options, text);
   const figures = { byId: numbering.figures.byId, own: figuresOf(numbering.figures, numbering.key) };
   const variables = variablesOf(options, lines);
-  // Indented code reaches the line handling below; `{{name}}` is never replaced there, as in rendering.
-  const code = codeLines(text);
+  // Indented code and display math reach the line handling below; they stay as written, as in rendering.
+  const literal = literalLines(text);
   interface Frame { len: number; prefix: string; close?: string; end?: string[] }
   const stack: Frame[] = [];
   const prefix = () => stack.map((f) => f.prefix).join('');
@@ -113,8 +113,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       for (const l of head.inside ?? []) emit(l);
       continue;
     }
-    const content = /^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line;
-    emit(convertInline(substituteLine(content, variablesOn(i, code, variables)), figures.byId));
+    emit(lineMarkdown(line, literal.has(i), { variables, figures: figures.byId }));
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
@@ -133,8 +132,16 @@ interface FigureNumbering { figures: ExpandedFigures; key: string; offset: numbe
 const includeNumbering = new WeakMap<ToMarkdownOptions, FigureNumbering>();
 const figureNumbering = (options: ToMarkdownOptions, text: string): FigureNumbering =>
   includeNumbering.get(options) ?? { figures: expandedFigures(text, options.readFile), key: '', offset: 0 };
-/** The variables `{{name}}` stands for on a line: none on a line of code. */
-const variablesOn = (line: number, code: ReadonlySet<number>, variables: Variables) => (code.has(line) ? undefined : variables);
+/**
+ * A line of text in plain Markdown: a heading without its attributes, `{{name}}` replaced and inline syntax
+ * converted. A line of code or display math (`literal`) stays as written, since nothing on it is inline syntax.
+ */
+function lineMarkdown(line: string, literal: boolean, document: { variables: Variables; figures: ReadonlyMap<string, FigureNumber> }): string {
+  if (literal) return line;
+  const content = /^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line;
+  // Math is set aside before `{{name}}` is replaced, as rendering reads it.
+  return aroundInlineMath(content, (text) => convertInline(substituteLine(text, document.variables), document.figures));
+}
 
 interface IncludeAt {
   lines: string[];
@@ -274,12 +281,12 @@ const STATUS_EMOJI: Record<string, string> = {
   blue: '🔵', cyan: '🔵', indigo: '🔵', purple: '🟣', gray: '⚪', muted: '⚪',
 };
 
-/** Convert inline SMD syntax on one line, leaving code spans untouched. */
+/** Convert inline SMD syntax on one line, leaving code spans and `$inline math$` untouched. */
 export function convertInline(line: string, figures?: ReadonlyMap<string, FigureNumber>): string {
-  return line
+  return aroundInlineMath(line, (text) => text
     .split(/(`+[^`]*`+)/)
     .map((part, idx) => (idx % 2 === 1 ? part : convertText(part, figures)))
-    .join('');
+    .join(''));
 }
 
 /** `:ref[id]` → `[Figure 2](#id)`; references to unknown ids stay as written. */
