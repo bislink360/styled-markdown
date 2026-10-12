@@ -14,7 +14,7 @@ import {
 import {
   expandedFigures, figuresOf, includedLines, includedLiteralLines, includeKey, includeSource, type ExpandedFigures,
 } from './includeText';
-import { literalLines, parseSmd } from './parse';
+import { aroundInlineMath, literalLines, parseSmd } from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { quoteCite } from './quote';
@@ -581,17 +581,17 @@ function renderFence(fence: { start: number; body: string[]; info: string }, end
 const STATUS_WORDS: Record<string, string> = { green: 'ok', teal: 'ok', red: 'bad', pink: 'bad', orange: 'warn', amber: 'warn', yellow: 'warn' };
 
 /**
- * Strip styling syntax from one line, keeping the words. Code spans are left untouched. With the
- * document's figures by id, `:ref[id]` becomes `Figure 2 (id)`; with its front matter, `{{name}}`
- * becomes the value of `name`.
+ * Strip styling syntax from one line, keeping the words. Code spans and `$inline math$` are left
+ * untouched. With the document's figures by id, `:ref[id]` becomes `Figure 2 (id)`; with its front matter,
+ * `{{name}}` becomes the value of `name`.
  */
 export function inlineText(
   line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables,
 ): string {
-  return line
+  return aroundInlineMath(line, (text) => text
     .split(/(`+[^`]*`+)/)
     .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, variables), today, openTask, figures)))
-    .join('');
+    .join(''));
 }
 
 /** `:ref[id]` → `Figure 2 (id)`; references to unknown ids stay as written. */

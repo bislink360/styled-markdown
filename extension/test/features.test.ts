@@ -5,8 +5,11 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  agentView, extractTasks, getDocumentInfo, outline, renderSmd, smdToMarkdown, validateSmd,
+  agentView, extractTasks, getDocumentInfo, outline, querySmd, renderSmd, smdToMarkdown, validateSmd,
 } from '../src/core';
+import { inlineText } from '../src/core/agentView';
+import { inlineMathSpans } from '../src/core/parse';
+import { convertInline } from '../src/core/toMarkdown';
 import { readdirSync } from 'node:fs';
 import { fillTemplate } from '../src/core';
 
@@ -190,6 +193,74 @@ test('agent view and plain Markdown keep indented code verbatim, like fenced cod
   const including = 'Before.\n\n:::include{file="part.smd"}\n:::\n';
   has(agentView(including, { readFile, brief: true }).text, '<included file="part.smd">', 'Included.', '', ...code, '', '$$', String.raw`|a| \le |b|`, '$$', '</included>');
   has(smdToMarkdown(including, { readFile }), 'Included.', '', ...code, '', '$$', String.raw`|a| \le |b|`, '$$');
+});
+
+/** Inline math in a heading, a task, a table cell and a container title, inside other syntax, and dollar signs that are not math. */
+const INLINE_MATH = [
+  String.raw`## Heading $\sqrt[3]{h}$ ==mark==`, '',
+  String.raw`- [ ] Task $\sqrt[3]{t}$ :badge[b]`, '',
+  '| a | b |', '|---|---|', String.raw`| $\sqrt[3]{c}$ ==m== | $a ==b== c$ |`, '',
+  String.raw`:::note Title $\sqrt[3]{n}$ ==t==`, 'Body.', ':::', '',
+  String.raw`Around ==a $x=y$ b== and [span $\sqrt[3]{s}$]{color=red}, not in ` + '`$a ==b==$`.', '',
+  String.raw`Money $5 and $10 ==cheap==, or \$a ==b== c\$ [red]{color=red}.`,
+].join('\n');
+
+test('agent view and plain Markdown leave $inline math$ as written, as rendering reads it', () => {
+  const html = renderSmd(INLINE_MATH).html;
+  const tex = [...html.matchAll(/<annotation encoding="application\/x-tex">([^<]*)<\/annotation>/g)].map((m) => m[1]);
+  assert.deepEqual(tex, [String.raw`\sqrt[3]{h}`, String.raw`\sqrt[3]{t}`, String.raw`\sqrt[3]{c}`, 'a ==b== c', String.raw`\sqrt[3]{n}`, 'x=y', String.raw`\sqrt[3]{s}`]);
+  // Dollar signs that open no math are text, and the syntax around them is syntax.
+  assert.match(html, /Money \$5 and \$10 <mark>cheap<\/mark>, or \$a <mark>b<\/mark> c\$ <span[^>]*>red<\/span>\./);
+
+  const view = agentView(INLINE_MATH).text;
+  has(view, String.raw`## Heading $\sqrt[3]{h}$ mark  [L1]`);
+  has(view, String.raw`- [ ] Task $\sqrt[3]{t}$ [b]`);
+  has(view, String.raw`|$\sqrt[3]{c}$ m|$a ==b== c$|`);
+  has(view, String.raw`<note title="Title $\sqrt[3]{n}$ t">`);
+  has(view, String.raw`Around a $x=y$ b and span $\sqrt[3]{s}$, not in ` + '`$a ==b==$`.');
+  has(view, String.raw`Money $5 and $10 cheap, or \$a b c\$ red.`);
+
+  const md = smdToMarkdown(INLINE_MATH);
+  has(md, String.raw`## Heading $\sqrt[3]{h}$ **mark**`);
+  has(md, String.raw`- [ ] Task $\sqrt[3]{t}$ ` + '`b`');
+  has(md, String.raw`| $\sqrt[3]{c}$ **m** | $a ==b== c$ |`);
+  has(md, String.raw`> **Title $\sqrt[3]{n}$ **t****`);
+  has(md, String.raw`Around **a $x=y$ b** and span $\sqrt[3]{s}$, not in ` + '`$a ==b==$`.');
+  has(md, String.raw`Money $5 and $10 **cheap**, or \$a **b** c\$ red.`);
+
+  // In included text too.
+  const readFile = (p: string) => (p === 'part.smd' ? String.raw`Included $\sqrt[3]{i}$ ==m==.` + '\n' : undefined);
+  const including = ':::include{file="part.smd"}\n:::\n';
+  has(agentView(including, { readFile }).text, String.raw`Included $\sqrt[3]{i}$ m.`);
+  has(smdToMarkdown(including, { readFile }), String.raw`Included $\sqrt[3]{i}$ **m**.`);
+});
+
+test('inline math is found as the inline parser reads a line; tasks, meta and query keep it, and text without math is unchanged', () => {
+  const spans = (line: string) => inlineMathSpans(line).map(([start, end]) => line.slice(start, end));
+  assert.deepEqual(spans(String.raw`a $x$ b $\sqrt[3]{y}$ c`), ['$x$', String.raw`$\sqrt[3]{y}$`]);
+  // The opening and closing conditions of the rule: no space inside the `$` signs, no digit after the closing one.
+  for (const line of ['$5 and $10', 'from $5-$10', 'a $ x$ b', 'a $x $ b', 'a $$ b', 'one $ sign']) assert.deepEqual(spans(line), [], line);
+  // `\$` opens nothing and closes nothing.
+  assert.deepEqual(spans(String.raw`\$a$b$ and $c \$ d$ and \$e ==f== g\$`), ['$b$', String.raw`$c \$ d$`]);
+  // Rules that come first: code spans, link destinations and HTML tags hold no math; an image's alt text is its own text.
+  assert.deepEqual(spans('`$a$` [l](u/$b) [m](u/$c) <i title="$d$"> ![alt $e$](i.png) $f$'), ['$f$']);
+  assert.deepEqual(spans('[US$]{color=red} or [CA$]{color=blue}'), ['$]{color=red} or [CA$']);
+
+  assert.equal(inlineText(String.raw`:badge[a] $\sqrt[3]{x}$ ==m== {{v}} $y^{{v}}$`, undefined, false, undefined, { v: 2 }), String.raw`[a] $\sqrt[3]{x}$ m 2 $y^{{v}}$`);
+  assert.equal(inlineText('Pay $5 and $10 ==now== [red]{color=red} `==code==` {{v}}', undefined, false, undefined, { v: 2 }), 'Pay $5 and $10 now red `==code==` 2');
+  assert.equal(convertInline(String.raw`:badge[a] $\sqrt[3]{x}$ ==m==`), '`a` ' + String.raw`$\sqrt[3]{x}$ **m**`);
+  assert.equal(convertInline('Pay $5 and $10 ==now== [red]{color=red weight=bold}'), 'Pay $5 and $10 **now** **red**');
+
+  const text = [
+    String.raw`## Costs $\sqrt[3]{h}$ ==now==`, '', String.raw`- [ ] Check $\sqrt[3]{t}$ ==soon== :priority[P1]`, '- [ ] Pay $5 and $10 ==now== :due[2026-10-01]', '',
+    String.raw`:::decision{status=accepted} Use $\sqrt[3]{d}$ ==here==`, ':::',
+  ].join('\n');
+  const tasks = extractTasks(text, TODAY);
+  assert.deepEqual(tasks.map((t) => [t.text, t.section, t.priority ?? '', t.due ?? '']), [
+    [String.raw`Check $\sqrt[3]{t}$ soon`, String.raw`Costs $\sqrt[3]{h}$ now`, 'P1', ''], ['Pay $5 and $10 now', String.raw`Costs $\sqrt[3]{h}$ now`, '', '2026-10-01'],
+  ]);
+  assert.equal(querySmd(text, 'decision')[0].title, String.raw`Use $\sqrt[3]{d}$ here`);
+  assert.equal(getDocumentInfo(text, { today: TODAY }).decisions[0].title, String.raw`Use $\sqrt[3]{d}$ here`);
 });
 
 test('outline lists sections with costs and markers', () => {

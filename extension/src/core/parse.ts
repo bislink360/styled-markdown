@@ -3,7 +3,7 @@ import type { Token } from 'markdown-it';
 import { FigureCounter, figureTargets, type Figure } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
-import { acceptAnyFootnote, type ContainerMeta } from './markdownItRules';
+import { acceptAnyFootnote, mathInline, type ContainerMeta } from './markdownItRules';
 import { createMarkdownIt, type Env, type Heading, type ResolvedOptions } from './render';
 import { CALLOUT_TYPES } from './spec';
 import type { Variables } from './variables';
@@ -99,13 +99,27 @@ function documentVariablesOf(lines: string[], fm: { data: Record<string, unknown
 
 const OPTIONS: ResolvedOptions = { allowHtml: true, agentBlocks: 'collapsed', readFile: undefined, today: '' };
 let md: MarkdownIt | undefined;
-const parser = () => (md ??= recordingDefinitions(inPlaceFootnotes(createMarkdownIt(OPTIONS))));
+const parser = () => (md ??= recordingInlineMath(recordingDefinitions(inPlaceFootnotes(createMarkdownIt(OPTIONS)))));
 /** Container titles render as inline Markdown with raw HTML off (see renderContainer). */
 let titleMd: MarkdownIt | undefined;
 const titleParser = () => (titleMd ??= createMarkdownIt({ allowHtml: false }));
 const TITLED = new Set<string>([...CALLOUT_TYPES, 'details', 'card', 'tab', 'agent', 'human', 'decision', 'risk', 'api', 'figure', 'glossary']);
 
-type ParseEnv = Env & { definitions: Definition[] };
+/** A `$inline math$` the inline parser accepted: its columns in the text being parsed, and that text's length. */
+interface InlineMath { start: number; end: number; length: number }
+
+type ParseEnv = Env & { definitions: Definition[]; inlineMath?: InlineMath[] };
+
+/** Wrap the inline math rule so every `$…$` it accepts is recorded with its columns, for an env that asks (see inlineMathSpans). */
+function recordingInlineMath(instance: MarkdownIt): MarkdownIt {
+  instance.inline.ruler.at('smd_math_inline', (state, silent) => {
+    const start = state.pos;
+    const accepted = mathInline(state, silent);
+    if (accepted && !silent) (state.env as ParseEnv).inlineMath?.push({ start, end: state.pos, length: state.src.length });
+    return accepted;
+  });
+  return instance;
+}
 
 /**
  * Wrap the reference rule so every definition markdown-it accepts is recorded with its line, including
@@ -214,6 +228,49 @@ export function codeLines(text: string, offset = 0): Set<number> {
 export function literalLines(text: string, offset = 0): Set<number> {
   const { code, math } = parseSmd(text);
   return linesIn([...code, ...math], offset);
+}
+
+/**
+ * The `$inline math$` on one line of text, as the inline parser reads that line: [start, end) columns, the
+ * `$` signs included. It is the rule rendering uses, after the rules that come first: `\$` is escaped,
+ * `$5 and $10` is text, and a `$` in a code span, a link destination or an HTML tag opens nothing.
+ */
+export function inlineMathSpans(line: string): Array<[number, number]> {
+  // Math needs an opening and a closing `$`.
+  if (line.indexOf('$') === line.lastIndexOf('$')) return [];
+  const env = newEnv(0, []);
+  const found: InlineMath[] = [];
+  env.inlineMath = found;
+  parser().parseInline(line, env);
+  // Text that is parsed apart from the line, such as an image's alt text, has columns of its own.
+  return found
+    .filter((m) => m.length === line.length && line[m.start] === '$' && line[m.end - 1] === '$')
+    .map((m): [number, number] => [m.start, m.end]);
+}
+
+/** Private-use characters: each stands for one math span while a line is converted. */
+const MARKS = /[-]/g;
+const FIRST_MARK = 0xe000;
+
+/**
+ * `convert` applied to a line of text with its `$inline math$` set aside, then put back as written: math is
+ * not text, so nothing in it is inline syntax or a `{{name}}`. Each span is one character while the line is
+ * converted, so syntax around math (`==a $x$ b==`) still converts. A line without math goes to `convert` as it is.
+ */
+export function aroundInlineMath(line: string, convert: (text: string) => string): string {
+  const spans = line.search(MARKS) < 0 ? inlineMathSpans(line) : [];
+  if (!spans.length) return convert(line);
+  let masked = '';
+  let last = 0;
+  spans.forEach(([start, end], i) => {
+    masked += line.slice(last, start) + String.fromCodePoint(FIRST_MARK + i);
+    last = end;
+  });
+  const math = (mark: string) => {
+    const span = spans[(mark.codePointAt(0) ?? 0) - FIRST_MARK];
+    return span ? line.slice(span[0], span[1]) : mark;
+  };
+  return convert(masked + line.slice(last)).replaceAll(MARKS, math);
 }
 
 function linesIn(ranges: Array<[number, number]>, offset: number): Set<number> {

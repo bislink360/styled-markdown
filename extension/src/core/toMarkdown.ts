@@ -6,7 +6,7 @@ import {
   containerEnd, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
 import { expandedFigures, figuresOf, includedLines, includeKey, includeSource, type ExpandedFigures } from './includeText';
-import { literalLines } from './parse';
+import { aroundInlineMath, literalLines } from './parse';
 import { quoteCite } from './quote';
 import { HEADING_ATTRS } from './render';
 import { riskMatrixMarkdown } from './risks';
@@ -139,7 +139,8 @@ const figureNumbering = (options: ToMarkdownOptions, text: string): FigureNumber
 function lineMarkdown(line: string, literal: boolean, document: { variables: Variables; figures: ReadonlyMap<string, FigureNumber> }): string {
   if (literal) return line;
   const content = /^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line;
-  return convertInline(substituteLine(content, document.variables), document.figures);
+  // Math is set aside before `{{name}}` is replaced, as rendering reads it.
+  return aroundInlineMath(content, (text) => convertInline(substituteLine(text, document.variables), document.figures));
 }
 
 interface IncludeAt {
@@ -280,12 +281,12 @@ const STATUS_EMOJI: Record<string, string> = {
   blue: '🔵', cyan: '🔵', indigo: '🔵', purple: '🟣', gray: '⚪', muted: '⚪',
 };
 
-/** Convert inline SMD syntax on one line, leaving code spans untouched. */
+/** Convert inline SMD syntax on one line, leaving code spans and `$inline math$` untouched. */
 export function convertInline(line: string, figures?: ReadonlyMap<string, FigureNumber>): string {
-  return line
+  return aroundInlineMath(line, (text) => text
     .split(/(`+[^`]*`+)/)
     .map((part, idx) => (idx % 2 === 1 ? part : convertText(part, figures)))
-    .join('');
+    .join(''));
 }
 
 /** `:ref[id]` → `[Figure 2](#id)`; references to unknown ids stay as written. */
