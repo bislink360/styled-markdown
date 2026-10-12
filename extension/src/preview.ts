@@ -5,6 +5,7 @@ import { renderSmd, type RenderOptions } from './core';
 import { escapeHtml } from './core/attrs';
 import { taskCheckbox } from './editing';
 import { readerFor } from './files';
+import { PreviewSync, readPosition } from './previewSync';
 
 /** Live preview webviews, one per .smd document. */
 export class PreviewManager implements vscode.Disposable {
@@ -80,11 +81,9 @@ export interface RenderStatus {
   top: number;
   /** Number of renders reported so far by this panel. */
   renders: number;
+  /** How the page found its place when it loaded: "state", "host", "none", or "waiting" while it has no layout yet. */
+  restore?: string;
 }
-
-/** A line-structure edit, as the page runtime's mapLine() expects: [startLine, endLine, insertedLineBreaks]. */
-type LineEdit = [number, number, number];
-const MAX_EDITS = 500;
 
 class Preview {
   readonly panel: vscode.WebviewPanel;
@@ -92,10 +91,8 @@ class Preview {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private lastScrollLine = -1;
   private deferredScrollLine: number | undefined;
-  /** Line edits not yet delivered to the page, so it can keep its scroll anchor on the same content. */
-  private edits: LineEdit[] = [];
-  /** How many of `edits` are already embedded in `webview.html` (set while the panel is hidden). */
-  private embeddedEdits = 0;
+  /** Line edits and the page's last reported place, so the page keeps its scroll anchor on the same content. */
+  private readonly sync: PreviewSync;
   /** Document version the current `webview.html` was rendered from. */
   private htmlVersion: number;
 
@@ -115,17 +112,14 @@ class Preview {
     );
     this.panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'smd-icon.svg');
     this.htmlVersion = document.version;
+    this.sync = new PreviewSync(document.version);
     this.panel.webview.html = this.shell();
     this.panel.webview.onDidReceiveMessage((msg) => this.onMessage(msg));
     // Hidden webviews are torn down (no retainContextWhenHidden, to save memory) and reload from
-    // webview.html when shown again; the page keeps its scroll and UI state with setState().
+    // webview.html when shown again; the page keeps its scroll and UI state with setState(). Nothing here
+    // depends on when the page went away or came back: see previewSync.ts.
     this.panel.onDidChangeViewState(() => {
-      if (!this.panel.visible) {
-        this.update();
-      } else if (this.embeddedEdits) {
-        this.edits.splice(0, this.embeddedEdits);
-        this.embeddedEdits = 0;
-      }
+      if (!this.panel.visible) this.update();
     });
     this.panel.onDidDispose(() => {
       clearTimeout(this.timer);
@@ -134,16 +128,7 @@ class Preview {
   }
 
   scheduleUpdate(changes: readonly vscode.TextDocumentContentChangeEvent[] = []): void {
-    for (const c of changes) {
-      const breaks = c.text.split('\n').length - 1;
-      // Edits within one line don't move any line below them.
-      if (c.range.start.line === c.range.end.line && breaks === 0) continue;
-      this.edits.push([c.range.start.line, c.range.end.line, breaks]);
-    }
-    if (this.edits.length > MAX_EDITS) {
-      this.edits = [];
-      this.embeddedEdits = 0;
-    }
+    this.sync.record(this.document.version, changes.map((c) => ({ startLine: c.range.start.line, endLine: c.range.end.line, text: c.text })));
     clearTimeout(this.timer);
     this.timer = setTimeout(() => this.update(), 200);
   }
@@ -155,15 +140,14 @@ class Preview {
       // Nothing is listening; refresh the page the webview will reload from.
       this.deferredScrollLine = undefined;
       this.htmlVersion = this.document.version;
-      this.embeddedEdits = this.edits.length;
       this.panel.webview.html = this.shell();
       return;
     }
     const result = renderSmd(this.document.getText(), renderOptions(this.document));
-    const edits = this.edits;
-    this.edits = [];
-    this.embeddedEdits = 0;
-    this.panel.webview.postMessage({ type: 'update', html: result.html, themePref: themePreference(result.frontMatter), edits });
+    // The message is lost if the webview is being torn down or is still loading. The edits stay in `sync`
+    // until the page says it has them, and a page that loads from an older `webview.html` asks again ("ready").
+    const { version, since, edits } = this.sync.snapshot(this.document.version);
+    this.panel.webview.postMessage({ type: 'update', html: result.html, themePref: themePreference(result.frontMatter), version, since, edits });
     if (this.deferredScrollLine !== undefined) {
       const line = this.deferredScrollLine;
       this.deferredScrollLine = undefined;
@@ -207,11 +191,19 @@ class Preview {
 <link rel="stylesheet" href="${media('smd.css')}">
 </head>
 <body class="smd-body">
-<main id="smd-root" data-smd-edits="${JSON.stringify(this.edits)}">${result.html}</main>
+<main id="smd-root" data-smd-sync="${escapeHtml(JSON.stringify(this.sync.snapshot(this.document.version)))}">${result.html}</main>
 <script nonce="${nonce}" src="${media('vendor', 'mermaid.min.js')}"></script>
 <script nonce="${nonce}" src="${media('runtime.js')}"></script>
 </body>
 </html>`;
+  }
+
+  /** The page saved where it is (after a render, a scroll, or once it could restore its place). */
+  private onPosition(msg: object): void {
+    const position = readPosition(msg);
+    if (!position) return;
+    this.sync.confirm(position);
+    if (this.lastStatus) this.lastStatus = { ...this.lastStatus, top: position.anchor?.line ?? 0 };
   }
 
   private async onMessage(msg: { type: string; line?: number; href?: string } & Partial<RenderStatus>): Promise<void> {
@@ -224,7 +216,11 @@ class Preview {
         this.lastStatus = {
           diagrams: msg.diagrams ?? 0, errors: msg.errors ?? 0, math: msg.math ?? 0, tabs: msg.tabs ?? 0, theme: msg.theme ?? '',
           reused: msg.reused ?? 0, top: msg.top ?? 0, renders: (this.lastStatus?.renders ?? 0) + 1,
+          restore: msg.restore,
         };
+        break;
+      case 'position':
+        this.onPosition(msg);
         break;
       case 'toggleTask':
         if (typeof msg.line === 'number') await toggleTask(this.document, msg.line);

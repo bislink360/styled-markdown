@@ -162,17 +162,23 @@ const checks = {
     edit.insert(doc.uri, new vscode.Position(0, 0), 'More.\n\n');
     await vscode.workspace.applyEdit(edit);
     // Usually long enough for the debounced refresh (200 ms) to reach the hidden page. The check below doesn't depend
-    // on it: if the page comes back before the refresh, it re-renders with the edit once the refresh runs.
+    // on it, nor on when the extension hears that the panel is hidden or shown: the page maps its saved place through
+    // the edits made after the document version it was saved in (test/previewRestore.test.ts runs every order).
     await wait(500);
     await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
+    // The command previews the active editor's document, which the extension host hears about separately.
+    await waitFor(() => vscode.window.activeTextEditor?.document === doc, 'the document to be the active editor');
     await vscode.commands.executeCommand('smd.openPreviewToSide');
+    // The page reports its place with the render and again when it moves, e.g. once a frame that loaded before it was
+    // displayed has a layout to scroll in.
     const restored = await waitFor(async () => {
       const s = await status();
       return s && s.renders > settled.renders && s.top === settled.top + 2 ? s : undefined;
     }, 'preview restored after being hidden', 20000).catch(async (e) => {
       throw new Error(`${e.message}: expected anchor line ${settled.top + 2}, last status ${JSON.stringify(await status())}`);
     });
-    console.log(`      after hide/restore ${settled.top} -> ${restored.top}`);
+    // "restore" says how the page found its place: from its own state, from the extension's copy ("host"), or late.
+    console.log(`      after hide/restore ${settled.top} -> ${restored.top} ${JSON.stringify(restored)}`);
     assert.equal(restored.top, settled.top + 2);
     await vscode.commands.executeCommand('workbench.action.closeAllEditors');
   },
