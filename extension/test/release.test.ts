@@ -7,6 +7,7 @@ import { changelogExcerpt, downloadsTable, dropEmptyHeadings, releaseNotes, vers
 import { checkRelease, isReleaseBranch, pyprojectVersion } from '../scripts/release/check-versions.mjs';
 import { isListed, listedVersions, registryRequest, waitForVersion } from '../scripts/release/wait-for-version.mjs';
 import { publishDecision } from '../scripts/release/publish-gate.mjs';
+import { pickBaseTag, releaseTags } from '../../.claude/skills/smd-release/scripts/base-tag.mjs';
 
 const changelog = [
   '# Changelog',
@@ -187,4 +188,34 @@ test('publishDecision publishes only with a token, outside a dry run, when not l
   assert.match(String(missing.notice), /^NPM_TOKEN is not set, so 1\.5\.0 was not published to npm\./);
   assert.deepEqual(publishDecision({ ...gate, registry: 'marketplace', listed: true }), { ready: false, notice: 'VS Code Marketplace already lists 1.5.0; nothing to publish.' });
   assert.match(String(publishDecision({ ...gate, registry: 'pypi', secret: 'PYPI_TOKEN', hasToken: false }).notice), /^PYPI_TOKEN is not set, so 1\.5\.0 was not published to PyPI\./);
+});
+
+// ---- release-check.mjs: the tag it compares with (.claude/skills/smd-release/scripts/base-tag.mjs) ----
+
+test('pickBaseTag: the newest release, or the one before when this tree is already released', () => {
+  const tags = releaseTags(['v1.10.0', 'v1.6.0', 'v1.7.0', 'nightly', 'v1.7.0-rc.1', 'v1.9.0']);
+  assert.deepEqual(tags, ['v1.6.0', 'v1.7.0', 'v1.9.0', 'v1.10.0'], 'by version, not by name');
+  const released = ['v1.5.0', 'v1.6.0', 'v1.7.0'];
+  const never = () => false;
+  // Before the tag: the release branch is compared with the last release.
+  assert.deepEqual(pickBaseTag({ tags: released, version: '1.7.1', sameTree: never }), { base: 'v1.7.0', released: false });
+  // After the tag, on the tagged tree (the tracking PR into main): compared with the release before it.
+  assert.deepEqual(pickBaseTag({ tags: released, version: '1.7.0', sameTree: (tag) => tag === 'v1.7.0' }), { base: 'v1.6.0', released: true });
+  // The version's tag exists but the tree differs: the version was not bumped, so the newest tag stays the base.
+  assert.deepEqual(pickBaseTag({ tags: released, version: '1.7.0', sameTree: never }), { base: 'v1.7.0', released: false });
+  // --base wins; the first release has nothing before it.
+  assert.deepEqual(pickBaseTag({ tags: released, version: '1.7.0', explicit: 'v1.5.0', sameTree: () => true }), { base: 'v1.5.0', released: false });
+  assert.deepEqual(pickBaseTag({ tags: ['v1.0.0'], version: '1.0.0', sameTree: () => true }), { base: undefined, released: true });
+  assert.deepEqual(pickBaseTag({ tags: [], version: '1.0.0', sameTree: never }), { base: undefined, released: false });
+});
+
+// ---- What the .vsix never packs ----
+
+test('.vscodeignore keeps sources, tests and local output out of the .vsix, and the release checks the same list', () => {
+  const ignored = readFileSync(join(__dirname, '..', '.vscodeignore'), 'utf8').split(/\r?\n/);
+  const workflow = readFileSync(join(__dirname, '..', '..', '.github', 'workflows', 'release.yml'), 'utf8');
+  // The grep in the workflow's artifact check: ' extension/(src|test|…|\.vscode-test)/'.
+  const guard = / extension\/\(([^)]+)\)\//.exec(workflow)?.[1].replaceAll(String.raw`\.`, '.').split('|') ?? [];
+  assert.deepEqual([...guard].sort((a, b) => a.localeCompare(b)), ['.vscode-test', 'coverage', 'node_modules', 'scripts', 'src', 'test']);
+  for (const folder of guard) assert.ok(ignored.includes(`${folder}/**`), `${folder}/** is in .vscodeignore`);
 });
