@@ -147,6 +147,8 @@ jobs:
             unzip -tq "$zip"   # a real zip archive, not a tar named .zip
           done
           unzip -l "$vsix" | grep -E ' extension/LICENSE(\.txt)?$' > /dev/null || { echo "::error::$vsix has no LICENSE (Open VSX and the Marketplace show it)"; exit 1; }
+          # Sources, tests and local output (a coverage report, a downloaded VS Code) never ship; .vscodeignore lists them.
+          if unzip -l "$vsix" | grep -E ' extension/(src|test|scripts|node_modules|coverage|\.vscode-test)/'; then echo "::error::$vsix packs files that .vscodeignore should exclude"; exit 1; fi
           unzip -p "$vsix" extension/package.json | node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8')); if (p.version!==process.env.VERSION) { console.error('::error::.vsix version '+p.version); process.exit(1); }"
           tar -tzf "$tgz" | grep -x 'package/LICENSE' > /dev/null || { echo "::error::$tgz has no LICENSE"; exit 1; }
           tar -xOzf "$tgz" package/package.json | node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8')); if (p.version!==process.env.VERSION) { console.error('::error::.tgz version '+p.version); process.exit(1); }"

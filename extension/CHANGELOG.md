@@ -7,6 +7,7 @@
 ### Added
 
 ### Changed
+- The VS Code extension package (`.vsix`) no longer includes the MkDocs plugin's bridge script (`dist/mkdocs-bridge.cjs`, 871 KB), which only the Python package uses.
 
 ### Deprecated
 
@@ -18,6 +19,7 @@
 - Validation: `{{name}}` in an indented code block is no longer reported as `variable/undefined` or `variable/not-text`. Code is never substituted, and fenced code was already left alone.
 - Validation: nothing inside an indented code block, `$$` display math or `$inline math$` is checked as text, as in fenced code. A link, reference, footnote, `:ref[id]`, attribute list, directive or open task written there used to be reported as if it were syntax: `$\sqrt[3]{x}$` gave `attrs/unknown`, and `[a]{color=nope}` in an indented code example gave an `attrs/value` error, which fails `smd validate`. Code and math are found as rendering, the agent view and `smd to-md` find them. No document gets a new diagnostic from this; the false ones are gone.
 - `smd tasks`, `smd meta`, `smd query task`, `smd issues`, `smd report`, the site dashboard and the Tasks view in VS Code: a `- [ ]` or `- [x]` line in an indented code block is code, not a task, as in fenced code. A nested task (indented under its parent) is a task as before. Library: `extractTasks`, and the task counts of `getDocumentInfo`, leave lines of code out.
+- Release tooling: a `.vsix` built on a developer's machine could pack a local coverage report (`coverage/`) or a downloaded VS Code (`.vscode-test/`); both are now excluded, and the release workflow fails if a `.vsix` holds sources, tests or local output. The published 1.7.0 package was built from a clean checkout and was not affected.
 
 ## 1.7.0 — 2026-10-11
 
