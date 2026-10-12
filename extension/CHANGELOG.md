@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.1 — 2026-10-12
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 1.7.0 — 2026-10-11
 
 New ways to use `.smd` outside VS Code: a web playground that shares documents by link, plugins for MkDocs and Obsidian, export to Confluence, Notion and Word, and a Tree-sitter grammar for Neovim, Helix and Zed. It also closes the gaps known in 1.6.0 (figures across includes in the agent view and `smd to-md`, `{{variables}}` in indented code, glossary checks). Documents, CLI commands and flags, diagnostic codes and messages, library exports, extension commands and settings from 1.6.0 all keep working, and rendered output is unchanged. Two new warnings, `container/agent-in-skip` and `glossary/duplicate-id`, fire only on documents with those mistakes; they are never errors, so documents that passed `smd validate` still pass, but `--strict` turns them into failures. Each GitHub Release now attaches eight files: the extension, the npm package, both skill zips, the playground, the MkDocs plugin wheel and source package, and the Obsidian plugin.
