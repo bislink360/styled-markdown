@@ -12,7 +12,7 @@ import { figureTargets, findRefs, type Figure, type FigureRef } from './figures'
 import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, versionLabel, type ChangelogEntry, type Version } from './changelog';
 import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
-import { parseSmd } from './parse';
+import { codeLines, parseSmd } from './parse';
 import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
@@ -197,7 +197,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   checkTermIds(terms, text, lines, fm.bodyStartLine, push);
   for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
-  checkVariables(lines, fm.bodyStartLine, fm.data, push);
+  checkVariables(text, lines, fm.bodyStartLine, fm.data, push);
   checkAgentInSkipped(text, lines, fm.bodyStartLine, push);
 
   let result = applySuppressions(text, diagnostics);
@@ -647,9 +647,12 @@ function checkFigures(text: string, lines: string[], bodyStart: number, push: Pu
  * `{{name}}` in the body names a front matter key with a text value. Undefined names are only `info`: until
  * 1.6, `{{…}}` was plain text (templates, Handlebars or Jinja examples), so it must not start failing checks.
  */
-function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push): void {
-  const uses = findVariables(lines, bodyStart);
-  if (!uses.length) return;
+function checkVariables(text: string, lines: string[], bodyStart: number, data: Variables, push: Push): void {
+  const found = findVariables(lines, bodyStart);
+  if (!found.length) return;
+  // Code is never substituted, so `{{…}}` in it is code, not a variable: findVariables skips fences, this indented code.
+  const code = codeLines(text);
+  const uses = found.filter((use) => !code.has(use.line));
   const names = [...new Set([...Object.keys(data), ...variableNames(data).map((v) => v.name)])];
   for (const use of uses) {
     const value = lookupVariable(data, use.name);

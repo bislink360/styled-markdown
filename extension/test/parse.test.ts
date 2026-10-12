@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parseSmd, renderSmd } from '../src/core';
 import { anchorIds } from '../src/core/links';
+import { resetParseCache } from '../src/core/parse';
 
 const repo = path.join(__dirname, '..', '..');
 
@@ -89,6 +90,21 @@ test('incremental parsing matches a full parse through random edits', () => {
       assert.deepEqual([...anchorIds(text)].sort(), [...anchorIdsFromHtml(text)].sort(), label);
     }
   }
+});
+
+test('parseSmd lists the lines of code and of display math as markdown-it reads them, after an edit too', () => {
+  const lines = [
+    '---', 'smd: 1', '---', '$$', 'a', '$$', '', '$$b$$', '', '- item', '', '  $$', '  c', '  $$', '', ':::note', '$$ d', 'e $$', ':::', '',
+    'Text', '    $$ not math $$', '', '    $$ code $$', '', '```', '$$', 'fenced', '$$', '```', '', '$$', 'never closed',
+  ];
+  const ranges = (text: string) => ({ code: parseSmd(text).code, math: parseSmd(text).math });
+  const expected = { code: [[23, 24], [25, 30]], math: [[3, 6], [7, 8], [11, 14], [16, 18]] };
+  resetParseCache();
+  assert.deepEqual(ranges(lines.join('\n')), expected);
+  // An edit above moves them; one that removes a closing `$$` leaves no math there.
+  const moved = { code: expected.code.map(([a, b]) => [a + 1, b + 1]), math: expected.math.map(([a, b]) => [a + 1, b + 1]) };
+  assert.deepEqual(ranges(['---', 'smd: 1', '---', 'Intro', ...lines.slice(3)].join('\n')), moved);
+  assert.deepEqual(ranges(lines.filter((_, i) => i !== 5).join('\n')).math, [[3, 7], [10, 13], [15, 17]]);
 });
 
 test('parseSmd returns the same headings as renderSmd and reuses results for the same text', () => {

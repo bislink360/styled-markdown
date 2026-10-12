@@ -130,6 +130,53 @@ test('agent view can inline embedded source on request', () => {
   assert.match(r.text, /src\/pricing\.ts lines 7-13:\n```ts\nexport function subtotalCents/);
 });
 
+/** Indented code at the top level, in a list and in a container, and display math, next to four-space lines that are text. */
+const AS_WRITTEN = [
+  'Text :badge[top] ==mark== [red]{color=red}.', '',
+  '    code :badge[x] ==mark== [text]{color=red} ![alt](a.png) :ref[fig-a]', '',
+  'Paragraph', '    continued :badge[lazy] ==m==', '',
+  '- item', '    more :badge[item]', '',
+  '        nested :kbd[Ctrl] ==mark==', '',
+  ':::note Title :badge[t]', '    first :badge[c] ==mark==', ':::', '',
+  ':::figure{#fig-a} Caption', 'x', ':::', '',
+  '$$', String.raw`\sqrt[3]{x} ==m== :badge[b]`, '$$', '',
+  String.raw`$$\sqrt[3]{y} ==m==$$`,
+].join('\n');
+const AS_WRITTEN_PART = [
+  'Included :badge[inc].', '', '    inc code :badge[x] ==mark== [text]{color=red}', '',
+  '$$', String.raw`\sqrt[3]{z} ==m==`, '$$', '', 'Para', '    lazy :badge[inc-lazy]', '',
+].join('\n');
+const AS_WRITTEN_INCLUDING = 'Before :badge[b].\n\n:::include{file="part.smd"}\n:::\n';
+const asWrittenFile = (p: string) => (p === 'part.smd' ? AS_WRITTEN_PART : undefined);
+const has = (text: string, ...lines: string[]) => assert.ok(`\n${text}\n`.includes(`\n${lines.join('\n')}\n`), `${lines.join('\n')}\n--- not in ---\n${text}`);
+
+test('agent view leaves indented code and display math as written, as rendering shows them', () => {
+  // What rendering shows: code and math as written; a four-space line that continues a paragraph or a list item is text.
+  const html = renderSmd(AS_WRITTEN).html;
+  assert.ok(html.includes('<code>code :badge[x] ==mark== [text]{color=red} ![alt](a.png) :ref[fig-a]\n</code>'));
+  assert.ok(html.includes('<code>  nested :kbd[Ctrl] ==mark==\n</code>'));
+  assert.ok(html.includes('<code>first :badge[c] ==mark==\n</code>'));
+  assert.match(html, /continued <span class="smd-badge"[^>]*>lazy<\/span> <mark>m<\/mark>/);
+  assert.match(html, /more <span class="smd-badge"[^>]*>item<\/span>/);
+  assert.ok(html.includes(String.raw`<annotation encoding="application/x-tex">\sqrt[3]{x} ==m== :badge[b]</annotation>`));
+  assert.ok(html.includes(String.raw`<annotation encoding="application/x-tex">\sqrt[3]{y} ==m==</annotation>`));
+
+  for (const brief of [false, true]) {
+    const view = agentView(AS_WRITTEN, { brief }).text;
+    has(view, 'Text [top] mark red.');
+    has(view, '    code :badge[x] ==mark== [text]{color=red} ![alt](a.png) :ref[fig-a]');
+    has(view, 'Paragraph', '    continued [lazy] m');
+    has(view, '- item', '    more [item]', '', '        nested :kbd[Ctrl] ==mark==');
+    has(view, '<note title="Title [t]">', '    first :badge[c] ==mark==', '</note>');
+    has(view, '$$', String.raw`\sqrt[3]{x} ==m== :badge[b]`, '$$', '', String.raw`$$\sqrt[3]{y} ==m==$$`);
+  }
+  // In included text too, by where the included lines are code or math.
+  assert.ok(renderSmd(AS_WRITTEN_INCLUDING, { readFile: asWrittenFile }).html.includes('<code>inc code :badge[x] ==mark== [text]{color=red}\n</code>'));
+  has(agentView(AS_WRITTEN_INCLUDING, { readFile: asWrittenFile }).text,
+    'Before [b].', '', '<included file="part.smd">', 'Included [inc].', '', '    inc code :badge[x] ==mark== [text]{color=red}', '',
+    '$$', String.raw`\sqrt[3]{z} ==m==`, '$$', '', 'Para', '    lazy [inc-lazy]', '</included>');
+});
+
 test('outline lists sections with costs and markers', () => {
   const o = outline(prd, { today: TODAY });
   assert.match(o, /^Checkout Redesign — One-Page Checkout · approved · file ≈\d+ tokens/);
@@ -176,6 +223,21 @@ test('plain Markdown fallbacks for new syntax', () => {
   assert.match(md, /\*\*`GET \/v1\/y`\*\* — Get Y/);
   assert.match(md, /\*\*P1\*\* 📅 2026-10-01 \*\*5\*\* Bugs/);
   assert.match(md, /\[`src\/a.ts`\]\(src\/a.ts#L1-L1\)\n\n```ts\nconst a = 1;\n```/);
+});
+
+test('plain Markdown leaves indented code and display math as written', () => {
+  const md = smdToMarkdown(AS_WRITTEN);
+  has(md, 'Text `top` **mark** red.');
+  has(md, '    code :badge[x] ==mark== [text]{color=red} ![alt](a.png) :ref[fig-a]');
+  // Four spaces that continue a paragraph or a list item are text, and still convert.
+  has(md, 'Paragraph', '    continued `lazy` **m**');
+  has(md, '- item', '    more `item`', '', '        nested :kbd[Ctrl] ==mark==');
+  has(md, '> **Title `t`**', '>', '>     first :badge[c] ==mark==');
+  has(md, '$$', String.raw`\sqrt[3]{x} ==m== :badge[b]`, '$$', '', String.raw`$$\sqrt[3]{y} ==m==$$`);
+  // In included text too.
+  has(smdToMarkdown(AS_WRITTEN_INCLUDING, { readFile: asWrittenFile }),
+    'Before `b`.', '', '<!-- included from part.smd -->', 'Included `inc`.', '', '    inc code :badge[x] ==mark== [text]{color=red}', '',
+    '$$', String.raw`\sqrt[3]{z} ==m==`, '$$', '', 'Para', '    lazy `inc-lazy`');
 });
 
 // ---------------------------------------------------------------------------

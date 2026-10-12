@@ -11,6 +11,9 @@
 ### Deprecated
 
 ### Fixed
+- Agent view and `smd to-md`: inline syntax in an indented code block (four spaces, also inside lists and containers and in included text) stays as written, as in rendered output. `:badge[x]` and the other directives, `==mark==`, `[text]{color=red}`, images and `:ref[id]` used to be converted there as if the code were text. A four-space line that continues a paragraph or a list item is text and converts as before.
+- Agent view and `smd to-md`: `$$` display math stays as written, on one line or several, also inside lists and containers and in included text, as in rendered output. `{{name}}` on the lines of a multi-line block used to show the front matter value, and inline syntax in math was converted (`\sqrt[3]{x}` lost its brackets and braces). Library: `parseSmd(text).math` lists the lines markdown-it reads as display math.
+- Validation: `{{name}}` in an indented code block is no longer reported as `variable/undefined` or `variable/not-text`. Code is never substituted, and fenced code was already left alone.
 
 ## 1.7.0 — 2026-10-11
 

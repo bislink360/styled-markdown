@@ -157,6 +157,34 @@ test('variables: indented code keeps {{name}} as written in the agent view and s
   assert.match(smdToMarkdown(lazy), /continued 2\.10[\s\S]*more 2\.10/);
 });
 
+test('variables: math keeps {{name}} as written in the agent view and smd to-md, as in rendering', () => {
+  const text = doc(
+    '$$', 'a = {{version}}', '$$', '', '$$ b = {{version}} $$', '', 'Inline $c^{{version}}$ and {{version}}.', '',
+    '- list', '', '  $$', '  d = {{version}}', '  $$', '', ':::note', '$$ e = {{version}}', 'f = {{version}} $$', ':::', '',
+    'Text', '    $$ g = {{version}} $$',
+  );
+  const tex = [...renderSmd(text).html.matchAll(/<annotation encoding="application\/x-tex">([^<]*)<\/annotation>/g)].map((m) => m[1]);
+  assert.deepEqual(tex, ['a = {{version}}', 'b = {{version}}', 'c^{{version}}', 'd = {{version}}', 'e = {{version}}\nf = {{version}}']);
+  // Four spaces that continue a paragraph are text, not math.
+  assert.match(renderSmd(text).html, /Text\n\$\$ g = 2\.10 \$\$<\/p>/);
+  const view = agentView(text).text;
+  const md = smdToMarkdown(text);
+  for (const out of [view, md]) {
+    assert.match(out, /^\$\$\na = \{\{version\}\}\n\$\$$/m);
+    assert.match(out, /^\$\$ b = \{\{version\}\} \$\$$/m);
+    assert.match(out, /^Inline \$c\^\{\{version\}\}\$ and 2\.10\.$/m);
+    assert.match(out, /^ {2}\$\$\n {2}d = \{\{version\}\}\n {2}\$\$$/m);
+    assert.match(out, /^(> )?\$\$ e = \{\{version\}\}\n(> )?f = \{\{version\}\} \$\$$/m);
+    assert.match(out, /^Text\n {4}\$\$ g = 2\.10 \$\$$/m);
+  }
+  // In included text too, by where the included lines are math.
+  const readFile = (p: string) => (p === 'part.smd' ? 'Included {{version}}.\n\n$$\nh = {{version}}\n$$\n' : undefined);
+  const including = doc(':::include{file="part.smd"}', ':::');
+  assert.match(renderSmd(including, { readFile }).html, /<annotation encoding="application\/x-tex">h = \{\{version\}\}<\/annotation>/);
+  assert.match(agentView(including, { readFile }).text, /^Included 2\.10\.\n\n\$\$\nh = \{\{version\}\}\n\$\$$/m);
+  assert.match(smdToMarkdown(including, { readFile }), /^Included 2\.10\.\n\n\$\$\nh = \{\{version\}\}\n\$\$$/m);
+});
+
 test('variables: values are substituted before glossary terms are marked', () => {
   const html = renderSmd('---\nproduct: the API gateway\n---\n## Intro\n\nWe ship {{product}}.\n\n:::glossary\n- **API**: Application Programming Interface\n:::\n').html;
   assert.match(html, /We ship the <a class="smd-term" href="#term-api"><abbr title="Application Programming Interface">API<\/abbr><\/a> gateway\./);
@@ -172,6 +200,21 @@ test('variables: validation reports undefined names (info, with a fix) and value
   // Existing checks don't change: a document without variables gets no new diagnostics.
   assert.deepEqual(codes(validateSmd('Use {{name}} in a Handlebars template.')), ['0:variable/undefined:info']);
   assert.deepEqual(codes(validateSmd('Use {{name}}.', { rules: { 'variable/*': 'off' } })), []);
+});
+
+test('variables: validation leaves {{…}} in indented code alone, as in fenced code', () => {
+  const text = doc(
+    '    {{nope}} at the top', '', '- item', '', '      {{nope}} in a list', '', ':::note', '    {{nope}} in a container', ':::', '',
+    'Paragraph', '    {{nope}} continues it', '', '- item', '    {{nope}} continues the item', '', 'End.', '', '    {{owner}} is a mapping',
+  );
+  const html = renderSmd(text).html;
+  for (const code of ['{{nope}} at the top', '{{nope}} in a list', '{{nope}} in a container', '{{owner}} is a mapping']) assert.ok(html.includes(`<code>${code}\n</code>`), code);
+  // Only the four-space lines that are text: one continues a paragraph, one a list item.
+  assert.deepEqual(codes(validateSmd(text).filter((d) => d.code.startsWith('variable/'))), ['19:variable/undefined:info', '22:variable/undefined:info']);
+  // A document's own lines are checked; code in a file it includes is that file's.
+  const readFile = (p: string) => (p === 'part.smd' ? 'Included.\n\n    {{nope}} in included code\n' : undefined);
+  assert.deepEqual(validateSmd(doc(':::include{file="part.smd"}', ':::'), { readFile }).filter((d) => d.code.startsWith('variable/')), []);
+  assert.deepEqual(validateSmd('Included.\n\n    {{nope}} in included code\n').filter((d) => d.code.startsWith('variable/')), []);
 });
 
 test('variables: custom keys shown with {{key}} get no unknown-key hint', () => {
