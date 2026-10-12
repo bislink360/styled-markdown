@@ -54,7 +54,14 @@ const tags = releaseTags(git('tag', '--list', 'v*').split('\n'));
 const extPkg = readJson(join(EXT, 'package.json'));
 const version = extPkg.version;
 // The tracked files equal a tag's (uncommitted changes count as differences).
-const sameTree = (tag) => spawnSync('git', ['diff', '--quiet', tag, '--'], { cwd: ROOT }).status === 0;
+const sameTree = (tag) => {
+  try {
+    git('diff', '--quiet', tag, '--'); // exits 1, so throws, when anything differs
+    return true;
+  } catch {
+    return false;
+  }
+};
 // Normally the newest tag. A tree that is already released (see base-tag.mjs) is compared with the release before it.
 const { base: BASE, released: RELEASED } = pickBaseTag({ tags, version, explicit: option('--base'), sameTree });
 if (!BASE) { console.error('No release tag (vX.Y.Z) found; pass --base.'); process.exit(2); }
