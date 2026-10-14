@@ -357,6 +357,13 @@ test('a `$$` line in indented code opens no math: no false math/unclosed, and th
   assert.deepEqual(found(text), ['10:attrs/value']);
 });
 
+test('a `$$` line in indented code hides no {{name}} after it from the variable checks', () => {
+  const text = ['---', 'smd: 1', 'title: V', 'release: "2.0"', '---', '', 'Example:', '', '    $$', '    x', '', 'Version {{release}}, not {{relase}}.'].join('\n');
+  assert.match(renderSmd(text).html, /Version 2\.0, not \{\{relase\}\}\./);
+  // `release` is shown, so it is no unknown key; `{{relase}}` is undefined.
+  assert.deepEqual(found(text), ['11:variable/undefined']);
+});
+
 test('outline lists sections with costs and markers', () => {
   const o = outline(prd, { today: TODAY });
   assert.match(o, /^Checkout Redesign — One-Page Checkout · approved · file ≈\d+ tokens/);

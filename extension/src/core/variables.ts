@@ -163,15 +163,17 @@ function opens(line: string): Block {
 
 /**
  * Every `{{name}}` in the body of a document, from line `from` (the first body line) on: outside code
- * fences, `$$` math, HTML comments and reference definitions, and outside inline code.
+ * fences, `$$` math, HTML comments and reference definitions, and outside inline code. `isCode` tells which lines
+ * are code as rendering reads them (see ParseResult.code): a `$$` line there is code and opens no math.
  */
-export function findVariables(lines: string[], from = 0): VariableUse[] {
+export function findVariables(lines: string[], from = 0, isCode: (line: number) => boolean = () => false): VariableUse[] {
   const uses: VariableUse[] = [];
   let block: Block = null;
   for (let i = from; i < lines.length; i++) {
     const line = lines[i];
     if (block) { block = stillInside(block, line); continue; }
     block = opens(line);
+    if (block?.kind === 'math' && isCode(i)) { block = null; continue; }
     if (block?.kind === 'fence' || block?.kind === 'math' || LITERAL_LINE.test(line)) continue;
     // A comment that runs on to later lines hides the rest of this one.
     const visible = block ? line.slice(0, line.lastIndexOf('<!--')) : line;

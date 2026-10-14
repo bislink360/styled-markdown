@@ -14,6 +14,7 @@
 - `smd outline` and the agent view's outline: the "N open tasks" note counts the open tasks `smd tasks` lists. A `- [ ]` line in a fenced or indented code block is code and no longer counts. With `--max-tokens`, a section whose only `- [ ]` lines are code is no longer kept longer than other sections as if it had open tasks.
 - Agent view, `smd to-md` and validation: `$inline math$` that runs on from one line to the next, as in `the cost $a +` followed by `b$ grows`, is math on both lines, as it renders. Math is now found over the whole text of a paragraph or list item, not one line at a time. Inline syntax and `{{name}}` inside it used to be converted, and links, directives and attribute lists in it were reported. Math on one line, and money such as `$5 and $10`, on one line or across two, read as before. Library: `parseSmd(text).inlineMath` gives the math on the lines of such text.
 - Validation: a `$$` line inside an indented code block no longer opens display math. It used to give a false `math/unclosed` error, and the lines after it went unchecked until the next `$$` line. **Documents with `$$` in indented code may now see diagnostics on the lines after it.** These problems were always there; the false math block hid them.
+- Validation: the `{{name}}` checks after a `$$` line in an indented code block now run too. `variable/undefined` and `variable/not-text` used to be skipped up to the next `$$` line. A front matter key used with `{{key}}` only there was also reported as `frontmatter/unknown-key`, and is not any more.
 
 ## 1.7.1 — 2026-10-14
 

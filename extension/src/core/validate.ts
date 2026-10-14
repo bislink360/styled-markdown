@@ -81,8 +81,11 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
   // --- Front matter -------------------------------------------------------
   const fm = parseFrontMatter(text);
+  // The lines of code as rendering reads them, found on the first ask: a `$$` line there opens no math.
+  let code: Set<number> | undefined;
+  const inCode = (line: number) => (code ??= codeLines(text)).has(line);
   if (fm.error) wholeLine(fm.error.line, 'error', 'frontmatter/invalid', fm.error.message);
-  if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, options);
+  if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, options, inCode);
   // For the checks of text: nothing in code or math is syntax, so what they find there is not reported.
   const pushText = outsideLiteral(push, literalText(text, lines, fm.bodyStartLine));
 
@@ -93,8 +96,6 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   let mathStart = -1;
   let mathLines: string[] = [];
   let firstH1: { text: string; line: number } | null = null;
-  let code: Set<number> | undefined;
-  const inCode = (line: number) => (code ??= codeLines(text)).has(line);
 
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
     const raw = lines[i];
@@ -202,7 +203,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   checkTermIds(terms, text, lines, fm.bodyStartLine, push);
   for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
-  checkVariables(lines, fm.bodyStartLine, fm.data, pushText);
+  checkVariables(lines, fm.bodyStartLine, fm.data, pushText, inCode);
   checkAgentInSkipped(text, lines, fm.bodyStartLine, push);
 
   let result = applySuppressions(text, diagnostics);
@@ -260,7 +261,7 @@ const RETIRED_STATUS = ['archived', 'deprecated'];
 
 /** Front matter checks, driven by FRONTMATTER_SCHEMA. Keys outside the schema are custom metadata. */
 function checkFrontMatter(
-  data: Record<string, unknown>, lines: string[], end: number, push: Push, options: ValidateOptions,
+  data: Record<string, unknown>, lines: string[], end: number, push: Push, options: ValidateOptions, isCode: (line: number) => boolean,
 ): void {
   // The line that starts with `key:`, or 0 (the opening `---`) when YAML wrote it differently,
   // e.g. `"quoted":` or `[a]:`. Keys are escaped, since any text can be a YAML key.
@@ -282,7 +283,7 @@ function checkFrontMatter(
   }
 
   // Custom keys the body shows with `{{key}}` are meant: no unknown-key hint for them.
-  const shown = new Set(findVariables(lines, end).map((v) => v.name.split('.')[0]));
+  const shown = new Set(findVariables(lines, end, isCode).map((v) => v.name.split('.')[0]));
   for (const [key, value] of Object.entries(data)) {
     const prop = frontMatterProperty(key);
     if (!prop) {
@@ -683,8 +684,8 @@ function checkFigures(text: string, lines: string[], bodyStart: number, push: Pu
  * `{{name}}` in the body names a front matter key with a text value. Undefined names are only `info`: until
  * 1.6, `{{…}}` was plain text (templates, Handlebars or Jinja examples), so it must not start failing checks.
  */
-function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push): void {
-  const uses = findVariables(lines, bodyStart);
+function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push, isCode: (line: number) => boolean): void {
+  const uses = findVariables(lines, bodyStart, isCode);
   if (!uses.length) return;
   const names = [...new Set([...Object.keys(data), ...variableNames(data).map((v) => v.name)])];
   for (const use of uses) {
