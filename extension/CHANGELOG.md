@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.7.2 — 2026-10-14
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 1.7.1 — 2026-10-14
 
 Fixes only. The VS Code preview keeps its place when it is shown again after being hidden. Indented code blocks and math (`$…$` and `$$…$$`) are read as code and math everywhere, as they always rendered: the agent view and `smd to-md` leave them as written, the validator reports nothing inside them, and task lists do not count the lines in them. No document gains a diagnostic or a task; documents that passed `smd validate` still pass, and rendered output is unchanged.
