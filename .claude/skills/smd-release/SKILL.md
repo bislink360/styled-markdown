@@ -50,7 +50,7 @@ node .claude/skills/smd-release/scripts/release-check.mjs            # on the re
 node .claude/skills/smd-release/scripts/release-check.mjs --skip-vscode --skip-tests   # quick iteration
 ```
 
-The checker builds the last release in a temporary worktree (cached) and compares it with the working tree:
+The checker builds the last release in a temporary worktree (cached) and compares it with the working tree. "The last release" is the newest `vX.Y.Z` tag, with one exception: once a version is tagged, the tree with exactly that tag's files (the tracking PR into `main`, whose CI runs again after the tag is pushed) is compared with the release before it and reported as already released, instead of failing as "not greater than the last release". A tag of the same version on a different tree still fails: the version was not bumped, or the tag is on the wrong commit.
 
 - format vocabulary, diagnostic codes, validation results, agent view, Markdown export and emitted CSS classes on a document corpus
 - CLI commands and flags, and templates

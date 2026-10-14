@@ -17,6 +17,26 @@
   }
 
   /**
+   * Bring an anchor ({ line, offset }) measured in document version `from` to version `to`.
+   * `sync.edits` are [version, startLine, endLine, insertedLineBreaks], each with the document version it
+   * produced, and hold every line edit made after version `sync.since`. An anchor from before that, or one
+   * newer than `to`, comes back as it is.
+   */
+  function mapAnchor(anchor, from, to, sync) {
+    if (!anchor) return null;
+    const known = !!sync && typeof from === 'number' && from >= sync.since;
+    if (!known) return anchor;
+    const edits = (sync.edits || []).filter((e) => e[0] > from && e[0] <= to).map((e) => e.slice(1));
+    return { line: mapLine(anchor.line, edits), offset: anchor.offset };
+  }
+
+  /** The more recent of two saved places ({ anchor, version }); the first one when they are as recent. */
+  function newerPlace(a, b) {
+    if (!a || !b) return a || b || null;
+    return b.version > a.version ? b : a;
+  }
+
+  /**
    * Which element anchors the viewport: the last one (document order) starting at or above
    * `viewTop`. `items` are [{ line, top }]; returns { line, offset } or null at the very top.
    */
@@ -157,7 +177,7 @@
 
   if (typeof document === 'undefined') {
     if (typeof module === 'object' && module.exports) {
-      module.exports = { mapLine, pickAnchor, findLine, stableKeys, lruCache, diagramKey, tabKeyTarget, buildTabs, uiLabel };
+      module.exports = { mapLine, mapAnchor, newerPlace, pickAnchor, findLine, stableKeys, lruCache, diagramKey, tabKeyTarget, buildTabs, uiLabel };
     }
     return;
   }
@@ -173,13 +193,23 @@
   // active tab per tab group and user-toggled <details>, keyed by content, not position.
   const saved = (vscode && vscode.getState()) || {};
   const ui = { tabs: saved.tabs || {}, open: saved.open || {} };
-  let anchor = saved.anchor || null;
-  let saveTimer;
+  // Where the page is: the anchor at the top of the viewport (null at the very top) and the document
+  // version its line number belongs to. See "Scroll anchoring" below.
+  let place = typeof saved.version === 'number' ? { anchor: saved.anchor || null, version: saved.version } : null;
+  // Document version this page shows; the extension sends it with every render.
+  let pageVersion = 0;
+  // A place the page could not show yet: it has no layout (its frame isn't displayed or sized yet), or it
+  // shows an older version of the document than the place was saved in.
+  let intent = null;
+  // How the page found its place when it loaded (reported to the extension's tests).
+  let restoredFrom = 'none';
 
   function saveState() {
     if (!vscode) return;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => vscode.setState({ anchor, tabs: ui.tabs, open: ui.open }), 100);
+    const at = place || { anchor: null, version: pageVersion };
+    vscode.setState({ anchor: at.anchor, version: at.version, tabs: ui.tabs, open: ui.open });
+    // The extension keeps a copy for a page that comes back without its state, and drops the edits this place includes.
+    vscode.postMessage({ type: 'position', anchor: at.anchor, version: at.version });
   }
 
   function currentTheme() {
@@ -470,6 +500,7 @@
         theme: html.getAttribute('data-smd-theme'),
         reused: reusedDiagrams,
         top: (captureAnchor() || { line: 0 }).line,
+        restore: intent ? 'waiting' : restoredFrom,
       });
     }
   }
@@ -483,6 +514,11 @@
   // ---- Scroll anchoring ---------------------------------------------------
   // The preview remembers which source line is at the top of the viewport (plus the offset into
   // that element) rather than a pixel position, so re-renders and edits above don't move it.
+  //
+  // In VS Code the page is torn down while its panel is hidden and loads again when it is shown, and a
+  // render sent to it meanwhile is lost. So a line number is kept with the document version it belongs to
+  // (`place`), the extension sends every line edit with the version it produced, and mapAnchor() applies
+  // the edits made after the place's version: the same result whichever of them the page saw before.
   let generation = 0;
 
   function lineItems() {
@@ -498,21 +534,87 @@
     return window.scrollY > 0 ? pickAnchor(lineItems(), window.scrollY) : null;
   }
 
+  /**
+   * False when there is nothing to scroll in yet: a page loads without layout while its frame isn't displayed,
+   * and with a layout that won't last while the frame has no size.
+   */
   function restoreAnchor(a) {
-    if (!a) return;
-    const items = lineItems();
+    if (!a) return true;
+    const items = window.innerWidth > 0 && window.innerHeight > 0 ? lineItems() : [];
+    if (!items.length) return false;
     const { index, exact } = findLine(items, a.line);
     if (index >= 0) window.scrollTo({ top: items[index].top + (exact ? a.offset : 0) });
+    return true;
   }
 
-  /** Restore now, and again once diagrams have rendered unless the user scrolled meanwhile. */
+  /**
+   * Restore now, and again once diagrams have rendered unless the user scrolled meanwhile.
+   * Returns what the first restoreAnchor() did.
+   */
   function keepAnchor(a, rendering) {
     const gen = ++generation;
-    restoreAnchor(a);
+    const shown = restoreAnchor(a);
     const y = window.scrollY;
     rendering.then(() => {
       if (a && gen === generation && window.scrollY === y) restoreAnchor(a);
     });
+    return shown;
+  }
+
+  /** Show the place that is still waiting, if the page can by now; then save it, which also tells the extension. */
+  function settle() {
+    // A place newer than the document shown waits for the render of that version, which is on its way.
+    if (!intent || intent.version > pageVersion || !restoreAnchor(intent.anchor)) return;
+    intent = null;
+    place = { anchor: captureAnchor(), version: pageVersion };
+    saveState();
+  }
+
+  /** The rendered document changed (a message from the extension, or from the playground's editor). */
+  function applyUpdate(msg) {
+    html.setAttribute('data-smd-theme-pref', msg.themePref || 'auto');
+    const root = document.getElementById('smd-root');
+    const y = window.scrollY;
+    const version = typeof msg.version === 'number' ? msg.version : pageVersion;
+    // A place that is still waiting counts, not what the viewport shows meanwhile.
+    const from = intent || { anchor: captureAnchor(), version: pageVersion };
+    const a = mapAnchor(from.anchor, from.version, version, msg);
+    const heights = diagramHeights();
+    root.innerHTML = msg.html;
+    pageVersion = version;
+    const rendering = hydrate(root, heights);
+    const shown = keepAnchor(a, rendering);
+    if (!a) window.scrollTo({ top: y });
+    intent = (shown || !vscode) ? null : { anchor: a, version };
+    place = { anchor: intent ? a : captureAnchor(), version };
+    saveState();
+  }
+
+  /** What the extension embedded in the page: the document version, the line edits it knows and the last place it heard of. */
+  function embeddedSync() {
+    const root = document.getElementById('smd-root');
+    try {
+      const sync = JSON.parse((root && root.dataset.smdSync) || 'null');
+      if (sync && typeof sync.version === 'number') return sync;
+    } catch { /* fall through */ }
+    return { version: 0 };
+  }
+
+  /**
+   * Coming back after the panel was hidden (the page is new, its state is not): go to the saved place,
+   * brought up to date with the edits made since it was saved.
+   */
+  function restorePlace(rendering) {
+    const sync = embeddedSync();
+    pageVersion = sync.version;
+    const mine = place;
+    place = newerPlace(mine, sync.position);
+    if (!place) return;
+    restoredFrom = place === mine ? 'state' : 'host';
+    const a = mapAnchor(place.anchor, place.version, pageVersion, sync);
+    const shown = keepAnchor(a, rendering);
+    if (place.version > pageVersion) intent = place;
+    else if (!shown) intent = { anchor: a, version: pageVersion };
   }
 
   function scrollToLine(line) {
@@ -560,18 +662,7 @@
   window.addEventListener('message', (event) => {
     const msg = event.data || {};
     if (msg.type === 'update') {
-      html.setAttribute('data-smd-theme-pref', msg.themePref || 'auto');
-      const root = document.getElementById('smd-root');
-      const y = window.scrollY;
-      const before = captureAnchor();
-      const a = before && { line: mapLine(before.line, msg.edits), offset: before.offset };
-      const heights = diagramHeights();
-      root.innerHTML = msg.html;
-      const rendering = hydrate(root, heights);
-      if (a) keepAnchor(a, rendering);
-      else window.scrollTo({ top: y });
-      anchor = captureAnchor();
-      saveState();
+      applyUpdate(msg);
     } else if (msg.type === 'scrollToLine') {
       scrollToLine(msg.line);
     }
@@ -603,16 +694,22 @@
     .catch(() => undefined)
     .finally(() => html.setAttribute('data-smd-ready', 'true'));
   if (vscode) {
-    // Coming back after the panel was hidden: restore the saved position, adjusted for edits
-    // made while it was away (the extension embeds those in the page).
-    const root = document.getElementById('smd-root');
-    let edits = [];
-    try { edits = JSON.parse((root && root.getAttribute('data-smd-edits')) || '[]'); } catch { /* ignore */ }
-    if (anchor) keepAnchor({ line: mapLine(anchor.line, edits), offset: anchor.offset }, rendering);
+    restorePlace(rendering);
+    // A page that loaded before its frame was displayed gets its size, and with it a layout, later.
+    window.addEventListener('resize', settle);
+    if (typeof ResizeObserver === 'function') new ResizeObserver(settle).observe(html);
     let scrollTimer;
     window.addEventListener('scroll', () => {
       clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(() => { anchor = captureAnchor(); saveState(); }, 150);
+      scrollTimer = setTimeout(() => {
+        // While a place is waiting, the viewport is not where the reader left it: don't save that instead.
+        if (intent) {
+          settle();
+          return;
+        }
+        place = { anchor: captureAnchor(), version: pageVersion };
+        saveState();
+      }, 150);
     }, { passive: true });
     vscode.postMessage({ type: 'ready' });
   }

@@ -12,9 +12,9 @@ import {
   includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
 import {
-  expandedFigures, figuresOf, includedCodeLines, includedLines, includeKey, includeSource, type ExpandedFigures,
+  expandedFigures, figuresOf, includedLines, includedLiteralLines, includeKey, includeSource, type ExpandedFigures,
 } from './includeText';
-import { codeLines, parseSmd } from './parse';
+import { aroundInlineMath, literalLines, parseSmd } from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { quoteCite } from './quote';
@@ -345,8 +345,8 @@ interface TransformOptions extends AgentViewOptions {
   changelogs?: ReadonlyMap<number, ChangelogEntry>;
   /** The document's front matter, for `{{name}}`; read from `lines` when left out. */
   variables?: Variables;
-  /** The lines of `lines` that are code, where `{{name}}` is never replaced; found in `lines` when left out. */
-  codeLines?: ReadonlySet<number>;
+  /** The lines of `lines` that are code or display math, kept as written; found in `lines` when left out. */
+  literalLines?: ReadonlySet<number>;
   /** Receives every emitted line with the source line it came from. */
   collect?: Array<[at: number, line: string]>;
   /** Inside an included document: where its own includes resolve. */
@@ -356,11 +356,9 @@ interface TransformOptions extends AgentViewOptions {
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
-  const { figures, ownFigures, code } = documentContext(lines, options);
+  const { figures, ownFigures, literal } = documentContext(lines, options);
   const variables = options.variables ?? documentVariables(lines);
-  // `{{name}}` is never replaced in code, as in rendering; indented code reaches the line handling below.
-  let lineVariables: Variables | undefined = variables;
-  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, lineVariables);
+  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, variables);
   const changelogs = options.changelogs ?? changelogEntries(lines);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
@@ -383,7 +381,6 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
   for (let i = from; i < lines.length; i++) {
     const raw = lines[i];
-    lineVariables = variablesOn(i, code, variables);
 
     // ---- fenced code ----
     if (fence) {
@@ -399,6 +396,13 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     if (f) {
       flushDone(i);
       fence = { marker: f[1], start: i, body: [], info: f[2] };
+      continue;
+    }
+
+    // ---- indented code and display math: as written, like fenced code (no line of them is a task, a table or a comment) ----
+    if (literal.has(i)) {
+      flushDone(i);
+      emit(raw, i);
       continue;
     }
 
@@ -482,27 +486,22 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
-interface DocumentContext { figures: ExpandedFigures; ownFigures: ReadonlyMap<number, Figure>; code: ReadonlySet<number> }
+interface DocumentContext { figures: ExpandedFigures; ownFigures: ReadonlyMap<number, Figure>; literal: ReadonlySet<number> }
 
 /**
  * The figures (numbered with the rest of the expanded document), this document's own figures by line, and the lines
- * of code, from `options` when the caller has them, else from `lines`.
+ * of code and display math, from `options` when the caller has them, else from `lines`.
  */
 function documentContext(lines: string[], options: TransformOptions): DocumentContext {
   const text = lines.join('\n');
   const figures = options.figures ?? expandedFigures(text, viewReader(options));
-  return { figures, ownFigures: figuresOf(figures, options.figureKey ?? ''), code: options.codeLines ?? codeLines(text) };
-}
-
-/** The front matter variables `{{name}}` stands for on a line: none on a line of code. */
-function variablesOn(line: number, code: ReadonlySet<number>, variables: Variables): Variables | undefined {
-  return code.has(line) ? undefined : variables;
+  return { figures, ownFigures: figuresOf(figures, options.figureKey ?? ''), literal: options.literalLines ?? literalLines(text) };
 }
 
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
   const text = lines.join('\n');
-  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), codeLines: codeLines(text) };
+  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text) };
   return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
 }
 
@@ -532,7 +531,7 @@ function includeView(info: ContainerInfo, lines: string[], line: number, options
   const inc = result.include;
   // Included text uses this document's front matter variables, as the rendered HTML does.
   const inner = {
-    ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines), codeLines: includedCodeLines(inc),
+    ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines), literalLines: includedLiteralLines(inc),
     // Its figures are numbered with the including document's, and `:ref` resolves across both, as in rendered output.
     figureKey: includeKey(options.figureKey ?? '', line),
   };
@@ -582,17 +581,17 @@ function renderFence(fence: { start: number; body: string[]; info: string }, end
 const STATUS_WORDS: Record<string, string> = { green: 'ok', teal: 'ok', red: 'bad', pink: 'bad', orange: 'warn', amber: 'warn', yellow: 'warn' };
 
 /**
- * Strip styling syntax from one line, keeping the words. Code spans are left untouched. With the
- * document's figures by id, `:ref[id]` becomes `Figure 2 (id)`; with its front matter, `{{name}}`
- * becomes the value of `name`.
+ * Strip styling syntax from one line, keeping the words. Code spans and `$inline math$` are left
+ * untouched. With the document's figures by id, `:ref[id]` becomes `Figure 2 (id)`; with its front matter,
+ * `{{name}}` becomes the value of `name`.
  */
 export function inlineText(
   line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables,
 ): string {
-  return line
+  return aroundInlineMath(line, (text) => text
     .split(/(`+[^`]*`+)/)
     .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, variables), today, openTask, figures)))
-    .join('');
+    .join(''));
 }
 
 /** `:ref[id]` → `Figure 2 (id)`; references to unknown ids stay as written. */
@@ -642,7 +641,7 @@ function plain(s: string, today: string | undefined, openTask: boolean, figures?
 function sectionViews(lines: string[], from: number, documentOptions: TransformOptions): (start: number, end: number) => string {
   const text = lines.join('\n');
   const options = {
-    ...documentOptions, figures: expandedFigures(text, viewReader(documentOptions)), changelogs: changelogEntries(lines), variables: documentVariables(lines), codeLines: codeLines(text),
+    ...documentOptions, figures: expandedFigures(text, viewReader(documentOptions)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text),
   };
   if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);
   const emitted: Array<[number, string]> = [];

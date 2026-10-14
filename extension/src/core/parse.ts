@@ -3,7 +3,7 @@ import type { Token } from 'markdown-it';
 import { FigureCounter, figureTargets, type Figure } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
-import { acceptAnyFootnote, type ContainerMeta } from './markdownItRules';
+import { acceptAnyFootnote, mathInline, type ContainerMeta } from './markdownItRules';
 import { createMarkdownIt, type Env, type Heading, type ResolvedOptions } from './render';
 import { CALLOUT_TYPES } from './spec';
 import type { Variables } from './variables';
@@ -36,6 +36,11 @@ export interface ParseResult {
    * [first, end) zero-based, the end exclusive. Text there is never substituted or styled.
    */
   code: Array<[number, number]>;
+  /**
+   * The lines of `$$` display math blocks, on one line or several, nested ones included, as markdown-it
+   * reads them: [first, end) zero-based, the end exclusive. Math is not text: never substituted or styled.
+   */
+  math: Array<[number, number]>;
 }
 
 /** A `:::figure` before numbering, with a body-relative line. */
@@ -56,6 +61,8 @@ interface Block {
   figures: FigureSource[];
   /** Code blocks in the block (nested ones too), [first, end) with body-relative lines. */
   code: Array<[number, number]>;
+  /** Display math blocks in the block (nested ones too), [first, end) with body-relative lines. */
+  math: Array<[number, number]>;
   /** Definitions after the previous block, up to the end of this one (inside it too). */
   definitions: Definition[];
   /** Footnote definitions in the block, with the ids inside each: they render only if the footnote does. */
@@ -92,13 +99,27 @@ function documentVariablesOf(lines: string[], fm: { data: Record<string, unknown
 
 const OPTIONS: ResolvedOptions = { allowHtml: true, agentBlocks: 'collapsed', readFile: undefined, today: '' };
 let md: MarkdownIt | undefined;
-const parser = () => (md ??= recordingDefinitions(inPlaceFootnotes(createMarkdownIt(OPTIONS))));
+const parser = () => (md ??= recordingInlineMath(recordingDefinitions(inPlaceFootnotes(createMarkdownIt(OPTIONS)))));
 /** Container titles render as inline Markdown with raw HTML off (see renderContainer). */
 let titleMd: MarkdownIt | undefined;
 const titleParser = () => (titleMd ??= createMarkdownIt({ allowHtml: false }));
 const TITLED = new Set<string>([...CALLOUT_TYPES, 'details', 'card', 'tab', 'agent', 'human', 'decision', 'risk', 'api', 'figure', 'glossary']);
 
-type ParseEnv = Env & { definitions: Definition[] };
+/** A `$inline math$` the inline parser accepted: its columns in the text being parsed, and that text's length. */
+interface InlineMath { start: number; end: number; length: number }
+
+type ParseEnv = Env & { definitions: Definition[]; inlineMath?: InlineMath[] };
+
+/** Wrap the inline math rule so every `$…$` it accepts is recorded with its columns, for an env that asks (see inlineMathSpans). */
+function recordingInlineMath(instance: MarkdownIt): MarkdownIt {
+  instance.inline.ruler.at('smd_math_inline', (state, silent) => {
+    const start = state.pos;
+    const accepted = mathInline(state, silent);
+    if (accepted && !silent) (state.env as ParseEnv).inlineMath?.push({ start, end: state.pos, length: state.src.length });
+    return accepted;
+  });
+  return instance;
+}
 
 /**
  * Wrap the reference rule so every definition markdown-it accepts is recorded with its line, including
@@ -175,8 +196,10 @@ export function parseSmd(text: string): ParseResult {
     if (typeof value === 'string') collectIds(parser().parseInline(value, newEnv(0, labelsOf(state))), ids);
   }
 
-  const code = state.blocks.flatMap((b) => b.code).map(([start, end]): [number, number] => [start + fm.bodyStartLine, end + fm.bodyStartLine]);
-  const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code };
+  const inDocument = ([start, end]: [number, number]): [number, number] => [start + fm.bodyStartLine, end + fm.bodyStartLine];
+  const code = state.blocks.flatMap((b) => b.code).map(inDocument);
+  const math = state.blocks.flatMap((b) => b.math).map(inDocument);
+  const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code, math };
   results.unshift({ text, result });
   results.length = Math.min(results.length, 3);
   return result;
@@ -195,8 +218,64 @@ export function figureIndex(text: string): FigureIndex {
 
 /** The zero-based lines of a document that are code (see ParseResult.code), plus `offset`. */
 export function codeLines(text: string, offset = 0): Set<number> {
+  return linesIn(parseSmd(text).code, offset);
+}
+
+/**
+ * The zero-based lines of a document that are shown as written, plus `offset`: code and display math
+ * (see ParseResult.code and ParseResult.math). Nothing on them is inline syntax or a `{{name}}`.
+ */
+export function literalLines(text: string, offset = 0): Set<number> {
+  const { code, math } = parseSmd(text);
+  return linesIn([...code, ...math], offset);
+}
+
+/**
+ * The `$inline math$` on one line of text, as the inline parser reads that line: [start, end) columns, the
+ * `$` signs included. It is the rule rendering uses, after the rules that come first: `\$` is escaped,
+ * `$5 and $10` is text, and a `$` in a code span, a link destination or an HTML tag opens nothing.
+ */
+export function inlineMathSpans(line: string): Array<[number, number]> {
+  // Math needs an opening and a closing `$`.
+  if (line.indexOf('$') === line.lastIndexOf('$')) return [];
+  const env = newEnv(0, []);
+  const found: InlineMath[] = [];
+  env.inlineMath = found;
+  parser().parseInline(line, env);
+  // Text that is parsed apart from the line, such as an image's alt text, has columns of its own.
+  return found
+    .filter((m) => m.length === line.length && line[m.start] === '$' && line[m.end - 1] === '$')
+    .map((m): [number, number] => [m.start, m.end]);
+}
+
+/** Private-use characters: each stands for one math span while a line is converted. */
+const MARKS = /[-]/g;
+const FIRST_MARK = 0xe000;
+
+/**
+ * `convert` applied to a line of text with its `$inline math$` set aside, then put back as written: math is
+ * not text, so nothing in it is inline syntax or a `{{name}}`. Each span is one character while the line is
+ * converted, so syntax around math (`==a $x$ b==`) still converts. A line without math goes to `convert` as it is.
+ */
+export function aroundInlineMath(line: string, convert: (text: string) => string): string {
+  const spans = line.search(MARKS) < 0 ? inlineMathSpans(line) : [];
+  if (!spans.length) return convert(line);
+  let masked = '';
+  let last = 0;
+  spans.forEach(([start, end], i) => {
+    masked += line.slice(last, start) + String.fromCodePoint(FIRST_MARK + i);
+    last = end;
+  });
+  const math = (mark: string) => {
+    const span = spans[(mark.codePointAt(0) ?? 0) - FIRST_MARK];
+    return span ? line.slice(span[0], span[1]) : mark;
+  };
+  return convert(masked + line.slice(last)).replaceAll(MARKS, math);
+}
+
+function linesIn(ranges: Array<[number, number]>, offset: number): Set<number> {
   const lines = new Set<number>();
-  for (const [start, end] of parseSmd(text).code) {
+  for (const [start, end] of ranges) {
     for (let line = start; line < end; line++) lines.add(line + offset);
   }
   return lines;
@@ -303,6 +382,7 @@ function shift(block: Block, delta: number): Block {
     headings: block.headings.map((h) => ({ ...h, line: h.line + delta })),
     figures: block.figures.map((f) => ({ ...f, line: f.line + delta })),
     code: block.code.map(([start, end]) => [start + delta, end + delta]),
+    math: block.math.map(([start, end]) => [start + delta, end + delta]),
     definitions: block.definitions.map((d) => ({ ...d, line: d.line + delta })),
   };
 }
@@ -347,7 +427,8 @@ function parseRange(
   let d = 0;
   for (const g of groups) {
     const block: Block = {
-      start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), code: codeIn(g.tokens, from), definitions: [], notes: [], noteRefs: [],
+      start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), code: linesOf(g.tokens, from, CODE_TOKENS),
+      math: linesOf(g.tokens, from, MATH_TOKENS), definitions: [], notes: [], noteRefs: [],
     };
     while (h < env.headings.length && env.headings[h].line < g.end) {
       if (env.headings[h].line >= g.start) { block.headings.push(env.headings[h]); block.bases.push(env.bases![h]); }
@@ -439,10 +520,15 @@ function figuresIn(tokens: Token[], from: number): FigureSource[] {
     });
 }
 
-/** The lines of the indented and fenced code blocks among a block's tokens, nested ones too, body-relative. */
-function codeIn(tokens: Token[], from: number): Array<[number, number]> {
+/** Indented and fenced code blocks. */
+const CODE_TOKENS = ['code_block', 'fence'];
+/** `$$` display math blocks. */
+const MATH_TOKENS = ['smd_math_block'];
+
+/** The lines of the tokens of these types among a block's tokens, nested ones too, body-relative. */
+function linesOf(tokens: Token[], from: number, types: string[]): Array<[number, number]> {
   return tokens
-    .filter((t) => t.map && (t.type === 'code_block' || t.type === 'fence'))
+    .filter((t) => t.map && types.includes(t.type))
     .map((t): [number, number] => [from + t.map![0], from + t.map![1]]);
 }
 

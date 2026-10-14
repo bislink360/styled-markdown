@@ -15,6 +15,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
+import { cmpSemver, pickBaseTag, releaseTags } from './base-tag.mjs';
 
 // ---------------------------------------------------------------------------
 // Arguments and helpers
@@ -49,19 +50,29 @@ const passed = [];     // checks that ran and passed
 // 1. Base version
 // ---------------------------------------------------------------------------
 const semver = (v) => v.replace(/^v/, '').split('.').map(Number);
-const cmpSemver = (a, b) => { const x = semver(a), y = semver(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; };
-const tags = git('tag', '--list', 'v*').split('\n').filter((t) => /^v\d+\.\d+\.\d+$/.test(t)).sort(cmpSemver);
-const BASE = option('--base') ?? tags[tags.length - 1];
+const tags = releaseTags(git('tag', '--list', 'v*').split('\n'));
+const extPkg = readJson(join(EXT, 'package.json'));
+const version = extPkg.version;
+// The tracked files equal a tag's (uncommitted changes count as differences).
+const sameTree = (tag) => {
+  try {
+    git('diff', '--quiet', tag, '--'); // exits 1, so throws, when anything differs
+    return true;
+  } catch {
+    return false;
+  }
+};
+// Normally the newest tag. A tree that is already released (see base-tag.mjs) is compared with the release before it.
+const { base: BASE, released: RELEASED } = pickBaseTag({ tags, version, explicit: option('--base'), sameTree });
 if (!BASE) { console.error('No release tag (vX.Y.Z) found; pass --base.'); process.exit(2); }
-log(`comparing working tree with ${BASE}`);
+log(RELEASED ? `this tree is the released v${version}; comparing it with ${BASE}` : `comparing working tree with ${BASE}`);
+if (RELEASED) passed.push(`Already released: this tree is the tagged v${version} (compared with ${BASE})`);
 
 // ---------------------------------------------------------------------------
 // 2. Versions are consistent and ahead of the base
 // ---------------------------------------------------------------------------
-const extPkg = readJson(join(EXT, 'package.json'));
 const npmPkgPath = join(ROOT, 'npm', 'package.json');
 const npmPkg = existsSync(npmPkgPath) ? readJson(npmPkgPath) : null;
-const version = extPkg.version;
 // --pr: feature/fix/docs/chore PRs don't bump versions; only release/vX.Y.Z branches do.
 const PR_MODE = flag('--pr');
 if (npmPkg && npmPkg.version !== version) failures.push(`Version mismatch: extension ${version} vs npm ${npmPkg.version}. They are released in lockstep.`);

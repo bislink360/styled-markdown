@@ -1,7 +1,7 @@
 {
   "id": "styled-markdown",
   "name": "Styled Markdown",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "minAppVersion": "1.4.0",
   "description": "Render Styled Markdown (.smd) syntax in your notes: callouts, cards, tabs, decisions, risks, badges, status and due dates. Opens .smd files too.",
   "author": "Roshan Alwis",
