@@ -12,7 +12,7 @@ import { figureTargets, findRefs, type Figure, type FigureRef } from './figures'
 import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, versionLabel, type ChangelogEntry, type Version } from './changelog';
 import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
-import { inlineMathSpans, literalLines, parseSmd } from './parse';
+import { codeLines, inlineMathLines, literalLines, mathOnLine, parseSmd, type InlineMathLines } from './parse';
 import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
@@ -81,8 +81,11 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
   // --- Front matter -------------------------------------------------------
   const fm = parseFrontMatter(text);
+  // The lines of code as rendering reads them, found on the first ask: a `$$` line there opens no math.
+  let code: Set<number> | undefined;
+  const inCode = (line: number) => (code ??= codeLines(text)).has(line);
   if (fm.error) wholeLine(fm.error.line, 'error', 'frontmatter/invalid', fm.error.message);
-  if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, options);
+  if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, options, inCode);
   // For the checks of text: nothing in code or math is syntax, so what they find there is not reported.
   const pushText = outsideLiteral(push, literalText(text, lines, fm.bodyStartLine));
 
@@ -128,7 +131,8 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       continue;
     }
     const trimmed = raw.trim();
-    if (trimmed.startsWith('$$')) {
+    // A `$$` in indented code is code: it opens no math (its text checks are dropped as literal).
+    if (trimmed.startsWith('$$') && !inCode(i)) {
       const rest = trimmed.slice(2);
       if (rest.endsWith('$$') && rest.length > 2) checkMath(rest.slice(0, -2), i, wholeLine);
       else { mathStart = i; mathLines = [rest]; }
@@ -199,7 +203,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   checkTermIds(terms, text, lines, fm.bodyStartLine, push);
   for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
-  checkVariables(lines, fm.bodyStartLine, fm.data, pushText);
+  checkVariables(lines, fm.bodyStartLine, fm.data, pushText, inCode);
   checkAgentInSkipped(text, lines, fm.bodyStartLine, push);
 
   let result = applySuppressions(text, diagnostics);
@@ -214,13 +218,15 @@ type InLiteral = (line: number, column: number) => boolean;
 
 /**
  * Where nothing is syntax, as rendering, the agent view and `smd to-md` read the document: the lines of code and
- * display math (literalLines) and `$inline math$` on the other lines (inlineMathSpans). Found on the first ask.
+ * display math (literalLines) and `$inline math$` on the other lines (mathOnLine: math may run on from one line to
+ * the next). Found on the first ask.
  */
 function literalText(text: string, lines: string[], bodyStart: number): InLiteral {
   let literal: Set<number> | undefined;
-  const math = new Map<number, Array<[number, number]>>();
+  let multiLine: InlineMathLines | undefined;
+  const math = new Map<number, ReadonlyArray<[number, number]>>();
   const mathOn = (line: number) => {
-    const spans = math.get(line) ?? inlineMathSpans(lines[line] ?? '');
+    const spans = math.get(line) ?? mathOnLine(multiLine ??= inlineMathLines(text), line, lines[line] ?? '');
     math.set(line, spans);
     return spans;
   };
@@ -255,7 +261,7 @@ const RETIRED_STATUS = ['archived', 'deprecated'];
 
 /** Front matter checks, driven by FRONTMATTER_SCHEMA. Keys outside the schema are custom metadata. */
 function checkFrontMatter(
-  data: Record<string, unknown>, lines: string[], end: number, push: Push, options: ValidateOptions,
+  data: Record<string, unknown>, lines: string[], end: number, push: Push, options: ValidateOptions, isCode: (line: number) => boolean,
 ): void {
   // The line that starts with `key:`, or 0 (the opening `---`) when YAML wrote it differently,
   // e.g. `"quoted":` or `[a]:`. Keys are escaped, since any text can be a YAML key.
@@ -277,7 +283,7 @@ function checkFrontMatter(
   }
 
   // Custom keys the body shows with `{{key}}` are meant: no unknown-key hint for them.
-  const shown = new Set(findVariables(lines, end).map((v) => v.name.split('.')[0]));
+  const shown = new Set(findVariables(lines, end, isCode).map((v) => v.name.split('.')[0]));
   for (const [key, value] of Object.entries(data)) {
     const prop = frontMatterProperty(key);
     if (!prop) {
@@ -678,8 +684,8 @@ function checkFigures(text: string, lines: string[], bodyStart: number, push: Pu
  * `{{name}}` in the body names a front matter key with a text value. Undefined names are only `info`: until
  * 1.6, `{{…}}` was plain text (templates, Handlebars or Jinja examples), so it must not start failing checks.
  */
-function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push): void {
-  const uses = findVariables(lines, bodyStart);
+function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push, isCode: (line: number) => boolean): void {
+  const uses = findVariables(lines, bodyStart, isCode);
   if (!uses.length) return;
   const names = [...new Set([...Object.keys(data), ...variableNames(data).map((v) => v.name)])];
   for (const use of uses) {
