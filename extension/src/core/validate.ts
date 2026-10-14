@@ -12,7 +12,7 @@ import { figureTargets, findRefs, type Figure, type FigureRef } from './figures'
 import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, versionLabel, type ChangelogEntry, type Version } from './changelog';
 import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
-import { inlineMathSpans, literalLines, parseSmd } from './parse';
+import { codeLines, inlineMathLines, literalLines, mathOnLine, parseSmd, type InlineMathLines } from './parse';
 import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
@@ -93,6 +93,8 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   let mathStart = -1;
   let mathLines: string[] = [];
   let firstH1: { text: string; line: number } | null = null;
+  let code: Set<number> | undefined;
+  const inCode = (line: number) => (code ??= codeLines(text)).has(line);
 
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
     const raw = lines[i];
@@ -128,7 +130,8 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       continue;
     }
     const trimmed = raw.trim();
-    if (trimmed.startsWith('$$')) {
+    // A `$$` in indented code is code: it opens no math (its text checks are dropped as literal).
+    if (trimmed.startsWith('$$') && !inCode(i)) {
       const rest = trimmed.slice(2);
       if (rest.endsWith('$$') && rest.length > 2) checkMath(rest.slice(0, -2), i, wholeLine);
       else { mathStart = i; mathLines = [rest]; }
@@ -214,13 +217,15 @@ type InLiteral = (line: number, column: number) => boolean;
 
 /**
  * Where nothing is syntax, as rendering, the agent view and `smd to-md` read the document: the lines of code and
- * display math (literalLines) and `$inline math$` on the other lines (inlineMathSpans). Found on the first ask.
+ * display math (literalLines) and `$inline math$` on the other lines (mathOnLine: math may run on from one line to
+ * the next). Found on the first ask.
  */
 function literalText(text: string, lines: string[], bodyStart: number): InLiteral {
   let literal: Set<number> | undefined;
-  const math = new Map<number, Array<[number, number]>>();
+  let multiLine: InlineMathLines | undefined;
+  const math = new Map<number, ReadonlyArray<[number, number]>>();
   const mathOn = (line: number) => {
-    const spans = math.get(line) ?? inlineMathSpans(lines[line] ?? '');
+    const spans = math.get(line) ?? mathOnLine(multiLine ??= inlineMathLines(text), line, lines[line] ?? '');
     math.set(line, spans);
     return spans;
   };

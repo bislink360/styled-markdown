@@ -41,10 +41,20 @@ export interface ParseResult {
    * reads them: [first, end) zero-based, the end exclusive. Math is not text: never substituted or styled.
    */
   math: Array<[number, number]>;
+  /**
+   * The `$inline math$` on each line of inline text that runs over several lines (a paragraph, a list item's
+   * text) and has `$` signs to pair, as rendering reads that text as a whole: zero-based line → [start, end)
+   * columns. Math can run from one line to the next, so a span may end a line or start one. Other lines are
+   * read on their own (see inlineMathSpans and mathSpansOf).
+   */
+  inlineMath: ReadonlyMap<number, Array<[number, number]>>;
 }
 
 /** A `:::figure` before numbering, with a body-relative line. */
 interface FigureSource { id?: string; kind?: string; line: number }
+
+/** A line and the [start, end) columns of the inline math on it. */
+type LineSpans = [line: number, spans: Array<[number, number]>];
 
 /** A reference definition markdown-it accepted, and the line it starts on. */
 interface Definition { line: number; label: string }
@@ -63,6 +73,8 @@ interface Block {
   code: Array<[number, number]>;
   /** Display math blocks in the block (nested ones too), [first, end) with body-relative lines. */
   math: Array<[number, number]>;
+  /** Inline math on the lines of inline text that runs over several lines (see ParseResult.inlineMath), body-relative lines. */
+  inlineMath: LineSpans[];
   /** Definitions after the previous block, up to the end of this one (inside it too). */
   definitions: Definition[];
   /** Footnote definitions in the block, with the ids inside each: they render only if the footnote does. */
@@ -199,7 +211,8 @@ export function parseSmd(text: string): ParseResult {
   const inDocument = ([start, end]: [number, number]): [number, number] => [start + fm.bodyStartLine, end + fm.bodyStartLine];
   const code = state.blocks.flatMap((b) => b.code).map(inDocument);
   const math = state.blocks.flatMap((b) => b.math).map(inDocument);
-  const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code, math };
+  const inlineMath = new Map(state.blocks.flatMap((b) => b.inlineMath).map(([line, spans]) => [line + fm.bodyStartLine, spans]));
+  const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code, math, inlineMath };
   results.unshift({ text, result });
   results.length = Math.min(results.length, 3);
   return result;
@@ -248,6 +261,23 @@ export function inlineMathSpans(line: string): Array<[number, number]> {
     .map((m): [number, number] => [m.start, m.end]);
 }
 
+/** A document's `$inline math$` by zero-based line: [start, end) columns, `$` signs included where they are on the line. */
+export type InlineMathLines = ReadonlyMap<number, ReadonlyArray<[number, number]>>;
+
+/**
+ * The `$inline math$` of the lines of a document whose inline text runs over several lines, as rendering reads that
+ * text, plus `offset` (see ParseResult.inlineMath). Other lines are read on their own: see mathOnLine.
+ */
+export function inlineMathLines(text: string, offset = 0): InlineMathLines {
+  const found = parseSmd(text).inlineMath;
+  return offset ? new Map([...found].map(([line, spans]) => [line + offset, spans])) : found;
+}
+
+/** The `$inline math$` on one line of a document: from `lines` (see inlineMathLines) when listed there, else read from `text`. */
+export function mathOnLine(lines: InlineMathLines, line: number, text: string): ReadonlyArray<[number, number]> {
+  return lines.get(line) ?? inlineMathSpans(text);
+}
+
 /** Private-use characters: each stands for one math span while a line is converted. */
 const MARKS = /[-]/g;
 const FIRST_MARK = 0xe000;
@@ -256,9 +286,10 @@ const FIRST_MARK = 0xe000;
  * `convert` applied to a line of text with its `$inline math$` set aside, then put back as written: math is
  * not text, so nothing in it is inline syntax or a `{{name}}`. Each span is one character while the line is
  * converted, so syntax around math (`==a $x$ b==`) still converts. A line without math goes to `convert` as it is.
+ * `known` gives the spans when the line's text is read with the lines around it (see mathOnLine); else they are read from the line.
  */
-export function aroundInlineMath(line: string, convert: (text: string) => string): string {
-  const spans = line.search(MARKS) < 0 ? inlineMathSpans(line) : [];
+export function aroundInlineMath(line: string, convert: (text: string) => string, known?: ReadonlyArray<[number, number]>): string {
+  const spans = line.search(MARKS) < 0 ? known ?? inlineMathSpans(line) : [];
   if (!spans.length) return convert(line);
   let masked = '';
   let last = 0;
@@ -383,6 +414,7 @@ function shift(block: Block, delta: number): Block {
     figures: block.figures.map((f) => ({ ...f, line: f.line + delta })),
     code: block.code.map(([start, end]) => [start + delta, end + delta]),
     math: block.math.map(([start, end]) => [start + delta, end + delta]),
+    inlineMath: block.inlineMath.map(([line, spans]) => [line + delta, spans]),
     definitions: block.definitions.map((d) => ({ ...d, line: d.line + delta })),
   };
 }
@@ -428,7 +460,7 @@ function parseRange(
   for (const g of groups) {
     const block: Block = {
       start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), code: linesOf(g.tokens, from, CODE_TOKENS),
-      math: linesOf(g.tokens, from, MATH_TOKENS), definitions: [], notes: [], noteRefs: [],
+      math: linesOf(g.tokens, from, MATH_TOKENS), inlineMath: multiLineMath(g.tokens, lines, from), definitions: [], notes: [], noteRefs: [],
     };
     while (h < env.headings.length && env.headings[h].line < g.end) {
       if (env.headings[h].line >= g.start) { block.headings.push(env.headings[h]); block.bases.push(env.bases![h]); }
@@ -530,6 +562,49 @@ function linesOf(tokens: Token[], from: number, types: string[]): Array<[number,
   return tokens
     .filter((t) => t.map && types.includes(t.type))
     .map((t): [number, number] => [from + t.map![0], from + t.map![1]]);
+}
+
+/**
+ * Inline math on the lines of each inline token (nested ones too) whose text runs over several lines and has `$`
+ * signs to pair, with body-relative lines: the text is read as a whole, as rendering reads it (see ParseResult.inlineMath).
+ */
+function multiLineMath(tokens: Token[], lines: string[], from: number): LineSpans[] {
+  return tokens
+    .filter((t) => t.type === 'inline' && t.map && t.content.includes('\n') && t.content.indexOf('$') !== t.content.lastIndexOf('$'))
+    .flatMap((t) => inlineTextMath(t.content, lines, from + t.map![0]));
+}
+
+/**
+ * The inline math of inline text whose lines are the source lines from `first` on, each without what comes before
+ * it there (indentation, a list marker, `>`) and the last without trailing spaces. Each span is cut at the line
+ * ends it runs over. Nothing when a line of the text is not such a cut of its source line.
+ */
+function inlineTextMath(content: string, lines: string[], first: number): LineSpans[] {
+  const parts = content.split('\n');
+  const columns = parts.map((part, k) => cutAt(lines[first + k] ?? '', part));
+  if (columns.includes(-1)) return [];
+  const starts: number[] = [];
+  let at = 0;
+  for (const part of parts) {
+    starts.push(at);
+    at += part.length + 1;
+  }
+  const spans = parts.map((): Array<[number, number]> => []);
+  for (const [start, end] of inlineMathSpans(content)) {
+    parts.forEach((part, k) => {
+      const lo = Math.max(start, starts[k]);
+      const hi = Math.min(end, starts[k] + part.length);
+      if (lo < hi) spans[k].push([columns[k] + lo - starts[k], columns[k] + hi - starts[k]]);
+    });
+  }
+  return spans.map((s, k): LineSpans => [first + k, s]);
+}
+
+/** The column where `part` starts as the end of `source` (or of `source` without trailing spaces), or -1. */
+function cutAt(source: string, part: string): number {
+  if (source.endsWith(part)) return source.length - part.length;
+  const trimmed = source.trimEnd();
+  return trimmed.endsWith(part) ? trimmed.length - part.length : -1;
 }
 
 function collectIds(tokens: Token[], out: Set<string> | string[], skipHeadings = false): void {

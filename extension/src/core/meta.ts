@@ -1,9 +1,10 @@
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
-import { codeLines, parseSmd } from './parse';
+import { parseSmd } from './parse';
 import { dueState } from './render';
 import { validateSmd, type Diagnostic, type ValidateOptions } from './validate';
 import { inlineText } from './agentView';
+import { scanTasks } from './taskLines';
 import { substituteLine } from './variables';
 import { priorityRank } from './util';
 
@@ -38,62 +39,43 @@ export interface SmdDocumentInfo {
   diagnostics: { errors: number; warnings: number; items: Diagnostic[] };
 }
 
-/**
- * Is a line of a document code, as markdown-it reads it (see ParseResult.code)? Fenced code is skipped before
- * this is asked; an indented code block starts with four columns or a tab, so only such lines need the parse.
- */
-function codeLineCheck(text: string): (index: number, line: string) => boolean {
-  let code: Set<number> | undefined;
-  return (index, line) => {
-    if (!/^(?:\s{4}|\s*\t)/.test(line)) return false;
-    code ??= codeLines(text);
-    return code.has(index);
-  };
-}
-
-/** Parse every task (open and done) with its owner, priority and due date. Fenced and indented code holds none. */
+/** Parse every task (open and done) with its owner, priority and due date. Fenced and indented code holds none (see scanTasks). */
 export function extractTasks(text: string, today?: string): TaskInfo[] {
   const fm = parseFrontMatter(text);
-  const lines = text.split(/\r?\n/);
   const tasks: TaskInfo[] = [];
   let section: string | null = null;
-  let fence: string | null = null;
-  const inCode = codeLineCheck(text);
-  for (let i = fm.bodyStartLine; i < lines.length; i++) {
-    const line = lines[i];
-    const f = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
-    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; continue; }
-    if (f) { fence = f[1]; continue; }
-    const h = /^\s{0,3}#{1,6}\s+(.*?)(?:\s+\{[^{}]*\})?\s*#*\s*$/.exec(line);
-    if (h) { section = inlineText(h[1], undefined, false, undefined, fm.data); continue; }
-    const m = /^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\]\s+(.*)$/.exec(line);
-    // A line of an indented code block is code, not a task, as in rendering.
-    if (!m || inCode(i, line)) continue;
-    const body = substituteLine(m[2], fm.data);
-    const due = /:due\[([^\]]+)\]/.exec(body)?.[1]?.trim();
-    const priority = /:priority\[([^\]]+)\]/.exec(body)?.[1]?.trim();
-    const assignees = [
-      ...[...body.matchAll(/:mention\[([^\]]+)\]/g)].map((x) => x[1].trim()),
-      ...[...body.replace(/`[^`]*`/g, '').matchAll(/(?:^|\s)(@[\w.-]+)/g)].map((x) => x[1]),
-    ];
-    const done = m[1] !== ' ';
-    tasks.push({
-      // Owner, priority and due date live in their own fields, so strip them from the text.
-      text: inlineText(body)
-        .replace(/\s*\(due [^)]*\)/, '')
-        .replace(/\s*\[(?:P\d|critical|high|medium|low)\]/i, '')
-        .replace(/(^|\s)@[\w.-]+(?=\s|$)/g, '')
-        .replace(/\s{2,}/g, ' ')
-        .trim(),
-      line: i,
-      done,
-      section,
-      assignees: [...new Set(assignees)],
-      ...(priority ? { priority } : {}),
-      ...(due ? { due, overdue: !done && dueState(due, today) === 'overdue' } : {}),
-    });
+  for (const item of scanTasks(text, fm.bodyStartLine)) {
+    if (item.kind === 'heading') section = inlineText(item.text, undefined, false, undefined, fm.data);
+    else tasks.push(taskInfo(item, section, fm.data, today));
   }
   return tasks;
+}
+
+/** One task line as a task, under the heading `section`. */
+function taskInfo(item: { line: number; mark: string; body: string }, section: string | null, data: Record<string, unknown>, today?: string): TaskInfo {
+  const body = substituteLine(item.body, data);
+  const due = /:due\[([^\]]+)\]/.exec(body)?.[1]?.trim();
+  const priority = /:priority\[([^\]]+)\]/.exec(body)?.[1]?.trim();
+  const assignees = [
+    ...[...body.matchAll(/:mention\[([^\]]+)\]/g)].map((x) => x[1].trim()),
+    ...[...body.replace(/`[^`]*`/g, '').matchAll(/(?:^|\s)(@[\w.-]+)/g)].map((x) => x[1]),
+  ];
+  const done = item.mark !== ' ';
+  return {
+    // Owner, priority and due date live in their own fields, so strip them from the text.
+    text: inlineText(body)
+      .replace(/\s*\(due [^)]*\)/, '')
+      .replace(/\s*\[(?:P\d|critical|high|medium|low)\]/i, '')
+      .replace(/(^|\s)@[\w.-]+(?=\s|$)/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim(),
+    line: item.line,
+    done,
+    section,
+    assignees: [...new Set(assignees)],
+    ...(priority ? { priority } : {}),
+    ...(due ? { due, overdue: !done && dueState(due, today) === 'overdue' } : {}),
+  };
 }
 
 /** Overdue first, then by priority, due date (none last), file and line: the order of `smd tasks` and the tasks view. */

@@ -311,6 +311,52 @@ test('tasks, meta, query and issue sync read no task in indented code, as in fen
   assert.deepEqual(found(text).filter((d) => d.endsWith('task/overdue')), ['7:task/overdue']);
 });
 
+test('outlines and the token budget count the open tasks smd tasks lists: none in fenced or indented code', () => {
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
+  const text = [
+    ...HEAD, '## Plan', '', '- [ ] real', '', 'Example:', '', '    - [ ] in indented code', '', '```', '- [ ] fenced', '```', '',
+    '- item', '', '      - [ ] code in a list', '',
+    '## Notes', '', '```', ...Array.from({ length: 12 }, (_, i) => `- [ ] fenced ${i} ${words(4)}`), '```', '', '    - [ ] indented only', '',
+    '## Other', '', words(60), '',
+  ].join('\n');
+  assert.deepEqual(extractTasks(text, TODAY).filter((t) => !t.done).map((t) => t.line), [7]);
+  const o = outline(text, { today: TODAY });
+  assert.match(o, /## Plan\s+≈\d+\s+1 open task\n/);
+  assert.doesNotMatch(o, /## (?:Notes|Other).*open task/);
+  // Over the budget, a section whose only task-shaped lines are code is no more important than any other: the larger goes first.
+  const full = agentView(text, { today: TODAY }).tokens;
+  const budget = agentView(text, { today: TODAY, maxTokens: full - 1 }).budget!;
+  assert.deepEqual(budget.omitted.map((s) => s.heading), ['Notes']);
+});
+
+test('inline math that runs on to the next line is math to the views and to validation, as it renders', () => {
+  const text = [
+    ...HEAD, 'The cost $a + ==x== :badge[y]{color=nope}', 'b {{nope}} [r](nope.smd)$ grows ==z==', '', '- item $a', '  :due[bad] b$ ok', '',
+    '> q $x +', '> [c]{color=nope} y$ z', '', 'Pay $5 and', '$10 ==m== [d]{color=nope}',
+  ].join('\n');
+  const html = renderSmd(text).html;
+  assert.equal(html.match(/class="katex"/g)?.length, 3);
+  assert.doesNotMatch(html, /smd-badge|smd-due|<a /);
+  assert.match(html, /grows <mark>z<\/mark>[\s\S]*\$10 <mark>m<\/mark>/);
+  // Math is kept as written on both lines; the text around it converts.
+  for (const view of [agentView(text).text, smdToMarkdown(text)]) {
+    assert.ok(view.includes('The cost $a + ==x== :badge[y]{color=nope}\nb {{nope}} [r](nope.smd)$ grows '), view);
+    assert.ok(view.includes('- item $a\n  :due[bad] b$ ok'), view);
+    assert.ok(view.includes('> q $x +\n> [c]{color=nope} y$ z'), view);
+    assert.doesNotMatch(view, /==z==|==m==/);
+  }
+  // Only the attribute list after the money is text.
+  assert.deepEqual(found(text), ['15:attrs/value']);
+});
+
+test('a `$$` line in indented code opens no math: no false math/unclosed, and the lines after it are checked', () => {
+  const text = [...HEAD, 'Example:', '', '    $$', '    x', '', 'Text [a]{color=nope}', '', '$$', 'y^2', '$$'].join('\n');
+  const html = renderSmd(text).html;
+  assert.equal(html.match(/<code>/g)?.length, 1);
+  assert.equal(html.match(/class="katex-display"/g)?.length, 1);
+  assert.deepEqual(found(text), ['10:attrs/value']);
+});
+
 test('outline lists sections with costs and markers', () => {
   const o = outline(prd, { today: TODAY });
   assert.match(o, /^Checkout Redesign — One-Page Checkout · approved · file ≈\d+ tokens/);

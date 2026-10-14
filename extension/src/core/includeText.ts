@@ -5,7 +5,7 @@ import {
   type IncludeBlock, type IncludeScope, type IncludeSource, type LoadedInclude,
 } from './include';
 import { findLinks } from './links';
-import { literalLines, parseSmd } from './parse';
+import { inlineMathLines, literalLines, parseSmd, type InlineMathLines } from './parse';
 
 /** `:::include` for the line-based views (agent view, plain Markdown, validation), which read text rather than tokens. */
 
@@ -40,6 +40,15 @@ export function includedText(include: LoadedInclude): { text: string; offset: nu
 export function includedLiteralLines(include: LoadedInclude): Set<number> {
   const { text, offset } = includedText(include);
   return literalLines(text, offset);
+}
+
+/**
+ * The inline math of the included lines whose inline text runs over several lines (see inlineMathLines), by line of
+ * the included file, with columns in the lines as `includedLines` gives them (links rebased).
+ */
+export function includedInlineMath(include: LoadedInclude): InlineMathLines {
+  const text = ['', ...includedLines(include).slice(include.start, include.end + 1)].join('\n');
+  return inlineMathLines(text, include.start - 1);
 }
 
 /** Links, images, reference definitions and HTML href/src; `:::include` paths stay, as nested includes resolve them. */
