@@ -14,7 +14,7 @@ import {
 import {
   expandedFigures, figuresOf, includedInlineMath, includedLines, includedLiteralLines, includeKey, includeSource, type ExpandedFigures,
 } from './includeText';
-import { aroundInlineMath, inlineMathLines, literalLines, parseSmd, type InlineMathLines } from './parse';
+import { aroundInlineMath, fenceLines, inlineMathLines, lazyLineSet, literalLines, parseSmd, type InlineMathLines } from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { quoteCite } from './quote';
@@ -702,6 +702,30 @@ export function agentViewRanges(text: string, options: AgentViewOptions = {}): (
   return (start, end) => view(start, end).replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/** An outline note and the line that earns it: a fence that opens a diagram, or a container's opening line. */
+interface SectionMark { note: string; line: RegExp; fence?: true }
+
+const SECTION_MARKS: SectionMark[] = [
+  { note: 'diagram', line: /^\s*```\s*mermaid/, fence: true },
+  { note: 'AGENT INSTRUCTIONS', line: /^\s*:{3,}\s*agent\b/ },
+  { note: 'API', line: /^\s*:{3,}\s*api\b/ },
+  { note: 'decision', line: /^\s*:{3,}\s*decision\b/ },
+  { note: 'risk', line: /^\s*:{3,}\s*risk(?![\w-])/ },
+  { note: 'open question', line: /^\s*:{3,}\s*question\b/ },
+];
+
+/**
+ * Whether lines [start, end] of a document have a line that earns a note, as rendering reads them: code and
+ * display math are shown as written, so a `:::decision` line there is text, and a ```` ```mermaid ```` line is a
+ * diagram only where it opens a fence. The document is parsed only when a line has the shape of a mark.
+ */
+function sectionMarks(text: string, lines: string[]): (mark: SectionMark, start: number, end: number) => boolean {
+  const opensFence = lazyLineSet(() => fenceLines(text));
+  const isLiteral = lazyLineSet(() => literalLines(text));
+  const counts = (mark: SectionMark, i: number) => (mark.fence ? opensFence(i) : !isLiteral(i));
+  return (mark, start, end) => lines.slice(start, end + 1).some((l, k) => mark.line.test(l) && counts(mark, start + k));
+}
+
 export function outline(text: string, options: AgentViewOptions = {}): string {
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);
@@ -717,17 +741,12 @@ export function outline(text: string, options: AgentViewOptions = {}): string {
 
   // Counted as `smd tasks` counts them: a task-shaped line in code is code.
   const openTaskAt = openTaskLines(text);
+  const marked = sectionMarks(text, lines);
   const rows = sectionCosts(text, options).map((s) => {
-    const sectionText = lines.slice(s.start, s.end + 1);
     const openTasks = openTaskAt.filter((l) => l >= s.start && l <= s.end).length;
     const notes = [
       openTasks ? `${openTasks} open task${openTasks > 1 ? 's' : ''}` : '',
-      sectionText.some((l) => /^\s*```\s*mermaid/.test(l)) ? 'diagram' : '',
-      sectionText.some((l) => /^\s*:{3,}\s*agent\b/.test(l)) ? 'AGENT INSTRUCTIONS' : '',
-      sectionText.some((l) => /^\s*:{3,}\s*api\b/.test(l)) ? 'API' : '',
-      sectionText.some((l) => /^\s*:{3,}\s*(decision)\b/.test(l)) ? 'decision' : '',
-      sectionText.some((l) => /^\s*:{3,}\s*(risk)(?![\w-])/.test(l)) ? 'risk' : '',
-      sectionText.some((l) => /^\s*:{3,}\s*(question)\b/.test(l)) ? 'open question' : '',
+      ...SECTION_MARKS.map((mark) => (marked(mark, s.start, s.end) ? mark.note : '')),
       s.heading.agent === 'skip' ? 'skipped for agents' : '',
     ].filter(Boolean).join(', ');
     const range = `L${s.start + 1}-${s.end + 1}`;

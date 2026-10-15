@@ -12,6 +12,9 @@
 ### Deprecated
 
 ### Fixed
+- `smd outline` and the agent view's outline: the diagram, AGENT INSTRUCTIONS, API, decision, risk and open question notes come only from lines that render as those blocks. A `:::agent`, `:::decision` or other container line in a fenced or indented code block or in `$$` display math is shown as written and no longer adds a note. A section has the diagram note when a ```` ```mermaid ```` fence opens in it, as before, but not for such a line inside other code, such as a ```` ````md ```` example, or in indented code.
+- Agent view with `--max-tokens`: a `:::agent` line in code or display math no longer keeps its section from being omitted, and a `:::danger`, `:::warning` or `:::question` line, or an accepted `:::decision`, there no longer keeps its section longer than others.
+- Editors (VS Code and the language server): after a `$$` line in an indented code block, `{{` completion is offered again and hovering a `{{name}}` shows its value. The `$$` line is code, not the start of display math, which hid the rest of the document.
 
 ## 1.8.0 — 2026-10-15
 

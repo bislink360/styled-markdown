@@ -8,7 +8,7 @@ import {
   agentView, extractTasks, getDocumentInfo, issueTasks, outline, planIssueSync, querySmd, renderSmd, smdToMarkdown, validateSmd,
 } from '../src/core';
 import { inlineText } from '../src/core/agentView';
-import { inlineMathSpans } from '../src/core/parse';
+import { fenceLines, inlineMathSpans } from '../src/core/parse';
 import { convertInline } from '../src/core/toMarkdown';
 import { readdirSync } from 'node:fs';
 import { fillTemplate } from '../src/core';
@@ -327,6 +327,39 @@ test('outlines and the token budget count the open tasks smd tasks lists: none i
   const full = agentView(text, { today: TODAY }).tokens;
   const budget = agentView(text, { today: TODAY, maxTokens: full - 1 }).budget!;
   assert.deepEqual(budget.omitted.map((s) => s.heading), ['Notes']);
+});
+
+test('outline notes read code and display math as written: a container or Mermaid line there marks nothing', () => {
+  const marks = [':::agent', ':::api GET /x', ':::decision{status=accepted} Use Y', ':::risk', ':::question', ':::warning'];
+  const text = [
+    ...HEAD, '## Real', '', '```mermaid', 'graph TD', '  A --> B', '```', '', ':::decision{status=accepted} Use X', 'Body.', ':::', '',
+    '## Examples', '', '````md', '```mermaid', 'graph TD', '```', ...marks, '````', '', 'Indented:', '', ...marks.map((m) => `    ${m}`), '',
+    '$$', ...marks, '$$', '', '    ```mermaid', '    graph TD', '',
+  ].join('\n');
+  // As rendered: one diagram and one decision, in the first section; the rest is code and math.
+  const html = renderSmd(text).html;
+  assert.equal(html.match(/class="smd-diagram"/g)?.length, 1);
+  assert.equal(html.match(/class="smd-decision /g)?.length, 1);
+  assert.doesNotMatch(html, /smd-agent|smd-api|smd-risk|smd-question|smd-callout/);
+  const o = outline(text, { today: TODAY });
+  assert.match(o, /## Real\s+≈\d+\s+diagram, decision\n/);
+  assert.match(o, /## Examples\s+≈\d+\n/);
+  // A diagram is a fence that opens: not one in other code, nor indented code that looks like a fence.
+  assert.deepEqual([...fenceLines(text)], [7, 18]);
+});
+
+test('the token budget reads code and display math as written: a container line there neither pins a section nor keeps it longer', () => {
+  const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
+  const text = [
+    ...HEAD, '## Pinned', '', words(80), '', '```', ':::agent', '```', '',
+    '## Callouts', '', words(40), '', '    :::warning', '', '$$', ':::decision{status=accepted} Use Y', '$$', '',
+    '## Plain', '', words(20), '',
+  ].join('\n');
+  const full = agentView(text, { today: TODAY }).tokens;
+  // The largest goes first: `:::agent` in code is no instruction, and the callouts are code and math.
+  assert.deepEqual(agentView(text, { today: TODAY, maxTokens: full - 1 }).budget!.omitted.map((s) => s.heading), ['Pinned']);
+  const two = agentView(text, { today: TODAY, maxTokens: full - 150 }).budget!.omitted.map((s) => s.heading);
+  assert.deepEqual(two, ['Pinned', 'Callouts']);
 });
 
 test('inline math that runs on to the next line is math to the views and to validation, as it renders', () => {
