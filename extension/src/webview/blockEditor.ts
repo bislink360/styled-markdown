@@ -12,7 +12,7 @@ import type {
 import {
   FROZEN, blockLabel, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
   gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement,
-  itemForLine, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, boundaryY, dropAnnouncement, dropIndex, dropMoves, dropTo, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  itemForLine, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, boundaryY, dropAnnouncement, dropIndex, dropMoves, dropTo, imageProblem, toBase64, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction, type GridCell, type GridRequest, type GridSize, type LineRange,
 } from './blockEditorModel';
 
@@ -1110,6 +1110,62 @@ function start(rt: Runtime): void {
     const editId = nextId();
     drops.set(editId, dropAnnouncement(d.view, index < d.siblings.length ? viewOf.get(d.siblings[index]) : undefined));
     post({ type: 'move', key: d.view.key, to: dropTo(keys, index), editId });
+  });
+
+  // ---- Images: pasted, or dropped from the file manager ------------------------------------------
+  // A pasted image (Ctrl+V) goes after the current block; a dropped image file after the block it is dropped on. The
+  // page reads the file's bytes (a webview gets the file itself, never its path) and sends them, base64, with its
+  // type and name; the extension saves it where it saves images and inserts the link.
+  const imageFiles = (data: DataTransfer | null): File[] => Array.from(data?.files ?? []);
+  const hasFiles = (data: DataTransfer | null) => !!data && Array.from(data.types).includes('Files');
+
+  async function sendImages(files: readonly File[], atKey: string | undefined, named = true): Promise<void> {
+    const problems = files.map((f) => imageProblem(f)).filter((p): p is string => p !== undefined);
+    if (problems.length) showNotice(problems.join(' '));
+    const images = files.filter((f) => !imageProblem(f));
+    if (!images.length) return;
+    rt.announce(images.length === 1 ? 'Adding the image…' : `Adding ${images.length} images…`);
+    // Each goes right after the block: sent last first, they end up in the order given.
+    for (const file of [...images].reverse()) {
+      const data = toBase64(new Uint8Array(await file.arrayBuffer()));
+      const place = atKey ? { atKey } : { position: 'end' };
+      post({ type: 'image', mime: file.type, data, ...(named && file.name ? { name: file.name } : {}), ...place, editId: nextId() });
+    }
+  }
+
+  document.addEventListener('paste', (event) => {
+    const files = imageFiles(event.clipboardData);
+    if (!files.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const key = currentView()?.key;
+    if (editing) finishEdit(false);
+    // A pasted image's name is the browser's ("image.png"): the extension names it after the document instead.
+    void sendImages(files, key, false);
+  }, true);
+
+  document.addEventListener('dragover', (event) => {
+    if (dragging || !hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  });
+
+  document.addEventListener('drop', (event) => {
+    if (dragging || !event.dataTransfer) return;
+    const files = imageFiles(event.dataTransfer);
+    if (!files.length) {
+      // From VS Code's Explorer a drop brings a link to the file, not the file: only the text editor can use it.
+      if (Array.from(event.dataTransfer.types).some((t) => t === 'text/uri-list' || t === 'application/vnd.code.uri-list')) {
+        event.preventDefault();
+        showNotice('Drop image files from your file manager here, or paste an image. Files from the Explorer can be dropped in the text editor.');
+      }
+      return;
+    }
+    event.preventDefault();
+    const item = (event.target as HTMLElement).closest?.<HTMLElement>(`.${ITEM}`);
+    const key = item ? viewOf.get(item)?.key : currentView()?.key;
+    if (editing) finishEdit(false);
+    void sendImages(files, key);
   });
 
   /** A drop was made: say where the block went. */

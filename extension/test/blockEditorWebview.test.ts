@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import {
   FROZEN, blockLabel, blockName, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
   gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement, itemForLine,
-  linesLabel, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, boundaryY, dropAnnouncement, dropIndex, dropMoves, dropTo, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  linesLabel, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, boundaryY, dropAnnouncement, dropIndex, dropMoves, dropTo, imageProblem, toBase64, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction,
 } from '../src/webview/blockEditorModel';
 import type { BlockView } from '../src/blockEditorSession';
@@ -331,6 +331,25 @@ test('page: one drag handle in a closed shadow root; a drop sends move with a si
   assert.match(pageSource, /post\(\{ type: 'move', key: d\.view\.key, to: dropTo\(keys, index\), editId \}\)/);
   assert.match(pageSource, /drops\.set\(editId, dropAnnouncement\(/, 'the result of a drop is announced');
   assert.match(pageSource, /siblingGroups\.set\(el, complete \? group : \[\]\)/, 'children are dropped only among their own siblings');
+});
+
+test('images: what the page sends, and what it doesn\'t', () => {
+  assert.equal(imageProblem({ name: 'a.png', type: 'image/png', size: 100 }), undefined);
+  assert.equal(imageProblem({ type: 'image/svg+xml', size: 100 }), undefined);
+  assert.equal(imageProblem({ name: 'a.tiff', type: 'image/tiff', size: 100 }), '"a.tiff" is not a PNG, JPEG, GIF, WebP, BMP, AVIF or SVG image.');
+  assert.equal(imageProblem({ type: 'text/plain', size: 1 }), 'The pasted file is not a PNG, JPEG, GIF, WebP, BMP, AVIF or SVG image.');
+  assert.equal(imageProblem({ name: 'big.png', type: 'image/png', size: 10 * 1024 * 1024 + 1 }), '"big.png" is larger than 10 MB.');
+  assert.equal(imageProblem({ name: 'e.png', type: 'image/png', size: 0 }), '"e.png" is empty.');
+  const bytes = new Uint8Array(100_000).map((_, i) => (i * 31) % 256);
+  assert.equal(toBase64(bytes), Buffer.from(bytes).toString('base64'), 'in chunks, the same as in one go');
+  assert.equal(toBase64(new Uint8Array()), '');
+});
+
+test('page: pasted and dropped images go to the extension as bytes with a type, never as a path', () => {
+  assert.match(pageSource, /post\(\{ type: 'image', mime: file\.type, data, \.\.\.\(named && file\.name \? \{ name: file\.name \} : \{\}\), \.\.\.place, editId: nextId\(\) \}\)/);
+  assert.match(pageSource, /document\.addEventListener\('paste', \(event\) => \{/);
+  assert.match(pageSource, /data: DataTransfer \| null\): File\[\] => Array\.from\(data\?\.files \?\? \[\]\)/);
+  assert.doesNotMatch(pageSource, /\.path\b.*type: 'image'/);
 });
 
 test('textareaRows grows with the text, within limits', () => {

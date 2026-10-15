@@ -51,7 +51,7 @@ async function onEnterKey(editor: vscode.TextEditor): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /** Where images for a document are saved: `smd.images.folder` in its workspace folder. */
-function targetFolder(document: vscode.TextDocument): string {
+export function targetFolder(document: vscode.TextDocument): string {
   const folder = vscode.workspace.getConfiguration('smd.images', document.uri).get<string>('folder', 'docs/images');
   return imageFolder(document.uri.fsPath, vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath, folder);
 }
@@ -61,7 +61,7 @@ async function exists(file: string): Promise<boolean> {
 }
 
 /** A free file name in `folder`, also avoiding names already claimed by this operation. */
-async function freeName(folder: string, base: string, ext: string, claimed: Set<string>): Promise<string> {
+export async function freeName(folder: string, base: string, ext: string, claimed: Set<string>): Promise<string> {
   const taken = new Set(claimed);
   for (let name = uniqueFileName(base, ext, (n) => taken.has(n)); ; name = uniqueFileName(base, ext, (n) => taken.has(n))) {
     if (!(await exists(path.join(folder, name)))) { claimed.add(name); return name; }

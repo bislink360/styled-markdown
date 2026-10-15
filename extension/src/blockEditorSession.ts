@@ -43,6 +43,7 @@ export type EditorMessage =
   | TableMessage
   | { type: 'addFrontMatter'; editId?: string }
   | SetFrontMatterMessage
+  | ImageMessage
   | { type: 'getFixes'; key: string; requestId: number }
   | ApplyFixMessage
   | { type: 'toggleTask'; line: number }
@@ -83,6 +84,21 @@ export type TableMessage =
 export type MoveMessage =
   | { type: 'move'; key: string; direction: MoveDirection; to?: undefined; editId?: string }
   | { type: 'move'; key: string; to: string; direction?: undefined; editId?: string };
+
+/**
+ * An image pasted or dropped on the page: its type and bytes (base64), and, dropped, the file's name, which the host
+ * may use for the name it gives the file. It goes after the block `atKey`, or at the end of the document. The host
+ * decides where the file is saved and what it is called.
+ */
+export interface ImageMessage {
+  type: 'image';
+  mime: string;
+  data: string;
+  name?: string;
+  atKey?: string;
+  position?: 'end';
+  editId?: string;
+}
 
 /**
  * Set a known front matter key (FRONT_MATTER_FIELDS) of the front matter block `key`: a text, a list's items, or
@@ -368,6 +384,58 @@ function readTableCol(m: Raw): EditorMessage | undefined {
   return align ? withId({ type: 'tableCol', key: m.key, op: 'align', at: m.at, align }, m.editId) : undefined;
 }
 
+/** The image types the page may send, and the extension each is saved with (as editing.ts's imageExtension). */
+export const IMAGE_TYPES: Readonly<Record<string, string>> = {
+  'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp', 'image/bmp': '.bmp', 'image/avif': '.avif', 'image/svg+xml': '.svg',
+};
+/** The largest image the page may send: 10 MB, and its base64 length. */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_BASE64 = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+function readImage(m: Raw): EditorMessage | undefined {
+  const typed = typeof m.mime === 'string' && Object.hasOwn(IMAGE_TYPES, m.mime);
+  const data = typeof m.data === 'string' && m.data.length > 0 && m.data.length <= MAX_IMAGE_BASE64 && m.data.length % 4 === 0 && BASE64.test(m.data);
+  if (!typed || !data || (m.name !== undefined && !isLine(m.name)) || !optionalId(m.editId)) return undefined;
+  const message: ImageMessage = { type: 'image', mime: m.mime as string, data: m.data as string };
+  if (typeof m.name === 'string') message.name = m.name.slice(0, 200);
+  if (m.atKey !== undefined) {
+    if (!isKey(m.atKey)) return undefined;
+    message.atKey = m.atKey;
+  } else if (m.position !== 'end') {
+    return undefined;
+  } else {
+    message.position = 'end';
+  }
+  return withId(message, m.editId);
+}
+
+/** The first bytes of each image type (an SVG is text: it is checked for its `<svg` tag instead). */
+const MAGIC: Readonly<Record<string, (b: Uint8Array) => boolean>> = {
+  'image/png': (b) => starts(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  'image/jpeg': (b) => starts(b, [0xff, 0xd8, 0xff]),
+  'image/gif': (b) => starts(b, [0x47, 0x49, 0x46, 0x38]),
+  'image/webp': (b) => starts(b, [0x52, 0x49, 0x46, 0x46]) && ascii(b, 8, 12) === 'WEBP',
+  'image/bmp': (b) => starts(b, [0x42, 0x4d]),
+  'image/avif': (b) => ascii(b, 4, 8) === 'ftyp' && /^avi[fs]$/.test(ascii(b, 8, 12)),
+  'image/svg+xml': (b) => /<svg[\s>]/.test(ascii(b, 0, Math.min(b.length, 4096))),
+};
+const starts = (b: Uint8Array, magic: readonly number[]) => magic.every((byte, i) => b[i] === byte);
+const ascii = (b: Uint8Array, from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
+
+/** An image's bytes, if they are what its type says (by their first bytes); else why it is refused. */
+export function imageBytes(mime: string, data: string): Uint8Array | { refused: string } {
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+  } catch {
+    return { refused: 'The image could not be read.' };
+  }
+  if (bytes.length > MAX_IMAGE_BYTES) return { refused: 'The image is larger than 10 MB.' };
+  const check = MAGIC[mime];
+  return check?.(bytes) ? bytes : { refused: `That file is not the ${IMAGE_TYPES[mime]?.slice(1).toUpperCase() ?? 'image'} it says it is.` };
+}
+
 /** A move: Alt+↑/↓ (`direction`), or a drop (`to`: the key of a sibling block, or 'end'), not both. */
 function readMove(m: Raw): EditorMessage | undefined {
   if (!isKey(m.key) || !optionalId(m.editId)) return undefined;
@@ -418,6 +486,7 @@ const READERS: Readonly<Record<string, Reader>> = {
   tableAlign: (m) => (isKey(m.key) && optionalId(m.editId) ? withId({ type: 'tableAlign', key: m.key }, m.editId) : undefined),
   addFrontMatter: (m) => (optionalId(m.editId) ? withId({ type: 'addFrontMatter' }, m.editId) : undefined),
   setFrontMatter: readSetFrontMatter,
+  image: readImage,
   getFixes: (m) => (isKey(m.key) && isCount(m.requestId) ? { type: 'getFixes', key: m.key, requestId: m.requestId } : undefined),
   applyFix: readApplyFix,
   toggleTask: (m) => (isCount(m.line) ? { type: 'toggleTask', line: m.line } : undefined),
@@ -554,6 +623,12 @@ export interface SessionOptions {
   scan?(lines: readonly string[]): InlineItem[];
   /** A table block's lines read for the grid (readTable with the render's allowHtml). */
   table?(lines: readonly string[]): TableSource | TableRefusal;
+  /**
+   * Save an image's bytes as a new file where the editor saves images (the host picks the folder and the name, from
+   * the dropped file's `name` or the document's); its Markdown image link, relative to the document, and its path
+   * as the notice shows it; or why it can't be saved.
+   */
+  saveImage?(bytes: Uint8Array, extension: string, name: string | undefined): PromiseLike<{ markdown: string; path: string } | { refused: string }>;
   /** The quick fixes VS Code has for the problems on lines [start, end): code actions of kind quickfix with an edit. */
   quickFixes?(range: LineRange): PromiseLike<readonly QuickFix[]>;
 }
@@ -1110,6 +1185,8 @@ export class BlockEditorSession {
         return this.addFrontMatter(message.editId);
       case 'setFrontMatter':
         return this.setFrontMatter(message);
+      case 'image':
+        return this.insertImage(message);
       case 'getFixes':
         return this.getFixes(message.key, message.requestId);
       case 'applyFix':
@@ -1349,6 +1426,29 @@ export class BlockEditorSession {
       const change = minimalEdit(found.lines[line], e.lines[0]);
       return change ? [{ from: starts[line] + change.from, to: starts[line] + change.to, insert: change.insert }] : [];
     });
+  }
+
+  /**
+   * Save a pasted or dropped image and put a link to it after a block (or at the end): only if its bytes are the
+   * image type it says and the block is still there. The host saves the file (saveImage: its folder and name are
+   * the host's), then inserts `![alt](path)` as a block of its own, adding only new lines.
+   */
+  private async insertImage(m: ImageMessage): Promise<void> {
+    if (!this.options.saveImage) return this.notice(m.editId, 'Images can\'t be saved here.');
+    const bytes = imageBytes(m.mime, m.data);
+    if (!(bytes instanceof Uint8Array)) return this.notice(m.editId, bytes.refused);
+    if (m.atKey && !this.found(m.atKey, m.editId)) return;
+    const saved = await this.options.saveImage(bytes, IMAGE_TYPES[m.mime], m.name);
+    if ('refused' in saved) return this.notice(m.editId, saved.refused);
+    // The document may have changed while the file was written: the block is looked for again.
+    const text = this.doc.getText();
+    const lines = splitLines(text);
+    const after = m.atKey ? this.lookup(m.atKey).found : undefined;
+    if (m.atKey && !after) return this.notice(m.editId, `The image is saved as ${saved.path}, but the block it was to follow has changed. Link it with ${saved.markdown}`);
+    const { edit, line } = insertBlock(lines, after ? after.range.end : endLine(lines), saved.markdown);
+    if (!(await this.applyLines(text, [edit], m.editId))) return;
+    this.notice(undefined, `Image saved as ${saved.path}.`);
+    this.ack(m.editId, { line });
   }
 
   /**

@@ -130,6 +130,26 @@ export function dropAnnouncement(moved: Pick<BlockView, 'type' | 'container'>, b
   return `${blockName(moved)} moved before ${name.charAt(0).toLowerCase()}${name.slice(1)}, ${linesLabel(before)}.`;
 }
 
+/** The image types the page sends (IMAGE_TYPES in the session), and the largest it sends: 10 MB. */
+export const IMAGE_MIMES: readonly string[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/avif', 'image/svg+xml'];
+export const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+/** Why a pasted or dropped file is not sent, or undefined when it is an image the extension takes. */
+export function imageProblem(file: { name?: string; type: string; size: number }): string | undefined {
+  const name = file.name ? `"${file.name}"` : 'The pasted file';
+  if (!IMAGE_MIMES.includes(file.type)) return `${name} is not a PNG, JPEG, GIF, WebP, BMP, AVIF or SVG image.`;
+  if (file.size > MAX_IMAGE_SIZE) return `${name} is larger than 10 MB.`;
+  if (file.size === 0) return `${name} is empty.`;
+  return undefined;
+}
+
+/** Bytes as base64, in chunks (a 10 MB image is too many arguments for one String.fromCharCode). */
+export function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
 /** Rendered HTML without its source line numbers, to tell whether a block that only moved looks the same. */
 export function withoutLines(html: string): string {
   return html.replaceAll(/ data-(?:task-)?line="\d*"/g, '');

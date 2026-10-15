@@ -8,6 +8,8 @@ import {
   BlockEditorSession, readEditorMessage, type BlockEditorStatus, type DiagnosticSeverity, type DocumentPort, type LineDiagnostic, type QuickFix,
 } from './blockEditorSession';
 import type { LineRange } from './core/sourceEdit';
+import { imageBaseName, imageMarkdown } from './editing';
+import { freeName, targetFolder } from './editorFeatures';
 import { renderBlocks, segmentSmd } from './core/blocks';
 import { scanInline } from './core/inlineEdit';
 import { readTable } from './core/tableEdit';
@@ -93,6 +95,8 @@ class BlockEditorPanel implements vscode.Disposable {
     this.session = new BlockEditorSession(documentPort(document), {
       // Quick fixes from the badge of a block: the session checks where they write, and asks before more than the block.
       quickFixes: (range) => this.quickFixes(range),
+      // Pasted and dropped images: saved where the text editor saves them (smd.images.folder), under a name the host picks.
+      saveImage: (bytes, extension, name) => this.saveImage(bytes, extension, name),
       // Numbered inline directives and spans: the page edits them in small forms (setInline).
       render: (text) => renderBlocks(text, { ...options(), inlineIndex: true }),
       scan: (lines) => scanInline(lines, { allowHtml: options().allowHtml }),
@@ -193,6 +197,26 @@ class BlockEditorPanel implements vscode.Disposable {
       'vscode.executeCodeActionProvider', doc.uri, lines, vscode.CodeActionKind.QuickFix.value,
     );
     return (actions ?? []).filter(isEditFix).map((action) => quickFix(action, doc.uri));
+  }
+
+  /**
+   * Save an image from the page as a new file, as image paste in the text editor does: in `smd.images.folder` (of
+   * the workspace folder, or next to the document), named after the dropped file or the document and the time, never
+   * over another file. The page only sends the bytes; the folder and the name are decided here.
+   */
+  private async saveImage(bytes: Uint8Array, extension: string, name: string | undefined): Promise<{ markdown: string; path: string } | { refused: string }> {
+    const doc = this.document;
+    if (doc.uri.scheme !== 'file') return { refused: 'Save the document first: images are saved in a folder next to it.' };
+    try {
+      const folder = targetFolder(doc);
+      const file = await freeName(folder, imageBaseName(doc.uri.fsPath, name, new Date()), extension, new Set());
+      const target = path.join(folder, file);
+      await vscode.workspace.fs.createDirectory(vscode.Uri.file(folder));
+      await vscode.workspace.fs.writeFile(vscode.Uri.file(target), bytes);
+      return { markdown: imageMarkdown(doc.uri.fsPath, target), path: vscode.workspace.asRelativePath(target) };
+    } catch (error) {
+      return { refused: `The image could not be saved: ${error instanceof Error ? error.message : String(error)}` };
+    }
   }
 
   /** Resolves once diagnostics have been reported for the document as it is now (or after a second). */

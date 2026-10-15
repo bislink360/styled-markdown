@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   BlockEditorSession, EditLog, containerForm, inlineAgree, inlineFields, innermostSegment, lineSpan, mapBoundary, problemOwners, readEditorMessage, yamlScalar,
-  fixScope,
+  fixScope, imageBytes, MAX_IMAGE_BYTES,
   type BlockView, type DocumentPort, type HostMessage, type LineDiagnostic, type QuickFix, type RenderMessage, type SessionMessage, type SessionOptions,
   type TextChange,
 } from '../src/blockEditorSession';
@@ -75,6 +75,7 @@ interface HarnessOptions {
   title?: string;
   scan?: SessionOptions['scan'];
   quickFixes?: (doc: FakeDoc, range: LineRange) => PromiseLike<readonly QuickFix[]>;
+  saveImage?: SessionOptions['saveImage'];
 }
 
 function harness(text: string, options: HarnessOptions = {}): Harness {
@@ -91,6 +92,7 @@ function harness(text: string, options: HarnessOptions = {}): Harness {
     title: options.title,
     scan: options.scan,
     quickFixes: options.quickFixes && ((range) => options.quickFixes!(doc, range)),
+    saveImage: options.saveImage,
   });
   doc.onChange = (version, changes) => session.recordChange(version, changes);
   return {
@@ -1475,3 +1477,117 @@ test('move to: the target found where a text editor moved it, and a CRLF documen
   assert.ok(h.doc.text.includes('Added.\r\n\r\n# Plan\r\n\r\nLast paragraph.\r\n\r\nFirst paragraph\r\n'), JSON.stringify(h.doc.text));
   assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
 });
+
+// ---------------------------------------------------------------------------
+// Pasted and dropped images
+// ---------------------------------------------------------------------------
+
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]).toString('base64');
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16]).toString('base64');
+const SVG = Buffer.from('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64');
+
+/** A saveImage that records what it was given, and names files as the provider would. */
+function imageSaver(saved: { bytes: Uint8Array; extension: string; name?: string }[]): NonNullable<SessionOptions['saveImage']> {
+  return (bytes, extension, name) => {
+    saved.push({ bytes, extension, name });
+    const file = `images/${name?.replace(/\.\w+$/, '') ?? 'plan-20261015-101500'}${extension}`;
+    return Promise.resolve({ markdown: `![image](${file})`, path: `docs/${file}` });
+  };
+}
+
+test('readEditorMessage: an image is a known type, base64 bytes of at most 10 MB, and a place; never a path', () => {
+  const key = 'abc123#0';
+  assert.deepEqual(readEditorMessage({ type: 'image', mime: 'image/png', data: PNG, atKey: key, editId: 'i' }), { type: 'image', mime: 'image/png', data: PNG, atKey: key, editId: 'i' });
+  assert.deepEqual(readEditorMessage({ type: 'image', mime: 'image/svg+xml', data: SVG, name: 'logo.svg', position: 'end', path: '/etc/x' }), { type: 'image', mime: 'image/svg+xml', data: SVG, name: 'logo.svg', position: 'end' }, 'a path from the page is dropped');
+  const big = 'A'.repeat(Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 4);
+  for (const bad of [
+    { type: 'image', mime: 'image/tiff', data: PNG, position: 'end' }, { type: 'image', mime: 'text/html', data: PNG, position: 'end' },
+    { type: 'image', mime: 'image/png', data: 'not base64!', position: 'end' }, { type: 'image', mime: 'image/png', data: 'abc', position: 'end' },
+    { type: 'image', mime: 'image/png', data: '', position: 'end' }, { type: 'image', mime: 'image/png', data: big, position: 'end' },
+    { type: 'image', mime: 'image/png', data: PNG }, { type: 'image', mime: 'image/png', data: PNG, atKey: 'x' },
+    { type: 'image', mime: 'image/png', data: PNG, position: 'start' }, { type: 'image', mime: 'image/png', data: PNG, position: 'end', name: 'a\nb' },
+    { type: 'image', mime: '__proto__', data: PNG, position: 'end' },
+  ]) {
+    assert.equal(readEditorMessage(bad), undefined, JSON.stringify(bad).slice(0, 100));
+  }
+});
+
+test('imageBytes: the bytes must be the image type they say they are', () => {
+  assert.ok(imageBytes('image/png', PNG) instanceof Uint8Array);
+  assert.ok(imageBytes('image/jpeg', JPEG) instanceof Uint8Array);
+  assert.ok(imageBytes('image/svg+xml', SVG) instanceof Uint8Array);
+  assert.deepEqual(imageBytes('image/png', JPEG), { refused: 'That file is not the PNG it says it is.' });
+  assert.deepEqual(imageBytes('image/svg+xml', Buffer.from('<html><script>x</script>').toString('base64')), { refused: 'That file is not the SVG it says it is.' });
+  assert.deepEqual(imageBytes('image/gif', Buffer.from('GIF89a').toString('base64')) instanceof Uint8Array, true);
+  assert.deepEqual(imageBytes('image/webp', Buffer.from('RIFF\0\0\0\0WEBPVP8 ').toString('base64')) instanceof Uint8Array, true);
+  assert.deepEqual(imageBytes('image/avif', Buffer.from('\0\0\0\x1cftypavif').toString('base64')) instanceof Uint8Array, true);
+});
+
+test('image: the host saves the bytes and inserts a link after the block, adding only new lines', async () => {
+  const saved: { bytes: Uint8Array; extension: string; name?: string }[] = [];
+  const h = harness(DOC, { saveImage: imageSaver(saved) });
+  const r = h.render();
+  const para = block(r, 'First');
+  const before = h.doc.text;
+  const reply = await h.send({ type: 'image', mime: 'image/png', data: PNG, atKey: para.key, editId: 'i1' });
+  assert.equal(reply?.type, 'ack');
+  assert.deepEqual([saved[0].extension, saved[0].name, saved[0].bytes.length], ['.png', undefined, 16], 'the extension from the type; the name is the host\'s');
+  assert.ok(h.doc.text.includes('First paragraph\nsecond line.\n\n![image](images/plan-20261015-101500.png)\n\n:::warning'), h.doc.text);
+  const notice = h.sent.find((m) => m.type === 'notice');
+  assert.deepEqual(notice, { type: 'notice', text: 'Image saved as docs/images/plan-20261015-101500.png.' });
+  onlyInsertedLines(before, h.doc.text);
+  // Dropped, with its name; at the end of the document.
+  await h.send({ type: 'image', mime: 'image/jpeg', data: JPEG, name: 'photo.jpeg', position: 'end', editId: 'i2' });
+  assert.equal(saved[1].name, 'photo.jpeg');
+  assert.ok(h.doc.text.endsWith('Last paragraph.\n\n![image](images/photo.jpg)\n'), JSON.stringify(h.doc.text));
+});
+
+test('image: refused when it is not what it says, when nothing can save it, when saving fails or the block changed', async () => {
+  const saved: { bytes: Uint8Array; extension: string; name?: string }[] = [];
+  const h = harness(DOC, { saveImage: imageSaver(saved) });
+  const r = h.render();
+  const para = block(r, 'First');
+  assert.deepEqual(await h.send({ type: 'image', mime: 'image/png', data: JPEG, atKey: para.key, editId: 'a' }), { type: 'notice', editId: 'a', text: 'That file is not the PNG it says it is.' });
+  assert.equal(saved.length, 0, 'nothing written');
+  // The block it was to follow changed in a text editor: nothing is saved.
+  const at = h.doc.text.indexOf('second line');
+  h.doc.type(at, at, 'a ');
+  assert.equal((await h.send({ type: 'image', mime: 'image/png', data: PNG, atKey: para.key, editId: 'b' }))?.type, 'conflict');
+  assert.equal(saved.length, 0);
+  const plain = harness(DOC);
+  assert.deepEqual(await plain.send({ type: 'image', mime: 'image/png', data: PNG, position: 'end', editId: 'c' }), { type: 'notice', editId: 'c', text: 'Images can\'t be saved here.' });
+  const failing = harness(DOC, { saveImage: () => Promise.resolve({ refused: 'Save the document first: images are saved in a folder next to it.' }) });
+  const reply = await failing.send({ type: 'image', mime: 'image/png', data: PNG, position: 'end', editId: 'd' });
+  assert.deepEqual(reply, { type: 'notice', editId: 'd', text: 'Save the document first: images are saved in a folder next to it.' });
+  assert.equal(failing.doc.text, DOC);
+  // Saved, but the block changed while the file was written: the link is given in the notice, nothing inserted.
+  const racing = harness(DOC, {
+    saveImage: () => {
+      const p = racing.doc.text.indexOf('second line');
+      racing.doc.type(p, p, 'x ');
+      return Promise.resolve({ markdown: '![a](images/a.png)', path: 'docs/images/a.png' });
+    },
+  });
+  const rr = racing.render();
+  const late = await racing.send({ type: 'image', mime: 'image/png', data: PNG, atKey: block(rr, 'First').key, editId: 'e' });
+  assert.equal(late?.type === 'notice' && late.text, 'The image is saved as docs/images/a.png, but the block it was to follow has changed. Link it with ![a](images/a.png)');
+  assert.doesNotMatch(racing.doc.text, /!\[a\]/);
+});
+
+test('image in a CRLF document: the new lines get CRLF', async () => {
+  const crlf = DOC.replaceAll('\n', '\r\n');
+  const h = harness(crlf, { saveImage: imageSaver([]) });
+  const r = h.render();
+  await h.send({ type: 'image', mime: 'image/png', data: PNG, atKey: block(r, '# Plan').key, editId: 'i' });
+  assert.ok(h.doc.text.includes('# Plan\r\n\r\n![image](images/plan-20261015-101500.png)\r\n\r\nFirst paragraph'), JSON.stringify(h.doc.text));
+  assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
+});
+
+/** `after` is `before` with whole lines added and none changed or removed. */
+function onlyInsertedLines(before: string, after: string): void {
+  const a = lines(before);
+  const b = lines(after);
+  let i = 0;
+  for (const line of b) if (i < a.length && line === a[i]) i++;
+  assert.equal(i, a.length, 'every line of before is in after, in order');
+}
