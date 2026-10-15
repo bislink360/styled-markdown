@@ -1036,6 +1036,23 @@ pre.smd-has-hl code { position: relative; }
     });
   }
 
+  /**
+   * Saved UI state (key \u2192 value) brought over to the elements whose keys are now \`keys\` (document order); state of
+   * keys no longer in the page is dropped. \`previous[i]\` is the key element i had when it was hydrated, if it is
+   * left alone this time (outside the scope being hydrated), else null. An element left alone takes its own state
+   * along when its key moved; the others pick up what was saved under their key, unless an element left alone had it.
+   */
+  function carryState(state, keys, previous) {
+    const taken = new Set(previous.filter((k) => k !== null));
+    const next = {};
+    keys.forEach((key, i) => {
+      let from = previous[i];
+      if (from === null && !taken.has(key)) from = key;
+      if (from !== null && from in state) next[key] = state[from];
+    });
+    return next;
+  }
+
   /** Small LRU map for rendered diagrams, keyed by theme + source. */
   function lruCache(max) {
     const map = new Map();
@@ -1146,14 +1163,20 @@ pre.smd-has-hl code { position: relative; }
 
   if (typeof document === 'undefined') {
     if (typeof module === 'object' && module.exports) {
-      module.exports = { mapLine, mapAnchor, newerPlace, pickAnchor, findLine, stableKeys, lruCache, diagramKey, tabKeyTarget, buildTabs, uiLabel };
+      module.exports = { mapLine, mapAnchor, newerPlace, pickAnchor, findLine, stableKeys, carryState, lruCache, diagramKey, tabKeyTarget, buildTabs, uiLabel };
     }
     return;
   }
 
   // ---- Page state ----------------------------------------------------------
 
+  // acquireVsCodeApi() works once per page: the page's other scripts get this handle from window.smdRuntime.
   const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+  // What the page is, from <body data-smd-mode>: the preview (the default, also exported HTML, sites and the
+  // playground) or the Block Editor. Only the preview follows the editor's scrolling, keeps its scroll place and
+  // reveals source lines on double-click.
+  const mode = document.body?.dataset?.smdMode || 'preview';
+  const isPreview = mode === 'preview';
   const html = document.documentElement;
   const svgCache = lruCache(100);
   let diagramSeq = 0;
@@ -1162,6 +1185,8 @@ pre.smd-has-hl code { position: relative; }
   // active tab per tab group and user-toggled <details>, keyed by content, not position.
   const saved = (vscode && vscode.getState()) || {};
   const ui = { tabs: saved.tabs || {}, open: saved.open || {} };
+  // State the page's other scripts keep with the runtime's (setState() replaces the whole state).
+  let appState = saved.app;
   // Where the page is: the anchor at the top of the viewport (null at the very top) and the document
   // version its line number belongs to. See "Scroll anchoring" below.
   let place = typeof saved.version === 'number' ? { anchor: saved.anchor || null, version: saved.version } : null;
@@ -1173,10 +1198,16 @@ pre.smd-has-hl code { position: relative; }
   // How the page found its place when it loaded (reported to the extension's tests).
   let restoredFrom = 'none';
 
+  const withApp = (state) => (appState === undefined ? state : { ...state, app: appState });
+
   function saveState() {
     if (!vscode) return;
+    if (!isPreview) {
+      vscode.setState(withApp({ tabs: ui.tabs, open: ui.open }));
+      return;
+    }
     const at = place || { anchor: null, version: pageVersion };
-    vscode.setState({ anchor: at.anchor, version: at.version, tabs: ui.tabs, open: ui.open });
+    vscode.setState(withApp({ anchor: at.anchor, version: at.version, tabs: ui.tabs, open: ui.open }));
     // The extension keeps a copy for a page that comes back without its state, and drops the edits this place includes.
     vscode.postMessage({ type: 'position', anchor: at.anchor, version: at.version });
   }
@@ -1203,50 +1234,70 @@ pre.smd-has-hl code { position: relative; }
 
   // ---- Tabs ---------------------------------------------------------------
   const panesOf = (tabs) => Array.from(tabs.children).filter((el) => el.classList.contains('smd-tab'));
+  // Hydrating a scope (the whole page, or one block in the Block Editor) builds what is inside it. Keys are
+  // counted over the whole page, so an element's key can move when one before it changes; saved state of the
+  // elements outside the scope moves with them (carryState).
+  const inScope = (scope, el) => scope === document || scope.contains(el);
+  /** The key each tab group had when it was last keyed. */
+  const tabKeys = new WeakMap();
 
   function initTabs(scope) {
-    const groups = Array.from(scope.querySelectorAll('.smd-tabs'));
+    const groups = Array.from(document.querySelectorAll('.smd-tabs'));
     const keys = stableKeys(groups.map((g) => 'tabs:' + panesOf(g).map((p) => p.getAttribute('data-title') || '').join('\\u0001')));
-    ui.tabs = Object.fromEntries(keys.filter((k) => k in ui.tabs).map((k) => [k, ui.tabs[k]]));
+    ui.tabs = carryState(ui.tabs, keys, groups.map((g) => (inScope(scope, g) ? null : tabKeys.get(g) ?? null)));
     groups.forEach((tabs, groupIndex) => {
-      if (tabs.classList.contains('smd-js')) return;
+      tabKeys.set(tabs, keys[groupIndex]);
+      if (!inScope(scope, tabs) || tabs.classList.contains('smd-js')) return;
       const panes = panesOf(tabs);
       if (!panes.length) return;
-      const key = keys[groupIndex];
       const select = buildTabs(document, tabs, panes, (i) => {
-        ui.tabs[key] = i;
+        ui.tabs[tabKeys.get(tabs)] = i;
         saveState();
         refreshScrollers();
       });
-      select(Math.min(ui.tabs[key] || 0, panes.length - 1));
+      select(Math.min(ui.tabs[keys[groupIndex]] || 0, panes.length - 1));
     });
   }
 
   // ---- Open/closed <details> (collapsible callouts, details, agent blocks) --
+  const DETAILS_KEY = 'data-smd-key';
+
+  /** A <details> being hydrated: remember its source default, and reopen or close it as the reader left it. */
+  function restoreDetails(d, key, state, live) {
+    d.setAttribute(DETAILS_KEY, key);
+    d.setAttribute('data-smd-default', d.open ? 'open' : 'closed');
+    // A user toggle wins only while the source default it overrode is unchanged.
+    if (state && state[0] === d.open) {
+      d.open = state[1];
+      live[key] = state;
+    }
+  }
+
   function initDetails(scope) {
-    const all = Array.from(scope.querySelectorAll('details'));
+    const all = Array.from(document.querySelectorAll('details'));
     const keys = stableKeys(all.map((d) => {
       const summary = d.querySelector(':scope > summary');
       return 'details:' + (summary ? summary.textContent.trim() : '');
     }));
+    const outside = all.map((d) => !inScope(scope, d));
+    const carried = carryState(ui.open, keys, all.map((d, i) => (outside[i] ? d.getAttribute(DETAILS_KEY) : null)));
     const live = {};
     all.forEach((d, i) => {
       const key = keys[i];
-      d.setAttribute('data-smd-key', key);
-      d.setAttribute('data-smd-default', d.open ? 'open' : 'closed');
-      // A user toggle wins only while the source default it overrode is unchanged.
-      const state = ui.open[key];
-      if (state && state[0] === d.open) {
-        d.open = state[1];
-        live[key] = state;
+      if (!outside[i]) {
+        restoreDetails(d, key, carried[key], live);
+        return;
       }
+      // Left as it is, under its new key if it has been hydrated before.
+      if (d.hasAttribute(DETAILS_KEY)) d.setAttribute(DETAILS_KEY, key);
+      if (carried[key]) live[key] = carried[key];
     });
     ui.open = live;
   }
 
   document.addEventListener('toggle', (e) => {
     const d = e.target;
-    const key = d && d.getAttribute && d.getAttribute('data-smd-key');
+    const key = d && d.getAttribute && d.getAttribute(DETAILS_KEY);
     if (!key) return;
     const dflt = d.getAttribute('data-smd-default') === 'open';
     if (d.open === dflt) delete ui.open[key];
@@ -1265,14 +1316,17 @@ pre.smd-has-hl code { position: relative; }
     setTimeout(() => { liveRegion.textContent = text; }, 50);
   }
 
+  function ensureLiveRegion() {
+    if (liveRegion) return;
+    liveRegion = document.createElement('div');
+    liveRegion.className = 'smd-sr-only';
+    liveRegion.setAttribute('role', 'status');
+    document.body.appendChild(liveRegion);
+  }
+
   function addCopyButtons(scope) {
     const blocks = scope.querySelectorAll('.smd-code');
-    if (blocks.length && !liveRegion) {
-      liveRegion = document.createElement('div');
-      liveRegion.className = 'smd-sr-only';
-      liveRegion.setAttribute('role', 'status');
-      document.body.appendChild(liveRegion);
-    }
+    if (blocks.length) ensureLiveRegion();
     blocks.forEach((block) => {
       if (block.querySelector('.smd-copy')) return;
       const btn = document.createElement('button');
@@ -1458,7 +1512,7 @@ pre.smd-has-hl code { position: relative; }
     refreshScrollers();
     await renderDiagrams(scope, heights);
     refreshScrollers();
-    if (vscode) {
+    if (vscode && isPreview) {
       // Lets the extension (and its tests) know what actually rendered.
       vscode.postMessage({
         type: 'rendered',
@@ -1625,17 +1679,20 @@ pre.smd-has-hl code { position: relative; }
 
   document.addEventListener('dblclick', (e) => {
     const line = lineOf(e.target);
-    if (vscode && line !== null) vscode.postMessage({ type: 'revealLine', line });
+    if (vscode && isPreview && line !== null) vscode.postMessage({ type: 'revealLine', line });
   });
 
-  window.addEventListener('message', (event) => {
-    const msg = event.data || {};
-    if (msg.type === 'update') {
-      applyUpdate(msg);
-    } else if (msg.type === 'scrollToLine') {
-      scrollToLine(msg.line);
-    }
-  });
+  // Renders and scroll sync from the extension (or the playground's editor). The Block Editor has its own messages.
+  if (isPreview) {
+    window.addEventListener('message', (event) => {
+      const msg = event.data || {};
+      if (msg.type === 'update') {
+        applyUpdate(msg);
+      } else if (msg.type === 'scrollToLine') {
+        scrollToLine(msg.line);
+      }
+    });
+  }
 
   // Follow VS Code / OS theme changes.
   new MutationObserver(() => { if (applyTheme()) rerenderDiagrams(); })
@@ -1657,12 +1714,38 @@ pre.smd-has-hl code { position: relative; }
     openedForPrint = [];
   });
 
+  // ---- For the page's other scripts (the Block Editor's) ----------------------
+  window.smdRuntime = Object.freeze({
+    /** 'preview' or 'block-editor', from <body data-smd-mode>. */
+    mode,
+    /** The page's one acquireVsCodeApi() handle; null outside VS Code. */
+    vscode,
+    /**
+     * Build tabs, details state, copy buttons and diagrams inside \`scope\` (an element just rendered; the whole page
+     * when left out). Other elements keep their state. Resolves once its diagrams have rendered.
+     */
+    hydrate: (scope) => hydrate(scope || document),
+    /** Tell screen readers something without moving focus. */
+    announce: (text) => {
+      ensureLiveRegion();
+      announce(text);
+    },
+    /** What the page's other scripts saved with saveAppState(), kept across the panel being hidden. */
+    appState: () => appState,
+    /** Save state of the page's other scripts with the runtime's own (use this rather than vscode.setState()). */
+    saveAppState: (value) => {
+      appState = value;
+      saveState();
+    },
+  });
+
   const rendering = hydrate(document);
   // data-smd-ready: diagrams rendered and fonts loaded, so the page can be printed (smd pdf waits for it).
   Promise.all([rendering, document.fonts ? document.fonts.ready : null])
     .catch(() => undefined)
     .finally(() => html.setAttribute('data-smd-ready', 'true'));
-  if (vscode) {
+  // Coming back where the reader was, and keeping the extension posted.
+  if (vscode && isPreview) {
     restorePlace(rendering);
     // A page that loaded before its frame was displayed gets its size, and with it a layout, later.
     window.addEventListener('resize', settle);
@@ -1683,6 +1766,6 @@ pre.smd-has-hl code { position: relative; }
     vscode.postMessage({ type: 'ready' });
   }
 })();
-`;function Ab(e){let t=e.lastIndexOf("/");return t<0?"":e.slice(0,t)}function H9(e,t){let n=e?e.split("/"):[];for(let r of t.split("/"))if(r===".."){if(!n.length)return;n.pop()}else r&&r!=="."&&n.push(r);return n.join("/")}function Cb(e,t){let n=e.split("/").slice(0,-1),r=t.split("/"),i=0;for(;i<n.length&&i<r.length-1&&n[i]===r[i];)i++;return[...n.slice(i).map(()=>".."),...r.slice(i)].map(encodeURIComponent).join("/")}var G9=/(\s(?:href|src)=")([^"]*)"/g;function nc(e,t,n,r){let i=new Set;return{html:e.replace(G9,(s,a,u)=>{let l=V9(K9(u),t,n,r,i);return l===void 0?s:`${a}${te(l)}"`}),assets:[...i]}}function V9(e,t,n,r,i){let o=j9(e,t);if(!o)return;let s=r.pages.get(o.path);if(s!==void 0)return r.linker.href(n,s)+o.suffix;if(!/\.smd$/i.test(o.path))return i.add(o.path),r.linker.href(n,o.path)+o.suffix}function j9(e,t){if(!e||e.startsWith("#")||e.startsWith("/"))return;let n=ao(e);if(!n?.path||n.path.endsWith("/"))return;let r=H9(Ab(t),n.path);if(!r)return;let i=e.search(/[?#]/);return{path:r,suffix:i<0?"":e.slice(i)}}function K9(e){return e.replace(/&quot;/g,'"').replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&#39;/g,"'").replace(/&amp;/g,"&")}var X9="_smd",uN=`${X9}/search-index.js`;var CN=hi("risk[impact=high|critical]");var rc=String.raw`https?://github\.com/([A-Za-z0-9-]+)/([\w.-]+)/issues/(\d+)(?![\w/])`,IN=new RegExp(rc,"gi"),NN=new RegExp(String.raw`\[[^\]\n]*\]\(\s*${rc}\s*\)|<${rc}>`,"gi");function pa(e){if(e===void 0)return;let t=Nt(e);if(t)return t.startsWith("var(")?{named:e.trim()}:{css:t}}var J9=new Map([["strong_open",()=>({bold:!0})],["em_open",()=>({italic:!0})],["s_open",()=>({strike:!0})],["smd_mark_open",()=>({highlight:"yellow"})],["smd_dfn_open",()=>({bold:!0})],["link_open",e=>({href:e.attrGet("href")??void 0})],["smd_span_open",e=>tw(e.meta?.values??{})]]),YN=new Set([...J9.keys()].map(e=>e.replace(/_open$/,"_close"))),ew=new Map([["italic",{italic:!0}],["underline",{underline:!0}],["strike",{strike:!0}]]);function tw(e){let t={...ew.get(e.style??"")};return e.weight==="bold"&&(t.bold=!0),e.font==="mono"&&(t.code=!0),pa(e.color)&&(t.color=e.color.trim()),pa(e.bg)&&(t.highlight=e.bg.trim()),t}var ow=["smd.config.json",".smdrc",".smdrc.json"];function Mb(e,t=new Map){let n=[],r={rules:{},problems:[]};for(let i=zn.dirname(zn.resolve(e));;i=zn.dirname(i)){let o=t.get(i);if(o){r=o;break}n.push(i);let s=ow.map(a=>zn.join(i,a)).find(a=>yo.existsSync(a));if(s){r=sw(s);break}if(yo.existsSync(zn.join(i,".git"))||zn.dirname(i)===i)break}for(let i of n)t.set(i,r);return r}function sw(e){let t;try{t=JSON.parse(yo.readFileSync(e,"utf8"))}catch(n){return{file:e,rules:{},problems:[`Not valid JSON: ${n.message}`]}}return{file:e,...zl(t)}}var cr=vn(require("node:path"));var Br=vn(require("node:fs")),It=vn(require("node:path"));function aw(e){let t=It.dirname(It.resolve(e)),n=[It.resolve(process.cwd()),t];for(let r=t;;r=It.dirname(r)){if(Br.existsSync(It.join(r,".git"))){n.push(r);break}if(It.dirname(r)===r)break}return n}function ha(e,t=aw(e)){let n=It.dirname(It.resolve(e));return r=>{let i=It.resolve(n,r);if(t.some(o=>i===o||i.startsWith(o+It.sep)))try{return Br.readFileSync(i,"utf8")}catch{return}}}function ic(e,t){let n=cr.relative(e,t);return n===""||!n.startsWith("..")&&!cr.isAbsolute(n)}var uw=1,dr=class extends Error{};function lw(e){return e.replace(/^(\.hljs[^{]*)\{/gm,(t,n)=>n.split(",").map(r=>".smd-code "+r.trim()).join(", ")+" {")}function cw(e){return e.replace(/^\.\//,"")}var ga=class{site;configs=new Map;handleLine(t){let n;try{n=JSON.parse(t)}catch{return{id:null,error:{message:"Not valid JSON."}}}return this.handle(n)}handle(t){let{id:n=null,method:r,params:i}=oc(t)?t:{};try{return{id:n,result:this.call(r,oc(i)?i:{})}}catch(o){let s=o instanceof dr?o.message:`Internal error: ${o.message??String(o)}`;return{id:n,error:{message:s}}}}call(t,n){switch(t){case"hello":return{protocol:uw,version:"1.7.2",node:process.versions.node};case"assets":return{css:lw(fa),runtimeJs:ma};case"site":return this.setSite(n);case"render":return this.render(n);default:throw new dr(`Unknown method: ${String(t)}.`)}}setSite(t){let n=Rb(t,"docsDir"),r=oc(t.pages)?t.pages:{},i=new Map;for(let[o,s]of Object.entries(r))typeof s=="string"&&i.set(o,cw(s));return this.site={docsDir:vi.resolve(n),links:{pages:i,linker:{href:(o,s)=>Cb(o,s)||"./"}},lang:Ib(t,"lang"),today:Ib(t,"today")},this.configs.clear(),{pages:i.size}}render(t){let n=this.site;if(!n)throw new dr('Call "site" before "render".');let r=Rb(t,"path").replace(/\\/g,"/"),i=vi.resolve(n.docsDir,r);if(!ic(n.docsDir,i))throw new dr(`${r} is outside the docs folder.`);let o=typeof t.text=="string"?t.text:fw(i,r),s=ha(i,[n.docsDir]),a=xe(o),u=ho(o,a,{readFile:s,today:n.today,lang:n.lang},t.header!==!1),l=n.links.pages.get(r)??r,m={html:nc(u.html,r,l,n.links).html,title:dw(u.frontMatter,u.headings),headings:u.headings.map(({level:h,text:g,slug:x})=>({level:h,text:g,slug:x})),lang:u.lang??"en"};return t.validate===!0&&(m.diagnostics=this.diagnostics(o,i,n)),m}diagnostics(t,n,r){let i=vi.dirname(n),o=a=>{let u=vi.resolve(i,a);return ic(r.docsDir,u)&&ba.existsSync(u)},s=Mb(n,this.configs).rules;return mo(t,{fileExists:o,readFile:ha(n,[r.docsDir]),today:r.today,rules:s}).sort((a,u)=>a.line-u.line||a.column-u.column).map(a=>({line:a.line+1,column:a.column+1,severity:a.severity,code:a.code,message:a.message}))}};function dw(e,t){return typeof e.title=="string"&&e.title.trim()?e.title.trim():t.find(n=>n.level===1)?.text??null}function fw(e,t){try{return ba.readFileSync(e,"utf8")}catch{throw new dr(`Cannot read ${t}.`)}}function oc(e){return typeof e=="object"&&e!==null&&!Array.isArray(e)}function Rb(e,t){let n=e[t];if(typeof n!="string"||!n)throw new dr(`"${t}" must be a non-empty string.`);return n}function Ib(e,t){let n=e[t];return typeof n=="string"&&n?n:void 0}function Nb(e,t,n){let r="",i=o=>{let s=r.split(`
+`;function Ab(e){let t=e.lastIndexOf("/");return t<0?"":e.slice(0,t)}function H9(e,t){let n=e?e.split("/"):[];for(let r of t.split("/"))if(r===".."){if(!n.length)return;n.pop()}else r&&r!=="."&&n.push(r);return n.join("/")}function Cb(e,t){let n=e.split("/").slice(0,-1),r=t.split("/"),i=0;for(;i<n.length&&i<r.length-1&&n[i]===r[i];)i++;return[...n.slice(i).map(()=>".."),...r.slice(i)].map(encodeURIComponent).join("/")}var G9=/(\s(?:href|src)=")([^"]*)"/g;function nc(e,t,n,r){let i=new Set;return{html:e.replace(G9,(s,a,u)=>{let l=V9(K9(u),t,n,r,i);return l===void 0?s:`${a}${te(l)}"`}),assets:[...i]}}function V9(e,t,n,r,i){let o=j9(e,t);if(!o)return;let s=r.pages.get(o.path);if(s!==void 0)return r.linker.href(n,s)+o.suffix;if(!/\.smd$/i.test(o.path))return i.add(o.path),r.linker.href(n,o.path)+o.suffix}function j9(e,t){if(!e||e.startsWith("#")||e.startsWith("/"))return;let n=ao(e);if(!n?.path||n.path.endsWith("/"))return;let r=H9(Ab(t),n.path);if(!r)return;let i=e.search(/[?#]/);return{path:r,suffix:i<0?"":e.slice(i)}}function K9(e){return e.replace(/&quot;/g,'"').replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&#39;/g,"'").replace(/&amp;/g,"&")}var X9="_smd",uN=`${X9}/search-index.js`;var CN=hi("risk[impact=high|critical]");var rc=String.raw`https?://github\.com/([A-Za-z0-9-]+)/([\w.-]+)/issues/(\d+)(?![\w/])`,IN=new RegExp(rc,"gi"),NN=new RegExp(String.raw`\[[^\]\n]*\]\(\s*${rc}\s*\)|<${rc}>`,"gi");function pa(e){if(e===void 0)return;let t=Nt(e);if(t)return t.startsWith("var(")?{named:e.trim()}:{css:t}}var J9=new Map([["strong_open",()=>({bold:!0})],["em_open",()=>({italic:!0})],["s_open",()=>({strike:!0})],["smd_mark_open",()=>({highlight:"yellow"})],["smd_dfn_open",()=>({bold:!0})],["link_open",e=>({href:e.attrGet("href")??void 0})],["smd_span_open",e=>tw(e.meta?.values??{})]]),YN=new Set([...J9.keys()].map(e=>e.replace(/_open$/,"_close"))),ew=new Map([["italic",{italic:!0}],["underline",{underline:!0}],["strike",{strike:!0}]]);function tw(e){let t={...ew.get(e.style??"")};return e.weight==="bold"&&(t.bold=!0),e.font==="mono"&&(t.code=!0),pa(e.color)&&(t.color=e.color.trim()),pa(e.bg)&&(t.highlight=e.bg.trim()),t}var ow=["smd.config.json",".smdrc",".smdrc.json"];function Mb(e,t=new Map){let n=[],r={rules:{},problems:[]};for(let i=zn.dirname(zn.resolve(e));;i=zn.dirname(i)){let o=t.get(i);if(o){r=o;break}n.push(i);let s=ow.map(a=>zn.join(i,a)).find(a=>yo.existsSync(a));if(s){r=sw(s);break}if(yo.existsSync(zn.join(i,".git"))||zn.dirname(i)===i)break}for(let i of n)t.set(i,r);return r}function sw(e){let t;try{t=JSON.parse(yo.readFileSync(e,"utf8"))}catch(n){return{file:e,rules:{},problems:[`Not valid JSON: ${n.message}`]}}return{file:e,...zl(t)}}var cr=vn(require("node:path"));var Br=vn(require("node:fs")),It=vn(require("node:path"));function aw(e){let t=It.dirname(It.resolve(e)),n=[It.resolve(process.cwd()),t];for(let r=t;;r=It.dirname(r)){if(Br.existsSync(It.join(r,".git"))){n.push(r);break}if(It.dirname(r)===r)break}return n}function ha(e,t=aw(e)){let n=It.dirname(It.resolve(e));return r=>{let i=It.resolve(n,r);if(t.some(o=>i===o||i.startsWith(o+It.sep)))try{return Br.readFileSync(i,"utf8")}catch{return}}}function ic(e,t){let n=cr.relative(e,t);return n===""||!n.startsWith("..")&&!cr.isAbsolute(n)}var uw=1,dr=class extends Error{};function lw(e){return e.replace(/^(\.hljs[^{]*)\{/gm,(t,n)=>n.split(",").map(r=>".smd-code "+r.trim()).join(", ")+" {")}function cw(e){return e.replace(/^\.\//,"")}var ga=class{site;configs=new Map;handleLine(t){let n;try{n=JSON.parse(t)}catch{return{id:null,error:{message:"Not valid JSON."}}}return this.handle(n)}handle(t){let{id:n=null,method:r,params:i}=oc(t)?t:{};try{return{id:n,result:this.call(r,oc(i)?i:{})}}catch(o){let s=o instanceof dr?o.message:`Internal error: ${o.message??String(o)}`;return{id:n,error:{message:s}}}}call(t,n){switch(t){case"hello":return{protocol:uw,version:"1.8.0",node:process.versions.node};case"assets":return{css:lw(fa),runtimeJs:ma};case"site":return this.setSite(n);case"render":return this.render(n);default:throw new dr(`Unknown method: ${String(t)}.`)}}setSite(t){let n=Rb(t,"docsDir"),r=oc(t.pages)?t.pages:{},i=new Map;for(let[o,s]of Object.entries(r))typeof s=="string"&&i.set(o,cw(s));return this.site={docsDir:vi.resolve(n),links:{pages:i,linker:{href:(o,s)=>Cb(o,s)||"./"}},lang:Ib(t,"lang"),today:Ib(t,"today")},this.configs.clear(),{pages:i.size}}render(t){let n=this.site;if(!n)throw new dr('Call "site" before "render".');let r=Rb(t,"path").replace(/\\/g,"/"),i=vi.resolve(n.docsDir,r);if(!ic(n.docsDir,i))throw new dr(`${r} is outside the docs folder.`);let o=typeof t.text=="string"?t.text:fw(i,r),s=ha(i,[n.docsDir]),a=xe(o),u=ho(o,a,{readFile:s,today:n.today,lang:n.lang},t.header!==!1),l=n.links.pages.get(r)??r,m={html:nc(u.html,r,l,n.links).html,title:dw(u.frontMatter,u.headings),headings:u.headings.map(({level:h,text:g,slug:x})=>({level:h,text:g,slug:x})),lang:u.lang??"en"};return t.validate===!0&&(m.diagnostics=this.diagnostics(o,i,n)),m}diagnostics(t,n,r){let i=vi.dirname(n),o=a=>{let u=vi.resolve(i,a);return ic(r.docsDir,u)&&ba.existsSync(u)},s=Mb(n,this.configs).rules;return mo(t,{fileExists:o,readFile:ha(n,[r.docsDir]),today:r.today,rules:s}).sort((a,u)=>a.line-u.line||a.column-u.column).map(a=>({line:a.line+1,column:a.column+1,severity:a.severity,code:a.code,message:a.message}))}};function dw(e,t){return typeof e.title=="string"&&e.title.trim()?e.title.trim():t.find(n=>n.level===1)?.text??null}function fw(e,t){try{return ba.readFileSync(e,"utf8")}catch{throw new dr(`Cannot read ${t}.`)}}function oc(e){return typeof e=="object"&&e!==null&&!Array.isArray(e)}function Rb(e,t){let n=e[t];if(typeof n!="string"||!n)throw new dr(`"${t}" must be a non-empty string.`);return n}function Ib(e,t){let n=e[t];return typeof n=="string"&&n?n:void 0}function Nb(e,t,n){let r="",i=o=>{let s=r.split(`
 `);r=o?"":s.pop()??"";for(let a of s)a.trim()&&n(JSON.stringify(e.handleLine(a.trim()))+`
 `)};return new Promise(o=>{t.setEncoding("utf8"),t.on("data",s=>{r+=s,i(!1)}),t.on("end",()=>{i(!0),o()})})}Nb(new ga,process.stdin,e=>process.stdout.write(e));
