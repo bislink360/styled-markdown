@@ -6,11 +6,11 @@
 // The document's rendered HTML goes into the page as in the preview. The editor's own controls (toolbar, menus,
 // forms, the source editor, notices, problem badges) live in closed shadow roots and are built with createElement
 // and textContent only.
-import type { BlockView, FocusRequest, FormField, FrontMatterView, HostMessage, InlineView, RenderMessage, TableView } from '../blockEditorSession';
+import type { BlockProblems, BlockView, FocusRequest, FormField, FrontMatterView, HostMessage, InlineView, RenderMessage, TableView } from '../blockEditorSession';
 import {
   FROZEN, blockLabel, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
-  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemForLine,
-  listKeyTarget, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement,
+  itemForLine, listKeyTarget, mergeProblems, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction, type GridCell, type GridRequest, type GridSize, type LineRange,
 } from './blockEditorModel';
 
@@ -80,8 +80,14 @@ interface Grid {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+/** An item's controls: the shadow host and the problem badge. */
+interface Chrome {
+  host: HTMLElement;
+  badge: HTMLButtonElement;
+}
+
 type ItemView = Pick<BlockView, 'key' | 'type' | 'container' | 'start' | 'end' | 'source' | 'problems' | 'form' | 'children' | 'inline' | 'table'>;
-type Action = 'insert' | 'edit' | 'grid' | 'props' | 'up' | 'down' | 'del' | 'reveal' | 'fm';
+type Action = 'insert' | 'edit' | 'grid' | 'props' | 'problems' | 'up' | 'down' | 'del' | 'reveal' | 'fm';
 
 const AUTOSAVE_DELAY = 800;
 const DIV = 'div';
@@ -99,6 +105,10 @@ const CONTENT = 'smd-ed-content';
 const RAW = 'smd-ed-raw';
 const EDITOR = 'smd-ed-editor';
 const GRID_HOST = 'smd-ed-grid-host';
+const CHROME = 'smd-ed-chrome';
+const CHROME_CHILD = 'smd-ed-chrome-child';
+/** Child elements that can't hold the editor's controls (they go right before them). */
+const OUTSIDE_CHROME = new Set(['TABLE', 'DETAILS', 'HR', 'IMG', 'PRE']);
 const ARIA_EXPANDED = 'aria-expanded';
 const ARIA_DISABLED = 'aria-disabled';
 const ARIA_LABEL = 'aria-label';
@@ -154,7 +164,9 @@ function start(rt: Runtime): void {
   const signature = new WeakMap<HTMLElement, string>();
   const nodeIds = new WeakMap<HTMLElement, string>();
   const shown = new WeakMap<HTMLElement, string>();
-  const badges = new WeakMap<HTMLElement, { host: HTMLElement; span: HTMLElement }>();
+  const chromes = new WeakMap<HTMLElement, Chrome>();
+  /** The problems an item's badge shows: its own, and those of children not found in its HTML. */
+  const shownProblems = new WeakMap<HTMLElement, BlockProblems | undefined>();
   let fmNode: HTMLElement | null = null;
   let currentKey: string | null = null;
   let currentLine = 0;
@@ -221,55 +233,81 @@ function start(rt: Runtime): void {
     viewOf.set(el, view);
   }
 
-  /** The problem count badge of a top-level block (in a shadow root; its text is also in the block's label). */
-  function updateBadge(node: HTMLElement, view: ItemView): void {
-    let badge = badges.get(node);
-    if (!view.problems) {
-      if (badge) badge.host.hidden = true;
-      return;
-    }
-    if (!badge) {
-      const host = h(DIV, { className: 'smd-ed-badge-host' });
-      const span = h('span', { className: 'badge', attrs: { 'aria-hidden': TRUE } });
-      chromeRoot(host).append(span);
-      badge = { host, span };
-      badges.set(node, badge);
-      node.prepend(host);
-    }
-    badge.host.hidden = false;
-    badge.span.textContent = `⚠ ${view.problems.count}`;
-    badge.span.className = `badge ${view.problems.severity}`;
-    badge.span.title = view.problems.messages.join('\n');
+  /**
+   * The editor's controls on an item (in a shadow root): its problem badge, which opens the list of problems and
+   * quick fixes. A top-level block holds them; a child gets them as its first element (or right before it, where
+   * an element can't hold them), so they show and hide with it, as a tab or a closed details hides its content.
+   */
+  function chromeFor(el: HTMLElement, child: boolean): Chrome {
+    const known = chromes.get(el);
+    if (known?.host.isConnected) return known;
+    const host = h(DIV, { className: child ? `${CHROME} ${CHROME_CHILD}` : CHROME });
+    const badge = h('button', { className: 'badge', attrs: { type: 'button', [TABINDEX]: '-1', 'aria-hidden': TRUE } });
+    badge.addEventListener('click', (event) => {
+      event.stopPropagation();
+      setCurrent(el, false);
+      openProblems(el);
+    });
+    chromeRoot(host).append(h(DIV, { className: child ? 'chrome child' : 'chrome' }, [badge]));
+    const chrome: Chrome = { host, badge };
+    chromes.set(el, chrome);
+    if (!child) el.prepend(host);
+    else if (OUTSIDE_CHROME.has(el.tagName) || el.parentElement?.classList.contains('smd-table-wrap')) el.before(host);
+    else el.prepend(host);
+    return chrome;
   }
 
-  function decorateTop(node: HTMLElement, view: ItemView): void {
+  /** Show an item's problem count (the messages are in the badge's tooltip, the item's label and the problems list). */
+  function updateChrome(el: HTMLElement, problems: BlockProblems | undefined, child: boolean): void {
+    shownProblems.set(el, problems);
+    const chrome = problems || chromes.has(el) ? chromeFor(el, child) : undefined;
+    if (!chrome) return;
+    chrome.badge.hidden = !problems;
+    if (!problems) return;
+    chrome.badge.textContent = `⚠ ${problems.count}`;
+    chrome.badge.className = `badge ${problems.severity}`;
+    chrome.badge.title = `${problems.messages.join('\n')}\n\nClick, or press Ctrl+. on the block, for quick fixes.`;
+  }
+
+  function decorateTop(node: HTMLElement, view: ItemView, lost?: BlockProblems): void {
     markItem(node, view);
     node.setAttribute('role', 'group');
     node.setAttribute('aria-roledescription', 'block');
-    const problems = problemsLabel(view.problems);
+    const shown = mergeProblems(view.problems, lost);
+    const problems = problemsLabel(shown);
     node.setAttribute(ARIA_LABEL, problems ? `${blockLabel(view)}, ${problems}` : blockLabel(view));
-    if (view.problems) node.setAttribute('aria-description', view.problems.messages.join('; '));
+    if (shown) node.setAttribute('aria-description', shown.messages.join('; '));
     else node.removeAttribute('aria-description');
-    updateBadge(node, view);
+    updateChrome(node, shown, false);
   }
 
-  /** Mark a container's children (found in its HTML by their first line) as items of their own. */
-  function annotateChildren(scope: HTMLElement, children: readonly BlockView[] | undefined): void {
+  /**
+   * Mark a container's children (found in its HTML by their first line) as items of their own, each with its problem
+   * badge. Returns the problems of children that are not in the HTML, which their container shows instead.
+   */
+  function annotateChildren(scope: HTMLElement, children: readonly BlockView[] | undefined): BlockProblems | undefined {
+    let lost: BlockProblems | undefined;
     for (const child of children ?? []) {
       if (child.kind !== 'block') continue;
       const el = scope.querySelector<HTMLElement>(`[data-line="${child.start}"]`);
       if (el && !el.classList.contains(ITEM)) {
         markItem(el, child);
         el.classList.add(CHILD);
+        updateChrome(el, mergeProblems(child.problems, annotateChildren(el, child.children)), true);
+      } else {
+        lost = mergeProblems(lost, child.problems, annotateChildren(el ?? scope, child.children));
       }
-      annotateChildren(el ?? scope, child.children);
     }
+    return lost;
   }
 
   function clearChildren(node: HTMLElement): void {
+    node.querySelectorAll<HTMLElement>(`.${CHROME_CHILD}`).forEach((host) => host.remove());
     node.querySelectorAll<HTMLElement>(`.${CHILD}`).forEach((el) => {
       el.classList.remove(ITEM, CHILD);
       delete el.dataset.smdEdKey;
+      chromes.delete(el);
+      shownProblems.delete(el);
     });
   }
 
@@ -296,8 +334,7 @@ function start(rt: Runtime): void {
       content.innerHTML = view.html ?? '';
     }
     node.append(content);
-    decorateTop(node, view);
-    annotateChildren(content, view.children);
+    decorateTop(node, view, annotateChildren(content, view.children));
     fresh.add(node);
     return node;
   }
@@ -321,8 +358,7 @@ function start(rt: Runtime): void {
       const content = old.querySelector<HTMLElement>(`:scope > .${CONTENT}`) ?? old;
       shiftLines(content, view.start - startOf(old));
       clearChildren(content);
-      decorateTop(old, view);
-      annotateChildren(content, view.children);
+      decorateTop(old, view, annotateChildren(content, view.children));
       return old;
     }
     const node = createTop(view);
@@ -828,12 +864,16 @@ function start(rt: Runtime): void {
       openByKey(item, event.key);
       return true;
     }
+    if (event.key === '.' && (event.ctrlKey || event.metaKey) && !event.altKey) {
+      openProblems(item);
+      return true;
+    }
     if (event.altKey || event.ctrlKey || event.metaKey) return false;
     const list = items();
     const to = listKeyTarget(event.key, list.indexOf(item), list.length);
     if (to < 0) return false;
     setCurrent(list[to], true);
-    if (list[to].classList.contains(CHILD)) rt.announce(blockLabel(viewOf.get(list[to])!));
+    if (list[to].classList.contains(CHILD)) rt.announce(itemAnnouncement(viewOf.get(list[to])!, shownProblems.get(list[to])));
     return true;
   }
 
@@ -909,6 +949,11 @@ function start(rt: Runtime): void {
       case 'props':
         toggleProps();
         return;
+      case 'problems': {
+        const item = currentItem();
+        if (item) openProblems(item);
+        return;
+      }
       default:
         blockAction(action);
     }
@@ -951,6 +996,7 @@ function start(rt: Runtime): void {
     edit: button('Edit', () => act('edit'), { title: 'Edit the source of this block (Enter, or F2 on a table)' }),
     grid: button('Edit as grid', () => act('grid'), { title: 'Edit this table cell by cell (Enter)' }),
     props: button('Properties', () => act('props'), { title: 'Title and attributes of this container', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'props' }),
+    problems: button('Problems…', () => act('problems'), { title: 'This block\'s problems and their quick fixes (Ctrl+.)', 'aria-haspopup': 'dialog' }),
     up: button('Move up', () => act('up'), { title: 'Move this block up (Alt+Up)' }),
     down: button('Move down', () => act('down'), { title: 'Move this block down (Alt+Down)' }),
     del: button('Delete', () => act('del'), { title: 'Delete this block (Ctrl+Z undoes it)' }),
@@ -1002,6 +1048,8 @@ function start(rt: Runtime): void {
     status.textContent = view ? blockLabel(view) : 'No block selected';
     for (const action of ['edit', 'up', 'down', 'del', 'reveal'] as const) setDisabled(buttons[action], !view);
     setDisabled(buttons.props, !view?.form);
+    const item = currentItem();
+    setDisabled(buttons.problems, !item || !shownProblems.get(item));
     updateGridButton(view?.table);
     buttons.fm.hidden = !model || model.frontMatter !== null;
     rovingBar();
@@ -1602,6 +1650,7 @@ function start(rt: Runtime): void {
   let popTarget: { el: HTMLElement; key: string; view: InlineView; controls: Map<string, HTMLInputElement | HTMLSelectElement> } | null = null;
 
   function openInline(el: HTMLElement, key: string, view: InlineView): void {
+    closeProblems(false);
     const controls = new Map<string, HTMLInputElement | HTMLSelectElement>();
     const rows = (view.fields ?? []).map((field) => {
       const id = `inline-${field.name}`;
@@ -1650,20 +1699,73 @@ function start(rt: Runtime): void {
       return;
     }
     const escape = event.key === ESCAPE;
-    // Enter applies, except on a button, which Enter presses.
-    const enter = event.key === 'Enter' && !(event.target instanceof HTMLButtonElement);
+    // Enter applies an inline form, except on a button, which Enter presses.
+    const enter = event.key === 'Enter' && popTarget !== null && !(event.target instanceof HTMLButtonElement);
     if (!escape && !enter) return;
     event.preventDefault();
     event.stopPropagation();
-    if (escape) closeInline(true);
+    if (escape) closePop(true);
     else applyInline();
   });
 
   pop.addEventListener('focusout', (event) => {
     if (!pop.contains(event.relatedTarget as Node | null)) setTimeout(() => {
-      if (!pop.contains(popRoot.activeElement)) closeInline(false);
+      if (!pop.contains(popRoot.activeElement)) closePop(false);
     }, 0);
   });
+
+  /** Close the inline form or the problems list. */
+  function closePop(refocus: boolean): void {
+    closeInline(refocus);
+    closeProblems(refocus);
+  }
+
+  function placePop(el: HTMLElement): void {
+    popHost.hidden = false;
+    const rect = el.getBoundingClientRect();
+    popHost.style.top = `${rect.top + window.scrollY + Math.min(rect.height, 24) + 4}px`;
+    popHost.style.left = `${Math.max(0, rect.left + window.scrollX)}px`;
+  }
+
+  // ---- Problems: the list of a block's problems ------------------------------------------------------------
+  // The badge on a block (or Ctrl+. on it, or Problems… in the toolbar) opens a list of its problems.
+  let problemsTarget: { item: HTMLElement; key: string } | null = null;
+
+  function openProblems(item: HTMLElement): void {
+    const view = viewOf.get(item);
+    const problems = shownProblems.get(item);
+    if (!view || !problems) {
+      showNotice('This block has no problems.');
+      return;
+    }
+    closePop(false);
+    const title = h('p', { className: 'pop-title', text: `Problems: ${blockLabel(view)}`, attrs: { id: 'pop-title' } });
+    const list = h('ul', { className: 'problems' }, problems.messages.map((m) => h('li', { text: m })));
+    const more = problems.count > problems.messages.length ? h('p', { className: 'hint', text: `And ${problems.count - problems.messages.length} more.` }) : null;
+    const actions = h(DIV, { className: 'actions' }, [
+      button('Edit source', () => {
+        closeProblems(false);
+        startEdit(item);
+      }),
+      button('Close', () => closeProblems(true)),
+    ]);
+    pop.replaceChildren(title, list, ...(more ? [more] : []), actions);
+    problemsTarget = { item, key: view.key };
+    placePop(item);
+    actions.querySelector('button')?.focus();
+    rt.announce(`${problemsLabel(problems)}: ${problems.messages.join('. ')}`);
+  }
+
+  function closeProblems(refocus: boolean): void {
+    const target = problemsTarget;
+    if (!target) return;
+    problemsTarget = null;
+    popHost.hidden = true;
+    pop.replaceChildren();
+    if (!refocus) return;
+    const item = target.item.isConnected ? target.item : itemsAll().find((i) => i.dataset.smdEdKey === target.key);
+    (item ?? currentItem())?.focus();
+  }
 
   updateToolbar();
   post({ type: 'ready' });

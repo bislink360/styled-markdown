@@ -57,6 +57,27 @@ export function problemsLabel(problems: BlockProblems | undefined): string {
   return `${problems.count} ${problems.count === 1 ? 'problem' : 'problems'}`;
 }
 
+const SEVERITY_ORDER: readonly BlockProblems['severity'][] = ['error', 'warning', 'info'];
+/** As many messages as the extension sends for one block (MAX_PROBLEM_MESSAGES). */
+const MAX_MESSAGES = 10;
+
+/**
+ * Problems of several blocks as one: a container shows its own and those of children the page could not find in
+ * its HTML (so no problem goes unseen). Undefined when there are none.
+ */
+export function mergeProblems(...lists: (BlockProblems | undefined)[]): BlockProblems | undefined {
+  const all = lists.filter((p): p is BlockProblems => !!p?.count);
+  if (all.length <= 1) return all[0];
+  const severity = SEVERITY_ORDER.find((s) => all.some((p) => p.severity === s)) ?? 'info';
+  return { count: all.reduce((n, p) => n + p.count, 0), severity, messages: all.flatMap((p) => p.messages).slice(0, MAX_MESSAGES) };
+}
+
+/** How a block is announced as it becomes current: "Paragraph, lines 3–5", with its problems when it has some. */
+export function itemAnnouncement(view: Pick<BlockView, 'type' | 'container' | 'start' | 'end'>, problems: BlockProblems | undefined): string {
+  const count = problemsLabel(problems);
+  return count ? `${blockLabel(view)}, ${count}. Ctrl+. shows them.` : blockLabel(view);
+}
+
 /** Rendered HTML without its source line numbers, to tell whether a block that only moved looks the same. */
 export function withoutLines(html: string): string {
   return html.replaceAll(/ data-(?:task-)?line="\d*"/g, '');

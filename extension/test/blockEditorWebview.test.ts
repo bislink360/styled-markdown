@@ -4,8 +4,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   FROZEN, blockLabel, blockName, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
-  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemForLine, linesLabel,
-  listKeyTarget, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement, itemForLine,
+  linesLabel, listKeyTarget, mergeProblems, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction,
 } from '../src/webview/blockEditorModel';
 import type { BlockView } from '../src/blockEditorSession';
@@ -167,7 +167,7 @@ test('page: inline items get a popover in a closed shadow root, keyboard stops i
   assert.match(pageSource, /const popRoot = chromeRoot\(popHost\);/);
   assert.match(pageSource, /type: 'setInline'/);
   assert.match(pageSource, /rt\.announce\(inlineAnnouncement\(/);
-  assert.match(pageSource, /if \(escape\) closeInline\(true\);/);
+  assert.match(pageSource, /if \(escape\) closePop\(true\);/);
   assert.match(pageSource, /if \(msg\.fallback\) editSourceOf\(msg\.fallback\);/, 'a refused inline change opens the block\'s source');
   assert.match(pageSource, /el\.setAttribute\(TABINDEX, '0'\);/);
 });
@@ -250,6 +250,29 @@ test('page: the grid is a labelled role="grid" table of text fields in a closed 
   assert.match(pageSource, /post\(\{ \.\.\.request, key: g\.key, editId \}\)/);
   assert.match(pageSource, /rt\.announce\(gridAnnouncement\(request\)\)/);
   assert.match(pageSource, /g\.timer = setTimeout\(\(\) => commitCell\(g, cell\), AUTOSAVE_DELAY\)/, 'typing is written after a pause, as in the source editor');
+});
+
+test('problems: merged for a container that shows a lost child\'s, and announced with the block', () => {
+  const warn = { count: 1, severity: 'warning' as const, messages: ['Line 3: a'] };
+  const err = { count: 2, severity: 'error' as const, messages: ['Line 5: b', 'Line 6: c'] };
+  assert.equal(mergeProblems(), undefined);
+  assert.equal(mergeProblems(undefined, undefined), undefined);
+  assert.equal(mergeProblems(warn, undefined), warn, 'one list is itself');
+  assert.deepEqual(mergeProblems(warn, err), { count: 3, severity: 'error', messages: ['Line 3: a', 'Line 5: b', 'Line 6: c'] });
+  const many = { count: 12, severity: 'info' as const, messages: Array.from({ length: 10 }, (_, i) => `m${i}`) };
+  assert.equal(mergeProblems(many, warn)!.messages.length, 10, 'at most as many messages as the extension sends');
+  assert.equal(mergeProblems(many, warn)!.count, 13);
+  assert.equal(itemAnnouncement(view('a', 2, 4), undefined), 'Paragraph, lines 3–4');
+  assert.equal(itemAnnouncement(view('a', 2, 4), err), 'Paragraph, lines 3–4, 2 problems. Ctrl+. shows them.');
+});
+
+test('page: problem badges on top-level blocks and children, in closed shadow roots, open the problems list', () => {
+  assert.match(pageSource, /updateChrome\(el, mergeProblems\(child\.problems, annotateChildren\(el, child\.children\)\), true\)/, 'children get badges');
+  assert.match(pageSource, /lost = mergeProblems\(lost, child\.problems/, 'a child not in the HTML: its container shows its problems');
+  assert.match(pageSource, /h\('button', \{ className: 'badge', attrs: \{ type: 'button', \[TABINDEX\]: '-1', 'aria-hidden': TRUE \} \}\)/, 'one tab stop: the badge is for the mouse');
+  assert.match(pageSource, /event\.key === '\.' && \(event\.ctrlKey \|\| event\.metaKey\)/, 'Ctrl+. on a block');
+  assert.match(pageSource, /problems: button\('Problems…'/);
+  assert.match(pageSource, /h\('ul', \{ className: 'problems' \}, problems\.messages\.map\(\(m\) => h\('li', \{ text: m \}\)\)\)/);
 });
 
 test('textareaRows grows with the text, within limits', () => {

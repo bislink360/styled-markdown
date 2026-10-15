@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  BlockEditorSession, EditLog, containerForm, inlineAgree, inlineFields, lineSpan, mapBoundary, readEditorMessage, yamlScalar,
+  BlockEditorSession, EditLog, containerForm, inlineAgree, inlineFields, innermostSegment, lineSpan, mapBoundary, problemOwners, readEditorMessage, yamlScalar,
   type BlockView, type DocumentPort, type HostMessage, type LineDiagnostic, type RenderMessage, type SessionMessage, type SessionOptions, type TextChange,
 } from '../src/blockEditorSession';
 import { renderBlocks, segmentSmd, type BlockRenderOptions, type Segment } from '../src/core/blocks';
@@ -245,8 +245,9 @@ test('render: the front matter, top-level blocks with their HTML, gaps, children
   assert.match(callout.html!, /smd-callout-warning/);
   assert.deepEqual(callout.children!.map((c) => c.type), ['paragraph', 'list'], 'blank gaps inside containers are left out');
   assert.equal(callout.children![0].html, undefined, 'children are found in the container HTML');
-  assert.deepEqual(callout.problems, { count: 2, severity: 'error', messages: ['Line 11: Odd', 'Line 13: Bad'] });
-  assert.deepEqual(callout.children![1].problems?.count, 1);
+  assert.equal(callout.problems, undefined, 'each problem is on the innermost block: here, the container\'s children');
+  assert.deepEqual(callout.children![0].problems, { count: 1, severity: 'warning', messages: ['Line 11: Odd'] });
+  assert.deepEqual(callout.children![1].problems, { count: 1, severity: 'error', messages: ['Line 13: Bad'] });
   assert.equal(callout.form?.name, 'warning');
   assert.deepEqual(callout.form!.fields.map((f) => [f.name, f.kind, f.value]), [
     ['title', 'title', 'Heads up'], ['collapsible', 'flag', 'true'], ['color', 'color', ''], ['bg', 'color', ''], ['border', 'color', ''],
@@ -254,6 +255,27 @@ test('render: the front matter, top-level blocks with their HTML, gaps, children
   assert.equal(r.blocks.find((b) => b.kind === 'gap' && !b.blank)?.source, '\n[ref]: https://example.com\n');
   assert.ok(r.templates.some((t) => t.name === 'Callout'));
   assert.deepEqual(h.session.status().blocks, 4);
+});
+
+test('problems go to the innermost block: a child, a nested child, else the container, the front matter or a gap', () => {
+  const text = [
+    '---', 'title: T', 'statsu: draft', '---', '',
+    '::::tabs', ':::tab One', 'Para one', '', '- item', ':::', '', '[x]: https://example.com', '::::', '',
+    '[y]: https://example.com', '',
+  ].join('\n');
+  const at = (line: number): LineDiagnostic => ({ line, message: `on ${line}`, severity: 'warning' });
+  const h = harness(text, { diagnostics: [2, 5, 6, 7, 9, 12, 15].map(at) });
+  const r = h.render();
+  const messages = (v: { problems?: { messages: string[] } } | null | undefined) => v?.problems?.messages ?? [];
+  assert.deepEqual(messages(r.frontMatter), ['Line 3: on 2']);
+  assert.deepEqual(messages(block(r, '::::tabs')), ['Line 6: on 5', 'Line 13: on 12'], 'its fence, and a gap inside it');
+  assert.deepEqual(messages(block(r, ':::tab')), ['Line 7: on 6'], 'the opening line of the inner container');
+  assert.deepEqual(messages(block(r, 'Para one')), ['Line 8: on 7']);
+  assert.deepEqual(messages(block(r, '- item')), ['Line 10: on 9']);
+  assert.deepEqual(messages(r.blocks.find((b) => b.kind === 'gap' && b.source.includes('[y]'))), ['Line 16: on 15']);
+  assert.equal(innermostSegment(segmentSmd(text), 99), undefined, 'past the end');
+  const owners = problemOwners(segmentSmd(text), [at(7), at(7)]);
+  assert.deepEqual([...owners.values()].map((l) => l.length), [2], 'two problems on one line, one owner');
 });
 
 test('containerForm: enumerated values, colors, flags and text, from CONTAINERS', () => {

@@ -671,13 +671,39 @@ function inlineView(index: number, rendered: RenderedInline, item: InlineItem | 
   return view;
 }
 
-/** The problems on lines [start, end). */
-function problemsIn(diagnostics: readonly LineDiagnostic[], start: number, end: number): BlockProblems | undefined {
-  const inside = diagnostics.filter((d) => d.line >= start && d.line < end);
-  if (!inside.length) return undefined;
+/** A list of problems as a block shows them: how many, the worst severity, and the first messages. */
+function problemsOf(inside: readonly LineDiagnostic[] | undefined): BlockProblems | undefined {
+  if (!inside?.length) return undefined;
   const severity = inside.reduce<DiagnosticSeverity>((worst, d) => (SEVERITY_RANK[d.severity] < SEVERITY_RANK[worst] ? d.severity : worst), 'info');
   const messages = inside.slice(0, MAX_PROBLEM_MESSAGES).map((d) => `Line ${d.line + 1}: ${d.message}`);
   return { count: inside.length, severity, messages };
+}
+
+/**
+ * The innermost segment a line belongs to, as the page shows segments: a top-level segment (the front matter, a
+ * block or a gap), then, inside a container, the child block that holds it. A line of a container that no child
+ * block holds (its fences, a gap inside it) belongs to the container.
+ */
+export function innermostSegment(segments: readonly Segment[], line: number): Segment | undefined {
+  const holder = segments.find((s) => s.start <= line && line < s.end);
+  if (!holder?.children) return holder;
+  return innermostSegment(holder.children.filter((c) => c.kind === BLOCK), line) ?? holder;
+}
+
+/** The problems of each segment, by key. */
+type Problems = ReadonlyMap<string, readonly LineDiagnostic[]>;
+
+/** Each diagnostic with the innermost segment its line is in, by that segment's key. */
+export function problemOwners(segments: readonly Segment[], diagnostics: readonly LineDiagnostic[]): Map<string, LineDiagnostic[]> {
+  const owners = new Map<string, LineDiagnostic[]>();
+  for (const d of diagnostics) {
+    const owner = innermostSegment(segments, d.line);
+    if (!owner) continue;
+    const list = owners.get(owner.key);
+    if (list) list.push(d);
+    else owners.set(owner.key, [d]);
+  }
+  return owners;
 }
 
 /** Every segment of a tree, depth first. */
@@ -807,7 +833,7 @@ export class BlockEditorSession {
     const version = this.doc.version;
     const result = this.options.render(text);
     const lines = splitLines(text);
-    const diagnostics = this.options.diagnostics?.() ?? [];
+    const owners = problemOwners(result.segments, this.options.diagnostics?.() ?? []);
     this.known = new Map();
     for (const s of allSegments(result.segments)) {
       this.known.set(s.key, { start: s.start, end: s.end, version, text: lines.slice(s.start, s.end).join('\n') });
@@ -816,13 +842,13 @@ export class BlockEditorSession {
     const inline = new Map(result.blocks.map((b) => [b.key, b.inline]));
     this.inlineRendered = { version, items: new Map() };
     const view = (s: Segment): BlockView => {
-      const v = this.blockView(s, lines, html, diagnostics);
+      const v = this.blockView(s, lines, html, owners);
       const items = this.inlineViews(s.key, lines.slice(s.start, s.end), inline.get(s.key), result.frontMatter);
       if (items) v.inline = items;
       return v;
     };
     const first = result.segments[0];
-    const frontMatter = first?.kind === FRONT_MATTER ? this.frontMatterView(first, lines, diagnostics) : null;
+    const frontMatter = first?.kind === FRONT_MATTER ? this.frontMatterView(first, lines, owners) : null;
     const message: RenderMessage = {
       type: 'render',
       version,
@@ -855,14 +881,14 @@ export class BlockEditorSession {
     return this.options.scan?.(lines) ?? scanInline(lines);
   }
 
-  private frontMatterView(s: Segment, lines: readonly string[], diagnostics: readonly LineDiagnostic[]): FrontMatterView {
+  private frontMatterView(s: Segment, lines: readonly string[], owners: Problems): FrontMatterView {
     const view: FrontMatterView = { key: s.key, start: s.start, end: s.end, source: lines.slice(s.start, s.end).join('\n') };
-    const problems = problemsIn(diagnostics, s.start, s.end);
+    const problems = problemsOf(owners.get(s.key));
     if (problems) view.problems = problems;
     return view;
   }
 
-  private blockView(s: Segment, lines: readonly string[], html: ReadonlyMap<string, string> | undefined, diagnostics: readonly LineDiagnostic[]): BlockView {
+  private blockView(s: Segment, lines: readonly string[], html: ReadonlyMap<string, string> | undefined, owners: Problems): BlockView {
     const source = lines.slice(s.start, s.end).join('\n');
     const isBlock = s.kind === BLOCK;
     const type = isBlock ? s.type ?? 'paragraph' : GAP;
@@ -870,20 +896,20 @@ export class BlockEditorSession {
     if (!isBlock && isBlankText(source)) view.blank = true;
     if (s.container) view.container = s.container;
     if (html && isBlock) view.html = html.get(s.key) ?? '';
-    if (s.children) view.children = this.childViews(s.children, lines, diagnostics);
+    if (s.children) view.children = this.childViews(s.children, lines, owners);
     const form = s.type === CONTAINER ? containerForm(lines[s.start], s.container) : undefined;
     if (form) view.form = form;
     if (isBlock && s.type === TABLE) view.table = this.tableView(lines.slice(s.start, s.end));
-    const problems = problemsIn(diagnostics, s.start, s.end);
+    const problems = problemsOf(owners.get(s.key));
     if (problems) view.problems = problems;
     return view;
   }
 
   /** A container's children: its blocks and the gaps that hold more than blank lines. */
-  private childViews(children: readonly Segment[], lines: readonly string[], diagnostics: readonly LineDiagnostic[]): BlockView[] {
+  private childViews(children: readonly Segment[], lines: readonly string[], owners: Problems): BlockView[] {
     return children
       .filter((c) => c.kind === BLOCK || !isBlankText(lines.slice(c.start, c.end).join('\n')))
-      .map((c) => this.blockView(c, lines, undefined, diagnostics));
+      .map((c) => this.blockView(c, lines, undefined, owners));
   }
 
   /** Where the blocks the page edited are now: a new key when their lines are one block again, else their lines. */
