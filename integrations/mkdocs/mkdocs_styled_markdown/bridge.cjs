@@ -1036,6 +1036,23 @@ pre.smd-has-hl code { position: relative; }
     });
   }
 
+  /**
+   * Saved UI state (key \u2192 value) brought over to the elements whose keys are now \`keys\` (document order); state of
+   * keys no longer in the page is dropped. \`previous[i]\` is the key element i had when it was hydrated, if it is
+   * left alone this time (outside the scope being hydrated), else null. An element left alone takes its own state
+   * along when its key moved; the others pick up what was saved under their key, unless an element left alone had it.
+   */
+  function carryState(state, keys, previous) {
+    const taken = new Set(previous.filter((k) => k !== null));
+    const next = {};
+    keys.forEach((key, i) => {
+      let from = previous[i];
+      if (from === null && !taken.has(key)) from = key;
+      if (from !== null && from in state) next[key] = state[from];
+    });
+    return next;
+  }
+
   /** Small LRU map for rendered diagrams, keyed by theme + source. */
   function lruCache(max) {
     const map = new Map();
@@ -1146,14 +1163,20 @@ pre.smd-has-hl code { position: relative; }
 
   if (typeof document === 'undefined') {
     if (typeof module === 'object' && module.exports) {
-      module.exports = { mapLine, mapAnchor, newerPlace, pickAnchor, findLine, stableKeys, lruCache, diagramKey, tabKeyTarget, buildTabs, uiLabel };
+      module.exports = { mapLine, mapAnchor, newerPlace, pickAnchor, findLine, stableKeys, carryState, lruCache, diagramKey, tabKeyTarget, buildTabs, uiLabel };
     }
     return;
   }
 
   // ---- Page state ----------------------------------------------------------
 
+  // acquireVsCodeApi() works once per page: the page's other scripts get this handle from window.smdRuntime.
   const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+  // What the page is, from <body data-smd-mode>: the preview (the default, also exported HTML, sites and the
+  // playground) or the Block Editor. Only the preview follows the editor's scrolling, keeps its scroll place and
+  // reveals source lines on double-click.
+  const mode = document.body?.dataset?.smdMode || 'preview';
+  const isPreview = mode === 'preview';
   const html = document.documentElement;
   const svgCache = lruCache(100);
   let diagramSeq = 0;
@@ -1162,6 +1185,8 @@ pre.smd-has-hl code { position: relative; }
   // active tab per tab group and user-toggled <details>, keyed by content, not position.
   const saved = (vscode && vscode.getState()) || {};
   const ui = { tabs: saved.tabs || {}, open: saved.open || {} };
+  // State the page's other scripts keep with the runtime's (setState() replaces the whole state).
+  let appState = saved.app;
   // Where the page is: the anchor at the top of the viewport (null at the very top) and the document
   // version its line number belongs to. See "Scroll anchoring" below.
   let place = typeof saved.version === 'number' ? { anchor: saved.anchor || null, version: saved.version } : null;
@@ -1173,10 +1198,16 @@ pre.smd-has-hl code { position: relative; }
   // How the page found its place when it loaded (reported to the extension's tests).
   let restoredFrom = 'none';
 
+  const withApp = (state) => (appState === undefined ? state : { ...state, app: appState });
+
   function saveState() {
     if (!vscode) return;
+    if (!isPreview) {
+      vscode.setState(withApp({ tabs: ui.tabs, open: ui.open }));
+      return;
+    }
     const at = place || { anchor: null, version: pageVersion };
-    vscode.setState({ anchor: at.anchor, version: at.version, tabs: ui.tabs, open: ui.open });
+    vscode.setState(withApp({ anchor: at.anchor, version: at.version, tabs: ui.tabs, open: ui.open }));
     // The extension keeps a copy for a page that comes back without its state, and drops the edits this place includes.
     vscode.postMessage({ type: 'position', anchor: at.anchor, version: at.version });
   }
@@ -1203,50 +1234,70 @@ pre.smd-has-hl code { position: relative; }
 
   // ---- Tabs ---------------------------------------------------------------
   const panesOf = (tabs) => Array.from(tabs.children).filter((el) => el.classList.contains('smd-tab'));
+  // Hydrating a scope (the whole page, or one block in the Block Editor) builds what is inside it. Keys are
+  // counted over the whole page, so an element's key can move when one before it changes; saved state of the
+  // elements outside the scope moves with them (carryState).
+  const inScope = (scope, el) => scope === document || scope.contains(el);
+  /** The key each tab group had when it was last keyed. */
+  const tabKeys = new WeakMap();
 
   function initTabs(scope) {
-    const groups = Array.from(scope.querySelectorAll('.smd-tabs'));
+    const groups = Array.from(document.querySelectorAll('.smd-tabs'));
     const keys = stableKeys(groups.map((g) => 'tabs:' + panesOf(g).map((p) => p.getAttribute('data-title') || '').join('\\u0001')));
-    ui.tabs = Object.fromEntries(keys.filter((k) => k in ui.tabs).map((k) => [k, ui.tabs[k]]));
+    ui.tabs = carryState(ui.tabs, keys, groups.map((g) => (inScope(scope, g) ? null : tabKeys.get(g) ?? null)));
     groups.forEach((tabs, groupIndex) => {
-      if (tabs.classList.contains('smd-js')) return;
+      tabKeys.set(tabs, keys[groupIndex]);
+      if (!inScope(scope, tabs) || tabs.classList.contains('smd-js')) return;
       const panes = panesOf(tabs);
       if (!panes.length) return;
-      const key = keys[groupIndex];
       const select = buildTabs(document, tabs, panes, (i) => {
-        ui.tabs[key] = i;
+        ui.tabs[tabKeys.get(tabs)] = i;
         saveState();
         refreshScrollers();
       });
-      select(Math.min(ui.tabs[key] || 0, panes.length - 1));
+      select(Math.min(ui.tabs[keys[groupIndex]] || 0, panes.length - 1));
     });
   }
 
   // ---- Open/closed <details> (collapsible callouts, details, agent blocks) --
+  const DETAILS_KEY = 'data-smd-key';
+
+  /** A <details> being hydrated: remember its source default, and reopen or close it as the reader left it. */
+  function restoreDetails(d, key, state, live) {
+    d.setAttribute(DETAILS_KEY, key);
+    d.setAttribute('data-smd-default', d.open ? 'open' : 'closed');
+    // A user toggle wins only while the source default it overrode is unchanged.
+    if (state && state[0] === d.open) {
+      d.open = state[1];
+      live[key] = state;
+    }
+  }
+
   function initDetails(scope) {
-    const all = Array.from(scope.querySelectorAll('details'));
+    const all = Array.from(document.querySelectorAll('details'));
     const keys = stableKeys(all.map((d) => {
       const summary = d.querySelector(':scope > summary');
       return 'details:' + (summary ? summary.textContent.trim() : '');
     }));
+    const outside = all.map((d) => !inScope(scope, d));
+    const carried = carryState(ui.open, keys, all.map((d, i) => (outside[i] ? d.getAttribute(DETAILS_KEY) : null)));
     const live = {};
     all.forEach((d, i) => {
       const key = keys[i];
-      d.setAttribute('data-smd-key', key);
-      d.setAttribute('data-smd-default', d.open ? 'open' : 'closed');
-      // A user toggle wins only while the source default it overrode is unchanged.
-      const state = ui.open[key];
-      if (state && state[0] === d.open) {
-        d.open = state[1];
-        live[key] = state;
+      if (!outside[i]) {
+        restoreDetails(d, key, carried[key], live);
+        return;
       }
+      // Left as it is, under its new key if it has been hydrated before.
+      if (d.hasAttribute(DETAILS_KEY)) d.setAttribute(DETAILS_KEY, key);
+      if (carried[key]) live[key] = carried[key];
     });
     ui.open = live;
   }
 
   document.addEventListener('toggle', (e) => {
     const d = e.target;
-    const key = d && d.getAttribute && d.getAttribute('data-smd-key');
+    const key = d && d.getAttribute && d.getAttribute(DETAILS_KEY);
     if (!key) return;
     const dflt = d.getAttribute('data-smd-default') === 'open';
     if (d.open === dflt) delete ui.open[key];
@@ -1265,14 +1316,17 @@ pre.smd-has-hl code { position: relative; }
     setTimeout(() => { liveRegion.textContent = text; }, 50);
   }
 
+  function ensureLiveRegion() {
+    if (liveRegion) return;
+    liveRegion = document.createElement('div');
+    liveRegion.className = 'smd-sr-only';
+    liveRegion.setAttribute('role', 'status');
+    document.body.appendChild(liveRegion);
+  }
+
   function addCopyButtons(scope) {
     const blocks = scope.querySelectorAll('.smd-code');
-    if (blocks.length && !liveRegion) {
-      liveRegion = document.createElement('div');
-      liveRegion.className = 'smd-sr-only';
-      liveRegion.setAttribute('role', 'status');
-      document.body.appendChild(liveRegion);
-    }
+    if (blocks.length) ensureLiveRegion();
     blocks.forEach((block) => {
       if (block.querySelector('.smd-copy')) return;
       const btn = document.createElement('button');
@@ -1458,7 +1512,7 @@ pre.smd-has-hl code { position: relative; }
     refreshScrollers();
     await renderDiagrams(scope, heights);
     refreshScrollers();
-    if (vscode) {
+    if (vscode && isPreview) {
       // Lets the extension (and its tests) know what actually rendered.
       vscode.postMessage({
         type: 'rendered',
@@ -1625,17 +1679,20 @@ pre.smd-has-hl code { position: relative; }
 
   document.addEventListener('dblclick', (e) => {
     const line = lineOf(e.target);
-    if (vscode && line !== null) vscode.postMessage({ type: 'revealLine', line });
+    if (vscode && isPreview && line !== null) vscode.postMessage({ type: 'revealLine', line });
   });
 
-  window.addEventListener('message', (event) => {
-    const msg = event.data || {};
-    if (msg.type === 'update') {
-      applyUpdate(msg);
-    } else if (msg.type === 'scrollToLine') {
-      scrollToLine(msg.line);
-    }
-  });
+  // Renders and scroll sync from the extension (or the playground's editor). The Block Editor has its own messages.
+  if (isPreview) {
+    window.addEventListener('message', (event) => {
+      const msg = event.data || {};
+      if (msg.type === 'update') {
+        applyUpdate(msg);
+      } else if (msg.type === 'scrollToLine') {
+        scrollToLine(msg.line);
+      }
+    });
+  }
 
   // Follow VS Code / OS theme changes.
   new MutationObserver(() => { if (applyTheme()) rerenderDiagrams(); })
@@ -1657,12 +1714,38 @@ pre.smd-has-hl code { position: relative; }
     openedForPrint = [];
   });
 
+  // ---- For the page's other scripts (the Block Editor's) ----------------------
+  window.smdRuntime = Object.freeze({
+    /** 'preview' or 'block-editor', from <body data-smd-mode>. */
+    mode,
+    /** The page's one acquireVsCodeApi() handle; null outside VS Code. */
+    vscode,
+    /**
+     * Build tabs, details state, copy buttons and diagrams inside \`scope\` (an element just rendered; the whole page
+     * when left out). Other elements keep their state. Resolves once its diagrams have rendered.
+     */
+    hydrate: (scope) => hydrate(scope || document),
+    /** Tell screen readers something without moving focus. */
+    announce: (text) => {
+      ensureLiveRegion();
+      announce(text);
+    },
+    /** What the page's other scripts saved with saveAppState(), kept across the panel being hidden. */
+    appState: () => appState,
+    /** Save state of the page's other scripts with the runtime's own (use this rather than vscode.setState()). */
+    saveAppState: (value) => {
+      appState = value;
+      saveState();
+    },
+  });
+
   const rendering = hydrate(document);
   // data-smd-ready: diagrams rendered and fonts loaded, so the page can be printed (smd pdf waits for it).
   Promise.all([rendering, document.fonts ? document.fonts.ready : null])
     .catch(() => undefined)
     .finally(() => html.setAttribute('data-smd-ready', 'true'));
-  if (vscode) {
+  // Coming back where the reader was, and keeping the extension posted.
+  if (vscode && isPreview) {
     restorePlace(rendering);
     // A page that loaded before its frame was displayed gets its size, and with it a layout, later.
     window.addEventListener('resize', settle);
