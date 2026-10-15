@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.9.0 — 2026-10-15
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 1.8.0 — 2026-10-15
 
 A new, optional way to edit in VS Code: the **Styled Markdown Block Editor (Preview)** shows a document as the preview renders it and edits one block's source at a time, so the lines you did not edit never change. It is opt-in through **Open With…** and never the default editor. Nothing else changes: the file format, rendered output, the CLI and the npm package are as in 1.7.2.
