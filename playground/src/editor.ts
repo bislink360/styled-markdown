@@ -75,16 +75,6 @@ export function offsetOf(text: string, line: number, column: number): number {
   return Math.min(offset + Math.max(0, column), lineEnd);
 }
 
-/** The smallest replacement that turns `before` into `after`: replace [from, to) of `before` with `insert`. */
-export function changedRange(before: string, after: string): { from: number; to: number; insert: string } {
-  const max = Math.min(before.length, after.length);
-  let from = 0;
-  while (from < max && before[from] === after[from]) from++;
-  let tail = 0;
-  while (tail < max - from && before.at(-1 - tail) === after.at(-1 - tail)) tail++;
-  return { from, to: before.length - tail, insert: after.slice(from, after.length - tail) };
-}
-
 /** "1\n2\n…" for the line-number gutter. */
 export function lineNumbers(text: string): string {
   const count = text.split('\n').length;
