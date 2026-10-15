@@ -63,7 +63,8 @@ export function renderOptions(document?: vscode.TextDocument): RenderOptions {
   };
 }
 
-function themePreference(frontMatter: Record<string, unknown>): string {
+/** The page's theme: the smd.preview.theme setting, else the document's `theme:`, else the editor's. Also the Block Editor's. */
+export function themePreference(frontMatter: Record<string, unknown>): string {
   const setting = vscode.workspace.getConfiguration('smd.preview').get<string>('theme', 'auto');
   if (setting !== 'auto') return setting;
   return frontMatter.theme === 'light' || frontMatter.theme === 'dark' ? String(frontMatter.theme) : 'auto';

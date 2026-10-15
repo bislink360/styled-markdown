@@ -5,6 +5,8 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- VS Code: **Styled Markdown Block Editor (Preview)**, an optional editor that shows a `.smd` document as the preview renders it and edits it one block at a time. It is opt-in: open a file with **Open With… → Styled Markdown Block Editor (Preview)** or **Styled Markdown: Open Block Editor**, and go back with **Reopen in Text Editor**. It never becomes the default editor. Click a block, or press Enter, to edit that block's source; insert blocks from the snippet templates (`Ctrl+/`), move them (`Alt+↑` `Alt+↓`), delete them, set a container's title and attributes in a form, add front matter and tick tasks. Each edit changes only the lines of that one block, so lines you did not edit never change and nothing is reformatted. It works on the same document as the text editor, so save, undo, Git diffs and Problems work as usual. It is labelled Preview: its UI may change in minor releases.
+- Block Editor: keyboard and screen reader use: one tab stop for the blocks with the arrow keys between them, labelled source editors, a toolbar and insert menu that follow the ARIA patterns, and announced notices. When a text editor changes the block you are editing, your text is kept and you choose which version stays. In a block's text box, `Ctrl+Z` undoes your typing there; elsewhere it undoes the document.
 
 ### Changed
 

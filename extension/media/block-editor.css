@@ -1,0 +1,163 @@
+/* Styled Markdown Block Editor (Preview).
+ *
+ * Loaded twice: by the page, for the blocks around the rendered document (smd.css styles the document itself), and
+ * inside each closed shadow root of the editor's controls. The controls' rules start with :host, which matches
+ * nothing outside a shadow root, so a document's own class names can never pick them up. Colors come from VS Code's
+ * theme variables, so light, dark and high-contrast themes all apply; forced-colors mode gets system colors.
+ */
+
+/* ---- The page ------------------------------------------------------------------------------------------- */
+
+#smd-ed-toolbar { position: sticky; top: 0; z-index: 10; margin: 0 0 8px; }
+
+.smd-ed-block { position: relative; border-radius: 3px; }
+.smd-ed-item { cursor: text; border-radius: 3px; }
+.smd-ed-item:hover { box-shadow: -6px 0 0 -3px var(--vscode-editorLineNumber-foreground, rgba(128, 128, 128, 0.5)); }
+.smd-ed-item:focus { outline: 2px solid var(--vscode-focusBorder, #0078d4); outline-offset: 3px; }
+.smd-ed-item:focus:not(:focus-visible) { outline-style: dashed; outline-width: 1px; }
+.smd-ed-hidden { display: none !important; }
+.smd-ed-gap { height: 0; }
+
+/* Lines that render nothing (link and footnote definitions), the front matter, and text waiting to be rendered. */
+.smd-ed-raw {
+  margin: 0.5em 0;
+  padding: 4px 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground, inherit);
+  background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.1));
+  border: 1px dashed var(--vscode-panel-border, rgba(128, 128, 128, 0.45));
+  border-radius: 3px;
+}
+.smd-ed-pending { opacity: 0.8; }
+
+.smd-ed-badge-host { position: absolute; top: 2px; right: 0; z-index: 1; }
+
+@media (forced-colors: active) {
+  .smd-ed-item:focus { outline: 2px solid Highlight; }
+  .smd-ed-raw { border-color: CanvasText; color: CanvasText; }
+}
+
+/* ---- The editor's controls (inside shadow roots) ----------------------------------------------------------- */
+
+:host { font-family: var(--vscode-font-family, system-ui, sans-serif); font-size: var(--vscode-font-size, 13px); color: var(--vscode-foreground, inherit); }
+:host [hidden] { display: none !important; }
+:host :focus-visible { outline: 2px solid var(--vscode-focusBorder, #0078d4); outline-offset: 1px; }
+
+:host button {
+  font: inherit;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground, inherit));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
+  border-radius: 2px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+:host button:hover { background: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.2)); }
+:host button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+
+:host input, :host select, :host textarea {
+  font: inherit;
+  color: var(--vscode-input-foreground, inherit);
+  background: var(--vscode-input-background, transparent);
+  border: 1px solid var(--vscode-input-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.5)));
+  border-radius: 2px;
+}
+:host input:focus, :host select:focus, :host textarea:focus { outline: 2px solid var(--vscode-focusBorder, #0078d4); outline-offset: 0; }
+
+/* The toolbar. */
+:host .bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 8px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background, Canvas));
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.35)));
+}
+:host .toolbar { display: flex; flex-wrap: wrap; gap: 4px; }
+:host .status { color: var(--vscode-descriptionForeground, inherit); }
+:host .bar-notice { padding: 4px 8px; background: var(--vscode-editorWidget-background, Canvas); color: var(--vscode-foreground, inherit); }
+:host .bar-notice:empty { display: none; }
+
+/* The insert menu. */
+:host .menu {
+  position: absolute;
+  left: 8px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 16em;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 4px;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground, inherit));
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background, Canvas));
+  border: 1px solid var(--vscode-menu-border, var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.5))));
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+:host .menu button { text-align: left; border-color: transparent; background: transparent; color: inherit; }
+:host .menu button:focus, :host .menu button:hover {
+  color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, inherit));
+  background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, rgba(128, 128, 128, 0.3)));
+}
+
+/* A container's properties. */
+:host .props {
+  padding: 8px;
+  background: var(--vscode-editorWidget-background, Canvas);
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.35)));
+}
+:host .props-title { margin: 0 0 6px; font-family: var(--vscode-editor-font-family, monospace); }
+:host .field { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+:host .field label { min-width: 8em; }
+:host .field.flag label { min-width: 0; }
+:host .field input[type="text"] { flex: 1; min-width: 8em; padding: 2px 4px; }
+
+/* The source editor of a block. */
+:host .editor { margin: 0.5em 0; }
+:host .label { display: block; margin-bottom: 2px; font-size: 0.85em; color: var(--vscode-descriptionForeground, inherit); }
+:host textarea.source {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  resize: vertical;
+  tab-size: 4;
+  line-height: 1.5;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--vscode-editor-font-size, 13px);
+}
+:host .hint { margin: 2px 0 0; font-size: 0.8em; color: var(--vscode-descriptionForeground, inherit); }
+:host .notice {
+  margin-top: 6px;
+  padding: 6px 8px;
+  color: var(--vscode-foreground, inherit);
+  background: var(--vscode-inputValidation-warningBackground, rgba(204, 153, 0, 0.15));
+  border: 1px solid var(--vscode-inputValidation-warningBorder, #cc9900);
+}
+:host .notice p { margin: 0 0 6px; }
+:host .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Problem count on a block; the messages are in its tooltip and in the block's accessible description. */
+:host .badge {
+  display: inline-block;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  border-radius: 9px;
+  cursor: help;
+  color: var(--vscode-foreground, inherit);
+  background: var(--vscode-inputValidation-infoBackground, rgba(128, 128, 128, 0.2));
+  border: 1px solid var(--vscode-inputValidation-infoBorder, currentColor);
+}
+:host .badge.warning { background: var(--vscode-inputValidation-warningBackground, rgba(204, 153, 0, 0.2)); border-color: var(--vscode-inputValidation-warningBorder, #cc9900); }
+:host .badge.error { background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.2)); border-color: var(--vscode-inputValidation-errorBorder, #be1100); }
+
+@media (forced-colors: active) {
+  :host button, :host .badge, :host .notice, :host .menu { border: 1px solid ButtonText; }
+  :host :focus-visible, :host textarea:focus, :host .menu button:focus { outline: 2px solid Highlight; }
+  :host button[aria-disabled="true"] { color: GrayText; }
+}
