@@ -1,7 +1,7 @@
 // The Block Editor page's logic that needs no DOM: labels, which blocks to keep, the order to put them in, keys.
 // The page (blockEditor.ts) does the DOM work; the unit tests import this module directly. Types only from the
 // session module: nothing of the .smd engine reaches the page.
-import type { BlockProblems, BlockView, FormField, RenderMessage } from '../blockEditorSession';
+import type { BlockProblems, BlockView, FormField, InlineView, RenderMessage } from '../blockEditorSession';
 
 export interface LineRange {
   start: number;
@@ -172,6 +172,46 @@ export function formRequest(field: Pick<FormField, 'name' | 'kind'>, value: stri
   if (field.kind === 'flag') return { type: 'setAttr', name: field.name, value: value ? true : null };
   const text = String(value).trim();
   return { type: 'setAttr', name: field.name, value: text === '' ? null : text };
+}
+
+/** The field of an inline form for the text in the brackets (CONTENT_FIELD in the session). */
+const CONTENT = 'content';
+
+/** What an inline form asks for: new content, attributes to set or remove (null). */
+export interface InlineRequest {
+  content?: string;
+  attrs?: Record<string, string | null>;
+}
+
+/**
+ * The setInline fields for an inline form's values (by field name): only what changed, trimmed; an emptied
+ * attribute is removed. Null when nothing changed.
+ */
+export function inlineRequest(fields: readonly Pick<FormField, 'name' | 'value'>[], values: Readonly<Record<string, string>>): InlineRequest | null {
+  const request: InlineRequest = {};
+  const attrs: Record<string, string | null> = {};
+  for (const field of fields) {
+    const value = (values[field.name] ?? field.value).trim();
+    if (value === field.value) continue;
+    if (field.name === CONTENT) request.content = value;
+    else attrs[field.name] = value === '' ? null : value;
+  }
+  if (Object.keys(attrs).length) request.attrs = attrs;
+  return request.content === undefined && !request.attrs ? null : request;
+}
+
+/** How an inline item is named to a screen reader: 'Badge "Shipped", press Enter to edit'. */
+export function inlineItemLabel(view: Pick<InlineView, 'label' | 'text'>): string {
+  return view.text ? `${view.label} "${view.text}", press Enter to edit` : `${view.label}, press Enter to edit`;
+}
+
+/** What is announced when an inline form is applied: 'Badge: Text "Done", Color green.' */
+export function inlineAnnouncement(view: Pick<InlineView, 'label' | 'fields'>, request: InlineRequest): string {
+  const label = (name: string) => view.fields?.find((f) => f.name === name)?.label ?? name;
+  const parts: string[] = [];
+  if (request.content !== undefined) parts.push(`${label(CONTENT)} "${request.content}"`);
+  for (const [name, value] of Object.entries(request.attrs ?? {})) parts.push(value === null ? `${label(name)} removed` : `${label(name)} ${value}`);
+  return `${view.label}: ${parts.join(', ')}.`;
 }
 
 /** A block of the render (top-level or child, at any depth) by key. */

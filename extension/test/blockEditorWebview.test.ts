@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  FROZEN, blockLabel, blockName, desiredOrder, editLabel, findView, followEdit, formRequest, isUndoRedo, itemForLine, linesLabel,
-  listKeyTarget, orderMoves, problemsLabel, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  FROZEN, blockLabel, blockName, desiredOrder, editLabel, findView, followEdit, formRequest, inlineAnnouncement, inlineItemLabel, inlineRequest,
+  isUndoRedo, itemForLine, linesLabel, listKeyTarget, orderMoves, problemsLabel, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead,
+  withoutLines,
 } from '../src/webview/blockEditorModel';
 import type { BlockView } from '../src/blockEditorSession';
 import { prng } from './fuzz/generate';
@@ -137,6 +138,36 @@ test('findView, followEdit and topRange: the block being edited across renders',
   assert.deepEqual(followEdit(render, 'gone#0', { start: 2, end: 3 }), { key: 'gone#0', range: { start: 2, end: 3 } }, 'nothing there');
   assert.deepEqual(topRange(blocks, { start: 5, end: 6 }), { start: 4, end: 8 });
   assert.deepEqual(topRange(blocks, { start: 2, end: 3 }), { start: 2, end: 3 });
+});
+
+test('inlineRequest asks only for what changed: content trimmed, emptied attributes removed', () => {
+  const fields = [
+    { name: 'content', value: 'Beta' },
+    { name: 'color', value: 'blue' },
+    { name: 'label', value: '' },
+  ];
+  assert.equal(inlineRequest(fields, { content: 'Beta', color: 'blue', label: '' }), null, 'nothing changed');
+  assert.equal(inlineRequest(fields, { content: ' Beta ' }), null, 'only spaces around it');
+  assert.deepEqual(inlineRequest(fields, { content: ' GA ' }), { content: 'GA' });
+  assert.deepEqual(inlineRequest(fields, { color: '', label: 'Act' }), { attrs: { color: null, label: 'Act' } });
+  assert.deepEqual(inlineRequest(fields, { content: '', color: 'red' }), { content: '', attrs: { color: 'red' } }, 'content may be emptied');
+});
+
+test('inline labels and announcements', () => {
+  assert.equal(inlineItemLabel({ label: 'Badge', text: 'Shipped' }), 'Badge "Shipped", press Enter to edit');
+  assert.equal(inlineItemLabel({ label: 'Progress bar', text: '' }), 'Progress bar, press Enter to edit');
+  const fields = [{ name: 'content', kind: 'text' as const, label: 'Text', value: 'A' }, { name: 'color', kind: 'color' as const, label: 'Color', value: '' }];
+  assert.equal(inlineAnnouncement({ label: 'Badge', fields }, { content: 'Done', attrs: { color: 'green' } }), 'Badge: Text "Done", Color green.');
+  assert.equal(inlineAnnouncement({ label: 'Badge', fields }, { attrs: { color: null, bg: 'red' } }), 'Badge: Color removed, bg red.');
+});
+
+test('page: inline items get a popover in a closed shadow root, keyboard stops in the current block, focus back after Escape', () => {
+  assert.match(pageSource, /const popRoot = chromeRoot\(popHost\);/);
+  assert.match(pageSource, /type: 'setInline'/);
+  assert.match(pageSource, /rt\.announce\(inlineAnnouncement\(/);
+  assert.match(pageSource, /if \(escape\) closeInline\(true\);/);
+  assert.match(pageSource, /if \(msg\.fallback\) editSourceOf\(msg\.fallback\);/, 'a refused inline change opens the block\'s source');
+  assert.match(pageSource, /el\.setAttribute\(TABINDEX, '0'\);/);
 });
 
 test('textareaRows grows with the text, within limits', () => {

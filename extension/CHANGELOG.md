@@ -5,6 +5,7 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- Block Editor (Preview): edit inline items without opening a block's source. Click a `:badge`, `:status`, `:priority`, `:progress`, `:due`, `:metric`, `:kbd` or `:mention`, or a styled `[text]{…}` span, or press `Enter` on it (`Tab` from the current block goes through its items), to change it in a small form: its text, a date picker for `:due`, a list for `:priority` and other values with fixed choices, and the named colors (`color`, plus `bg` and `border` on spans). Only that item's own text changes; the rest of the line and the document stay exactly as written, attributes keep their order and quotes, and new ones go where `smd fmt` puts them. When the editor can't be sure which text an item is, it opens the block's source instead. Rendered output, the preview, the CLI and exports are unchanged.
 
 ### Changed
 
