@@ -229,7 +229,8 @@ async function closeBlockEditors(uri: vscode.Uri): Promise<void> {
 export function registerBlockEditor(context: vscode.ExtensionContext): void {
   const provider = new BlockEditorProvider(context);
   context.subscriptions.push(
-    vscode.window.registerCustomEditorProvider(BLOCK_EDITOR_VIEW_TYPE, provider),
+    // No retainContextWhenHidden: a hidden page is let go and comes back from its saved state.
+    vscode.window.registerCustomEditorProvider(BLOCK_EDITOR_VIEW_TYPE, provider, { webviewOptions: { enableFindWidget: true } }),
 
     vscode.commands.registerCommand('smd.openBlockEditor', async (arg?: unknown) => {
       const uri = targetUri(arg);

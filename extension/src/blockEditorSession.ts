@@ -482,6 +482,8 @@ export class BlockEditorSession {
   private last: { version: number; keys: string[]; blocks: number } | null = null;
   private renders = 0;
   private requests = 0;
+  /** The document version the session's last edit made. */
+  private applied = 0;
   private readonly waiting = new Map<number, () => void>();
 
   constructor(
@@ -673,7 +675,7 @@ export class BlockEditorSession {
     if (change && !(await this.apply([{ from: span.from + change.from, to: span.from + change.to, insert: change.insert }]))) {
       return this.notice(m.editId, NOT_APPLIED);
     }
-    this.pin(m.key, { start: range.start, end: range.start + lineBreaks(newText) + 1, version: this.doc.version, text: newText });
+    this.pin(m.key, { start: range.start, end: range.start + lineBreaks(newText) + 1, version: this.version(), text: newText });
     this.ack(m.editId);
   }
 
@@ -715,7 +717,7 @@ export class BlockEditorSession {
     if (!(await this.applyLines(found.text, moved.edits, editId))) return;
     // The same block, on other lines: a second move before the next render still finds it.
     const size = found.range.end - found.range.start;
-    this.pin(key, { start: moved.line, end: moved.line + size, version: this.doc.version, text: found.lines.slice(found.range.start, found.range.end).join('\n') });
+    this.pin(key, { start: moved.line, end: moved.line + size, version: this.version(), text: found.lines.slice(found.range.start, found.range.end).join('\n') });
     this.ack(editId, { line: moved.line });
   }
 
@@ -734,7 +736,7 @@ export class BlockEditorSession {
     }
     // The next change from the same form, before the next render, still finds the block.
     const text = [next, ...found.lines.slice(found.range.start + 1, found.range.end)].join('\n');
-    this.pin(m.key, { ...found.range, version: this.doc.version, text });
+    this.pin(m.key, { ...found.range, version: this.version(), text });
     this.ack(m.editId, { line: found.range.start });
   }
 
@@ -754,7 +756,16 @@ export class BlockEditorSession {
   }
 
   private async apply(edits: readonly TextEdit[]): Promise<boolean> {
-    return (await this.doc.applyEdits(edits)) !== false;
+    const before = this.doc.version;
+    const ok = (await this.doc.applyEdits(edits)) !== false;
+    // The version our edit made, also if the document reports the change only after the edit resolves.
+    this.applied = ok ? Math.max(this.doc.version, before + 1) : this.doc.version;
+    return ok;
+  }
+
+  /** The document version as of the last thing this session did. */
+  private version(): number {
+    return Math.max(this.doc.version, this.applied);
   }
 
   private pin(key: string, entry: Entry): void {
@@ -766,7 +777,7 @@ export class BlockEditorSession {
   private ack(editId: string | undefined, focus?: FocusRequest): void {
     if (editId === undefined) return;
     this.lastAck = editId;
-    this.options.post(focus ? { type: 'ack', editId, version: this.doc.version, focus } : { type: 'ack', editId, version: this.doc.version });
+    this.options.post(focus ? { type: 'ack', editId, version: this.version(), focus } : { type: 'ack', editId, version: this.version() });
   }
 
   private conflict(editId: string | undefined, key: string, currentText: string | null): void {
