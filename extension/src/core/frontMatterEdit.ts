@@ -412,9 +412,20 @@ function shown(value: unknown): string {
   return typeof value === 'object' ? '' : String(value);
 }
 
+const isMapping = (value: unknown): boolean => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/** A select when the key has choices, else a text field. */
+function choiceField(key: string, text: string): FrontMatterField {
+  const choices = frontMatterValues(key);
+  if (!choices.length) return { name: key, kind: 'text', value: text };
+  // A value that is not one of the choices stays one, so the list shows what is written.
+  const extra = text && !choices.includes(text) ? [text] : [];
+  return { name: key, kind: 'select', value: text, options: ['', ...choices, ...extra] };
+}
+
 function field(key: string, value: unknown, entry: FrontMatterEntry | undefined): FrontMatterField {
   const text = shown(value);
-  const refused = entry?.refused ?? (value !== null && typeof value === 'object' && !Array.isArray(value) ? 'a mapping' : undefined);
+  const refused = entry?.refused ?? (isMapping(value) ? 'a mapping' : undefined);
   let f: FrontMatterField;
   if (LIST_KEYS.has(key)) {
     const items = Array.isArray(value) ? value.map(String) : [];
@@ -423,10 +434,7 @@ function field(key: string, value: unknown, entry: FrontMatterEntry | undefined)
   } else if (DATE_KEYS.has(key) && (text === '' || ISO_DATE.test(text))) {
     f = { name: key, kind: 'date', value: text };
   } else {
-    const choices = frontMatterValues(key);
-    // A value that is not one of the choices stays one, so the list shows what is written.
-    const extra = text && !choices.includes(text) ? [text] : [];
-    f = choices.length ? { name: key, kind: 'select', value: text, options: ['', ...choices, ...extra] } : { name: key, kind: 'text', value: text };
+    f = choiceField(key, text);
   }
   if (refused) f.refused = refused;
   return f;
