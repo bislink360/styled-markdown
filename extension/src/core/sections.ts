@@ -2,6 +2,9 @@ import type { Heading } from './render';
 
 /** Heading ids and sections: a heading up to the next heading of the same or a higher level. */
 
+/** `## Title {#custom-id .class agent=skip}` — trailing attribute list on a heading. */
+export const HEADING_ATTRS = /\s+\{([^{}]*)\}\s*$/; // NOSONAR(typescript:S5852): matched against one heading line
+
 export function slugify(text: string): string {
   return text
     .toLowerCase()
