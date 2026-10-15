@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import {
   FROZEN, blockLabel, blockName, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
   gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement, itemForLine,
-  linesLabel, listKeyTarget, mergeProblems, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  linesLabel, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction,
 } from '../src/webview/blockEditorModel';
 import type { BlockView } from '../src/blockEditorSession';
@@ -273,6 +273,22 @@ test('page: problem badges on top-level blocks and children, in closed shadow ro
   assert.match(pageSource, /event\.key === '\.' && \(event\.ctrlKey \|\| event\.metaKey\)/, 'Ctrl+. on a block');
   assert.match(pageSource, /problems: button\('Problems…'/);
   assert.match(pageSource, /h\('ul', \{ className: 'problems' \}, problems\.messages\.map\(\(m\) => h\('li', \{ text: m \}\)\)\)/);
+});
+
+test('quick fixes: each button says what more than the block it changes, and the list is announced', () => {
+  assert.equal(fixLabel({ title: 'Change to "blue"', scope: 'block' }), 'Change to "blue"');
+  assert.equal(fixLabel({ title: 'Add ":::"', scope: 'lines' }), 'Add ":::" (also changes other lines)');
+  assert.equal(fixLabel({ title: 'Rename', scope: 'files' }), 'Rename (also changes other files)');
+  assert.equal(fixesAnnouncement([]), 'No quick fixes.');
+  assert.equal(fixesAnnouncement([{ title: 'Change to "blue"', scope: 'block' }]), '1 quick fix: Change to "blue".');
+  assert.equal(fixesAnnouncement([{ title: 'a', scope: 'block' }, { title: 'b', scope: 'lines' }]), '2 quick fixes.');
+});
+
+test('page: quick fixes are asked for by block and applied by number; the page never sends an edit of its own', () => {
+  assert.match(pageSource, /post\(\{ type: 'getFixes', key: view\.key, requestId \}\)/);
+  assert.match(pageSource, /post\(\{ type: 'applyFix', key: target\.key, index, version: target\.version, \.\.\.\(confirm \? \{ confirm: true \} : \{\}\), editId: target\.editId \}\)/);
+  assert.match(pageSource, /case 'confirmFix':\n\s+onConfirmFix\(msg\.editId, msg\.index, msg\.text\);/, 'a fix that changes more than the block is confirmed first');
+  assert.match(pageSource, /'aria-live': 'polite'/, 'the fixes arriving are read');
 });
 
 test('textareaRows grows with the text, within limits', () => {

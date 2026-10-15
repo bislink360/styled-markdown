@@ -4,12 +4,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   BlockEditorSession, EditLog, containerForm, inlineAgree, inlineFields, innermostSegment, lineSpan, mapBoundary, problemOwners, readEditorMessage, yamlScalar,
-  type BlockView, type DocumentPort, type HostMessage, type LineDiagnostic, type RenderMessage, type SessionMessage, type SessionOptions, type TextChange,
+  fixScope,
+  type BlockView, type DocumentPort, type HostMessage, type LineDiagnostic, type QuickFix, type RenderMessage, type SessionMessage, type SessionOptions,
+  type TextChange,
 } from '../src/blockEditorSession';
+import { validateSmd } from '../src/core/validate';
 import { renderBlocks, segmentSmd, type BlockRenderOptions, type Segment } from '../src/core/blocks';
 import { scanInline, type RenderedInline } from '../src/core/inlineEdit';
 import { blockTemplates, type Snippet } from '../src/core/templates';
-import type { TextEdit } from '../src/core/sourceEdit';
+import type { LineRange, TextEdit } from '../src/core/sourceEdit';
 import { prng } from './fuzz/generate';
 
 // The Block Editor's host side (src/blockEditorSession.ts) against a fake document: every message, validation,
@@ -66,7 +69,15 @@ interface Harness {
   send(message: SessionMessage): Promise<HostMessage | undefined>;
 }
 
-function harness(text: string, options: { diagnostics?: LineDiagnostic[]; render?: BlockRenderOptions; title?: string; scan?: SessionOptions['scan'] } = {}): Harness {
+interface HarnessOptions {
+  diagnostics?: LineDiagnostic[];
+  render?: BlockRenderOptions;
+  title?: string;
+  scan?: SessionOptions['scan'];
+  quickFixes?: (doc: FakeDoc, range: LineRange) => PromiseLike<readonly QuickFix[]>;
+}
+
+function harness(text: string, options: HarnessOptions = {}): Harness {
   const doc = new FakeDoc(text);
   const sent: HostMessage[] = [];
   const renderOptions = { today: TODAY, ...options.render };
@@ -79,6 +90,7 @@ function harness(text: string, options: { diagnostics?: LineDiagnostic[]; render
     themePref: () => 'auto',
     title: options.title,
     scan: options.scan,
+    quickFixes: options.quickFixes && ((range) => options.quickFixes!(doc, range)),
   });
   doc.onChange = (version, changes) => session.recordChange(version, changes);
   return {
@@ -1130,4 +1142,173 @@ test('property: a random grid change to every table of every example and corpus 
     }
   }
   assert.ok(applied > 10, `table edits applied (${applied})`);
+});
+
+// ---------------------------------------------------------------------------
+// Quick fixes
+// ---------------------------------------------------------------------------
+
+/** The offset of a line and column in a text whose lines end in \n or \r\n. */
+function offsetAt(text: string, line: number, character: number): number {
+  let offset = 0;
+  for (let i = 0; i < line; i++) {
+    const next = text.indexOf('\n', offset);
+    offset = next < 0 ? text.length : next + 1;
+  }
+  return offset + character;
+}
+
+/** As language.ts's QuickFixProvider: the core fixes of the problems on the lines asked about, applied to the document. */
+function coreFixes(doc: FakeDoc, range: LineRange): Promise<QuickFix[]> {
+  const fixes = validateSmd(doc.text, { today: TODAY })
+    .filter((d) => d.fix && d.line >= range.start && d.line < range.end)
+    .map((d): QuickFix => {
+      const fix = d.fix!;
+      const start = { line: fix.line, character: fix.column };
+      const end = { line: fix.line, character: fix.endColumn };
+      return {
+        title: fix.title,
+        edits: [{ start, end }],
+        elsewhere: false,
+        diagnostics: [d.line],
+        apply: () => doc.applyEdits([{ from: offsetAt(doc.text, fix.line, fix.column), to: offsetAt(doc.text, fix.line, fix.endColumn), insert: fix.replacement.replaceAll('\n', doc.eol) }]),
+      };
+    });
+  return Promise.resolve(fixes);
+}
+
+const FIX_DOC = [
+  '---', 'title: Fixes', 'statsu: draft', 'smd: 1', '---', '',
+  ':::warnin Heads up', 'Body.', ':::', '',
+  ':::note{color=bleu} Inside', 'First child :badge[x]{color=gren}.', ':::', '',
+  'Last paragraph.', '',
+].join('\n');
+
+test('readEditorMessage: getFixes and applyFix name a block, a request or a listed fix, and nothing else', () => {
+  const key = 'abc123#0';
+  assert.deepEqual(readEditorMessage({ type: 'getFixes', key, requestId: 3, edits: [] }), { type: 'getFixes', key, requestId: 3 });
+  assert.deepEqual(readEditorMessage({ type: 'applyFix', key, index: 0, version: 4, editId: 'f' }), { type: 'applyFix', key, index: 0, version: 4, editId: 'f' });
+  assert.deepEqual(readEditorMessage({ type: 'applyFix', key, index: 1, version: 4, confirm: true }), { type: 'applyFix', key, index: 1, version: 4, confirm: true });
+  assert.deepEqual(
+    readEditorMessage({ type: 'applyFix', key, index: 1, version: 4, edit: { from: 0, to: 9, insert: 'x' } }),
+    { type: 'applyFix', key, index: 1, version: 4 },
+    'edits from the page are dropped',
+  );
+  for (const bad of [
+    { type: 'getFixes', key }, { type: 'getFixes', key: 'x', requestId: 1 }, { type: 'getFixes', key, requestId: -1 },
+    { type: 'applyFix', key, index: 0 }, { type: 'applyFix', key, version: 1 }, { type: 'applyFix', key, index: -1, version: 1 },
+    { type: 'applyFix', key, index: 50, version: 1 }, { type: 'applyFix', key, index: 0.5, version: 1 },
+    { type: 'applyFix', key, index: 0, version: 1, confirm: 'yes' }, { type: 'applyFix', key, index: 0, version: 1, editId: 'a b' },
+  ]) {
+    assert.equal(readEditorMessage(bad), undefined, JSON.stringify(bad));
+  }
+});
+
+test('fixScope: inside the block\'s lines, other lines too, or other files', () => {
+  const at = (sl: number, sc: number, el: number, ec: number) => ({ start: { line: sl, character: sc }, end: { line: el, character: ec } });
+  const range = { start: 4, end: 7 };
+  assert.equal(fixScope({ edits: [at(4, 0, 6, 9)], elsewhere: false }, range), 'block');
+  assert.equal(fixScope({ edits: [], elsewhere: false }, range), 'block');
+  assert.equal(fixScope({ edits: [at(3, 9, 4, 0)], elsewhere: false }, range), 'lines', 'from the line above');
+  assert.equal(fixScope({ edits: [at(6, 9, 7, 0)], elsewhere: false }, range), 'lines', 'to the start of the line below');
+  assert.equal(fixScope({ edits: [at(5, 0, 5, 1), at(20, 0, 20, 0)], elsewhere: false }, range), 'lines');
+  assert.equal(fixScope({ edits: [at(5, 0, 5, 1)], elsewhere: true }, range), 'files');
+});
+
+test('getFixes lists the fixes for the block\'s own problems; applyFix applies one, by number, inside the block', async () => {
+  const h = harness(FIX_DOC, { quickFixes: coreFixes });
+  const r = h.render();
+  const note = block(r, ':::note');
+  const child = block(r, 'First child');
+  const listed = await h.send({ type: 'getFixes', key: note.key, requestId: 1 });
+  assert.deepEqual(listed, { type: 'fixes', requestId: 1, key: note.key, version: 1, fixes: [{ title: 'Change to "blue"', scope: 'block' }] }, 'not the child\'s fix');
+  const own = await h.send({ type: 'getFixes', key: child.key, requestId: 2 });
+  assert.deepEqual(own?.type === 'fixes' && own.fixes, [{ title: 'Change to "green"', scope: 'block' }]);
+  const fm = await h.send({ type: 'getFixes', key: r.frontMatter!.key, requestId: 3 });
+  assert.deepEqual(fm?.type === 'fixes' && fm.fixes.map((f) => f.title), ['Change to "status"'], 'the front matter too');
+  const before = h.doc.text;
+  const reply = await h.send({ type: 'applyFix', key: child.key, index: 0, version: 1, editId: 'f1' });
+  assert.deepEqual(reply, { type: 'ack', editId: 'f1', version: 2, focus: { line: child.start } });
+  assert.ok(h.doc.text.includes(':badge[x]{color=green}'));
+  onlyLinesChanged(before, h.doc.text, child.start, child.end);
+  // Applied once: the list is gone with the version it belonged to.
+  assert.equal((await h.send({ type: 'applyFix', key: child.key, index: 0, version: 2, editId: 'f2' }))?.type, 'notice');
+});
+
+test('applyFix: a fix that writes outside the block, or to other files, is applied only once the page confirms it', async () => {
+  const outside = (doc: FakeDoc, range: LineRange): Promise<QuickFix[]> => Promise.resolve([{
+    title: 'Close it at the end',
+    edits: [{ start: { line: range.end + 2, character: 0 }, end: { line: range.end + 2, character: 0 } }],
+    elsewhere: false,
+    diagnostics: [],
+    apply: () => doc.applyEdits([{ from: doc.text.length, to: doc.text.length, insert: 'Added.\n' }]),
+  }, {
+    title: 'Rename the file',
+    edits: [],
+    elsewhere: true,
+    diagnostics: [],
+    apply: () => true,
+  }]);
+  const h = harness(FIX_DOC, { quickFixes: outside });
+  const r = h.render();
+  const warn = block(r, ':::warnin');
+  const listed = await h.send({ type: 'getFixes', key: warn.key, requestId: 1 });
+  assert.deepEqual(listed?.type === 'fixes' && listed.fixes.map((f) => f.scope), ['lines', 'files']);
+  const ask = await h.send({ type: 'applyFix', key: warn.key, index: 0, version: 1, editId: 'a' });
+  assert.deepEqual(ask, { type: 'confirmFix', editId: 'a', key: warn.key, index: 0, version: 1, text: 'This fix also changes lines outside this block.' });
+  assert.equal(h.doc.version, 1, 'nothing written');
+  const files = await h.send({ type: 'applyFix', key: warn.key, index: 1, version: 1 });
+  assert.equal(files?.type === 'confirmFix' && files.text, 'This fix also changes other files.');
+  assert.equal((await h.send({ type: 'applyFix', key: warn.key, index: 0, version: 1, confirm: true, editId: 'b' }))?.type, 'ack');
+  assert.ok(h.doc.text.endsWith('Last paragraph.\nAdded.\n'));
+});
+
+test('applyFix refuses a fix for another version, one never listed, and a block changed meanwhile', async () => {
+  const h = harness(FIX_DOC, { quickFixes: coreFixes });
+  const r = h.render();
+  const note = block(r, ':::note');
+  assert.equal((await h.send({ type: 'applyFix', key: note.key, index: 0, version: 1, editId: 'x' }))?.type, 'notice', 'not listed yet');
+  await h.send({ type: 'getFixes', key: note.key, requestId: 1 });
+  assert.equal((await h.send({ type: 'applyFix', key: note.key, index: 3, version: 1, editId: 'y' }))?.type, 'notice', 'no such fix');
+  assert.equal((await h.send({ type: 'applyFix', key: note.key, index: 0, version: 7, editId: 'z' }))?.type, 'notice', 'another version');
+  // A text editor changes the document: the fixes' ranges may be wrong now.
+  const at = h.doc.text.indexOf('Last');
+  h.doc.type(at, at, 'Very ');
+  const stale = await h.send({ type: 'applyFix', key: note.key, index: 0, version: 1, editId: 'w' });
+  assert.deepEqual(stale, { type: 'notice', editId: 'w', text: 'The document changed since the fixes were listed: choose the fix again.' });
+  assert.ok(h.doc.text.includes('color=bleu'), 'nothing applied');
+  // The block itself changed in a text editor: no fixes for it.
+  const body = h.doc.text.indexOf('Inside');
+  h.doc.type(body, body, 'Still ');
+  const gone = await h.send({ type: 'getFixes', key: note.key, requestId: 2 });
+  assert.deepEqual(gone?.type === 'fixes' && [gone.fixes, gone.error], [[], 'That block is no longer in the document.']);
+});
+
+test('getFixes: none without a provider, and none when the document changes while they are fetched', async () => {
+  const plain = harness(FIX_DOC);
+  const r = plain.render();
+  const none = await plain.send({ type: 'getFixes', key: block(r, ':::note').key, requestId: 1 });
+  assert.deepEqual(none?.type === 'fixes' && [none.fixes, none.error], [[], 'Quick fixes are not available here.']);
+  const racing = harness(FIX_DOC, {
+    quickFixes: (doc, range) => {
+      doc.type(doc.text.length, doc.text.length, 'More.\n');
+      return coreFixes(doc, range);
+    },
+  });
+  const r2 = racing.render();
+  const raced = await racing.send({ type: 'getFixes', key: block(r2, ':::note').key, requestId: 1 });
+  assert.deepEqual(raced?.type === 'fixes' && [raced.fixes, raced.error], [[], 'The document changed since the fixes were listed: choose the fix again.']);
+});
+
+test('quick fixes in a CRLF document: the same lines, and the document stays CRLF', async () => {
+  const crlf = FIX_DOC.replaceAll('\n', '\r\n');
+  const h = harness(crlf, { quickFixes: coreFixes });
+  const r = h.render();
+  const warn = block(r, ':::warnin');
+  const listed = await h.send({ type: 'getFixes', key: warn.key, requestId: 1 });
+  assert.deepEqual(listed?.type === 'fixes' && listed.fixes, [{ title: 'Change to ":::warning"', scope: 'block' }]);
+  await h.send({ type: 'applyFix', key: warn.key, index: 0, version: 1, editId: 'c' });
+  assert.ok(h.doc.text.includes('\r\n:::warning Heads up\r\nBody.\r\n'));
+  assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
+  onlyLinesChanged(crlf, h.doc.text, warn.start, warn.end);
 });

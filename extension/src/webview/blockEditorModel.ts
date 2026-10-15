@@ -1,7 +1,7 @@
 // The Block Editor page's logic that needs no DOM: labels, which blocks to keep, the order to put them in, keys.
 // The page (blockEditor.ts) does the DOM work; the unit tests import this module directly. Types only from the
 // session module: nothing of the .smd engine reaches the page.
-import type { BlockProblems, BlockView, FormField, InlineView, RenderMessage } from '../blockEditorSession';
+import type { BlockProblems, BlockView, FixView, FormField, InlineView, RenderMessage } from '../blockEditorSession';
 
 export interface LineRange {
   start: number;
@@ -76,6 +76,18 @@ export function mergeProblems(...lists: (BlockProblems | undefined)[]): BlockPro
 export function itemAnnouncement(view: Pick<BlockView, 'type' | 'container' | 'start' | 'end'>, problems: BlockProblems | undefined): string {
   const count = problemsLabel(problems);
   return count ? `${blockLabel(view)}, ${count}. Ctrl+. shows them.` : blockLabel(view);
+}
+
+/** A quick fix's button: its title, and what more it changes than the block. */
+export function fixLabel(fix: Pick<FixView, 'title' | 'scope'>): string {
+  if (fix.scope === 'lines') return `${fix.title} (also changes other lines)`;
+  return fix.scope === 'files' ? `${fix.title} (also changes other files)` : fix.title;
+}
+
+/** "1 quick fix: Change to "note".", "3 quick fixes." */
+export function fixesAnnouncement(fixes: readonly Pick<FixView, 'title' | 'scope'>[]): string {
+  if (fixes.length === 1) return `1 quick fix: ${fixLabel(fixes[0])}.`;
+  return fixes.length ? `${fixes.length} quick fixes.` : 'No quick fixes.';
 }
 
 /** Rendered HTML without its source line numbers, to tell whether a block that only moved looks the same. */

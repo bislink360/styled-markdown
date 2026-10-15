@@ -199,6 +199,11 @@
 /* A block's problems, listed (Ctrl+.). */
 :host .problems { margin: 0 0 6px; padding-left: 1.2em; max-height: 40vh; overflow: auto; }
 :host .problems li { margin: 2px 0; overflow-wrap: anywhere; }
+:host .fixes { margin: 0 0 6px; }
+:host .fixes-title { margin: 0 0 4px; font-weight: 600; }
+:host .fix-list { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+:host .fix-list button { text-align: left; overflow-wrap: anywhere; }
+:host .confirm { margin: 0 0 6px; overflow-wrap: anywhere; }
 
 /* Problem count on a block; the messages are in its tooltip and in the block's accessible description. */
 :host .badge {

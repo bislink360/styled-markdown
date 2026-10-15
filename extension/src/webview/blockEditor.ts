@@ -6,11 +6,13 @@
 // The document's rendered HTML goes into the page as in the preview. The editor's own controls (toolbar, menus,
 // forms, the source editor, notices, problem badges) live in closed shadow roots and are built with createElement
 // and textContent only.
-import type { BlockProblems, BlockView, FocusRequest, FormField, FrontMatterView, HostMessage, InlineView, RenderMessage, TableView } from '../blockEditorSession';
+import type {
+  BlockProblems, BlockView, FixesMessage, FixView, FocusRequest, FormField, FrontMatterView, HostMessage, InlineView, RenderMessage, TableView,
+} from '../blockEditorSession';
 import {
   FROZEN, blockLabel, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
   gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement,
-  itemForLine, listKeyTarget, mergeProblems, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  itemForLine, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction, type GridCell, type GridRequest, type GridSize, type LineRange,
 } from './blockEditorModel';
 
@@ -736,6 +738,7 @@ function start(rt: Runtime): void {
 
   function onAck(editId: string, version: number, focus: FocusRequest | undefined): void {
     acked = Math.max(acked, version);
+    fixApplied(editId);
     closedDrafts.delete(editId);
     cellEdits.delete(editId);
     if (editing?.pending.delete(editId)) editing.acked = Math.max(editing.acked, version);
@@ -801,11 +804,20 @@ function start(rt: Runtime): void {
         break;
       case 'notice':
         showNotice(msg.text);
-        if (msg.editId) gridRefused(msg.editId);
+        if (msg.editId) {
+          gridRefused(msg.editId);
+          fixRefused(msg.editId);
+        }
         if (msg.fallback) editSourceOf(msg.fallback);
         break;
       case 'flush':
         onFlush(msg.requestId);
+        break;
+      case 'fixes':
+        onFixes(msg);
+        break;
+      case 'confirmFix':
+        onConfirmFix(msg.editId, msg.index, msg.text);
         break;
     }
   });
@@ -1727,9 +1739,14 @@ function start(rt: Runtime): void {
     popHost.style.left = `${Math.max(0, rect.left + window.scrollX)}px`;
   }
 
-  // ---- Problems: the list of a block's problems ------------------------------------------------------------
-  // The badge on a block (or Ctrl+. on it, or Problems… in the toolbar) opens a list of its problems.
-  let problemsTarget: { item: HTMLElement; key: string } | null = null;
+  // ---- Problems: the list of a block's problems, and their quick fixes ----------------------------------------
+  // The badge on a block (or Ctrl+. on it, or Problems… in the toolbar) opens a list of its problems and asks the
+  // extension for their quick fixes. The page shows their titles and sends the one chosen by number (applyFix); the
+  // extension keeps the fixes themselves, and asks first when one changes more than the block.
+  let problemsTarget: {
+    item: HTMLElement; key: string; requestId: number; fixes: HTMLElement; version?: number; list?: FixView[]; editId?: string;
+  } | null = null;
+  let fixRequests = 0;
 
   function openProblems(item: HTMLElement): void {
     const view = viewOf.get(item);
@@ -1738,10 +1755,15 @@ function start(rt: Runtime): void {
       showNotice('This block has no problems.');
       return;
     }
+    // Whatever was typed is written first, so the fixes are for the block as it is.
+    if (editing) finishEdit(false);
     closePop(false);
     const title = h('p', { className: 'pop-title', text: `Problems: ${blockLabel(view)}`, attrs: { id: 'pop-title' } });
     const list = h('ul', { className: 'problems' }, problems.messages.map((m) => h('li', { text: m })));
     const more = problems.count > problems.messages.length ? h('p', { className: 'hint', text: `And ${problems.count - problems.messages.length} more.` }) : null;
+    const fixes = h(DIV, { className: 'fixes', attrs: { role: 'group', [ARIA_LABEL]: 'Quick fixes', 'aria-live': 'polite' } }, [
+      h('p', { className: 'hint', text: 'Looking for quick fixes…' }),
+    ]);
     const actions = h(DIV, { className: 'actions' }, [
       button('Edit source', () => {
         closeProblems(false);
@@ -1749,11 +1771,67 @@ function start(rt: Runtime): void {
       }),
       button('Close', () => closeProblems(true)),
     ]);
-    pop.replaceChildren(title, list, ...(more ? [more] : []), actions);
-    problemsTarget = { item, key: view.key };
+    pop.replaceChildren(title, list, ...(more ? [more] : []), fixes, actions);
+    const requestId = ++fixRequests;
+    problemsTarget = { item, key: view.key, requestId, fixes };
     placePop(item);
     actions.querySelector('button')?.focus();
     rt.announce(`${problemsLabel(problems)}: ${problems.messages.join('. ')}`);
+    post({ type: 'getFixes', key: view.key, requestId });
+  }
+
+  /** The quick fixes arrived: one button each, or why there are none. */
+  function onFixes(msg: FixesMessage): void {
+    const target = problemsTarget;
+    if (target?.requestId !== msg.requestId) return;
+    target.version = msg.version;
+    target.list = msg.fixes;
+    if (!msg.fixes.length) {
+      target.fixes.replaceChildren(h('p', { className: 'hint', text: msg.error ?? 'No quick fixes for these problems.' }));
+      return;
+    }
+    const buttons = msg.fixes.map((fix, index) => button(fixLabel(fix), () => applyFix(index, false), { title: fix.title }));
+    target.fixes.replaceChildren(h('p', { className: 'fixes-title', text: 'Quick fixes' }), h(DIV, { className: 'fix-list' }, buttons));
+    rt.announce(fixesAnnouncement(msg.fixes));
+  }
+
+  function applyFix(index: number, confirm: boolean): void {
+    const target = problemsTarget;
+    if (!target || target.version === undefined) return;
+    target.editId = nextId();
+    post({ type: 'applyFix', key: target.key, index, version: target.version, ...(confirm ? { confirm: true } : {}), editId: target.editId });
+  }
+
+  /** The extension asks before a fix that changes more than the block: Apply or Cancel, in the list. */
+  function onConfirmFix(editId: string | undefined, index: number, text: string): void {
+    const target = problemsTarget;
+    if (!target || target.editId !== editId) return;
+    const title = target.list?.[index]?.title ?? 'This fix';
+    const apply = button('Apply anyway', () => applyFix(index, true));
+    const cancel = button('Cancel', () => closeProblems(true));
+    target.fixes.replaceChildren(h('p', { className: 'confirm', text: `${title}: ${text} Apply it?` }), h(DIV, { className: 'actions' }, [apply, cancel]));
+    apply.focus();
+    rt.announce(`${text} Apply it?`);
+  }
+
+  /** A fix was not applied (the document changed since it was listed): the list asks for the fixes again. */
+  function fixRefused(editId: string): void {
+    const target = problemsTarget;
+    if (!target || target.editId !== editId) return;
+    target.editId = undefined;
+    target.version = undefined;
+    target.requestId = ++fixRequests;
+    target.fixes.replaceChildren(h('p', { className: 'hint', text: 'Looking for quick fixes…' }));
+    post({ type: 'getFixes', key: target.key, requestId: target.requestId });
+  }
+
+  /** A fix was applied: the list closes, and focus goes back to the block once it is rendered again. */
+  function fixApplied(editId: string): boolean {
+    const target = problemsTarget;
+    if (!target || target.editId !== editId) return false;
+    closeProblems(false);
+    rt.announce('Quick fix applied. Ctrl+Z undoes it.');
+    return true;
   }
 
   function closeProblems(refocus: boolean): void {

@@ -39,6 +39,8 @@ export type EditorMessage =
   | SetInlineMessage
   | TableMessage
   | { type: 'addFrontMatter'; editId?: string }
+  | { type: 'getFixes'; key: string; requestId: number }
+  | ApplyFixMessage
   | { type: 'toggleTask'; line: number }
   | { type: 'openLink'; href: string }
   | { type: 'revealLine'; line: number }
@@ -69,6 +71,19 @@ export type TableMessage =
   | { type: 'tableRow'; key: string; op: 'insert' | 'delete'; at: number; editId?: string }
   | { type: 'tableCol'; key: string; op: 'insert' | 'delete' | 'align'; at: number; align?: TableAlign; editId?: string }
   | { type: 'tableAlign'; key: string; editId?: string };
+
+/**
+ * Apply the `index`th quick fix the host listed for a block (`fixes`) at document `version`. The page names the fix,
+ * never its edits. `confirm`: the user agreed that it also changes lines outside the block, or other files.
+ */
+export interface ApplyFixMessage {
+  type: 'applyFix';
+  key: string;
+  index: number;
+  version: number;
+  confirm?: true;
+  editId?: string;
+}
 
 /** The messages the session itself answers; the provider runs the others (toggleTask, openLink, revealLine). */
 export type SessionMessage = Exclude<EditorMessage, { type: 'toggleTask' | 'openLink' | 'revealLine' }>;
@@ -196,8 +211,33 @@ export interface FocusRequest {
   cell?: TableCellRef;
 }
 
+/**
+ * Where a quick fix changes the document: only the block's own lines, lines outside it too, or other files as
+ * well (or it creates, renames or deletes files).
+ */
+export type FixScope = 'block' | 'lines' | 'files';
+
+/** A quick fix as the page lists it: its title and what it changes. */
+export interface FixView {
+  title: string;
+  scope: FixScope;
+}
+
+/** The quick fixes of a block at a document version; `error` says why there are none to offer. */
+export interface FixesMessage {
+  type: 'fixes';
+  requestId: number;
+  key: string;
+  version: number;
+  fixes: FixView[];
+  error?: string;
+}
+
 export type HostMessage =
   | RenderMessage
+  | FixesMessage
+  /** A fix that changes more than the block: the page asks the user, then sends applyFix again with `confirm`. */
+  | { type: 'confirmFix'; editId?: string; key: string; index: number; version: number; text: string }
   | { type: 'ack'; editId: string; version: number; focus?: FocusRequest }
   | { type: 'conflict'; editId: string; key: string; currentText: string | null }
   /** `fallback`: the key of a block to edit in its source instead (an inline item the form can't change). */
@@ -298,6 +338,17 @@ function readTableCol(m: Raw): EditorMessage | undefined {
   return align ? withId({ type: 'tableCol', key: m.key, op: 'align', at: m.at, align }, m.editId) : undefined;
 }
 
+/** The most quick fixes the host lists for a block. */
+export const MAX_FIXES = 50;
+
+function readApplyFix(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || !isCount(m.index) || m.index >= MAX_FIXES || !isCount(m.version) || !optionalId(m.editId)) return undefined;
+  if (m.confirm !== undefined && m.confirm !== true) return undefined;
+  const message: ApplyFixMessage = { type: 'applyFix', key: m.key, index: m.index, version: m.version };
+  if (m.confirm) message.confirm = true;
+  return withId(message, m.editId);
+}
+
 const READERS: Readonly<Record<string, Reader>> = {
   ready: () => ({ type: 'ready' }),
   edit: (m) =>
@@ -319,6 +370,8 @@ const READERS: Readonly<Record<string, Reader>> = {
   tableCol: readTableCol,
   tableAlign: (m) => (isKey(m.key) && optionalId(m.editId) ? withId({ type: 'tableAlign', key: m.key }, m.editId) : undefined),
   addFrontMatter: (m) => (optionalId(m.editId) ? withId({ type: 'addFrontMatter' }, m.editId) : undefined),
+  getFixes: (m) => (isKey(m.key) && isCount(m.requestId) ? { type: 'getFixes', key: m.key, requestId: m.requestId } : undefined),
+  applyFix: readApplyFix,
   toggleTask: (m) => (isCount(m.line) ? { type: 'toggleTask', line: m.line } : undefined),
   openLink: (m) => (isText(m.href, 4096) && m.href !== '' ? { type: 'openLink', href: m.href } : undefined),
   revealLine: (m) => (isCount(m.line) ? { type: 'revealLine', line: m.line } : undefined),
@@ -453,6 +506,34 @@ export interface SessionOptions {
   scan?(lines: readonly string[]): InlineItem[];
   /** A table block's lines read for the grid (readTable with the render's allowHtml). */
   table?(lines: readonly string[]): TableSource | TableRefusal;
+  /** The quick fixes VS Code has for the problems on lines [start, end): code actions of kind quickfix with an edit. */
+  quickFixes?(range: LineRange): PromiseLike<readonly QuickFix[]>;
+}
+
+/** A position in the document: a zero-based line and a UTF-16 column. */
+export interface DocPosition {
+  line: number;
+  character: number;
+}
+
+/** A quick fix as a provider made it. The session checks where it writes; `apply` writes its whole edit as made. */
+export interface QuickFix {
+  title: string;
+  /** The ranges its text edits replace in this document. */
+  edits: readonly { start: DocPosition; end: DocPosition }[];
+  /** It also changes other files, or creates, renames or deletes files. */
+  elsewhere: boolean;
+  /** The lines of the problems it fixes (empty when the provider didn't say). */
+  diagnostics: readonly number[];
+  /** Apply its WorkspaceEdit exactly as the provider made it; false when that fails. */
+  apply(): PromiseLike<boolean> | boolean;
+}
+
+/** Where a fix writes, against a block's lines [start, end): inside them only, other lines too, or other files. */
+export function fixScope(fix: Pick<QuickFix, 'edits' | 'elsewhere'>, range: LineRange): FixScope {
+  if (fix.elsewhere) return 'files';
+  // An edit that reaches the start of the line after the block changes that line's place: it is outside.
+  return fix.edits.every((e) => e.start.line >= range.start && e.end.line < range.end) ? 'block' : 'lines';
 }
 
 /** What the integration test (smd._blockEditorStatus) reads. */
@@ -494,6 +575,10 @@ const SEVERITY_RANK: Readonly<Record<DiagnosticSeverity, number>> = { error: 0, 
 const NOT_FOUND = 'That block is no longer in the document.';
 const TABLE = 'table';
 const TABLE_SOURCE = 'Edit the table\'s source instead.';
+const NO_FIXES = 'Quick fixes are not available here.';
+const FIXES_STALE = 'The document changed since the fixes were listed: choose the fix again.';
+/** How many blocks' quick fixes are kept. */
+const MAX_FIX_CACHE = 16;
 
 const lf = (text: string) => text.replaceAll('\r\n', '\n');
 const isBlankText = (text: string) => text.trim() === '';
@@ -778,6 +863,8 @@ export class BlockEditorSession {
   private inlineRendered: { version: number; items: Map<string, readonly RenderedInline[]> } = { version: -1, items: new Map() };
   /** The document version the session's last edit made. */
   private applied = 0;
+  /** The quick fixes last listed for each block, and the document version they belong to. */
+  private readonly fixCache = new Map<string, { version: number; range: LineRange; fixes: readonly QuickFix[] }>();
   private readonly waiting = new Map<number, () => void>();
 
   constructor(
@@ -960,6 +1047,10 @@ export class BlockEditorSession {
         return this.editTable(message);
       case 'addFrontMatter':
         return this.addFrontMatter(message.editId);
+      case 'getFixes':
+        return this.getFixes(message.key, message.requestId);
+      case 'applyFix':
+        return this.applyFix(message);
     }
   }
 
@@ -971,17 +1062,21 @@ export class BlockEditorSession {
 
   /** The block a key names, if it still holds the text it had when the page got it; else a conflict is sent. */
   private found(key: string, editId: string | undefined): Found | undefined {
+    const result = this.lookup(key);
+    if (!result.found) this.conflict(editId, key, result.current);
+    return result.found;
+  }
+
+  /** The block a key names, if it still holds the text it had when the page got it; else the text on its lines now. */
+  private lookup(key: string): { found?: Found; current: string | null } {
     const text = this.doc.getText();
     const lines = splitLines(text);
     const entry = newer(this.pins.get(key), this.known.get(key));
     const range = entry && this.log.mapRange(entry, entry.version, this.doc.version);
     const inside = range !== undefined && range.end > range.start && range.end <= lines.length;
     const current = inside ? lines.slice(range.start, range.end).join('\n') : undefined;
-    if (!range || current === undefined || current !== entry?.text) {
-      this.conflict(editId, key, current ?? null);
-      return undefined;
-    }
-    return { range, text, lines };
+    if (!range || current === undefined || current !== entry?.text) return { current: current ?? null };
+    return { found: { range, text, lines }, current };
   }
 
   private async edit(m: Extract<EditorMessage, { type: 'edit' }>): Promise<void> {
@@ -1169,6 +1264,61 @@ export class BlockEditorSession {
     });
   }
 
+  /**
+   * List the quick fixes for a block's problems: VS Code's code actions of kind quickfix that carry an edit (the
+   * provider filters them), less those that fix a problem of a block inside it. They are kept, by block and document
+   * version, for applyFix; the page only gets their titles and what they change.
+   */
+  private async getFixes(key: string, requestId: number): Promise<void> {
+    const version = this.doc.version;
+    const reply = (fixes: FixView[], error?: string) =>
+      this.options.post(error === undefined ? { type: 'fixes', requestId, key, version, fixes } : { type: 'fixes', requestId, key, version, fixes, error });
+    const { found } = this.lookup(key);
+    if (!found) return reply([], NOT_FOUND);
+    if (!this.options.quickFixes) return reply([], NO_FIXES);
+    const all = await this.options.quickFixes(found.range);
+    // The fixes' ranges are only good for the document they were made for.
+    if (this.doc.version !== version) return reply([], FIXES_STALE);
+    const fixes = this.ownFixes(all, found).slice(0, MAX_FIXES);
+    this.fixCache.delete(key);
+    this.fixCache.set(key, { version, range: found.range, fixes });
+    if (this.fixCache.size > MAX_FIX_CACHE) this.fixCache.delete(this.fixCache.keys().next().value!);
+    reply(fixes.map((f) => ({ title: f.title.slice(0, MAX_VALUE), scope: fixScope(f, found.range) })));
+  }
+
+  /** The fixes for the block's own problems: not those of a block inside it, which that block lists. */
+  private ownFixes(fixes: readonly QuickFix[], found: Found): QuickFix[] {
+    const segments = this.options.segment?.(found.text) ?? this.options.render(found.text).segments;
+    const owned = (line: number) => {
+      const owner = innermostSegment(segments, line);
+      return owner?.start === found.range.start && owner.end === found.range.end;
+    };
+    return fixes.filter((f) => f.diagnostics.every(owned));
+  }
+
+  /**
+   * Apply a listed quick fix, as its provider made it, if the document is still the version it was listed for and
+   * the block still holds its text. A fix that writes outside the block's lines, or to other files, is applied only
+   * once the page confirms it.
+   */
+  private async applyFix(m: ApplyFixMessage): Promise<void> {
+    const cached = this.fixCache.get(m.key);
+    const fix = cached?.fixes[m.index];
+    if (!cached || !fix || cached.version !== m.version || this.doc.version !== m.version) return this.notice(m.editId, FIXES_STALE);
+    const found = this.found(m.key, m.editId);
+    if (!found) return;
+    const scope = fixScope(fix, found.range);
+    if (scope !== 'block' && !m.confirm) {
+      const text = scope === 'files' ? 'This fix also changes other files.' : 'This fix also changes lines outside this block.';
+      const confirm = { type: 'confirmFix' as const, key: m.key, index: m.index, version: m.version, text };
+      this.options.post(m.editId === undefined ? confirm : { ...confirm, editId: m.editId });
+      return;
+    }
+    this.fixCache.delete(m.key);
+    if (!(await this.applyWith(() => fix.apply()))) return this.notice(m.editId, NOT_APPLIED);
+    this.ack(m.editId, { line: found.range.start });
+  }
+
   private async addFrontMatter(editId: string | undefined): Promise<void> {
     const text = this.doc.getText();
     if (parseFrontMatter(text).present) return this.notice(editId, 'The document already has front matter.');
@@ -1184,9 +1334,14 @@ export class BlockEditorSession {
     return ok;
   }
 
-  private async apply(edits: readonly TextEdit[]): Promise<boolean> {
+  private apply(edits: readonly TextEdit[]): Promise<boolean> {
+    return this.applyWith(() => this.doc.applyEdits(edits));
+  }
+
+  /** Make a change to the document (our edits, or a quick fix's), and remember the version it made. */
+  private async applyWith(write: () => PromiseLike<boolean> | boolean): Promise<boolean> {
     const before = this.doc.version;
-    const ok = (await this.doc.applyEdits(edits)) !== false;
+    const ok = (await write()) !== false;
     // The version our edit made, also if the document reports the change only after the edit resolves.
     this.applied = ok ? Math.max(this.doc.version, before + 1) : this.doc.version;
     return ok;

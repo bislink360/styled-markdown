@@ -4,7 +4,10 @@
 // or "Styled Markdown: Open Block Editor"; never the default editor for .smd files.
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { BlockEditorSession, readEditorMessage, type BlockEditorStatus, type DiagnosticSeverity, type DocumentPort, type LineDiagnostic } from './blockEditorSession';
+import {
+  BlockEditorSession, readEditorMessage, type BlockEditorStatus, type DiagnosticSeverity, type DocumentPort, type LineDiagnostic, type QuickFix,
+} from './blockEditorSession';
+import type { LineRange } from './core/sourceEdit';
 import { renderBlocks, segmentSmd } from './core/blocks';
 import { scanInline } from './core/inlineEdit';
 import { readTable } from './core/tableEdit';
@@ -25,6 +28,33 @@ const SEVERITIES: ReadonlyMap<vscode.DiagnosticSeverity, DiagnosticSeverity> = n
   [vscode.DiagnosticSeverity.Error, 'error'],
   [vscode.DiagnosticSeverity.Warning, 'warning'],
 ]);
+
+/** How long a quick fix request waits for diagnostics of the document's current version. */
+const DIAGNOSTICS_WAIT = 1000;
+
+/** A code action the editor offers: a quick fix with an edit, no command, not disabled. */
+function isEditFix(action: vscode.CodeAction | vscode.Command): action is vscode.CodeAction & { edit: vscode.WorkspaceEdit } {
+  // A Command's `command` is its id; a CodeAction's is an optional Command to run after its edit.
+  if (typeof action.command === 'string') return false;
+  const fix = action as vscode.CodeAction;
+  return !!fix.edit && !fix.command && !fix.disabled && !!fix.kind && vscode.CodeActionKind.QuickFix.contains(fix.kind);
+}
+
+/** A code action as the session sees it: where it writes in this document, whether elsewhere, and how to apply it. */
+function quickFix(action: vscode.CodeAction & { edit: vscode.WorkspaceEdit }, uri: vscode.Uri): QuickFix {
+  const entries = action.edit.entries();
+  const here = entries.filter(([u]) => u.toString() === uri.toString());
+  const resources = new Set(entries.map(([u]) => u.toString()));
+  const position = (p: vscode.Position) => ({ line: p.line, character: p.character });
+  return {
+    title: action.title,
+    edits: here.flatMap(([, edits]) => edits.map((e) => ({ start: position(e.range.start), end: position(e.range.end) }))),
+    // Other documents, or file operations (which `size` counts but `entries` doesn't list).
+    elsewhere: here.length !== entries.length || action.edit.size > resources.size,
+    diagnostics: (action.diagnostics ?? []).map((d) => d.range.start.line),
+    apply: () => vscode.workspace.applyEdit(action.edit),
+  };
+}
 
 /** The TextDocument as blockEditorSession.ts sees it. */
 function documentPort(document: vscode.TextDocument): DocumentPort {
@@ -49,6 +79,9 @@ class BlockEditorPanel implements vscode.Disposable {
   readonly session: BlockEditorSession;
   private readonly disposables: vscode.Disposable[] = [];
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** The document version the last diagnostics were reported for, and who waits for the next ones. */
+  private diagnosed: number;
+  private readonly diagnosedWaiters: (() => void)[] = [];
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -56,7 +89,10 @@ class BlockEditorPanel implements vscode.Disposable {
     private readonly panel: vscode.WebviewPanel,
   ) {
     const options = () => renderOptions(document);
+    this.diagnosed = document.version;
     this.session = new BlockEditorSession(documentPort(document), {
+      // Quick fixes from the badge of a block: the session checks where they write, and asks before more than the block.
+      quickFixes: (range) => this.quickFixes(range),
       // Numbered inline directives and spans: the page edits them in small forms (setInline).
       render: (text) => renderBlocks(text, { ...options(), inlineIndex: true }),
       scan: (lines) => scanInline(lines, { allowHtml: options().allowHtml }),
@@ -93,7 +129,10 @@ class BlockEditorPanel implements vscode.Disposable {
         this.schedule();
       }),
       vscode.languages.onDidChangeDiagnostics((e) => {
-        if (e.uris.some((u) => u.toString() === uri)) this.schedule();
+        if (!e.uris.some((u) => u.toString() === uri)) return;
+        this.diagnosed = document.version;
+        this.diagnosedWaiters.splice(0).forEach((resolve) => resolve());
+        this.schedule();
       }),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('smd.preview')) this.schedule();
@@ -138,6 +177,34 @@ class BlockEditorPanel implements vscode.Disposable {
       message: d.message,
       severity: SEVERITIES.get(d.severity) ?? 'info',
     }));
+  }
+
+  /**
+   * The quick fixes for the problems on a block's lines: code actions of kind quickfix that carry an edit and run
+   * no command (applying one writes only its edit), asked for once the diagnostics belong to this document version,
+   * so their ranges are the document's own.
+   */
+  private async quickFixes(range: LineRange): Promise<QuickFix[]> {
+    await this.diagnosticsCurrent();
+    const doc = this.document;
+    const last = Math.min(Math.max(range.start, range.end - 1), doc.lineCount - 1);
+    const lines = new vscode.Range(range.start, 0, last, doc.lineAt(last).text.length);
+    const actions = await vscode.commands.executeCommand<(vscode.CodeAction | vscode.Command)[] | undefined>(
+      'vscode.executeCodeActionProvider', doc.uri, lines, vscode.CodeActionKind.QuickFix.value,
+    );
+    return (actions ?? []).filter(isEditFix).map((action) => quickFix(action, doc.uri));
+  }
+
+  /** Resolves once diagnostics have been reported for the document as it is now (or after a second). */
+  private diagnosticsCurrent(): Promise<void> {
+    if (this.diagnosed === this.document.version) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, DIAGNOSTICS_WAIT);
+      this.diagnosedWaiters.push(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
 
   private async onMessage(raw: unknown): Promise<void> {
