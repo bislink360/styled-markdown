@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  FROZEN, blockLabel, blockName, desiredOrder, editLabel, findView, followEdit, formRequest, inlineAnnouncement, inlineItemLabel, inlineRequest,
-  isUndoRedo, itemForLine, linesLabel, listKeyTarget, orderMoves, problemsLabel, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead,
-  withoutLines,
+  FROZEN, blockLabel, blockName, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
+  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemForLine, linesLabel,
+  listKeyTarget, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  type GridAction,
 } from '../src/webview/blockEditorModel';
 import type { BlockView } from '../src/blockEditorSession';
+import { cellText } from '../src/core/tableEdit';
 import { prng } from './fuzz/generate';
 
 // The Block Editor page's logic (src/webview/blockEditorModel.ts), and what the page script may and may not do.
@@ -168,6 +170,86 @@ test('page: inline items get a popover in a closed shadow root, keyboard stops i
   assert.match(pageSource, /if \(escape\) closeInline\(true\);/);
   assert.match(pageSource, /if \(msg\.fallback\) editSourceOf\(msg\.fallback\);/, 'a refused inline change opens the block\'s source');
   assert.match(pageSource, /el\.setAttribute\(TABINDEX, '0'\);/);
+});
+
+test('grid: arrow keys, Enter and Shift+Enter move between cells, ← → only from the edges of the text, never past the grid', () => {
+  const size = { rows: 3, cols: 2 };
+  const edges = { atStart: true, atEnd: true };
+  const inside = { atStart: false, atEnd: false };
+  assert.deepEqual(gridKeyTarget('ArrowDown', { row: 0, col: 1 }, size, inside), { row: 1, col: 1 });
+  assert.deepEqual(gridKeyTarget('ArrowUp', { row: 2, col: 0 }, size, inside), { row: 1, col: 0 });
+  assert.deepEqual(gridKeyTarget('Enter', { row: 1, col: 0 }, size, inside), { row: 2, col: 0 });
+  assert.deepEqual(gridKeyTarget('Enter', { row: 1, col: 0 }, size, inside, true), { row: 0, col: 0 }, 'Shift+Enter goes up');
+  assert.equal(gridKeyTarget('Enter', { row: 2, col: 0 }, size, inside), null, 'the last row: Enter stays');
+  assert.equal(gridKeyTarget('ArrowRight', { row: 0, col: 0 }, size, inside), null, 'inside the text, the caret moves');
+  assert.deepEqual(gridKeyTarget('ArrowRight', { row: 0, col: 0 }, size, edges), { row: 0, col: 1 });
+  assert.deepEqual(gridKeyTarget('ArrowLeft', { row: 0, col: 1 }, size, { atStart: true, atEnd: false }), { row: 0, col: 0 });
+  assert.equal(gridKeyTarget('ArrowLeft', { row: 0, col: 0 }, size, edges), null);
+  assert.equal(gridKeyTarget('ArrowUp', { row: 0, col: 0 }, size, edges), null);
+  assert.equal(gridKeyTarget('Tab', { row: 0, col: 0 }, size, edges), null, 'Tab is the browser\'s: the next field');
+  assert.equal(gridKeyTarget('toString', { row: 0, col: 0 }, size, edges), null);
+  assert.deepEqual(clampCell({ row: 9, col: -1 }, size), { row: 2, col: 0 });
+});
+
+test('grid: cell labels, the grid\'s label and announcements', () => {
+  const header = ['Name', ' ', 'Age'];
+  assert.equal(cellLabel(header, { row: 0, col: 2 }, 4), 'Header, column 3 of 3');
+  assert.equal(cellLabel(header, { row: 2, col: 0 }, 4), 'Name, row 2 of 3');
+  assert.equal(cellLabel(header, { row: 1, col: 1 }, 4), 'Column 2, row 1 of 3', 'an empty header: the column number');
+  assert.equal(gridLabel({ start: 4, end: 8 }), 'Table grid, lines 5–8');
+  assert.equal(gridAnnouncement({ type: 'tableRow', op: 'insert', at: 2 }), 'Row 2 added.');
+  assert.equal(gridAnnouncement({ type: 'tableRow', op: 'delete', at: 1 }), 'Row 1 deleted.');
+  assert.equal(gridAnnouncement({ type: 'tableCol', op: 'insert', at: 0 }), 'Column 1 added.');
+  assert.equal(gridAnnouncement({ type: 'tableCol', op: 'delete', at: 2 }), 'Column 3 deleted.');
+  assert.equal(gridAnnouncement({ type: 'tableCol', op: 'align', at: 1, align: 'center' }), 'Column 2 aligned centered.');
+  assert.equal(gridAnnouncement({ type: 'tableCol', op: 'align', at: 1, align: 'none' }), 'Column 2 alignment removed.');
+  assert.equal(gridAnnouncement({ type: 'tableAlign' }), 'Table aligned.');
+});
+
+test('grid: the toolbar\'s actions as requests, and when they can be taken', () => {
+  const cell = { row: 2, col: 1 };
+  const expected: Record<GridAction, unknown> = {
+    rowAbove: { type: 'tableRow', op: 'insert', at: 2 },
+    rowBelow: { type: 'tableRow', op: 'insert', at: 3 },
+    delRow: { type: 'tableRow', op: 'delete', at: 2 },
+    colLeft: { type: 'tableCol', op: 'insert', at: 1 },
+    colRight: { type: 'tableCol', op: 'insert', at: 2 },
+    delCol: { type: 'tableCol', op: 'delete', at: 1 },
+    alignTable: { type: 'tableAlign' },
+  };
+  for (const [action, request] of Object.entries(expected)) assert.deepEqual(gridRequest(action as GridAction, cell), request, action);
+  const header = { row: 0, col: 0 };
+  assert.equal(gridActionEnabled('rowAbove', header, { rows: 3, cols: 2 }), false, 'nothing above the header');
+  assert.equal(gridActionEnabled('delRow', header, { rows: 3, cols: 2 }), false, 'the header stays');
+  assert.equal(gridActionEnabled('rowBelow', header, { rows: 1, cols: 2 }), true);
+  assert.equal(gridActionEnabled('delCol', header, { rows: 3, cols: 1 }), false, 'the last column stays');
+  assert.equal(gridActionEnabled('delRow', cell, { rows: 3, cols: 2 }), true);
+});
+
+test('grid: a cell is written as the extension writes it, and a render keeps what the user typed and has not written', () => {
+  const r = prng(5);
+  const chars = ['a', '|', '\\', ' ', '`', 'é'];
+  for (let i = 0; i < 500; i++) {
+    const text = Array.from({ length: Math.floor(r() * 8) }, () => chars[Math.floor(r() * chars.length)]).join('');
+    assert.equal(cellSource(text), cellText(text), JSON.stringify(text));
+  }
+  // Written, and the render has it: the user's own text stays while they are in the cell (a trailing space they typed).
+  assert.equal(refreshedValue('a ', 'a', 'a', true), 'a ');
+  assert.equal(refreshedValue('a|b', 'a\\|b', 'a\\|b', false), 'a\\|b', 'out of the cell: the text as written');
+  assert.equal(refreshedValue('x', 'x', 'y', false), 'y', 'changed in another editor');
+  assert.equal(refreshedValue('typed', 'x', 'y', true), 'typed', 'not written yet: kept');
+  assert.equal(refreshedValue('typed', 'x', 'y', false), 'typed');
+});
+
+test('page: the grid is a labelled role="grid" table of text fields in a closed shadow root, and sends the table messages', () => {
+  assert.match(pageSource, /const root = chromeRoot\(host\);\n\s+const label = h\('p', \{ className: 'label', text: gridLabel\(view\), attrs: \{ id: 'grid-label' \} \}\);/);
+  assert.match(pageSource, /h\('table', \{ className: 'grid', attrs: \{ role: 'grid', 'aria-labelledby': 'grid-label' \} \}\)/);
+  assert.match(pageSource, /input\.setAttribute\(ARIA_LABEL, cellLabel\(/);
+  assert.match(pageSource, /role: 'toolbar', \[ARIA_LABEL\]: 'Table rows and columns'/);
+  assert.match(pageSource, /type: 'tableCell', key: g\.key/);
+  assert.match(pageSource, /post\(\{ \.\.\.request, key: g\.key, editId \}\)/);
+  assert.match(pageSource, /rt\.announce\(gridAnnouncement\(request\)\)/);
+  assert.match(pageSource, /g\.timer = setTimeout\(\(\) => commitCell\(g, cell\), AUTOSAVE_DELAY\)/, 'typing is written after a pause, as in the source editor');
 });
 
 test('textareaRows grows with the text, within limits', () => {

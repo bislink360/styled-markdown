@@ -876,3 +876,236 @@ test('property: setInline on every item of every example and corpus file changes
   }
   assert.ok(applied > 20, `inline edits applied (${applied})`);
 });
+
+// ---------------------------------------------------------------------------
+// Tables: the grid
+// ---------------------------------------------------------------------------
+
+const TABLE_DOC = [
+  '# Tables',
+  '',
+  '| Name  | Status | Notes |',
+  '| ----- | :----: | ----- |',
+  '| Alice | :badge[Done]{color=green} | `a\\|b` |',
+  '| Bob   | open   | x \\| y |',
+  '',
+  ':::note Inside',
+  'Name | Age',
+  '--- | ---:',
+  'Carol | 41',
+  ':::',
+  '',
+  '| a | b |',
+  '|---|---|',
+  '| ragged |',
+  '',
+].join('\n');
+
+const ack = (editId: string, version: number, line: number, cell: { row: number; col: number }) => ({ type: 'ack', editId, version, focus: { line, cell } });
+
+test('readEditorMessage: the table messages with their fields; anything malformed is ignored', () => {
+  const key = 'abc123#0';
+  const valid: [unknown, unknown][] = [
+    [{ type: 'tableCell', key, row: 2, col: 1, text: 'x', editId: 't1' }, { type: 'tableCell', key, row: 2, col: 1, text: 'x', editId: 't1' }],
+    [{ type: 'tableCell', key, row: 0, col: 0, text: '' }, { type: 'tableCell', key, row: 0, col: 0, text: '' }],
+    [{ type: 'tableRow', key, op: 'insert', at: 1 }, { type: 'tableRow', key, op: 'insert', at: 1 }],
+    [{ type: 'tableRow', key, op: 'delete', at: 3, editId: 'r' }, { type: 'tableRow', key, op: 'delete', at: 3, editId: 'r' }],
+    [{ type: 'tableCol', key, op: 'insert', at: 0 }, { type: 'tableCol', key, op: 'insert', at: 0 }],
+    [{ type: 'tableCol', key, op: 'delete', at: 2, extra: 1 }, { type: 'tableCol', key, op: 'delete', at: 2 }],
+    [{ type: 'tableCol', key, op: 'align', at: 1, align: 'center' }, { type: 'tableCol', key, op: 'align', at: 1, align: 'center' }],
+    [{ type: 'tableCol', key, op: 'align', at: 1, align: 'none' }, { type: 'tableCol', key, op: 'align', at: 1, align: 'none' }],
+    [{ type: 'tableAlign', key, editId: 'a' }, { type: 'tableAlign', key, editId: 'a' }],
+  ];
+  for (const [raw, read] of valid) assert.deepEqual(readEditorMessage(raw), read, JSON.stringify(raw));
+  const invalid: unknown[] = [
+    { type: 'tableCell', key, row: 1, col: 1 },
+    { type: 'tableCell', key, row: -1, col: 1, text: 'x' },
+    { type: 'tableCell', key, row: 1.5, col: 1, text: 'x' },
+    { type: 'tableCell', key, row: 1, col: 100_001, text: 'x' },
+    { type: 'tableCell', key, row: 1, col: 1, text: 'x'.repeat(10_001) },
+    { type: 'tableCell', key: 'nope', row: 1, col: 1, text: 'x' },
+    { type: 'tableCell', key, row: 1, col: 1, text: 'x', editId: 'bad id' },
+    { type: 'tableRow', key, op: 'move', at: 1 },
+    { type: 'tableRow', key, at: 1 },
+    { type: 'tableRow', key, op: 'insert', at: '1' },
+    { type: 'tableCol', key, op: 'align', at: 1 },
+    { type: 'tableCol', key, op: 'align', at: 1, align: 'justify' },
+    { type: 'tableCol', key, op: 'insert', at: 1, align: 'left' },
+    { type: 'tableCol', key, op: 'delete' },
+    { type: 'tableAlign' },
+    { type: 'tableAlign', key, editId: 7 },
+  ];
+  for (const m of invalid) assert.equal(readEditorMessage(m), undefined, JSON.stringify(m).slice(0, 120));
+});
+
+test('render: a table block has its cells as written and its alignments, at the top level and in a container; a ragged one says why not', () => {
+  const r = harness(TABLE_DOC).render();
+  assert.deepEqual(block(r, '| Name').table, {
+    rows: [['Name', 'Status', 'Notes'], ['Alice', ':badge[Done]{color=green}', '`a\\|b`'], ['Bob', 'open', 'x \\| y']],
+    aligns: ['none', 'center', 'none'],
+  });
+  assert.deepEqual(block(r, 'Name | Age').table, { rows: [['Name', 'Age'], ['Carol', '41']], aligns: ['none', 'right'] });
+  assert.match(block(r, '| a | b').table!.refused!, /Line 3 of the table has 1 cells and the header has 2/);
+  assert.equal(block(r, '# Tables').table, undefined);
+});
+
+test('tableCell: only the cell\'s text changes, on its own line; pipes are escaped; the ack names the cell', async () => {
+  const h = harness(TABLE_DOC);
+  const t = block(h.render(), '| Name');
+  const before = h.doc.text;
+  assert.deepEqual(await h.send({ type: 'tableCell', key: t.key, row: 2, col: 1, text: 'closed', editId: 'c1' }), ack('c1', 2, 2, { row: 2, col: 1 }));
+  assert.equal(h.doc.text, before.replace('| Bob   | open   |', '| Bob   | closed   |'));
+  onlyLinesChanged(before, h.doc.text, 5, 6);
+  // Before the next render, the next changes from the grid still find the table (pinned).
+  await h.send({ type: 'tableCell', key: t.key, row: 1, col: 0, text: 'Al|ice', editId: 'c2' });
+  await h.send({ type: 'tableCell', key: t.key, row: 0, col: 2, text: '  ', editId: 'c3' });
+  assert.deepEqual(lines(h.doc.text).slice(2, 6), [
+    '| Name  | Status |  |',
+    '| ----- | :----: | ----- |',
+    '| Al\\|ice | :badge[Done]{color=green} | `a\\|b` |',
+    '| Bob   | closed   | x \\| y |',
+  ]);
+  assert.deepEqual(block(h.render(), '| Name').table!.rows![1], ['Al\\|ice', ':badge[Done]{color=green}', '`a\\|b`']);
+});
+
+test('tableRow and tableCol: a row is one line added or removed; a column, on each line, one cell and its pipe', async () => {
+  const h = harness(TABLE_DOC);
+  const t = block(h.render(), '| Name');
+  assert.deepEqual(await h.send({ type: 'tableRow', key: t.key, op: 'insert', at: 2, editId: 'r1' }), ack('r1', 2, 2, { row: 2, col: 0 }));
+  assert.deepEqual(lines(h.doc.text).slice(4, 7), ['| Alice | :badge[Done]{color=green} | `a\\|b` |', '|       |        |        |', '| Bob   | open   | x \\| y |']);
+  await h.send({ type: 'tableRow', key: t.key, op: 'delete', at: 1, editId: 'r2' });
+  assert.deepEqual(await h.send({ type: 'tableCol', key: t.key, op: 'insert', at: 1, editId: 'r3' }), ack('r3', 4, 2, { row: 0, col: 1 }));
+  await h.send({ type: 'tableCol', key: t.key, op: 'align', at: 3, align: 'right', editId: 'r4' });
+  await h.send({ type: 'tableCol', key: t.key, op: 'delete', at: 2, editId: 'r5' });
+  assert.deepEqual(lines(h.doc.text).slice(0, 8), [
+    '# Tables',
+    '',
+    '| Name  |        | Notes |',
+    '| ----- | ------ | ----: |',
+    '|       |        |        |',
+    '| Bob   |        | x \\| y |',
+    '',
+    ':::note Inside',
+  ]);
+  assert.deepEqual(lines(h.doc.text).slice(7), lines(TABLE_DOC).slice(7), 'the lines after the table are untouched');
+  assert.deepEqual(block(h.render(), '| Name').table!.aligns, ['none', 'none', 'right']);
+});
+
+test('table edits in a container\'s table touch only its lines; Align table formats it as smd fmt does', async () => {
+  const h = harness(TABLE_DOC);
+  const t = block(h.render(), 'Name | Age');
+  const before = h.doc.text;
+  await h.send({ type: 'tableCol', key: t.key, op: 'insert', at: 2, editId: 'n1' });
+  assert.deepEqual(lines(h.doc.text).slice(8, 11), ['Name | Age |      |', '--- | ---: | ----', 'Carol | 41 |      |']);
+  onlyLinesChanged(before, h.doc.text, 8, 11);
+  assert.deepEqual(await h.send({ type: 'tableAlign', key: t.key, editId: 'n2' }), ack('n2', 3, 8, { row: 0, col: 0 }));
+  assert.deepEqual(lines(h.doc.text).slice(7, 12), [':::note Inside', '| Name  | Age |     |', '| ----- | --: | --- |', '| Carol |  41 |     |', ':::']);
+  const notice = h.sent.length;
+  await h.send({ type: 'tableAlign', key: t.key, editId: 'n3' });
+  assert.deepEqual(h.sent.slice(notice).map((m) => m.type), ['notice', 'ack'], 'already aligned: said so, nothing written');
+  assert.match((h.sent[notice] as { text: string }).text, /already aligned/);
+});
+
+test('table edits: a CRLF document stays CRLF', async () => {
+  const h = harness(TABLE_DOC.replaceAll('\n', '\r\n'));
+  const t = block(h.render(), '| Name');
+  await h.send({ type: 'tableCell', key: t.key, row: 2, col: 0, text: 'Robert', editId: 'w1' });
+  await h.send({ type: 'tableRow', key: t.key, op: 'insert', at: 3, editId: 'w2' });
+  await h.send({ type: 'tableCol', key: t.key, op: 'insert', at: 0, editId: 'w3' });
+  assert.doesNotMatch(h.doc.text, /[^\r]\n/, 'every line break is CRLF');
+  assert.deepEqual(lines(h.doc.text).slice(5, 7), ['|       | Robert   | open   | x \\| y |', '|       |          |        |        |']);
+});
+
+test('table edits follow lines a text editor added above; a table changed elsewhere is a conflict, and nothing is written', async () => {
+  const h = harness(TABLE_DOC);
+  const t = block(h.render(), '| Name');
+  h.doc.type(0, 0, 'Intro.\n\n');
+  await h.send({ type: 'tableCell', key: t.key, row: 1, col: 0, text: 'Ann', editId: 'f1' });
+  assert.equal(lines(h.doc.text)[6], '| Ann | :badge[Done]{color=green} | `a\\|b` |');
+  const at = h.doc.text.indexOf('open');
+  h.doc.type(at, at + 4, 'shut');
+  const changed = h.doc.text;
+  const reply = await h.send({ type: 'tableRow', key: t.key, op: 'insert', at: 1, editId: 'f2' });
+  assert.equal(reply?.type, 'conflict');
+  assert.equal(h.doc.text, changed);
+});
+
+test('table edits are refused, and nothing is written, for a table the grid can\'t read, a cell that isn\'t there or a change that wouldn\'t read back', async () => {
+  const h = harness(TABLE_DOC);
+  const r = h.render();
+  const top = block(r, '| Name');
+  const inner = block(r, 'Name | Age');
+  const ragged = block(r, '| a | b');
+  const before = h.doc.text;
+  const refused = async (message: SessionMessage) => {
+    const reply = await h.send(message) as { type: string; text?: string; fallback?: string };
+    assert.equal(h.doc.text, before, JSON.stringify(message));
+    assert.equal(reply.type, 'notice');
+    return reply;
+  };
+  const r1 = await refused({ type: 'tableCell', key: ragged.key, row: 1, col: 0, text: 'x', editId: 'x1' });
+  assert.equal(r1.fallback, ragged.key, 'a ragged table: the page edits its source');
+  assert.match(r1.text!, /has 1 cells/);
+  assert.equal((await refused({ type: 'tableCell', key: top.key, row: 9, col: 0, text: 'x', editId: 'x2' })).fallback, undefined, 'no such cell: a notice');
+  await refused({ type: 'tableCell', key: top.key, row: 1, col: 0, text: 'two\nlines', editId: 'x3' });
+  await refused({ type: 'tableRow', key: top.key, op: 'delete', at: 0, editId: 'x4' });
+  await refused({ type: 'tableRow', key: top.key, op: 'insert', at: 0, editId: 'x5' });
+  await refused({ type: 'tableCol', key: top.key, op: 'delete', at: 3, editId: 'x6' });
+  // A heading at the start of a row without a leading pipe ends the table: the change would not read back.
+  const r7 = await refused({ type: 'tableCell', key: inner.key, row: 1, col: 0, text: '# Carol', editId: 'x7' });
+  assert.equal(r7.fallback, inner.key);
+  assert.equal((await h.send({ type: 'tableAlign', key: 'zzzz#0', editId: 'x8' }))?.type, 'conflict', 'a key the session doesn\'t know');
+});
+
+test('inline items in table cells keep their forms around grid edits', async () => {
+  const h = harness(TABLE_DOC, INLINE_ON);
+  const t = block(h.render(), '| Name');
+  assert.equal(t.inline?.[0].name, 'badge');
+  assert.ok(t.inline![0].fields, 'the badge in a cell has its form');
+  await h.send({ type: 'tableCell', key: t.key, row: 2, col: 0, text: 'Bobby', editId: 'b1' });
+  assert.equal((await h.send({ type: 'setInline', key: t.key, index: 0, name: 'badge', attrs: { color: 'red' }, editId: 'b2' }))?.type, 'ack');
+  assert.equal(lines(h.doc.text)[4], '| Alice | :badge[Done]{color=red} | `a\\|b` |');
+  await h.send({ type: 'tableCell', key: t.key, row: 1, col: 1, text: ':badge[Late]{color=amber}', editId: 'b3' });
+  const again = block(h.render(), '| Name');
+  assert.equal(again.inline![0].text, 'Late');
+  assert.ok(again.inline![0].fields);
+});
+
+test('property: a random grid change to every table of every example and corpus file changes only that table\'s lines', async () => {
+  const random = prng(23);
+  const pickOf = <T>(list: readonly T[]): T => list[Math.floor(random() * list.length)];
+  const all = (views: readonly BlockView[]): BlockView[] => views.flatMap((v) => [v, ...all(v.children ?? [])]);
+  let applied = 0;
+  for (const d of [...readDir(examplesDir), ...readDir(corpusDir)]) {
+    const h = harness(d.text);
+    let r = h.render();
+    for (const key of all(r.blocks).filter((v) => v.table?.rows).map((v) => v.key)) {
+      // The table as the last render has it (an edit above may have moved it).
+      const t = all(r.blocks).find((v) => v.key === key);
+      if (!t?.table?.rows) continue;
+      const rows = t.table.rows;
+      const cols = rows[0].length;
+      const editId = `q${applied}`;
+      const message = pickOf<SessionMessage>([
+        { type: 'tableCell', key: t.key, row: Math.floor(random() * rows.length), col: Math.floor(random() * cols), text: pickOf(['x', '', 'a|b', '`c`']), editId },
+        { type: 'tableRow', key: t.key, op: 'insert', at: 1 + Math.floor(random() * rows.length), editId },
+        { type: 'tableCol', key: t.key, op: 'insert', at: Math.floor(random() * (cols + 1)), editId },
+        { type: 'tableCol', key: t.key, op: 'align', at: Math.floor(random() * cols), align: 'center', editId },
+        { type: 'tableAlign', key: t.key, editId },
+      ]);
+      const before = h.doc.text;
+      const reply = h.sent.length;
+      await h.send(message);
+      assert.ok(h.sent.slice(reply).some((m) => m.type === 'ack'), `${d.name}: ${JSON.stringify(message)} ${JSON.stringify(h.sent.slice(reply))}`);
+      applied++;
+      const grown = lines(h.doc.text).length - lines(before).length;
+      onlyLinesChanged(before, h.doc.text, t.start, t.end);
+      assert.ok(grown === 0 || (message.type === 'tableRow' && grown === 1), d.name);
+      // Still a table the grid reads.
+      r = h.render();
+      const after = all(r.blocks).find((v) => v.start === t.start && v.type === 'table');
+      assert.ok(after?.table?.rows, `${d.name}: still a table the grid edits`);
+    }
+  }
+  assert.ok(applied > 10, `table edits applied (${applied})`);
+});

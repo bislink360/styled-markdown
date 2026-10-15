@@ -10,8 +10,12 @@ import { containerHeader, lexAttrs, removeContainerAttr, setContainerAttr, setCo
 import type { BlockRender, Segment } from './core/blocks';
 import { parseFrontMatter } from './core/frontmatter';
 import { editInline, scanInline, SPAN, type InlineChange, type InlineItem, type RenderedInline } from './core/inlineEdit';
-import { deleteBlock, insertBlock, lineEditToTextEdit, minimalEdit, moveBlock, splitLines, type LineEdit, type LineRange, type TextEdit } from './core/sourceEdit';
+import { applyLineEdits, deleteBlock, insertBlock, lineEditToTextEdit, minimalEdit, moveBlock, splitLines, type LineEdit, type LineRange, type TextEdit } from './core/sourceEdit';
 import { CONTAINERS, INLINE_DIRECTIVES, NAMED_COLORS, PRIORITY_VALUES, type ContainerSpec, type InlineDirectiveSpec } from './core/spec';
+import {
+  TABLE_ALIGNS, alignTable, cellTexts, deleteColumn, deleteRow, insertColumn, insertRow, isRefusal, readTable, sameShape, setAlign, setCell, tableShape,
+  type TableAlign, type TableCellRef, type TableEdit, type TableRefusal, type TableSource,
+} from './core/tableEdit';
 import type { BlockTemplate } from './core/templates';
 import { substituteLine, type Variables } from './core/variables';
 
@@ -33,6 +37,7 @@ export type EditorMessage =
   | { type: 'setAttr'; key: string; name: string; value: string | true | null; editId?: string }
   | { type: 'setTitle'; key: string; title: string; editId?: string }
   | SetInlineMessage
+  | TableMessage
   | { type: 'addFrontMatter'; editId?: string }
   | { type: 'toggleTask'; line: number }
   | { type: 'openLink'; href: string }
@@ -53,6 +58,17 @@ export interface SetInlineMessage {
   attrs?: Record<string, string | null>;
   editId?: string;
 }
+
+/**
+ * A change to a table block in the grid. Rows count from the header (0); the delimiter row is not one. `at` is where
+ * a new row or column goes (a row: 1 to the row count; a column: 0 to the column count), or the row or column to
+ * delete or align.
+ */
+export type TableMessage =
+  | { type: 'tableCell'; key: string; row: number; col: number; text: string; editId?: string }
+  | { type: 'tableRow'; key: string; op: 'insert' | 'delete'; at: number; editId?: string }
+  | { type: 'tableCol'; key: string; op: 'insert' | 'delete' | 'align'; at: number; align?: TableAlign; editId?: string }
+  | { type: 'tableAlign'; key: string; editId?: string };
 
 /** The messages the session itself answers; the provider runs the others (toggleTask, openLink, revealLine). */
 export type SessionMessage = Exclude<EditorMessage, { type: 'toggleTask' | 'openLink' | 'revealLine' }>;
@@ -122,6 +138,16 @@ export interface BlockView {
   problems?: BlockProblems;
   /** A top-level block's inline directives and styled spans, by number (left out when it has none). */
   inline?: InlineView[];
+  /** A table block, as the grid edits it (top-level blocks and children). */
+  table?: TableView;
+}
+
+/** A table for the grid: its cells and alignments, or why only its source can change it. */
+export interface TableView {
+  /** Every cell's text as written (an escaped pipe stays `\|`), the header row first. */
+  rows?: string[][];
+  aligns?: TableAlign[];
+  refused?: string;
 }
 
 export interface FrontMatterView {
@@ -166,6 +192,8 @@ export interface FocusRequest {
   select?: { from: number; to: number };
   /** The inline item of the block to focus (its data-smd-inline number). */
   inline?: number;
+  /** The table block's cell to focus in the grid. */
+  cell?: TableCellRef;
 }
 
 export type HostMessage =
@@ -248,6 +276,28 @@ function readSetInline(m: Raw): EditorMessage | undefined {
   return withId(message, m.editId);
 }
 
+/** The highest row or column number a table message may name, and the longest text a cell may get. */
+const MAX_TABLE_INDEX = 100_000;
+const MAX_CELL = 10_000;
+const isIndex = (v: unknown): v is number => isCount(v) && v <= MAX_TABLE_INDEX;
+
+function readTableCell(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || !isIndex(m.row) || !isIndex(m.col) || !isText(m.text, MAX_CELL) || !optionalId(m.editId)) return undefined;
+  return withId({ type: 'tableCell', key: m.key, row: m.row, col: m.col, text: m.text }, m.editId);
+}
+
+function readTableRow(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || (m.op !== 'insert' && m.op !== 'delete') || !isIndex(m.at) || !optionalId(m.editId)) return undefined;
+  return withId({ type: 'tableRow', key: m.key, op: m.op, at: m.at }, m.editId);
+}
+
+function readTableCol(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || (m.op !== 'insert' && m.op !== 'delete' && m.op !== 'align') || !isIndex(m.at) || !optionalId(m.editId)) return undefined;
+  if (m.op !== 'align') return m.align === undefined ? withId({ type: 'tableCol', key: m.key, op: m.op, at: m.at }, m.editId) : undefined;
+  const align = TABLE_ALIGNS.find((a) => a === m.align);
+  return align ? withId({ type: 'tableCol', key: m.key, op: 'align', at: m.at, align }, m.editId) : undefined;
+}
+
 const READERS: Readonly<Record<string, Reader>> = {
   ready: () => ({ type: 'ready' }),
   edit: (m) =>
@@ -264,6 +314,10 @@ const READERS: Readonly<Record<string, Reader>> = {
   setTitle: (m) =>
     isKey(m.key) && isText(m.title, MAX_VALUE) && optionalId(m.editId) ? withId({ type: 'setTitle', key: m.key, title: m.title }, m.editId) : undefined,
   setInline: readSetInline,
+  tableCell: readTableCell,
+  tableRow: readTableRow,
+  tableCol: readTableCol,
+  tableAlign: (m) => (isKey(m.key) && optionalId(m.editId) ? withId({ type: 'tableAlign', key: m.key }, m.editId) : undefined),
   addFrontMatter: (m) => (optionalId(m.editId) ? withId({ type: 'addFrontMatter' }, m.editId) : undefined),
   toggleTask: (m) => (isCount(m.line) ? { type: 'toggleTask', line: m.line } : undefined),
   openLink: (m) => (isText(m.href, 4096) && m.href !== '' ? { type: 'openLink', href: m.href } : undefined),
@@ -397,6 +451,8 @@ export interface SessionOptions {
   title?: string;
   /** The inline directives and styled spans of a block's lines (scanInline with the render's allowHtml). */
   scan?(lines: readonly string[]): InlineItem[];
+  /** A table block's lines read for the grid (readTable with the render's allowHtml). */
+  table?(lines: readonly string[]): TableSource | TableRefusal;
 }
 
 /** What the integration test (smd._blockEditorStatus) reads. */
@@ -436,6 +492,8 @@ const COLOR_ATTRS = new Set(['accent', ...COLOR_KEYS]);
 const LABELS: Readonly<Record<string, string>> = { color: 'Text color', bg: 'Background', border: 'Border', accent: 'Accent color', title: 'Title' };
 const SEVERITY_RANK: Readonly<Record<DiagnosticSeverity, number>> = { error: 0, warning: 1, info: 2 };
 const NOT_FOUND = 'That block is no longer in the document.';
+const TABLE = 'table';
+const TABLE_SOURCE = 'Edit the table\'s source instead.';
 
 const lf = (text: string) => text.replaceAll('\r\n', '\n');
 const isBlankText = (text: string) => text.trim() === '';
@@ -655,6 +713,29 @@ function endLine(lines: readonly string[]): number {
   return lines.at(-1) === '' ? lines.length - 1 : lines.length;
 }
 
+/** Where each line of a text starts (lines split on \r?\n, as splitLines splits them). */
+function lineStarts(text: string): number[] {
+  const starts = [0];
+  const re = /\r?\n/g;
+  for (let m = re.exec(text); m; m = re.exec(text)) starts.push(m.index + m[0].length);
+  return starts;
+}
+
+/** The edit a grid message asks of a table, or why it can't be made. */
+function tableChange(table: TableSource, lines: readonly string[], m: TableMessage): TableEdit | TableRefusal {
+  switch (m.type) {
+    case 'tableCell':
+      return setCell(table, lines, m.row, m.col, m.text);
+    case 'tableRow':
+      return m.op === 'insert' ? insertRow(table, lines, m.at) : deleteRow(table, m.at);
+    case 'tableCol':
+      if (m.op === 'insert') return insertColumn(table, lines, m.at);
+      return m.op === 'delete' ? deleteColumn(table, lines, m.at) : setAlign(table, lines, m.at, m.align ?? 'none');
+    default:
+      return alignTable(table, lines);
+  }
+}
+
 /** One session per Block Editor panel. */
 export class BlockEditorSession {
   private readonly log: EditLog;
@@ -792,6 +873,7 @@ export class BlockEditorSession {
     if (s.children) view.children = this.childViews(s.children, lines, diagnostics);
     const form = s.type === CONTAINER ? containerForm(lines[s.start], s.container) : undefined;
     if (form) view.form = form;
+    if (isBlock && s.type === TABLE) view.table = this.tableView(lines.slice(s.start, s.end));
     const problems = problemsIn(diagnostics, s.start, s.end);
     if (problems) view.problems = problems;
     return view;
@@ -845,6 +927,11 @@ export class BlockEditorSession {
         return this.editHeader(message);
       case 'setInline':
         return this.setInline(message);
+      case 'tableCell':
+      case 'tableRow':
+      case 'tableCol':
+      case 'tableAlign':
+        return this.editTable(message);
       case 'addFrontMatter':
         return this.addFrontMatter(message.editId);
     }
@@ -999,9 +1086,61 @@ export class BlockEditorSession {
     return block?.inline;
   }
 
-  /** Refuse an inline change, and have the page open the block's source instead. */
-  private fallback(m: SetInlineMessage, text: string): void {
+  /** Refuse an inline or table change, and have the page open the block's source instead. */
+  private fallback(m: SetInlineMessage | TableMessage, text: string): void {
     this.options.post(m.editId === undefined ? { type: 'notice', text, fallback: m.key } : { type: 'notice', editId: m.editId, text, fallback: m.key });
+  }
+
+  private readTable(lines: readonly string[]): TableSource | TableRefusal {
+    return this.options.table?.(lines) ?? readTable(lines);
+  }
+
+  /** A table block for the grid: its cells as written, or why its source is the only way to change it. */
+  private tableView(lines: readonly string[]): TableView {
+    const table = this.readTable(lines);
+    return isRefusal(table) ? { refused: table.refused } : { rows: cellTexts(table, lines), aligns: [...table.aligns] };
+  }
+
+  /**
+   * Change a table block from the grid, if the block still holds the text the page was given and its source reads
+   * as a table the renderer agrees with. Only the cell changes (a row: its one line; a column: on each line, the
+   * cell and its pipe; Align table: what `smd fmt` would change). Afterwards the block must read as a table that
+   * holds exactly what was asked for, else nothing is written and the page is told to edit the table's source.
+   */
+  private async editTable(m: TableMessage): Promise<void> {
+    const found = this.found(m.key, m.editId);
+    if (!found) return;
+    const { range } = found;
+    const lines = found.lines.slice(range.start, range.end);
+    const table = this.readTable(lines);
+    if (isRefusal(table)) return this.fallback(m, `${table.refused} ${TABLE_SOURCE}`);
+    const change = tableChange(table, lines, m);
+    if (isRefusal(change)) return this.notice(m.editId, change.refused);
+    const after = applyLineEdits(lines, change.edits);
+    const check = this.readTable(after);
+    const aligning = m.type === 'tableAlign';
+    if (isRefusal(check) || !sameShape(tableShape(check), change.expect, aligning)) {
+      if (aligning) return this.notice(m.editId, 'The table can\'t be aligned without changing what its cells hold.');
+      return this.fallback(m, `That change can't be written in this table. ${TABLE_SOURCE}`);
+    }
+    const edits = this.tableTextEdits(found, change.edits);
+    if (edits.length && !(await this.apply(edits))) return this.notice(m.editId, NOT_APPLIED);
+    if (aligning && !edits.length) this.notice(m.editId, 'The table is already aligned.');
+    // The next change from the grid, before the next render, still finds the block.
+    this.pin(m.key, { start: range.start, end: range.start + after.length, version: this.version(), text: after.join('\n') });
+    this.ack(m.editId, { line: range.start, cell: change.focus });
+  }
+
+  /** A table's line edits (against its own lines) as text edits: a line replaced by another, by its smallest splice. */
+  private tableTextEdits(found: Found, edits: readonly LineEdit[]): TextEdit[] {
+    const base = found.range.start;
+    const starts = lineStarts(found.text);
+    return edits.flatMap((e): TextEdit[] => {
+      const line = base + e.start;
+      if (e.end - e.start !== 1 || e.lines.length !== 1) return [lineEditToTextEdit(found.text, { start: line, end: base + e.end, lines: e.lines }, this.doc.eol)];
+      const change = minimalEdit(found.lines[line], e.lines[0]);
+      return change ? [{ from: starts[line] + change.from, to: starts[line] + change.to, insert: change.insert }] : [];
+    });
   }
 
   private async addFrontMatter(editId: string | undefined): Promise<void> {
