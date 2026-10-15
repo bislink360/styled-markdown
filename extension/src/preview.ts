@@ -1,11 +1,11 @@
-import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { renderSmd, type RenderOptions } from './core';
 import { escapeHtml } from './core/attrs';
-import { taskCheckbox } from './editing';
 import { readerFor } from './files';
 import { PreviewSync, readPosition } from './previewSync';
+import { openLink, revealLine, toggleTask } from './webviewActions';
+import { webviewShell } from './webviewShell';
 
 /** Live preview webviews, one per .smd document. */
 export class PreviewManager implements vscode.Disposable {
@@ -63,7 +63,8 @@ export function renderOptions(document?: vscode.TextDocument): RenderOptions {
   };
 }
 
-function themePreference(frontMatter: Record<string, unknown>): string {
+/** The page's theme: the smd.preview.theme setting, else the document's `theme:`, else the editor's. Also the Block Editor's. */
+export function themePreference(frontMatter: Record<string, unknown>): string {
   const setting = vscode.workspace.getConfiguration('smd.preview').get<string>('theme', 'auto');
   if (setting !== 'auto') return setting;
   return frontMatter.theme === 'light' || frontMatter.theme === 'dark' ? String(frontMatter.theme) : 'auto';
@@ -169,33 +170,19 @@ class Preview {
 
   private shell(): string {
     const webview = this.panel.webview;
-    const media = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', ...p));
-    const nonce = randomBytes(16).toString('base64'); // CSP nonces must be unguessable
+    const media = (...p: string[]) => webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'media', ...p)).toString();
     const base = webview.asWebviewUri(vscode.Uri.file(path.dirname(this.document.uri.fsPath))).toString().replace(/\/$/, '');
     const result = renderSmd(this.document.getText(), renderOptions(this.document));
-    const csp = [
-      `default-src 'none'`,
-      `img-src ${webview.cspSource} https: data:`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `font-src ${webview.cspSource} data:`,
-      `script-src 'nonce-${nonce}'`,
-    ].join('; ');
-    return `<!DOCTYPE html>
-<html lang="${escapeHtml(result.lang ?? 'en')}" data-smd-theme-pref="${themePreference(result.frontMatter)}">
-<head>
-<meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="${csp}">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<base href="${base}/">
-<link rel="stylesheet" href="${media('vendor', 'katex', 'katex.min.css')}">
-<link rel="stylesheet" href="${media('smd.css')}">
-</head>
-<body class="smd-body">
-<main id="smd-root" data-smd-sync="${escapeHtml(JSON.stringify(this.sync.snapshot(this.document.version)))}">${result.html}</main>
-<script nonce="${nonce}" src="${media('vendor', 'mermaid.min.js')}"></script>
-<script nonce="${nonce}" src="${media('runtime.js')}"></script>
-</body>
-</html>`;
+    return webviewShell({
+      cspSource: webview.cspSource,
+      lang: result.lang ?? 'en',
+      htmlAttributes: { 'data-smd-theme-pref': themePreference(result.frontMatter) },
+      baseHref: `${base}/`,
+      styles: [media('vendor', 'katex', 'katex.min.css'), media('smd.css')],
+      bodyClass: 'smd-body',
+      body: `<main id="smd-root" data-smd-sync="${escapeHtml(JSON.stringify(this.sync.snapshot(this.document.version)))}">${result.html}</main>`,
+      scripts: [media('vendor', 'mermaid.min.js'), media('runtime.js')],
+    });
   }
 
   /** The page saved where it is (after a render, a scroll, or once it could restore its place). */
@@ -232,38 +219,5 @@ class Preview {
         if (msg.href) await openLink(this.document, msg.href);
         break;
     }
-  }
-}
-
-async function toggleTask(document: vscode.TextDocument, line: number): Promise<void> {
-  if (line < 0 || line >= document.lineCount) return;
-  const box = taskCheckbox(document.lineAt(line).text);
-  if (!box) return;
-  const edit = new vscode.WorkspaceEdit();
-  const pos = new vscode.Position(line, box.column);
-  edit.replace(document.uri, new vscode.Range(pos, pos.translate(0, 1)), box.done ? ' ' : 'x');
-  await vscode.workspace.applyEdit(edit);
-}
-
-async function revealLine(document: vscode.TextDocument, line: number): Promise<void> {
-  const visible = vscode.window.visibleTextEditors.find((e) => e.document === document);
-  const editor = await vscode.window.showTextDocument(document, visible?.viewColumn ?? vscode.ViewColumn.One);
-  const pos = new vscode.Position(line, 0);
-  editor.selection = new vscode.Selection(pos, pos);
-  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
-}
-
-async function openLink(document: vscode.TextDocument, href: string): Promise<void> {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) {
-    await vscode.env.openExternal(vscode.Uri.parse(href));
-    return;
-  }
-  const [file] = href.split('#');
-  const target = vscode.Uri.file(path.resolve(path.dirname(document.uri.fsPath), decodeURIComponent(file)));
-  try {
-    await vscode.workspace.fs.stat(target);
-    await vscode.commands.executeCommand('vscode.open', target, vscode.ViewColumn.One);
-  } catch {
-    vscode.window.showWarningMessage(`Styled Markdown: "${file}" does not exist.`);
   }
 }

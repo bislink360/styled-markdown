@@ -1,7 +1,7 @@
 import { findAttrsEnd } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN } from './containers';
 import { parseFrontMatter } from './frontmatter';
-import { HEADING_ATTRS } from './render';
+import { HEADING_ATTRS } from './sections';
 import { CONTAINERS, INLINE_DIRECTIVES, STYLE_KEYS } from './spec';
 
 /**
@@ -243,12 +243,7 @@ export function formatAttrs(src: string, order: readonly string[]): string | nul
     pos = ATTR_TOKEN.lastIndex;
   }
   const keys = [...entries.keys()];
-  const rank = (k: string) => {
-    const spec = order.indexOf(k);
-    if (spec >= 0) return spec;
-    const style = STYLE_ORDER.indexOf(k);
-    return style >= 0 ? order.length + style : order.length + STYLE_ORDER.length + keys.indexOf(k);
-  };
+  const rank = (k: string) => attrRank(k, order, keys);
   keys.sort((a, b) => rank(a) - rank(b));
   return [
     ...(id ? [`#${id}`] : []),
@@ -260,13 +255,24 @@ export function formatAttrs(src: string, order: readonly string[]): string | nul
   ].join(' ');
 }
 
+/**
+ * Where formatAttrs puts a key: the keys of `order` (the block's own), then the style keys, then the others in
+ * the order they were written (`written`, each key once).
+ */
+export function attrRank(key: string, order: readonly string[], written: readonly string[]): number {
+  const spec = order.indexOf(key);
+  if (spec >= 0) return spec;
+  const style = STYLE_ORDER.indexOf(key);
+  return style >= 0 ? order.length + style : order.length + STYLE_ORDER.length + written.indexOf(key);
+}
+
 /** Keys whose values are prose or paths (`:::include`), always quoted so they can grow into several words. */
 const TEXT_KEYS = ['title', 'label', 'file', 'section'];
 /** Prose and URL keys of `:::quote`, quoted where the block accepts them (elsewhere they are unknown and left as written). */
 const OWN_TEXT_KEYS = ['author', 'source', 'cite'];
 
 /** Keywords, numbers, dates, sizes and @owners stay bare (`status=accepted width=50%`); the rest is quoted. */
-function quote(key: string, value: string, order: readonly string[]): string {
+export function quote(key: string, value: string, order: readonly string[]): string {
   const text = TEXT_KEYS.includes(key) || (OWN_TEXT_KEYS.includes(key) && order.includes(key));
   if (!text && /^[\w@][\w.%@-]*$/.test(value)) return value;
   return value.includes('"') ? `'${value}'` : `"${value}"`;

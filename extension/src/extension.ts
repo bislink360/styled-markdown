@@ -5,6 +5,7 @@ import { markdownToSmd, notionRequests, renderStandaloneHtml, smdToConfluence, s
 import { registerLanguageFeatures } from './language';
 import { readerFor } from './files';
 import { registerAgentView } from './agentViewUi';
+import { registerBlockEditor } from './blockEditor';
 import { registerEditorFeatures } from './editorFeatures';
 import { extendMarkdownIt } from './markdownPreview';
 import { PreviewManager, renderOptions } from './preview';
@@ -25,6 +26,7 @@ export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
   registerTasksView(context);
   registerStatusWorkflow(context);
   registerDocxExport(context);
+  registerBlockEditor(context);
 
   const activeSmd = (): vscode.TextDocument | undefined => {
     const doc = vscode.window.activeTextEditor?.document;

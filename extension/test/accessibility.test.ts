@@ -261,3 +261,55 @@ test('a11y tabs: rendered panes read without scripts and stack when printed', ()
   assert.doesNotMatch(html, /role="tab/, 'roles come with the tab bar, from the runtime');
   assert.match(media('smd.css'), /\.smd-tabs\.smd-js \.smd-tab:not\(\.smd-active\), \.smd-tabs\.smd-js \.smd-tab-label \{ display: block; \}/);
 });
+
+// ---------------------------------------------------------------------------
+// Block Editor (Preview): its page is built at run time inside closed shadow roots, so its markup is checked in the
+// page script, and its stylesheet here; the labels are in blockEditorWebview.test.ts.
+// ---------------------------------------------------------------------------
+
+const blockEditorPage = readFileSync(join(__dirname, '..', 'src', 'webview', 'blockEditor.ts'), 'utf8');
+
+test('a11y block editor: blocks are named groups in one tab stop; the arrow keys move between them', () => {
+  assert.match(blockEditorPage, /node\.setAttribute\('role', 'group'\);\n\s+node\.setAttribute\('aria-roledescription', 'block'\);/);
+  assert.match(blockEditorPage, /node\.setAttribute\(ARIA_LABEL, problems \? `\$\{blockLabel\(view\)\}, \$\{problems\}` : blockLabel\(view\)\)/, 'the label says the kind, the lines and the problems');
+  assert.match(blockEditorPage, /if \(view\.problems\) node\.setAttribute\('aria-description', view\.problems\.messages\.join\('; '\)\)/, 'problem messages are read, not only shown on hover');
+  assert.match(blockEditorPage, /el\.setAttribute\(TABINDEX, '0'\)/);
+  assert.match(blockEditorPage, /listKeyTarget\(event\.key, list\.indexOf\(item\), list\.length\)/);
+});
+
+test('a11y block editor: a labelled toolbar, a menu of menu items, and buttons that say what they open', () => {
+  assert.match(blockEditorPage, /role: 'toolbar', \[ARIA_LABEL\]: 'Block editor'/);
+  assert.match(blockEditorPage, /'aria-haspopup': 'menu', \[ARIA_EXPANDED\]: FALSE, 'aria-controls': 'menu'/);
+  assert.match(blockEditorPage, /role: 'menu', \[ARIA_LABEL\]: 'Insert block'/);
+  assert.match(blockEditorPage, /role: 'menuitem', \[TABINDEX\]: '-1'/);
+  assert.match(blockEditorPage, /\[ARIA_EXPANDED\]: FALSE, 'aria-controls': 'props'/);
+  assert.match(blockEditorPage, /b\.setAttribute\(ARIA_DISABLED, TRUE\)/, 'unavailable buttons stay in the toolbar, marked disabled');
+  assert.match(blockEditorPage, /const TRUE = 'true';\nconst FALSE = 'false';/);
+  assert.match(blockEditorPage, /toolbarKeyTarget\(event\.key/);
+});
+
+test('a11y block editor: the source editor and the form controls have labels; notices are announced', () => {
+  assert.match(blockEditorPage, /h\('label', \{ className: 'label', text: editLabel\(view\), attrs: \{ for: 'source' \} \}\)/);
+  assert.match(blockEditorPage, /attrs: \{ id: 'source', [^}]*'aria-describedby': 'hint' \}/);
+  assert.match(blockEditorPage, /h\('label', \{ text: field\.label, attrs: \{ for: id \} \}\)/);
+  assert.match(blockEditorPage, /className: 'notice', attrs: \{ role: 'alert' \}/);
+  assert.match(blockEditorPage, /className: 'bar-notice', attrs: \{ role: 'status' \}/);
+  assert.match(blockEditorPage, /rt\.announce\(text\)/);
+});
+
+test('a11y block editor: visible focus everywhere, in every theme, and system colors in forced-colors mode', () => {
+  const css = media('block-editor.css');
+  assert.match(css, /\.smd-ed-item:focus \{ outline: 2px solid var\(--vscode-focusBorder, #0078d4\); outline-offset: 3px; \}/);
+  assert.match(css, /:host :focus-visible \{ outline: 2px solid var\(--vscode-focusBorder, #0078d4\); outline-offset: 1px; \}/);
+  assert.match(css, /:host textarea:focus \{ outline: 2px solid var\(--vscode-focusBorder/);
+  assert.match(css, /\.menu button:focus, :host \.menu button:hover \{/);
+  const forced = css.match(/@media \(forced-colors: active\) \{[^@]*\}/g) ?? [];
+  assert.equal(forced.length, 2, 'the page and the controls');
+  assert.ok(forced.some((block) => /\.smd-ed-item:focus \{ outline: 2px solid Highlight; \}/.test(block)));
+  assert.ok(forced.some((block) => /:host :focus-visible, :host textarea:focus, :host \.menu button:focus \{ outline: 2px solid Highlight; \}/.test(block)));
+  assert.doesNotMatch(css, /outline: none|outline: 0[;\s]/, 'no focus ring is taken away');
+  // Colors only from theme variables (with fallbacks), so light, dark and high-contrast themes apply.
+  const colors = [...css.matchAll(/(?:^|[;{\s])(?:color|background|border(?:-color)?): ([^;}]+)/g)].map((m) => m[1].trim());
+  assert.ok(colors.length > 20, `${colors.length} colors`);
+  for (const value of colors) assert.match(value, /var\(--vscode-|inherit|transparent|currentColor|CanvasText|Canvas|GrayText|ButtonText|1px (solid|dashed) var\(--vscode-/, value);
+});

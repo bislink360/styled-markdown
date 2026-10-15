@@ -129,16 +129,31 @@ export type ParsedDocument = Pick<FrontMatter, 'data' | 'body' | 'bodyStartLine'
  * remark/rehype plugins run (see unified.ts). `header: false` leaves out the title/status header.
  */
 export function renderParsed(text: string, fm: ParsedDocument, options: RenderOptions = {}, header = true): RenderResult {
-  const { md, tokens, env, lang, messages } = parseTokens(text, fm, options);
-  const data = fm.data;
+  const parsed = parseTokens(text, fm, options);
+  const { md, tokens, env, lang } = parsed;
   const body = md.renderer.render(tokens, md.options, env);
+  const frame = documentFrame(parsed, header);
+  const html = `${frame.open}${frame.header}${frame.toc}${body}</article>`;
+  return { html, frontMatter: fm.data, headings: env.headings, lang };
+}
 
+/** What renderSmd puts around the body: the `<article>` opening tag, the title header and the table of contents. */
+export interface DocumentFrame {
+  open: string;
+  header: string;
+  toc: string;
+}
+
+/** The frame of a parsed document, once its body is rendered (the contents come from the env). */
+export function documentFrame(parsed: Omit<ParsedTokens, 'tokens'>, header = true): DocumentFrame {
+  const { md, env, data, lang, messages } = parsed;
   const accent = typeof data.accent === 'string' ? resolveColor(data.accent) : null;
   const style = accent ? ` style="--smd-accent:${escapeHtml(accent)}"` : '';
-  const headerHtml = header ? renderHeader((s) => md.renderInline(s, { messages }), data, messages) : '';
-  const toc = data.toc === true ? renderToc(env.headings, messages) : '';
-  const html = `<article class="smd-doc"${languageAttrs(lang, messages)}${style}>${headerHtml}${toc}${body}</article>`;
-  return { html, frontMatter: data, headings: env.headings, lang };
+  return {
+    open: `<article class="smd-doc"${languageAttrs(lang, messages)}${style}>`,
+    header: header ? renderHeader((s) => md.renderInline(s, { messages }), data, messages) : '',
+    toc: data.toc === true ? renderToc(env.headings, messages) : '',
+  };
 }
 
 /** A document parsed into the block tokens renderSmd renders, with what the rules put on the env. */

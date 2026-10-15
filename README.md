@@ -118,6 +118,7 @@ History and research. People see it; agents skip it.
 <summary><b>VS Code extension</b></summary>
 
 - **Live preview** (`Ctrl+K V`) with scroll sync, double-click to jump to source, clickable task checkboxes, and light/dark themes
+- **[Block Editor (Preview)](#block-editor-preview):** the rendered document, edited one block's source at a time (opt-in through **Open With…**)
 - **Validation** as you type, with **quick fixes** (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`), and Mermaid syntax errors on the exact line
 - **IntelliSense:** completions for blocks, directives, attributes, allowed values and front matter; paths and `#anchors` in links, `related:` and `file="…"` embeds; hover docs; color picker
 - **Go to definition** for `#anchor` and `other.smd#anchor` links, files and reference links
@@ -182,17 +183,28 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-1.7.2.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+1. Download **`styled-markdown-1.8.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
 2. Install it:
 
    ```bash
-   code --install-extension styled-markdown-1.7.2.vsix
+   code --install-extension styled-markdown-1.8.0.vsix
    ```
 
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
 3. Open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS).
 
 > Listings on the VS Code Marketplace, [Open VSX](https://open-vsx.org) (for VSCodium, Cursor, Windsurf and Gitpod) and npm are coming once published. Until they are live, every release on GitHub has the `.vsix`, the npm package and the skills.
+
+### Block Editor (Preview)
+
+An optional editor for `.smd` files: the document as the preview renders it, edited one block at a time. It works on the same document as the text editor, so save, undo, the unsaved-changes dot, Git diffs and Problems work as usual. It is a preview: its look and keys may change in minor releases. On macOS, use `Cmd` where the keys below say `Ctrl`.
+
+- **Open it:** right-click a `.smd` file or its tab → **Open With…** → **Styled Markdown Block Editor (Preview)**, or run **Styled Markdown: Open Block Editor**. **Styled Markdown: Reopen in Text Editor** (also the icon in the editor's title bar) goes back. It is never the default editor for `.smd`.
+- **Edit:** click a block, or press `Enter` (or `F2`), to edit its Markdown source in place. What you type goes into the document when you pause, leave the block, press `Ctrl+Enter` (done) or save. `Escape` puts the block back as it was when you started editing it.
+- **Keys:** `↑` `↓` go from block to block, into callouts, tabs and other containers too (`Home` `End`: first and last); `Alt+↑` `Alt+↓` move a block; `Ctrl+/` opens the insert menu, whose templates come from the snippets and go after the current block. The toolbar also has **Delete**, **Move up**, **Move down**, **Properties** (a container's title and attributes, such as a risk's impact or a callout's color), **Edit in text editor** and, for a document without one, **Add front matter**. Task checkboxes tick as in the preview, and each block shows how many problems it has.
+- **What changes:** only the lines of the block you edit, or the lines a toolbar action adds, moves or removes. Lines you did not edit never change, and nothing is reformatted. If a text editor changes the block you are editing, your text is kept and you choose which version stays.
+- **Undo:** in a block's text box (and in the Properties text fields), `Ctrl+Z` and `Ctrl+Y` undo and redo your typing there. Anywhere else, `Ctrl+Z` undoes the document, as in the text editor: each written edit, insert, move or delete is a step. **Edit → Undo** in the menu always undoes the document.
+- **Not yet:** formatted (WYSIWYG) text editing, drag and drop, or selecting several blocks. Link and footnote definitions show as small source boxes you can edit; lines inside a container that render nothing are edited with the container.
 
 ### Web playground
 
@@ -203,8 +215,8 @@ Try `.smd` in the browser without installing anything: edit on the left; the pre
 Install the package straight from the release:
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.7.2/styled-markdown-1.7.2.tgz   # the smd command
-npm install https://github.com/bislink360/styled-markdown/releases/download/v1.7.2/styled-markdown-1.7.2.tgz      # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.8.0/styled-markdown-1.8.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v1.8.0/styled-markdown-1.8.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -229,7 +241,7 @@ Full instructions, building from source and troubleshooting: **[docs/INSTALL.md]
 ### Agent skills
 
 ```bash
-curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.7.2/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.8.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs skills install --global
 ```
 
@@ -281,7 +293,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v1.7.2
+      - uses: bislink360/styled-markdown/validate@v1.8.0
         with:
           paths: docs        # one per line; default: the whole repository
           fail-on: warning   # error (default), warning or never
@@ -382,7 +394,7 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-1.7.2.vsix
+npm run package        # → styled-markdown-1.8.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
 npm run build:playground  # → dist/playground (the web playground; open its index.html)
 ```

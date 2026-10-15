@@ -9,6 +9,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 ## Highlights
 
 - **Live preview** (`Ctrl+K V`): themed to match VS Code, scroll sync, double-click to jump to source, clickable tasks, Mermaid diagrams, KaTeX math, tabs and columns. Edits keep your scroll position, diagrams, selected tabs and open collapsibles.
+- **Block Editor (Preview):** open a `.smd` file with **Open With… → Styled Markdown Block Editor (Preview)** to see it as the preview renders it and edit one block's source at a time, in place: insert blocks from templates (`Ctrl+/`), move them (`Alt+↑` `Alt+↓`), set a container's title and attributes in a form. Only the lines of the block you edit change; save, undo and diffs work as in the text editor. Its UI may change in minor releases. [More](https://github.com/bislink360/styled-markdown#block-editor-preview).
 - **Project blocks:** `:::decision`, `:::risk`, `:::timeline`, KPI tiles (`:metric`), priorities, and due dates that turn red when overdue. Tasks carry owners.
 - **SMD Tasks view** in the Explorer: open tasks from every `.smd` file in the workspace, grouped by owner, due date (Overdue, Today, This week, Later) or document, overdue first, then by priority. Tick a checkbox to check the task off in its file, click a task to open it, and see the overdue count as a badge.
 - **Document status workflow:** the status bar shows the front matter `status` of the active document (or **No status**, or a warning for an unknown value). Click it to pick the next step, `draft` → `review` → `approved`, or `deprecated` / `archived`: only the `status:` value changes (quotes and comments kept), `updated:` is set to today, and Undo takes it back.
@@ -28,6 +29,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 |---|---|
 | Styled Markdown: Open Preview to the Side | `Ctrl+K V` |
 | Styled Markdown: Open Preview | `Ctrl+Shift+V` |
+| Styled Markdown: Open Block Editor / Reopen in Text Editor | **Open With…** · ⋯ in the title bar |
 | Styled Markdown: Show Agent View / Show Brief Agent View | 🤖 in the title bar |
 | Styled Markdown: Copy Agent View / Copy Sections for an Agent… | — |
 | Styled Markdown: Export to HTML / Export to Plain Markdown (.md) | — |

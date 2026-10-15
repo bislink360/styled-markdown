@@ -7,13 +7,14 @@
  */
 import STARTER from '../starter.smd';
 import { canShare, documentFromHash, fragmentPayload, shareFragment, shareLinkWarning } from './codec';
-import { changedRange, indent, lineNumbers, offsetOf, outdent, type Edit } from './editor';
+import { indent, lineNumbers, offsetOf, outdent, type Edit } from './editor';
 import {
   PREVIEW_SANDBOX, needsRebuild, previewDocument, previewTheme, updateMessage, type FrameAssets, type FrameState,
   type ThemeSetting,
 } from './frame';
 import { diagnosticsSummary, renderPanes, type Panes, type PreviewPane } from './panes';
 import { DRAFT_KEY, THEME_KEY, readStored, themeSetting, writeStored } from './storage';
+import { changedRange } from '../../extension/src/core/sourceEdit';
 import type { Diagnostic } from '../../extension/src/core/validate';
 
 // Embedded by scripts/build-playground.mjs.

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.0 — 2026-10-15
+
+A new, optional way to edit in VS Code: the **Styled Markdown Block Editor (Preview)** shows a document as the preview renders it and edits one block's source at a time, so the lines you did not edit never change. It is opt-in through **Open With…** and never the default editor. Nothing else changes: the file format, rendered output, the CLI and the npm package are as in 1.7.2.
+
+### Added
+- VS Code: **Styled Markdown Block Editor (Preview)**, an optional editor that shows a `.smd` document as the preview renders it and edits it one block at a time. It is opt-in: open a file with **Open With… → Styled Markdown Block Editor (Preview)** or **Styled Markdown: Open Block Editor**, and go back with **Reopen in Text Editor**. It never becomes the default editor. Click a block, or press Enter, to edit that block's source; insert blocks from the snippet templates (`Ctrl+/`), move them (`Alt+↑` `Alt+↓`), delete them, set a container's title and attributes in a form, add front matter and tick tasks. Each edit changes only the lines of that one block, so lines you did not edit never change and nothing is reformatted. It works on the same document as the text editor, so save, undo, Git diffs and Problems work as usual. It is labelled Preview: its UI may change in minor releases.
+- Block Editor: keyboard and screen reader use: one tab stop for the blocks with the arrow keys between them, labelled source editors, a toolbar and insert menu that follow the ARIA patterns, and announced notices. When a text editor changes the block you are editing, your text is kept and you choose which version stays. In a block's text box, `Ctrl+Z` undoes your typing there; elsewhere it undoes the document.
+
+### Changed
+- Preview: the page's content security policy also forbids form submissions (`form-action 'none'`). Rendered documents never submit forms, so nothing visible changes.
+
 ## 1.7.2 — 2026-10-14
 
 Fixes only, closing the gaps 1.7.1 left in reading code and math as they render. Outlines count only the open tasks `smd tasks` lists; `$inline math$` that runs on to the next line stays as written in the agent view and `smd to-md`, and the validator reports nothing in it; and a `$$` line in indented code no longer opens display math for the validator. Rendered output is unchanged. Documents with `$$` in indented code may now see diagnostics on the lines after it, which the false math block used to hide.

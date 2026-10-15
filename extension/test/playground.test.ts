@@ -7,7 +7,8 @@ import {
   FRAGMENT_KEY, MAX_DOCUMENT_BYTES, SHARE_WARN_LENGTH, base64UrlToBytes, bytesToBase64Url, decodeDocument, documentFromHash,
   encodeDocument, fragmentPayload, shareFragment, shareLinkWarning,
 } from '../../playground/src/codec';
-import { changedRange, indent, lineNumbers, offsetOf, outdent } from '../../playground/src/editor';
+import { indent, lineNumbers, offsetOf, outdent } from '../../playground/src/editor';
+import { changedRange } from '../src/core/sourceEdit';
 import { CSP_PLACEHOLDER, appCsp } from '../../playground/src/csp.mjs';
 import {
   PREVIEW_SANDBOX, needsRebuild, previewDocument, previewTheme, updateMessage, type FrameAssets,

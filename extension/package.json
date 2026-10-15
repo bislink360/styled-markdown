@@ -2,7 +2,7 @@
   "name": "styled-markdown",
   "displayName": "Styled Markdown (.smd)",
   "description": "Markdown for humans and AI agents: callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
-  "version": "1.7.2",
+  "version": "1.8.0",
   "publisher": "bislink360",
   "author": {
     "name": "Roshan Alwis"
@@ -107,6 +107,18 @@
         "path": "./snippets/smd.json"
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "smd.blockEditor",
+        "displayName": "Styled Markdown Block Editor (Preview)",
+        "selector": [
+          {
+            "filenamePattern": "*.smd"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "markdown.markdownItPlugins": true,
     "markdown.previewStyles": [
       "./media/vendor/katex/katex.min.css",
@@ -138,6 +150,17 @@
         "title": "Open Preview to the Side",
         "category": "Styled Markdown",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "smd.openBlockEditor",
+        "title": "Open Block Editor",
+        "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.reopenInTextEditor",
+        "title": "Reopen in Text Editor",
+        "category": "Styled Markdown",
+        "icon": "$(go-to-file)"
       },
       {
         "command": "smd.exportHtml",
@@ -274,6 +297,16 @@
           "command": "smd.showAgentView",
           "when": "editorLangId == smd",
           "group": "navigation"
+        },
+        {
+          "command": "smd.openBlockEditor",
+          "when": "resourceExtname == .smd && activeEditor == workbench.editors.files.textFileEditor",
+          "group": "smd@1"
+        },
+        {
+          "command": "smd.reopenInTextEditor",
+          "when": "activeCustomEditorId == smd.blockEditor",
+          "group": "navigation"
         }
       ],
       "editor/context": [
@@ -324,6 +357,14 @@
         {
           "command": "smd.onEnterKey",
           "when": "false"
+        },
+        {
+          "command": "smd.openBlockEditor",
+          "when": "resourceExtname == .smd"
+        },
+        {
+          "command": "smd.reopenInTextEditor",
+          "when": "activeCustomEditorId == smd.blockEditor"
         },
         {
           "command": "smd.exportHtml",
