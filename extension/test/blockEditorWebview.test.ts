@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import {
   FROZEN, blockLabel, blockName, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
   gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement, itemForLine,
-  linesLabel, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  linesLabel, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction,
 } from '../src/webview/blockEditorModel';
 import type { BlockView } from '../src/blockEditorSession';
@@ -289,6 +289,21 @@ test('page: quick fixes are asked for by block and applied by number; the page n
   assert.match(pageSource, /post\(\{ type: 'applyFix', key: target\.key, index, version: target\.version, \.\.\.\(confirm \? \{ confirm: true \} : \{\}\), editId: target\.editId \}\)/);
   assert.match(pageSource, /case 'confirmFix':\n\s+onConfirmFix\(msg\.editId, msg\.index, msg\.text\);/, 'a fix that changes more than the block is confirmed first');
   assert.match(pageSource, /'aria-live': 'polite'/, 'the fixes arriving are read');
+});
+
+test('front matter form: a field\'s value as setFrontMatter takes it', () => {
+  assert.equal(frontMatterValue({ kind: 'text' }, '  New title '), 'New title');
+  assert.equal(frontMatterValue({ kind: 'select' }, ''), null, 'emptied: the key is removed');
+  assert.equal(frontMatterValue({ kind: 'date' }, '2026-10-15'), '2026-10-15');
+  assert.deepEqual(frontMatterValue({ kind: 'list' }, '@maya, @api ,, x y'), ['@maya', '@api', 'x y']);
+  assert.equal(frontMatterValue({ kind: 'list' }, ' , '), null);
+});
+
+test('page: the front matter\'s fields are in the Properties panel, labelled, with the YAML a button away', () => {
+  assert.match(pageSource, /post\(\{ type: 'setFrontMatter', key, name: field\.name, value: frontMatterValue\(field, control\.value\), editId: nextId\(\) \}\)/);
+  assert.match(pageSource, /if \(view\?\.type === 'frontmatter'\) \{\n\s+fillFrontMatterProps\(view\);/);
+  assert.match(pageSource, /control\.setAttribute\('aria-describedby', notes\.map\(\(n\) => n\.id\)\.join\(' '\)\)/, 'list and refusal notes are read with the field');
+  assert.match(pageSource, /button\('Edit YAML'/);
 });
 
 test('textareaRows grows with the text, within limits', () => {

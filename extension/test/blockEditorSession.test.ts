@@ -1312,3 +1312,78 @@ test('quick fixes in a CRLF document: the same lines, and the document stays CRL
   assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
   onlyLinesChanged(crlf, h.doc.text, warn.start, warn.end);
 });
+
+// ---------------------------------------------------------------------------
+// The front matter form
+// ---------------------------------------------------------------------------
+
+const FM_DOC = [
+  '---', 'title: "Plan"   # shown', '# owners', 'owners:', '  - "@maya"', 'tags: [a, b]', '---', '', '# Plan', '', 'Text.', '',
+].join('\n');
+
+test('readEditorMessage: setFrontMatter takes a known key and a line of text, a list of them, or null', () => {
+  const key = 'abc123#0';
+  assert.deepEqual(readEditorMessage({ type: 'setFrontMatter', key, name: 'title', value: 'New', editId: 'f' }), { type: 'setFrontMatter', key, name: 'title', value: 'New', editId: 'f' });
+  assert.deepEqual(readEditorMessage({ type: 'setFrontMatter', key, name: 'tags', value: ['a', 'b'] }), { type: 'setFrontMatter', key, name: 'tags', value: ['a', 'b'] });
+  assert.deepEqual(readEditorMessage({ type: 'setFrontMatter', key, name: 'status', value: null }), { type: 'setFrontMatter', key, name: 'status', value: null });
+  for (const bad of [
+    { type: 'setFrontMatter', key, name: 'custom', value: 'x' }, { type: 'setFrontMatter', key, name: '__proto__', value: 'x' },
+    { type: 'setFrontMatter', key, name: 'title', value: 'two\nlines' }, { type: 'setFrontMatter', key, name: 'title', value: 3 },
+    { type: 'setFrontMatter', key, name: 'title' }, { type: 'setFrontMatter', key, name: 'tags', value: ['a', 3] },
+    { type: 'setFrontMatter', key, name: 'tags', value: ['a', ' '] }, { type: 'setFrontMatter', key, name: 'tags', value: Array.from({ length: 201 }, () => 'x') },
+    { type: 'setFrontMatter', key, name: 'title', value: 'x'.repeat(2001) }, { type: 'setFrontMatter', key: 'k', name: 'title', value: 'x' },
+  ]) {
+    assert.equal(readEditorMessage(bad), undefined, JSON.stringify(bad).slice(0, 100));
+  }
+});
+
+test('render: the front matter comes with its fields, or why only its YAML can be edited', () => {
+  const r = harness(FM_DOC).render();
+  const fields = r.frontMatter?.fields ?? [];
+  assert.deepEqual(fields.slice(0, 4).map((f) => [f.name, f.kind, f.value]), [['title', 'text', 'Plan'], ['summary', 'text', ''], ['status', 'select', ''], ['owners', 'list', '@maya']]);
+  assert.equal(fields.find((f) => f.name === 'toc')?.label, 'Table of contents');
+  const anchored = harness('---\na: &x 1\nb: *x\n---\n\nText.\n').render();
+  assert.equal(anchored.frontMatter?.fields, undefined);
+  assert.match(anchored.frontMatter?.formRefused ?? '', /anchors, aliases or tags/);
+});
+
+test('setFrontMatter changes only that key\'s lines, keeping comments and quotes; a new key goes before ---', async () => {
+  const h = harness(FM_DOC);
+  const fm = h.render().frontMatter!;
+  const reply = await h.send({ type: 'setFrontMatter', key: fm.key, name: 'title', value: 'New plan', editId: 'a' });
+  assert.deepEqual(reply, { type: 'ack', editId: 'a', version: 2 }, 'no focus request: focus stays in the form');
+  assert.equal(lines(h.doc.text)[1], 'title: "New plan"   # shown');
+  onlyLinesChanged(FM_DOC, h.doc.text, 1, 2);
+  // Before the next render, the next field still finds the block.
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'owners', value: ['@maya', '@api'], editId: 'b' });
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'status', value: 'draft', editId: 'c' });
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'tags', value: null, editId: 'd' });
+  assert.deepEqual(lines(h.doc.text).slice(0, 8), ['---', 'title: "New plan"   # shown', '# owners', 'owners:', '  - "@maya"', '  - "@api"', 'status: draft', '---']);
+  assert.ok(h.doc.text.endsWith('---\n\n# Plan\n\nText.\n'), 'the body is untouched');
+});
+
+test('setFrontMatter: a key the form can\'t edit opens the YAML; a block that is not the front matter is refused', async () => {
+  const text = '---\ntitle: x\nsummary: |\n  long\n---\n\nText.\n';
+  const h = harness(text);
+  const r = h.render();
+  const fm = r.frontMatter!;
+  const refused = await h.send({ type: 'setFrontMatter', key: fm.key, name: 'summary', value: 'short', editId: 'a' });
+  assert.deepEqual(refused, { type: 'notice', editId: 'a', text: '"summary" is written as a block scalar (| or >): edit it as text.', fallback: fm.key });
+  assert.equal(h.doc.text, text);
+  const para = block(r, 'Text.');
+  assert.equal((await h.send({ type: 'setFrontMatter', key: para.key, name: 'title', value: 'y', editId: 'b' }))?.type, 'notice');
+  assert.equal(h.doc.text, text);
+  // Changed in a text editor meanwhile: a conflict, nothing written.
+  h.doc.type(4, 11, 'title: other');
+  assert.equal((await h.send({ type: 'setFrontMatter', key: fm.key, name: 'title', value: 'z', editId: 'c' }))?.type, 'conflict');
+});
+
+test('setFrontMatter in a CRLF document keeps CRLF', async () => {
+  const crlf = FM_DOC.replaceAll('\n', '\r\n');
+  const h = harness(crlf);
+  const fm = h.render().frontMatter!;
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'owners', value: ['@a', '@maya'], editId: 'a' });
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'lang', value: 'de', editId: 'b' });
+  assert.ok(h.doc.text.startsWith('---\r\ntitle: "Plan"   # shown\r\n# owners\r\nowners:\r\n  - "@a"\r\n  - "@maya"\r\ntags: [a, b]\r\nlang: de\r\n---\r\n'), JSON.stringify(h.doc.text));
+  assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
+});

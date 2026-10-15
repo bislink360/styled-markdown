@@ -124,6 +124,10 @@
 :host .field label { min-width: 8em; }
 :host .field.flag label { min-width: 0; }
 :host .field input[type="text"] { flex: 1; min-width: 8em; padding: 2px 4px; }
+:host .props .field { flex-wrap: wrap; }
+:host .props .field .hint { margin: 0; }
+:host .props .actions { margin-top: 6px; }
+:host .field input:disabled, :host .field select:disabled { opacity: 0.6; }
 
 /* The form of an inline directive or styled span. */
 :host .pop {

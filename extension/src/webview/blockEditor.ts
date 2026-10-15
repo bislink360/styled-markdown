@@ -12,7 +12,7 @@ import type {
 import {
   FROZEN, blockLabel, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
   gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement,
-  itemForLine, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  itemForLine, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction, type GridCell, type GridRequest, type GridSize, type LineRange,
 } from './blockEditorModel';
 
@@ -1007,7 +1007,7 @@ function start(rt: Runtime): void {
     insert: button('Insert…', () => act('insert'), { title: 'Insert a block after this one (Ctrl+/)', 'aria-haspopup': 'menu', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'menu' }),
     edit: button('Edit', () => act('edit'), { title: 'Edit the source of this block (Enter, or F2 on a table)' }),
     grid: button('Edit as grid', () => act('grid'), { title: 'Edit this table cell by cell (Enter)' }),
-    props: button('Properties', () => act('props'), { title: 'Title and attributes of this container', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'props' }),
+    props: button('Properties', () => act('props'), { title: 'A container\'s title and attributes, or the front matter\'s fields', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'props' }),
     problems: button('Problems…', () => act('problems'), { title: 'This block\'s problems and their quick fixes (Ctrl+.)', 'aria-haspopup': 'dialog' }),
     up: button('Move up', () => act('up'), { title: 'Move this block up (Alt+Up)' }),
     down: button('Move down', () => act('down'), { title: 'Move this block down (Alt+Down)' }),
@@ -1059,7 +1059,7 @@ function start(rt: Runtime): void {
     const view = currentView();
     status.textContent = view ? blockLabel(view) : 'No block selected';
     for (const action of ['edit', 'up', 'down', 'del', 'reveal'] as const) setDisabled(buttons[action], !view);
-    setDisabled(buttons.props, !view?.form);
+    setDisabled(buttons.props, !view?.form && view?.type !== 'frontmatter');
     const item = currentItem();
     setDisabled(buttons.problems, !item || !shownProblems.get(item));
     updateGridButton(view?.table);
@@ -1172,11 +1172,56 @@ function start(rt: Runtime): void {
     return h(DIV, { className: `field ${field.kind}`, attrs: { 'data-field': field.name } }, field.kind === 'flag' ? [control, label] : [label, control]);
   }
 
-  /** Fill the form for the current container; the control with focus keeps it. */
+  /**
+   * A front matter field: a text field (a list's items separated by commas), a date or a list of choices. Changing
+   * it sets that key (setFrontMatter); emptying it removes the key. One the form can't change is shown, disabled,
+   * with the reason.
+   */
+  function frontMatterRow(key: string, field: FormField): HTMLElement {
+    const id = `field-${field.name}`;
+    const control = fieldControl(field, id);
+    const label = h('label', { text: field.label, attrs: { for: id } });
+    const notes: HTMLElement[] = [];
+    if (field.kind === 'list') notes.push(h('span', { className: 'hint', text: 'Separated by commas', attrs: { id: `${id}-hint` } }));
+    if (field.refused) {
+      control.disabled = true;
+      notes.push(h('span', { className: 'hint', text: `Written as ${field.refused}: edit the YAML.`, attrs: { id: `${id}-refused` } }));
+    }
+    if (notes.length) control.setAttribute('aria-describedby', notes.map((n) => n.id).join(' '));
+    control.addEventListener('change', () => {
+      post({ type: 'setFrontMatter', key, name: field.name, value: frontMatterValue(field, control.value), editId: nextId() });
+    });
+    return h(DIV, { className: `field ${field.kind}`, attrs: { 'data-field': field.name } }, [label, control, ...notes]);
+  }
+
+  /** The front matter's fields, or why only its YAML can be edited; Edit YAML opens its text. */
+  function fillFrontMatterProps(view: ItemView): void {
+    const fm = model?.frontMatter;
+    props.setAttribute(ARIA_LABEL, 'Front matter fields');
+    const yaml = button('Edit YAML', () => {
+      closeProps(false);
+      const item = currentItem();
+      if (item) startEdit(item);
+    }, { title: 'Edit the front matter as YAML text (Enter on the block)' });
+    const actions = h(DIV, { className: 'actions' }, [yaml, button('Done', () => closeProps(true))]);
+    const title = h('p', { className: 'props-title', text: 'Front matter' });
+    if (!fm?.fields) {
+      props.replaceChildren(title, h('p', { text: fm?.formRefused ?? 'The front matter can only be edited as YAML.' }), actions);
+      return;
+    }
+    props.replaceChildren(title, ...fm.fields.map((f) => frontMatterRow(view.key, f)), actions);
+  }
+
+  /** Fill the form for the current container or front matter; the control with focus keeps it. */
   function fillProps(): void {
     const view = currentView();
     const form = view?.form;
     const focused = (barRoot.activeElement as HTMLElement | null)?.closest<HTMLElement>('.field')?.dataset.field;
+    if (view?.type === 'frontmatter') {
+      fillFrontMatterProps(view);
+      if (focused) props.querySelector<HTMLElement>(`[data-field="${focused}"] input, [data-field="${focused}"] select`)?.focus();
+      return;
+    }
     if (!view || !form) {
       props.replaceChildren(h('p', { text: 'The current block is not a container: it has no properties.' }));
       return;

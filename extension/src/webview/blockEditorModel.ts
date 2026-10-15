@@ -207,6 +207,19 @@ export function formRequest(field: Pick<FormField, 'name' | 'kind'>, value: stri
   return { type: 'setAttr', name: field.name, value: text === '' ? null : text };
 }
 
+/**
+ * What a front matter field asks for (setFrontMatter's value): its text trimmed, a list's items (split on commas,
+ * trimmed, empty ones left out); null, which removes the key, when that leaves nothing.
+ */
+export function frontMatterValue(field: Pick<FormField, 'kind'>, value: string): string | string[] | null {
+  if (field.kind === 'list') {
+    const items = value.split(',').map((item) => item.trim()).filter(Boolean);
+    return items.length ? items : null;
+  }
+  const text = value.trim();
+  return text === '' ? null : text;
+}
+
 /** The field of an inline form for the text in the brackets (CONTENT_FIELD in the session). */
 const CONTENT = 'content';
 

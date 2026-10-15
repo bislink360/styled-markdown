@@ -9,6 +9,7 @@
 import { containerHeader, lexAttrs, removeContainerAttr, setContainerAttr, setContainerTitle } from './core/attrEdit';
 import type { BlockRender, Segment } from './core/blocks';
 import { parseFrontMatter } from './core/frontmatter';
+import { FRONT_MATTER_FIELDS, frontMatterFields, isFrontMatterRefusal, setFrontMatterValue } from './core/frontMatterEdit';
 import { editInline, scanInline, SPAN, type InlineChange, type InlineItem, type RenderedInline } from './core/inlineEdit';
 import { applyLineEdits, deleteBlock, insertBlock, lineEditToTextEdit, minimalEdit, moveBlock, splitLines, type LineEdit, type LineRange, type TextEdit } from './core/sourceEdit';
 import { CONTAINERS, INLINE_DIRECTIVES, NAMED_COLORS, PRIORITY_VALUES, type ContainerSpec, type InlineDirectiveSpec } from './core/spec';
@@ -39,6 +40,7 @@ export type EditorMessage =
   | SetInlineMessage
   | TableMessage
   | { type: 'addFrontMatter'; editId?: string }
+  | SetFrontMatterMessage
   | { type: 'getFixes'; key: string; requestId: number }
   | ApplyFixMessage
   | { type: 'toggleTask'; line: number }
@@ -73,6 +75,18 @@ export type TableMessage =
   | { type: 'tableAlign'; key: string; editId?: string };
 
 /**
+ * Set a known front matter key (FRONT_MATTER_FIELDS) of the front matter block `key`: a text, a list's items, or
+ * null to remove the key.
+ */
+export interface SetFrontMatterMessage {
+  type: 'setFrontMatter';
+  key: string;
+  name: string;
+  value: string | string[] | null;
+  editId?: string;
+}
+
+/**
  * Apply the `index`th quick fix the host listed for a block (`fixes`) at document `version`. The page names the fix,
  * never its edits. `confirm`: the user agreed that it also changes lines outside the block, or other files.
  */
@@ -96,7 +110,8 @@ export interface BlockProblems {
   messages: string[];
 }
 
-export type FormFieldKind = 'title' | 'select' | 'flag' | 'text' | 'color' | 'date';
+/** A form control: 'list' is a text field of items separated by commas (front matter lists). */
+export type FormFieldKind = 'title' | 'select' | 'flag' | 'text' | 'color' | 'date' | 'list';
 
 /** One control of a container's header form. */
 export interface FormField {
@@ -108,6 +123,8 @@ export interface FormField {
   value: string;
   /** Choices of a select or color field ('' first: not set). */
   options?: string[];
+  /** Why the form can't change this field (its text must be edited instead). */
+  refused?: string;
 }
 
 /** A container's header as a form: its title and the attributes its kind takes. */
@@ -171,6 +188,9 @@ export interface FrontMatterView {
   end: number;
   source: string;
   problems?: BlockProblems;
+  /** The known keys as form fields (setFrontMatter); left out when only the YAML can be edited, and `formRefused` says why. */
+  fields?: FormField[];
+  formRefused?: string;
 }
 
 /** A template the insert menu offers. */
@@ -338,6 +358,19 @@ function readTableCol(m: Raw): EditorMessage | undefined {
   return align ? withId({ type: 'tableCol', key: m.key, op: 'align', at: m.at, align }, m.editId) : undefined;
 }
 
+/** The most items a front matter list may get from the form. */
+const MAX_LIST_ITEMS = 200;
+/** A single-line value: no line breaks. */
+const isLine = (v: unknown): v is string => isText(v, MAX_VALUE) && !/[\r\n]/.test(v);
+
+function readSetFrontMatter(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || typeof m.name !== 'string' || !FRONT_MATTER_FIELDS.includes(m.name) || !optionalId(m.editId)) return undefined;
+  const list = Array.isArray(m.value) && m.value.length <= MAX_LIST_ITEMS && m.value.every((item) => isLine(item) && item.trim() !== '');
+  if (m.value !== null && !isLine(m.value) && !list) return undefined;
+  const value = list ? [...(m.value as string[])] : (m.value as string | null);
+  return withId({ type: 'setFrontMatter', key: m.key, name: m.name, value }, m.editId);
+}
+
 /** The most quick fixes the host lists for a block. */
 export const MAX_FIXES = 50;
 
@@ -370,6 +403,7 @@ const READERS: Readonly<Record<string, Reader>> = {
   tableCol: readTableCol,
   tableAlign: (m) => (isKey(m.key) && optionalId(m.editId) ? withId({ type: 'tableAlign', key: m.key }, m.editId) : undefined),
   addFrontMatter: (m) => (optionalId(m.editId) ? withId({ type: 'addFrontMatter' }, m.editId) : undefined),
+  setFrontMatter: readSetFrontMatter,
   getFixes: (m) => (isKey(m.key) && isCount(m.requestId) ? { type: 'getFixes', key: m.key, requestId: m.requestId } : undefined),
   applyFix: readApplyFix,
   toggleTask: (m) => (isCount(m.line) ? { type: 'toggleTask', line: m.line } : undefined),
@@ -571,7 +605,10 @@ const FLAGS = new Set(['collapsible', 'open']);
 const COLOR_KEYS = ['color', 'bg', 'border'];
 const COLOR_ATTRS = new Set(['accent', ...COLOR_KEYS]);
 const LABELS: Readonly<Record<string, string>> = { color: 'Text color', bg: 'Background', border: 'Border', accent: 'Accent color', title: 'Title' };
-const SEVERITY_RANK: Readonly<Record<DiagnosticSeverity, number>> = { error: 0, warning: 1, info: 2 };
+const FRONT_MATTER_LABELS: Readonly<Record<string, string>> = {
+  toc: 'Table of contents', smd: 'Styled Markdown version', lang: 'Language', related: 'Related documents', accent: 'Accent color',
+};
+const SEVERITY_RANK:Readonly<Record<DiagnosticSeverity, number>> = { error: 0, warning: 1, info: 2 };
 const NOT_FOUND = 'That block is no longer in the document.';
 const TABLE = 'table';
 const TABLE_SOURCE = 'Edit the table\'s source instead.';
@@ -969,7 +1006,11 @@ export class BlockEditorSession {
   }
 
   private frontMatterView(s: Segment, lines: readonly string[], owners: Problems): FrontMatterView {
-    const view: FrontMatterView = { key: s.key, start: s.start, end: s.end, source: lines.slice(s.start, s.end).join('\n') };
+    const own = lines.slice(s.start, s.end);
+    const fields = frontMatterFields(own);
+    const view: FrontMatterView = { key: s.key, start: s.start, end: s.end, source: own.join('\n') };
+    if (isFrontMatterRefusal(fields)) view.formRefused = fields.refused;
+    else view.fields = fields.map((f): FormField => ({ ...f, label: FRONT_MATTER_LABELS[f.name] ?? fieldLabel(f.name) }));
     const problems = problemsOf(owners.get(s.key));
     if (problems) view.problems = problems;
     return view;
@@ -1047,6 +1088,8 @@ export class BlockEditorSession {
         return this.editTable(message);
       case 'addFrontMatter':
         return this.addFrontMatter(message.editId);
+      case 'setFrontMatter':
+        return this.setFrontMatter(message);
       case 'getFixes':
         return this.getFixes(message.key, message.requestId);
       case 'applyFix':
@@ -1208,7 +1251,7 @@ export class BlockEditorSession {
   }
 
   /** Refuse an inline or table change, and have the page open the block's source instead. */
-  private fallback(m: SetInlineMessage | TableMessage, text: string): void {
+  private fallback(m: { key: string; editId?: string }, text: string): void {
     this.options.post(m.editId === undefined ? { type: 'notice', text, fallback: m.key } : { type: 'notice', editId: m.editId, text, fallback: m.key });
   }
 
@@ -1244,7 +1287,7 @@ export class BlockEditorSession {
       if (aligning) return this.notice(m.editId, 'The table can\'t be aligned without changing what its cells hold.');
       return this.fallback(m, `That change can't be written in this table. ${TABLE_SOURCE}`);
     }
-    const edits = this.tableTextEdits(found, change.edits);
+    const edits = this.blockTextEdits(found, change.edits);
     if (edits.length && !(await this.apply(edits))) return this.notice(m.editId, NOT_APPLIED);
     if (aligning && !edits.length) this.notice(m.editId, 'The table is already aligned.');
     // The next change from the grid, before the next render, still finds the block.
@@ -1253,7 +1296,7 @@ export class BlockEditorSession {
   }
 
   /** A table's line edits (against its own lines) as text edits: a line replaced by another, by its smallest splice. */
-  private tableTextEdits(found: Found, edits: readonly LineEdit[]): TextEdit[] {
+  private blockTextEdits(found: Found, edits: readonly LineEdit[]): TextEdit[] {
     const base = found.range.start;
     const starts = lineStarts(found.text);
     return edits.flatMap((e): TextEdit[] => {
@@ -1262,6 +1305,29 @@ export class BlockEditorSession {
       const change = minimalEdit(found.lines[line], e.lines[0]);
       return change ? [{ from: starts[line] + change.from, to: starts[line] + change.to, insert: change.insert }] : [];
     });
+  }
+
+  /**
+   * Set one known key of the front matter from its form, if the block still holds the text the page was given and
+   * is the front matter. Only that key's value changes (its line, or its list item lines); a new key goes before the
+   * closing `---`. YAML the form can't edit safely, or a value that wouldn't read back as asked, is refused, and the
+   * page opens the front matter's text instead.
+   */
+  private async setFrontMatter(m: SetFrontMatterMessage): Promise<void> {
+    const found = this.found(m.key, m.editId);
+    if (!found) return;
+    const { range } = found;
+    if (range.start !== 0 || parseFrontMatter(found.text).bodyStartLine !== range.end) return this.notice(m.editId, 'That block is not the front matter.');
+    const lines = found.lines.slice(range.start, range.end);
+    const value = Array.isArray(m.value) && !m.value.length ? null : m.value;
+    const edits = setFrontMatterValue(lines, m.name, value);
+    if (isFrontMatterRefusal(edits)) return this.fallback(m, edits.refused);
+    const after = applyLineEdits(lines, edits);
+    const textEdits = this.blockTextEdits(found, edits);
+    if (textEdits.length && !(await this.apply(textEdits))) return this.notice(m.editId, NOT_APPLIED);
+    // The next change from the same form, before the next render, still finds the block. Focus stays in the form.
+    this.pin(m.key, { start: range.start, end: range.start + after.length, version: this.version(), text: after.join('\n') });
+    this.ack(m.editId);
   }
 
   /**
