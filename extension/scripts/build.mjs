@@ -54,6 +54,19 @@ const builds = [
     minify: true,
     logLevel: 'warning',
   },
+  // The Block Editor's page script (a classic script in the webview, after media/runtime.js). It holds no .smd
+  // logic: the extension renders and edits, the page only shows blocks and sends requests.
+  {
+    entryPoints: [join(root, 'src', 'webview', 'blockEditor.ts')],
+    outfile: join(root, 'dist', 'webview', 'block-editor.js'),
+    bundle: true,
+    platform: 'browser',
+    format: 'iife',
+    target: ['es2022'],
+    minify: !watch,
+    legalComments: 'none',
+    logLevel: 'info',
+  },
 ];
 
 if (watch) {

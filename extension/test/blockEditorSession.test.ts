@@ -515,6 +515,19 @@ test('setAttr and setTitle change only the opening line, and only what they set'
   assert.equal((await h.send({ type: 'setTitle', key: block(h.render(), 'Last').key, title: 'x', editId: 'f' }))?.type, 'notice', 'not a container');
 });
 
+test('form changes and moves in a row, before the next render, still find their block', async () => {
+  const h = harness(DOC);
+  const r = h.render();
+  const callout = block(r, ':::warning');
+  await h.send({ type: 'setAttr', key: callout.key, name: 'color', value: 'teal', editId: 'a' });
+  assert.equal((await h.send({ type: 'setTitle', key: callout.key, title: 'Careful', editId: 'b' }))?.type, 'ack');
+  assert.equal(lines(h.doc.text)[9], ':::warning{collapsible color=teal} Careful');
+  const last = block(r, 'Last');
+  assert.equal((await h.send({ type: 'move', key: last.key, direction: 'up', editId: 'c' }))?.type, 'ack');
+  assert.equal((await h.send({ type: 'move', key: last.key, direction: 'up', editId: 'd' }))?.type, 'ack');
+  assert.ok(h.doc.text.includes('# Plan\n\nLast paragraph.\n\nFirst paragraph\nsecond line.\n'), h.doc.text);
+});
+
 test('addFrontMatter puts a title block at the top, once', async () => {
   const h = harness('# Doc\n\nText\n', { title: 'My notes: draft' });
   h.render();

@@ -692,8 +692,11 @@ export class BlockEditorSession {
     const target = moveTarget(place.siblings, place.index, direction);
     const moved = target === undefined ? null : moveBlock(found.lines, found.range, target);
     if (!moved) return this.notice(editId, direction === 'up' ? 'The block is already at the top.' : 'The block is already at the bottom.');
-    this.pins.delete(key);
-    if (await this.applyLines(found.text, moved.edits, editId)) this.ack(editId, { line: moved.line });
+    if (!(await this.applyLines(found.text, moved.edits, editId))) return;
+    // The same block, on other lines: a second move before the next render still finds it.
+    const size = found.range.end - found.range.start;
+    this.pin(key, { start: moved.line, end: moved.line + size, version: this.doc.version, text: found.lines.slice(found.range.start, found.range.end).join('\n') });
+    this.ack(editId, { line: moved.line });
   }
 
   private async editHeader(m: Extract<EditorMessage, { type: 'setAttr' | 'setTitle' }>): Promise<void> {
@@ -709,6 +712,9 @@ export class BlockEditorSession {
     if (change && !(await this.apply([{ from: span.from + change.from, to: span.from + change.to, insert: change.insert }]))) {
       return this.notice(m.editId, 'The edit could not be applied.');
     }
+    // The next change from the same form, before the next render, still finds the block.
+    const text = [next, ...found.lines.slice(found.range.start + 1, found.range.end)].join('\n');
+    this.pin(m.key, { ...found.range, version: this.doc.version, text });
     this.ack(m.editId, { line: found.range.start });
   }
 
