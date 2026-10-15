@@ -1,4 +1,5 @@
 import type { Heading } from './render';
+import { openTaskLines } from './taskLines';
 
 /**
  * Token budgets for the agent view (`smd agent --max-tokens N`).
@@ -51,10 +52,10 @@ export interface BudgetResult {
 export interface BudgetSection { heading: Heading; start: number; end: number }
 
 const AGENT_BLOCK = /^\s*:{3,}\s*agent(?![\w-])/;
+/** Key content besides open tasks, which are the ones `smd tasks` lists (see openTaskLines). */
 const KEY_CONTENT = [
   /^\s*:{3,}\s*(?:danger|warning|question)(?![\w-])/,
   /^\s*:{3,}\s*decision\b.*\bstatus\s*=\s*["']?accepted\b/,
-  /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/,
 ];
 
 const within = (inner: BudgetSection, outer: BudgetSection) => inner.start >= outer.start && inner.end <= outer.end;
@@ -70,13 +71,16 @@ export function omittableSections(sections: BudgetSection[], lines: string[], re
 }
 
 /** 1 when the section has content worth keeping longer (see the module comment), else 0. */
-function keepTier(s: BudgetSection, lines: string[]): number {
-  return lines.slice(s.start, s.end + 1).some((l) => KEY_CONTENT.some((re) => re.test(l))) ? 1 : 0;
+function keepTier(s: BudgetSection, lines: string[], openTasks: number[]): number {
+  const keyContent = openTasks.some((l) => l >= s.start && l <= s.end)
+    || lines.slice(s.start, s.end + 1).some((l) => KEY_CONTENT.some((re) => re.test(l)));
+  return keyContent ? 1 : 0;
 }
 
-/** Omission order: least important first (see the module comment). */
+/** Omission order: least important first (see the module comment). `lines` are the whole document's. */
 export function omissionOrder(candidates: BudgetSection[], lines: string[], cost: (s: BudgetSection) => number): BudgetSection[] {
-  const ranked = candidates.map((s) => ({ s, tier: keepTier(s, lines), tokens: cost(s) }));
+  const openTasks = candidates.length ? openTaskLines(lines.join('\n')) : [];
+  const ranked = candidates.map((s) => ({ s, tier: keepTier(s, lines, openTasks), tokens: cost(s) }));
   ranked.sort((a, b) => a.tier - b.tier
     || b.s.heading.level - a.s.heading.level
     || b.tokens - a.tokens

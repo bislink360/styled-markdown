@@ -12,13 +12,14 @@ import {
   includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
 import {
-  expandedFigures, figuresOf, includedLines, includedLiteralLines, includeKey, includeSource, type ExpandedFigures,
+  expandedFigures, figuresOf, includedInlineMath, includedLines, includedLiteralLines, includeKey, includeSource, type ExpandedFigures,
 } from './includeText';
-import { aroundInlineMath, literalLines, parseSmd } from './parse';
+import { aroundInlineMath, inlineMathLines, literalLines, parseSmd, type InlineMathLines } from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { quoteCite } from './quote';
 import { CALLOUT_TYPES } from './spec';
+import { openTaskLines } from './taskLines';
 import { documentVariables, substituteVariables, type Variables } from './variables';
 
 /**
@@ -347,6 +348,8 @@ interface TransformOptions extends AgentViewOptions {
   variables?: Variables;
   /** The lines of `lines` that are code or display math, kept as written; found in `lines` when left out. */
   literalLines?: ReadonlySet<number>;
+  /** The inline math of the lines of `lines` whose inline text runs over several lines (see inlineMathLines); found in `lines` when left out. */
+  inlineMath?: InlineMathLines;
   /** Receives every emitted line with the source line it came from. */
   collect?: Array<[at: number, line: string]>;
   /** Inside an included document: where its own includes resolve. */
@@ -356,9 +359,9 @@ interface TransformOptions extends AgentViewOptions {
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
-  const { figures, ownFigures, literal } = documentContext(lines, options);
+  const { figures, ownFigures, literal, inlineMath } = documentContext(lines, options);
   const variables = options.variables ?? documentVariables(lines);
-  const text = (s: string, openTask = false) => inlineText(s, options.today, openTask, figures.byId, variables);
+  const text = (s: string, openTask = false, math?: ReadonlyArray<[number, number]>) => inlineText(s, options.today, openTask, figures.byId, variables, math);
   const changelogs = options.changelogs ?? changelogEntries(lines);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
@@ -479,14 +482,15 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
       continue;
     }
 
-    const converted = text(line, task ? task[2] === ' ' : false);
+    // Math that runs on from one line to the next is known for the line as written (not with a comment cut out).
+    const converted = text(line, task ? task[2] === ' ' : false, line === raw ? inlineMath.get(i) : undefined);
     emit(converted.trimEnd(), i);
   }
   flushDone(lines.length - 1);
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
-interface DocumentContext { figures: ExpandedFigures; ownFigures: ReadonlyMap<number, Figure>; literal: ReadonlySet<number> }
+interface DocumentContext { figures: ExpandedFigures; ownFigures: ReadonlyMap<number, Figure>; literal: ReadonlySet<number>; inlineMath: InlineMathLines }
 
 /**
  * The figures (numbered with the rest of the expanded document), this document's own figures by line, and the lines
@@ -495,13 +499,15 @@ interface DocumentContext { figures: ExpandedFigures; ownFigures: ReadonlyMap<nu
 function documentContext(lines: string[], options: TransformOptions): DocumentContext {
   const text = lines.join('\n');
   const figures = options.figures ?? expandedFigures(text, viewReader(options));
-  return { figures, ownFigures: figuresOf(figures, options.figureKey ?? ''), literal: options.literalLines ?? literalLines(text) };
+  return {
+    figures, ownFigures: figuresOf(figures, options.figureKey ?? ''), literal: options.literalLines ?? literalLines(text), inlineMath: options.inlineMath ?? inlineMathLines(text),
+  };
 }
 
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
   const text = lines.join('\n');
-  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text) };
+  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text), inlineMath: inlineMathLines(text) };
   return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
 }
 
@@ -532,6 +538,7 @@ function includeView(info: ContainerInfo, lines: string[], line: number, options
   // Included text uses this document's front matter variables, as the rendered HTML does.
   const inner = {
     ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines), literalLines: includedLiteralLines(inc),
+    inlineMath: includedInlineMath(inc),
     // Its figures are numbered with the including document's, and `:ref` resolves across both, as in rendered output.
     figureKey: includeKey(options.figureKey ?? '', line),
   };
@@ -583,15 +590,16 @@ const STATUS_WORDS: Record<string, string> = { green: 'ok', teal: 'ok', red: 'ba
 /**
  * Strip styling syntax from one line, keeping the words. Code spans and `$inline math$` are left
  * untouched. With the document's figures by id, `:ref[id]` becomes `Figure 2 (id)`; with its front matter,
- * `{{name}}` becomes the value of `name`.
+ * `{{name}}` becomes the value of `name`. `math` is the line's inline math when it is read with the lines around
+ * it (see mathOnLine); else it is read from the line.
  */
 export function inlineText(
-  line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables,
+  line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables, math?: ReadonlyArray<[number, number]>,
 ): string {
   return aroundInlineMath(line, (text) => text
     .split(/(`+[^`]*`+)/)
     .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, variables), today, openTask, figures)))
-    .join(''));
+    .join(''), math);
 }
 
 /** `:ref[id]` → `Figure 2 (id)`; references to unknown ids stay as written. */
@@ -642,6 +650,7 @@ function sectionViews(lines: string[], from: number, documentOptions: TransformO
   const text = lines.join('\n');
   const options = {
     ...documentOptions, figures: expandedFigures(text, viewReader(documentOptions)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text),
+    inlineMath: inlineMathLines(text),
   };
   if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);
   const emitted: Array<[number, string]> = [];
@@ -706,9 +715,11 @@ export function outline(text: string, options: AgentViewOptions = {}): string {
   if (typeof fm.data.summary === 'string') out.push(`summary: ${fm.data.summary}`);
   out.push('');
 
+  // Counted as `smd tasks` counts them: a task-shaped line in code is code.
+  const openTaskAt = openTaskLines(text);
   const rows = sectionCosts(text, options).map((s) => {
     const sectionText = lines.slice(s.start, s.end + 1);
-    const openTasks = sectionText.filter((l) => /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(l)).length;
+    const openTasks = openTaskAt.filter((l) => l >= s.start && l <= s.end).length;
     const notes = [
       openTasks ? `${openTasks} open task${openTasks > 1 ? 's' : ''}` : '',
       sectionText.some((l) => /^\s*```\s*mermaid/.test(l)) ? 'diagram' : '',

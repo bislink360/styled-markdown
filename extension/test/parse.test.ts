@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parseSmd, renderSmd } from '../src/core';
 import { anchorIds } from '../src/core/links';
-import { resetParseCache } from '../src/core/parse';
+import { inlineMathLines, literalLines, mathOnLine, resetParseCache } from '../src/core/parse';
 
 const repo = path.join(__dirname, '..', '..');
 
@@ -105,6 +105,49 @@ test('parseSmd lists the lines of code and of display math as markdown-it reads 
   const moved = { code: expected.code.map(([a, b]) => [a + 1, b + 1]), math: expected.math.map(([a, b]) => [a + 1, b + 1]) };
   assert.deepEqual(ranges(['---', 'smd: 1', '---', 'Intro', ...lines.slice(3)].join('\n')), moved);
   assert.deepEqual(ranges(lines.filter((_, i) => i !== 5).join('\n')).math, [[3, 7], [10, 13], [15, 17]]);
+});
+
+/** The inline math of a document's body as the line-based views read it (mathOnLine), joined over line ends. */
+function viewMath(text: string, bodyStart: number): string[] {
+  const known = inlineMathLines(text);
+  const literal = literalLines(text);
+  const found: string[] = [];
+  let open = false;
+  text.split('\n').forEach((line, i) => {
+    if (i < bodyStart || literal.has(i)) return;
+    for (const [start, end] of mathOnLine(known, i, line)) {
+      const piece = line.slice(start, end);
+      if (open) found[found.length - 1] += `\n${piece}`;
+      else found.push(piece);
+      open = !piece.endsWith('$');
+    }
+  });
+  return found.map((m) => m.slice(1, -1));
+}
+
+/** The TeX of the inline math renderSmd renders. */
+const renderedMath = (text: string) => [...renderSmd(text).html.matchAll(/<annotation encoding="application\/x-tex">([^<]*)<\/annotation>/g)].map((m) => m[1]);
+
+test('parseSmd reads inline math over the whole text of a paragraph, as rendering does, after an edit too', () => {
+  const lines = [
+    '---', 'smd: 1', '---', 'The cost $a +', 'b$ grows and $c$ stays.', '', '- item $x', '  times y$ and $5 and', '  $10 money', '',
+    '> quote $p', '> q$ end', '', 'Lazy $m', 'n$ `code $o', 'p$` and $s$', '', 'one $line$ only', '', 'x $e +', 'f$g and h$ after', '',
+    '    $code$', '    $more$', '', 'Pay $5 and', '$10 money.',
+  ];
+  const text = lines.join('\n');
+  const expected = [
+    [3, ['$a +']], [4, ['b$', '$c$']], [6, ['$x']], [7, ['times y$']], [8, []], [10, ['$p']], [11, ['q$']], [13, ['$m']], [14, ['n$']], [15, ['$s$']],
+    [19, ['$e +']], [20, ['f$']], [25, []], [26, []],
+  ];
+  const pieces = (t: string) => [...parseSmd(t).inlineMath].map(([line, spans]) => [line, spans.map(([a, b]) => t.split('\n')[line].slice(a, b))]);
+  resetParseCache();
+  assert.deepEqual(pieces(text), expected);
+  // Read the line-based way, it is the math that renders: `$g and h$` is not math, `$o\np$` is code, money is text.
+  assert.deepEqual(viewMath(text, 3), renderedMath(text));
+  assert.deepEqual(viewMath(text, 3), ['a +\nb', 'c', 'x\ntimes y', 'p\nq', 'm\nn', 's', 'line', 'e +\nf']);
+  // An edit above moves the lines.
+  const edited = ['---', 'smd: 1', '---', 'Intro', '', ...lines.slice(3)].join('\n');
+  assert.deepEqual(pieces(edited), expected.map(([line, spans]) => [(line as number) + 2, spans]));
 });
 
 test('parseSmd returns the same headings as renderSmd and reuses results for the same text', () => {
