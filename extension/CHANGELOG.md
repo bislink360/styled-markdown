@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.8.0 — 2026-10-15
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 1.7.2 — 2026-10-14
 
 Fixes only, closing the gaps 1.7.1 left in reading code and math as they render. Outlines count only the open tasks `smd tasks` lists; `$inline math$` that runs on to the next line stays as written in the agent view and `smd to-md`, and the validator reports nothing in it; and a `$$` line in indented code no longer opens display math for the validator. Rendered output is unchanged. Documents with `$$` in indented code may now see diagnostics on the lines after it, which the false math block used to hide.
