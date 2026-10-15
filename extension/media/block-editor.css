@@ -35,8 +35,15 @@
 
 .smd-ed-badge-host { position: absolute; top: 2px; right: 0; z-index: 1; }
 
+/* Inline directives and styled spans: a click (or Enter, once the block is current) opens a small form. */
+.smd-ed-item [data-smd-inline] { cursor: pointer; border-radius: 3px; }
+.smd-ed-item [data-smd-inline]:hover { outline: 1px dashed var(--vscode-focusBorder, #0078d4); outline-offset: 1px; }
+.smd-ed-item [data-smd-inline]:focus { outline: 2px solid var(--vscode-focusBorder, #0078d4); outline-offset: 2px; }
+.smd-ed-pop-host { position: absolute; z-index: 30; }
+
 @media (forced-colors: active) {
   .smd-ed-item:focus { outline: 2px solid Highlight; }
+  .smd-ed-item [data-smd-inline]:focus { outline: 2px solid Highlight; }
   .smd-ed-raw { border-color: CanvasText; color: CanvasText; }
 }
 
@@ -116,6 +123,21 @@
 :host .field.flag label { min-width: 0; }
 :host .field input[type="text"] { flex: 1; min-width: 8em; padding: 2px 4px; }
 
+/* The form of an inline directive or styled span. */
+:host .pop {
+  min-width: 16em;
+  max-width: min(28em, 90vw);
+  padding: 8px;
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground, inherit));
+  background: var(--vscode-editorWidget-background, Canvas);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.5))));
+  border-radius: 3px;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+:host .pop-title { margin: 0 0 6px; font-weight: 600; overflow-wrap: anywhere; }
+:host .pop .field input[type="date"] { flex: 1; padding: 2px 4px; }
+:host .pop .actions { margin-top: 6px; }
+
 /* The source editor of a block. */
 :host .editor { margin: 0.5em 0; }
 :host .label { display: block; margin-bottom: 2px; font-size: 0.85em; color: var(--vscode-descriptionForeground, inherit); }
@@ -157,7 +179,7 @@
 :host .badge.error { background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.2)); border-color: var(--vscode-inputValidation-errorBorder, #be1100); }
 
 @media (forced-colors: active) {
-  :host button, :host .badge, :host .notice, :host .menu { border: 1px solid ButtonText; }
+  :host button, :host .badge, :host .notice, :host .menu, :host .pop { border: 1px solid ButtonText; }
   :host :focus-visible, :host textarea:focus, :host .menu button:focus { outline: 2px solid Highlight; }
   :host button[aria-disabled="true"] { color: GrayText; }
 }

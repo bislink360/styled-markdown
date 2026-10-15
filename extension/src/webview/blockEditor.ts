@@ -6,10 +6,11 @@
 // The document's rendered HTML goes into the page as in the preview. The editor's own controls (toolbar, menus,
 // forms, the source editor, notices, problem badges) live in closed shadow roots and are built with createElement
 // and textContent only.
-import type { BlockView, FocusRequest, FormField, FrontMatterView, HostMessage, RenderMessage } from '../blockEditorSession';
+import type { BlockView, FocusRequest, FormField, FrontMatterView, HostMessage, InlineView, RenderMessage } from '../blockEditorSession';
 import {
-  FROZEN, blockLabel, desiredOrder, editLabel, findView, followEdit, formRequest, isUndoRedo, itemForLine, listKeyTarget, orderMoves,
-  problemsLabel, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines, type LineRange,
+  FROZEN, blockLabel, desiredOrder, editLabel, findView, followEdit, formRequest, inlineAnnouncement, inlineItemLabel, inlineRequest,
+  isUndoRedo, itemForLine, listKeyTarget, orderMoves, problemsLabel, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead,
+  withoutLines, type LineRange,
 } from './blockEditorModel';
 
 interface Runtime {
@@ -52,7 +53,7 @@ interface Editing {
   timer?: ReturnType<typeof setTimeout>;
 }
 
-type ItemView = Pick<BlockView, 'key' | 'type' | 'container' | 'start' | 'end' | 'source' | 'problems' | 'form' | 'children'>;
+type ItemView = Pick<BlockView, 'key' | 'type' | 'container' | 'start' | 'end' | 'source' | 'problems' | 'form' | 'children' | 'inline'>;
 type Action = 'insert' | 'edit' | 'props' | 'up' | 'down' | 'del' | 'reveal' | 'fm';
 
 const AUTOSAVE_DELAY = 800;
@@ -75,6 +76,10 @@ const ARIA_DISABLED = 'aria-disabled';
 const ARIA_LABEL = 'aria-label';
 const TABINDEX = 'tabindex';
 const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role="tab"], audio, video, iframe, [contenteditable], .smd-ed-editor';
+/** An inline directive or styled span the extension numbered (renderBlocks' inlineIndex). */
+const INLINE = '[data-smd-inline]';
+/** The input type of a form field that is not a select. */
+const INPUT_TYPES: Readonly<Partial<Record<FormField['kind'], string>>> = { flag: 'checkbox', date: 'date' };
 
 const runtime = (globalThis as { smdRuntime?: Runtime }).smdRuntime;
 if (typeof document !== 'undefined' && runtime?.mode === 'block-editor') start(runtime);
@@ -403,6 +408,8 @@ function start(rt: Runtime): void {
     const item = list[itemForLine(list.map(startOf), focus.line)];
     setCurrent(item, true);
     if (focus.edit) startEdit(item, { select: focus.select });
+    // After an inline form: focus goes back to the item it changed.
+    if (focus.inline !== undefined) item.querySelector<HTMLElement>(`[data-smd-inline="${focus.inline}"]`)?.focus();
   }
 
   // ---- Editing a block's source ----------------------------------------------------
@@ -693,6 +700,7 @@ function start(rt: Runtime): void {
         break;
       case 'notice':
         showNotice(msg.text);
+        if (msg.fallback) editSourceOf(msg.fallback);
         break;
       case 'flush':
         onFlush(msg.requestId);
@@ -732,6 +740,12 @@ function start(rt: Runtime): void {
   // ---- Keyboard and mouse on the blocks --------------------------------------------
   rootEl.addEventListener(KEYDOWN, (event) => {
     const item = event.target as HTMLElement;
+    if (item.dataset?.smdInline !== undefined && ['Enter', ' ', 'F2'].includes(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      activateInline(item);
+      return;
+    }
     if (!item.classList?.contains(ITEM)) return;
     if (blockKey(item, event)) {
       event.preventDefault();
@@ -766,6 +780,11 @@ function start(rt: Runtime): void {
     const target = event.target as HTMLElement;
     if (!target.closest || target.closest(INTERACTIVE)) return;
     if (String(globalThis.getSelection?.() ?? '') !== '') return;
+    const inline = target.closest<HTMLElement>(INLINE);
+    if (inline && rootEl.contains(inline) && !inline.closest(`.${EDITOR}, .${HIDDEN}`)) {
+      activateInline(inline);
+      return;
+    }
     const item = target.closest<HTMLElement>(`.${ITEM}`);
     if (item && editing?.item !== item) {
       setCurrent(item, false);
@@ -892,6 +911,7 @@ function start(rt: Runtime): void {
     buttons.fm.hidden = !model || model.frontMatter !== null;
     rovingBar();
     if (!props.hidden) fillProps();
+    updateInlineStops();
   }
 
   function showNotice(text: string): void {
@@ -973,7 +993,7 @@ function start(rt: Runtime): void {
       select.value = field.value;
       return select;
     }
-    const input = h('input', { attrs: { id, type: field.kind === 'flag' ? 'checkbox' : 'text' } });
+    const input = h('input', { attrs: { id, type: INPUT_TYPES[field.kind] ?? 'text' } });
     if (field.kind === 'flag') input.checked = field.value === TRUE;
     else input.value = field.value;
     return input;
@@ -1016,6 +1036,129 @@ function start(rt: Runtime): void {
       closeProps(false);
       currentItem()?.focus();
     }
+  });
+
+  // ---- Inline items: a small form for one directive or styled span -------------------------------
+  // The editable items of the current block are tab stops right after it, so Tab from the block goes through them.
+  // Clicking one, or Enter on it, opens its form; an item the form can't change opens the block's source instead.
+  let inlineStops: HTMLElement[] = [];
+  const INLINE_STOP_ATTRS = ['role', 'aria-haspopup', ARIA_LABEL, TABINDEX];
+
+  /** The top-level block an inline element is in, its key, and what the extension says of the element. */
+  function inlineOf(el: HTMLElement): { key: string; view: InlineView } | undefined {
+    const top = el.closest<HTMLElement>('.smd-ed-block');
+    const key = top?.dataset.smdEdKey;
+    const view = top ? viewOf.get(top)?.inline?.[Number(el.dataset.smdInline)] : undefined;
+    return key && view ? { key, view } : undefined;
+  }
+
+  function updateInlineStops(): void {
+    for (const el of inlineStops) INLINE_STOP_ATTRS.forEach((name) => el.removeAttribute(name));
+    const item = editing ? undefined : currentItem();
+    inlineStops = item ? Array.from(item.querySelectorAll<HTMLElement>(INLINE)).filter((el) => inlineOf(el)?.view.fields) : [];
+    for (const el of inlineStops) {
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-haspopup', 'dialog');
+      el.setAttribute(ARIA_LABEL, inlineItemLabel(inlineOf(el)!.view));
+      el.setAttribute(TABINDEX, '0');
+    }
+  }
+
+  function activateInline(el: HTMLElement): void {
+    const found = inlineOf(el);
+    const item = el.closest<HTMLElement>(`.${ITEM}`);
+    if (!found?.view.fields) {
+      if (found) showNotice(`${found.view.label}: edit the block's source to change it.`);
+      if (item) {
+        setCurrent(item, false);
+        startEdit(item);
+      }
+      return;
+    }
+    if (editing) finishEdit(false);
+    // Ending the edit may have shown the block again as text: then there is no item to edit any more.
+    if (!el.isConnected) return;
+    if (item && item.dataset.smdEdKey !== currentKey) setCurrent(item, false);
+    openInline(el, found.key, found.view);
+  }
+
+  function editSourceOf(key: string): void {
+    const item = itemsAll().find((i) => i.dataset.smdEdKey === key);
+    if (!item) return;
+    setCurrent(item, false);
+    startEdit(item);
+  }
+
+  const popHost = h(DIV, { className: 'smd-ed-pop-host' });
+  const popRoot = chromeRoot(popHost);
+  const pop = h(DIV, { className: 'pop', attrs: { role: 'dialog', 'aria-labelledby': 'pop-title' } });
+  popRoot.append(pop);
+  popHost.hidden = true;
+  document.body.append(popHost);
+  let popTarget: { el: HTMLElement; key: string; view: InlineView; controls: Map<string, HTMLInputElement | HTMLSelectElement> } | null = null;
+
+  function openInline(el: HTMLElement, key: string, view: InlineView): void {
+    const controls = new Map<string, HTMLInputElement | HTMLSelectElement>();
+    const rows = (view.fields ?? []).map((field) => {
+      const id = `inline-${field.name}`;
+      const control = fieldControl(field, id);
+      controls.set(field.name, control);
+      return h(DIV, { className: `field ${field.kind}` }, [h('label', { text: field.label, attrs: { for: id } }), control]);
+    });
+    const title = h('p', { className: 'pop-title', text: view.text ? `${view.label}: ${view.text}` : view.label, attrs: { id: 'pop-title' } });
+    const hint = h('p', { className: 'hint', text: 'Enter: apply. Escape: cancel.' });
+    const actions = h(DIV, { className: 'actions' }, [button('Apply', applyInline), button('Cancel', () => closeInline(true))]);
+    pop.replaceChildren(title, ...rows, hint, actions);
+    popTarget = { el, key, view, controls };
+    popHost.hidden = false;
+    const rect = el.getBoundingClientRect();
+    popHost.style.top = `${rect.bottom + window.scrollY + 4}px`;
+    popHost.style.left = `${Math.max(0, rect.left + window.scrollX)}px`;
+    rows[0]?.querySelector<HTMLElement>('input, select')?.focus();
+  }
+
+  function applyInline(): void {
+    const target = popTarget;
+    if (!target) return;
+    const values = Object.fromEntries([...target.controls].map(([name, control]) => [name, control.value]));
+    const request = inlineRequest(target.view.fields ?? [], values);
+    closeInline(true);
+    if (!request) return;
+    post({ type: 'setInline', key: target.key, index: target.view.index, name: target.view.name, ...request, editId: nextId() });
+    rt.announce(inlineAnnouncement(target.view, request));
+  }
+
+  function closeInline(refocus: boolean): void {
+    const target = popTarget;
+    if (!target) return;
+    popTarget = null;
+    popHost.hidden = true;
+    pop.replaceChildren();
+    if (!refocus) return;
+    const el = target.el.isConnected ? target.el : nodes.get(target.key)?.querySelector<HTMLElement>(`[data-smd-inline="${target.view.index}"]`);
+    (el ?? currentItem())?.focus();
+  }
+
+  pop.addEventListener(KEYDOWN, (event) => {
+    // In a text field, Ctrl+Z is the field's own undo, as in the source editor.
+    if (isUndoRedo(event) && (event.target as HTMLInputElement).type === 'text') {
+      event.stopPropagation();
+      return;
+    }
+    const escape = event.key === ESCAPE;
+    // Enter applies, except on a button, which Enter presses.
+    const enter = event.key === 'Enter' && !(event.target instanceof HTMLButtonElement);
+    if (!escape && !enter) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (escape) closeInline(true);
+    else applyInline();
+  });
+
+  pop.addEventListener('focusout', (event) => {
+    if (!pop.contains(event.relatedTarget as Node | null)) setTimeout(() => {
+      if (!pop.contains(popRoot.activeElement)) closeInline(false);
+    }, 0);
   });
 
   updateToolbar();

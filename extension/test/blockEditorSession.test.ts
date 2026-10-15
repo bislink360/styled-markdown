@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  BlockEditorSession, EditLog, containerForm, lineSpan, mapBoundary, readEditorMessage, yamlScalar,
-  type BlockView, type DocumentPort, type HostMessage, type LineDiagnostic, type RenderMessage, type SessionMessage, type TextChange,
+  BlockEditorSession, EditLog, containerForm, inlineAgree, inlineFields, lineSpan, mapBoundary, readEditorMessage, yamlScalar,
+  type BlockView, type DocumentPort, type HostMessage, type LineDiagnostic, type RenderMessage, type SessionMessage, type SessionOptions, type TextChange,
 } from '../src/blockEditorSession';
-import { renderBlocks, segmentSmd, type Segment } from '../src/core/blocks';
+import { renderBlocks, segmentSmd, type BlockRenderOptions, type Segment } from '../src/core/blocks';
+import { scanInline, type RenderedInline } from '../src/core/inlineEdit';
 import { blockTemplates, type Snippet } from '../src/core/templates';
-import type { RenderOptions } from '../src/core';
 import type { TextEdit } from '../src/core/sourceEdit';
 import { prng } from './fuzz/generate';
 
@@ -66,7 +66,7 @@ interface Harness {
   send(message: SessionMessage): Promise<HostMessage | undefined>;
 }
 
-function harness(text: string, options: { diagnostics?: LineDiagnostic[]; render?: RenderOptions; title?: string } = {}): Harness {
+function harness(text: string, options: { diagnostics?: LineDiagnostic[]; render?: BlockRenderOptions; title?: string; scan?: SessionOptions['scan'] } = {}): Harness {
   const doc = new FakeDoc(text);
   const sent: HostMessage[] = [];
   const renderOptions = { today: TODAY, ...options.render };
@@ -78,6 +78,7 @@ function harness(text: string, options: { diagnostics?: LineDiagnostic[]; render
     diagnostics: () => options.diagnostics ?? [],
     themePref: () => 'auto',
     title: options.title,
+    scan: options.scan,
   });
   doc.onChange = (version, changes) => session.recordChange(version, changes);
   return {
@@ -680,4 +681,198 @@ test('segments of the fake document agree with segmentSmd (the session sees what
   const r = h.render();
   const top = segmentSmd(DOC).filter((s: Segment) => s.kind !== 'frontmatter').map((s) => s.key);
   assert.deepEqual(r.blocks.map((b) => b.key), top);
+});
+
+// ---------------------------------------------------------------------------
+// Inline directives and styled spans (setInline)
+// ---------------------------------------------------------------------------
+
+const INLINE_DOC = [
+  '---',
+  'title: Plan',
+  'version: 2',
+  '---',
+  '',
+  'Ship :badge[Beta]{color=blue .x} by :due[2026-10-30], :priority[P1] and [this]{color=red} `:badge[code]` v :badge[v{{version}}]',
+  '',
+  '- [ ] task :progress{value=40} :metric[42%]{label="Act" trend=up}',
+  '',
+  'Last.',
+  '',
+].join('\n');
+const INLINE_ON = { render: { inlineIndex: true } };
+
+test('readEditorMessage: setInline with its fields; anything malformed is ignored', () => {
+  const key = 'abc123#0';
+  const ok = { type: 'setInline', key, index: 2, name: 'badge', content: 'New', attrs: { color: 'red', bg: null }, editId: 'e1' };
+  assert.deepEqual(readEditorMessage(ok), ok);
+  assert.deepEqual(readEditorMessage({ type: 'setInline', key, index: 0, name: 'span' }), { type: 'setInline', key, index: 0, name: 'span' });
+  const proto = readEditorMessage({ type: 'setInline', key, index: 0, name: 'span', attrs: JSON.parse('{"__proto__":"x"}') });
+  assert.ok(proto?.type === 'setInline' && Object.hasOwn(proto.attrs!, '__proto__'), '"__proto__" stays a key');
+  const invalid: unknown[] = [
+    { type: 'setInline', key, index: -1, name: 'badge' },
+    { type: 'setInline', key, index: 1.5, name: 'badge' },
+    { type: 'setInline', key, index: 10_001, name: 'badge' },
+    { type: 'setInline', key, index: 0, name: 'Badge' },
+    { type: 'setInline', key, index: 0 },
+    { type: 'setInline', key: 'x', index: 0, name: 'badge' },
+    { type: 'setInline', key, index: 0, name: 'badge', content: 3 },
+    { type: 'setInline', key, index: 0, name: 'badge', content: 'x'.repeat(2001) },
+    { type: 'setInline', key, index: 0, name: 'badge', attrs: [] },
+    { type: 'setInline', key, index: 0, name: 'badge', attrs: 'color=red' },
+    { type: 'setInline', key, index: 0, name: 'badge', attrs: { 'bad key': 'x' } },
+    { type: 'setInline', key, index: 0, name: 'badge', attrs: { color: 3 } },
+    { type: 'setInline', key, index: 0, name: 'badge', attrs: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`k${i}`, 'v'])) },
+    { type: 'setInline', key, index: 0, name: 'badge', editId: 'has space' },
+  ];
+  for (const m of invalid) assert.equal(readEditorMessage(m), undefined, JSON.stringify(m));
+});
+
+test('render: a block\'s inline items by number, with forms; marks only when the render asks for them', () => {
+  const plain = block(harness(INLINE_DOC).render(), 'Ship');
+  assert.equal(plain.inline, undefined);
+  assert.doesNotMatch(plain.html!, /data-smd-inline/);
+  const r = harness(INLINE_DOC, INLINE_ON).render();
+  const ship = block(r, 'Ship');
+  assert.deepEqual(ship.inline!.map((i) => [i.index, i.name, i.label, i.text]), [
+    [0, 'badge', 'Badge', 'Beta'], [1, 'due', 'Due date', '2026-10-30'], [2, 'priority', 'Priority', 'P1'], [3, 'span', 'Styled text', 'this'],
+    [4, 'badge', 'Badge', 'v{{version}}'],
+  ]);
+  assert.equal((ship.html!.match(/data-smd-inline="/g) ?? []).length, 5);
+  const fields = (i: number) => ship.inline![i].fields!.map((f) => `${f.name}:${f.kind}:${f.value}`);
+  assert.deepEqual(fields(0), ['content:text:Beta', 'color:color:blue']);
+  assert.deepEqual(fields(1), ['content:date:2026-10-30']);
+  assert.deepEqual(fields(2), ['content:select:P1']);
+  assert.deepEqual(fields(3), ['color:color:red', 'bg:color:', 'border:color:']);
+  assert.ok(ship.inline![2].fields![0].options!.includes('P0'));
+  const task = block(r, '- [ ]');
+  assert.deepEqual(task.inline!.map((i) => i.fields!.map((f) => f.name)), [['value', 'color', 'label'], ['content', 'label', 'delta', 'trend', 'good']]);
+  assert.deepEqual(task.inline![1].fields!.find((f) => f.name === 'trend')!.options, ['', 'up', 'down', 'flat']);
+  assert.equal(block(r, 'Last').inline, undefined, 'a block without items has none');
+});
+
+test('setInline: only the item\'s own text changes; everything else on the line and in the document stays', async () => {
+  const h = harness(INLINE_DOC, INLINE_ON);
+  const ship = block(h.render(), 'Ship');
+  const before = h.doc.text;
+  const ack = await h.send({ type: 'setInline', key: ship.key, index: 0, name: 'badge', content: 'GA', attrs: { color: 'green' }, editId: 'i1' });
+  assert.deepEqual(ack, { type: 'ack', editId: 'i1', version: 2, focus: { line: ship.start, inline: 0 } });
+  assert.equal(h.doc.text, before.replace(':badge[Beta]{color=blue .x}', ':badge[GA]{color=green .x}'));
+  onlyLinesChanged(before, h.doc.text, ship.start, ship.end);
+  // Before the next render: the next change from the same form still finds the block (pinned), checked against a fresh render.
+  await h.send({ type: 'setInline', key: ship.key, index: 1, name: 'due', content: '2026-11-02', editId: 'i2' });
+  await h.send({ type: 'setInline', key: ship.key, index: 2, name: 'priority', content: 'P0', editId: 'i3' });
+  await h.send({ type: 'setInline', key: ship.key, index: 3, name: 'span', attrs: { color: null, border: 'amber' }, editId: 'i4' });
+  assert.equal(lines(h.doc.text)[ship.start],
+    'Ship :badge[GA]{color=green .x} by :due[2026-11-02], :priority[P0] and [this]{border=amber} `:badge[code]` v :badge[v{{version}}]');
+  assert.deepEqual(h.sent.slice(-3).map((m) => m.type), ['ack', 'ack', 'ack']);
+  const task = block(h.render(), '- [ ]');
+  await h.send({ type: 'setInline', key: task.key, index: 1, name: 'metric', attrs: { trend: 'down', label: 'Activation rate' }, editId: 'i5' });
+  assert.equal(lines(h.doc.text)[task.start], '- [ ] task :progress{value=40} :metric[42%]{label="Activation rate" trend=down}');
+});
+
+test('setInline: a variable in the content is compared as rendered, and the content is written as typed', async () => {
+  const h = harness(INLINE_DOC, INLINE_ON);
+  const ship = block(h.render(), 'Ship');
+  await h.send({ type: 'setInline', key: ship.key, index: 4, name: 'badge', content: 'v{{version}}-rc', editId: 'v1' });
+  assert.match(lines(h.doc.text)[ship.start], /v :badge\[v\{\{version\}\}-rc\]$/);
+});
+
+test('setInline: a CRLF document stays CRLF', async () => {
+  const h = harness(INLINE_DOC.replaceAll('\n', '\r\n'), INLINE_ON);
+  const ship = block(h.render(), 'Ship');
+  await h.send({ type: 'setInline', key: ship.key, index: 0, name: 'badge', attrs: { color: 'red' }, editId: 'c1' });
+  assert.equal(h.doc.text, INLINE_DOC.replace('color=blue', 'color=red').replaceAll('\n', '\r\n'));
+});
+
+test('setInline: a block changed in another editor is a conflict, and nothing is written', async () => {
+  const h = harness(INLINE_DOC, INLINE_ON);
+  const ship = block(h.render(), 'Ship');
+  const at = h.doc.text.indexOf('Ship');
+  h.doc.type(at, at + 4, 'Send');
+  const changed = h.doc.text;
+  const reply = await h.send({ type: 'setInline', key: ship.key, index: 0, name: 'badge', attrs: { color: 'red' }, editId: 'x1' });
+  assert.equal(reply?.type, 'conflict');
+  assert.equal(h.doc.text, changed);
+});
+
+test('setInline: a wrong name, a field the form lacks or a value that can\'t be written is refused, and nothing is written', async () => {
+  const h = harness(INLINE_DOC, INLINE_ON);
+  const ship = block(h.render(), 'Ship');
+  const before = h.doc.text;
+  const refused = async (message: SessionMessage) => {
+    const reply = await h.send(message);
+    assert.equal(h.doc.text, before, JSON.stringify(message));
+    return reply;
+  };
+  const fallback = { type: 'notice', editId: 'r', fallback: ship.key };
+  assert.deepEqual({ ...(await refused({ type: 'setInline', key: ship.key, index: 0, name: 'status', attrs: { color: 'red' }, editId: 'r' })), text: '' }, { ...fallback, text: '' });
+  assert.equal((await refused({ type: 'setInline', key: ship.key, index: 9, name: 'badge', editId: 'r' }) as { fallback?: string }).fallback, ship.key, 'no such item');
+  const lacking = await refused({ type: 'setInline', key: ship.key, index: 1, name: 'due', attrs: { color: 'red' }, editId: 'r' });
+  assert.equal(lacking?.type, 'notice');
+  assert.equal((lacking as { fallback?: string }).fallback, undefined, 'a field the form lacks: just a notice');
+  await refused({ type: 'setInline', key: ship.key, index: 2, name: 'priority', attrs: { content: 'P0' }, editId: 'r' });
+  // Content that would end the brackets early, or a value no attribute list can hold.
+  assert.equal((await refused({ type: 'setInline', key: ship.key, index: 0, name: 'badge', content: 'a]b', editId: 'r' }) as { fallback?: string }).fallback, ship.key);
+  await refused({ type: 'setInline', key: ship.key, index: 0, name: 'badge', attrs: { color: 'a"b\'c' }, editId: 'r' });
+  await refused({ type: 'setInline', key: ship.key, index: 0, name: 'badge', content: 'two\nlines', editId: 'r' });
+});
+
+test('setInline: when the source and the HTML don\'t agree on the items, nothing has a form and every change is refused', async () => {
+  // A scan that misses the first item: the numbers no longer match, so no item of the block can be trusted.
+  const h = harness(INLINE_DOC, { ...INLINE_ON, scan: (ls) => scanInline(ls).slice(1) });
+  const ship = block(h.render(), 'Ship');
+  assert.ok(ship.inline!.every((i) => i.fields === undefined));
+  const before = h.doc.text;
+  const reply = await h.send({ type: 'setInline', key: ship.key, index: 1, name: 'due', content: '2026-12-01', editId: 'm1' });
+  assert.equal(reply?.type, 'notice');
+  assert.equal((reply as { fallback?: string }).fallback, ship.key, 'the page edits the source instead');
+  assert.equal(h.doc.text, before);
+  // Without numbered HTML (a render without inlineIndex) there is nothing to match either.
+  const off = harness(INLINE_DOC);
+  const plain = block(off.render(), 'Ship');
+  const r2 = await off.send({ type: 'setInline', key: plain.key, index: 0, name: 'badge', attrs: { color: 'red' }, editId: 'm2' });
+  assert.equal((r2 as { fallback?: string }).fallback, plain.key);
+});
+
+test('inlineFields and inlineAgree', () => {
+  const [badge, span] = scanInline([':badge[A]{color=#123456} [t]{bg=teal}']);
+  assert.deepEqual(inlineFields(badge)!.find((f) => f.name === 'color')!.options!.at(-1), '#123456', 'a color not in the list is kept as a choice');
+  assert.deepEqual(inlineFields(span)!.map((f) => f.value), ['', 'teal', '']);
+  assert.equal(inlineFields({ ...badge, at: undefined }), undefined, 'an item without a place has no form');
+  assert.equal(inlineFields(scanInline([':due[{{when}}]'])[0])![0].kind, 'text', 'a date written as a variable is text');
+  const rendered: RenderedInline[] = [{ kind: 'directive', name: 'badge', content: 'A', values: { color: '#123456' } }, { kind: 'span', name: 'span', content: '', values: { bg: 'teal' } }];
+  assert.ok(inlineAgree([badge, span], rendered, {}));
+  assert.ok(!inlineAgree([badge], rendered, {}));
+  assert.ok(!inlineAgree([badge, span], [rendered[0], { ...rendered[1], values: { bg: 'red' } }], {}));
+  assert.ok(!inlineAgree([badge, span], [{ ...rendered[0], content: 'B' }, rendered[1]], {}));
+});
+
+test('property: setInline on every item of every example and corpus file changes only that item\'s text', async () => {
+  const random = prng(11);
+  const colors = ['red', 'green', 'teal', 'muted'];
+  let applied = 0;
+  for (const d of [...readDir(examplesDir), ...readDir(corpusDir)]) {
+    const h = harness(d.text, INLINE_ON);
+    const r = h.render();
+    for (const b of r.blocks.filter((v) => v.inline?.some((i) => i.fields))) {
+      const item = b.inline!.find((i) => i.fields)!;
+      const field = item.fields![Math.floor(random() * item.fields!.length)];
+      const value = field.options?.length ? field.options[Math.floor(random() * field.options.length)] : colors[Math.floor(random() * colors.length)];
+      const message: SessionMessage = field.name === 'content'
+        ? { type: 'setInline', key: b.key, index: item.index, name: item.name, content: value || 'x', editId: `p${applied}` }
+        : { type: 'setInline', key: b.key, index: item.index, name: item.name, attrs: { [field.name]: value || null }, editId: `p${applied}` };
+      const before = h.doc.text;
+      const reply = await h.send(message);
+      if (reply?.type !== 'ack') continue;
+      applied++;
+      onlyLinesChanged(before, h.doc.text, b.start, b.end);
+      const a = lines(before);
+      const c = lines(h.doc.text);
+      const changed = a.map((l, i) => (l === c[i] ? -1 : i)).filter((i) => i >= 0);
+      assert.ok(changed.length <= 1, `${d.name}: at most one line changes`);
+      h.render();
+    }
+  }
+  assert.ok(applied > 20, `inline edits applied (${applied})`);
 });

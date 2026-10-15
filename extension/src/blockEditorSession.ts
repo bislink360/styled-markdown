@@ -9,9 +9,11 @@
 import { containerHeader, lexAttrs, removeContainerAttr, setContainerAttr, setContainerTitle } from './core/attrEdit';
 import type { BlockRender, Segment } from './core/blocks';
 import { parseFrontMatter } from './core/frontmatter';
+import { editInline, scanInline, SPAN, type InlineChange, type InlineItem, type RenderedInline } from './core/inlineEdit';
 import { deleteBlock, insertBlock, lineEditToTextEdit, minimalEdit, moveBlock, splitLines, type LineEdit, type LineRange, type TextEdit } from './core/sourceEdit';
-import { CONTAINERS, NAMED_COLORS, type ContainerSpec } from './core/spec';
+import { CONTAINERS, INLINE_DIRECTIVES, NAMED_COLORS, PRIORITY_VALUES, type ContainerSpec, type InlineDirectiveSpec } from './core/spec';
 import type { BlockTemplate } from './core/templates';
+import { substituteLine, type Variables } from './core/variables';
 
 // ---------------------------------------------------------------------------
 // Protocol
@@ -30,11 +32,27 @@ export type EditorMessage =
   | { type: 'move'; key: string; direction: MoveDirection; editId?: string }
   | { type: 'setAttr'; key: string; name: string; value: string | true | null; editId?: string }
   | { type: 'setTitle'; key: string; title: string; editId?: string }
+  | SetInlineMessage
   | { type: 'addFrontMatter'; editId?: string }
   | { type: 'toggleTask'; line: number }
   | { type: 'openLink'; href: string }
   | { type: 'revealLine'; line: number }
   | { type: 'flushed'; requestId: number };
+
+/**
+ * Change one inline directive or styled span of a top-level block: the `index`th the block's HTML numbers
+ * (`data-smd-inline`), which the page believes is a `name` (a directive's name, or 'span'). `content` replaces the
+ * text in its brackets; `attrs` sets (a value) or removes (null) attributes.
+ */
+export interface SetInlineMessage {
+  type: 'setInline';
+  key: string;
+  index: number;
+  name: string;
+  content?: string;
+  attrs?: Record<string, string | null>;
+  editId?: string;
+}
 
 /** The messages the session itself answers; the provider runs the others (toggleTask, openLink, revealLine). */
 export type SessionMessage = Exclude<EditorMessage, { type: 'toggleTask' | 'openLink' | 'revealLine' }>;
@@ -47,7 +65,7 @@ export interface BlockProblems {
   messages: string[];
 }
 
-export type FormFieldKind = 'title' | 'select' | 'flag' | 'text' | 'color';
+export type FormFieldKind = 'title' | 'select' | 'flag' | 'text' | 'color' | 'date';
 
 /** One control of a container's header form. */
 export interface FormField {
@@ -65,6 +83,22 @@ export interface FormField {
 export interface ContainerForm {
   name: string;
   fields: FormField[];
+}
+
+/**
+ * An inline directive or styled span of a block, by the number its HTML gives it (`data-smd-inline`). With
+ * `fields`, the page edits it in a small form (setInline); without, only the block's source can change it.
+ */
+export interface InlineView {
+  index: number;
+  /** The directive's name, or 'span'. */
+  name: string;
+  /** What it is, in words: "Badge", "Due date", "Styled text". */
+  label: string;
+  /** Its text as written, shortened: the content, or the span's text. */
+  text: string;
+  /** The form's controls: 'content' for the text in its brackets, else attribute keys. */
+  fields?: FormField[];
 }
 
 /** A block, or a gap between blocks, as the page shows it. */
@@ -86,6 +120,8 @@ export interface BlockView {
   children?: BlockView[];
   form?: ContainerForm;
   problems?: BlockProblems;
+  /** A top-level block's inline directives and styled spans, by number (left out when it has none). */
+  inline?: InlineView[];
 }
 
 export interface FrontMatterView {
@@ -128,13 +164,16 @@ export interface FocusRequest {
   edit?: boolean;
   /** Text to select in the editor, as offsets into the block's source. */
   select?: { from: number; to: number };
+  /** The inline item of the block to focus (its data-smd-inline number). */
+  inline?: number;
 }
 
 export type HostMessage =
   | RenderMessage
   | { type: 'ack'; editId: string; version: number; focus?: FocusRequest }
   | { type: 'conflict'; editId: string; key: string; currentText: string | null }
-  | { type: 'notice'; editId?: string; text: string }
+  /** `fallback`: the key of a block to edit in its source instead (an inline item the form can't change). */
+  | { type: 'notice'; editId?: string; text: string; fallback?: string }
   | { type: 'flush'; requestId: number };
 
 // ---------------------------------------------------------------------------
@@ -177,6 +216,38 @@ function readSetAttr(m: Raw): EditorMessage | undefined {
   return withId({ type: 'setAttr', key: m.key, name: m.name, value }, m.editId);
 }
 
+/** The most inline items a block may number, and attributes one setInline may change. */
+const MAX_INLINE = 10_000;
+const MAX_INLINE_ATTRS = 16;
+const INLINE_NAME = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** `attrs` of setInline: a plain object of attribute names to a value or null; undefined when it is not one. */
+function readInlineAttrs(v: unknown): Record<string, string | null> | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const entries = Object.entries(v);
+  if (entries.length > MAX_INLINE_ATTRS) return undefined;
+  const valid = entries.every(([name, value]) => ATTR_NAME.test(name) && (value === null || isText(value, MAX_VALUE)));
+  // fromEntries defines own properties, so a "__proto__" key stays a key.
+  return valid ? Object.fromEntries(entries as [string, string | null][]) : undefined;
+}
+
+function readSetInline(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || !isCount(m.index) || m.index > MAX_INLINE || typeof m.name !== 'string' || !INLINE_NAME.test(m.name) || !optionalId(m.editId)) {
+    return undefined;
+  }
+  const message: SetInlineMessage = { type: 'setInline', key: m.key, index: m.index, name: m.name };
+  if (m.content !== undefined) {
+    if (!isText(m.content, MAX_VALUE)) return undefined;
+    message.content = m.content;
+  }
+  if (m.attrs !== undefined) {
+    const attrs = readInlineAttrs(m.attrs);
+    if (!attrs) return undefined;
+    message.attrs = attrs;
+  }
+  return withId(message, m.editId);
+}
+
 const READERS: Readonly<Record<string, Reader>> = {
   ready: () => ({ type: 'ready' }),
   edit: (m) =>
@@ -192,6 +263,7 @@ const READERS: Readonly<Record<string, Reader>> = {
   setAttr: readSetAttr,
   setTitle: (m) =>
     isKey(m.key) && isText(m.title, MAX_VALUE) && optionalId(m.editId) ? withId({ type: 'setTitle', key: m.key, title: m.title }, m.editId) : undefined,
+  setInline: readSetInline,
   addFrontMatter: (m) => (optionalId(m.editId) ? withId({ type: 'addFrontMatter' }, m.editId) : undefined),
   toggleTask: (m) => (isCount(m.line) ? { type: 'toggleTask', line: m.line } : undefined),
   openLink: (m) => (isText(m.href, 4096) && m.href !== '' ? { type: 'openLink', href: m.href } : undefined),
@@ -323,6 +395,8 @@ export interface SessionOptions {
   themePref?(frontMatter: Record<string, unknown>): string;
   /** The title a new front matter gets (the file name). */
   title?: string;
+  /** The inline directives and styled spans of a block's lines (scanInline with the render's allowHtml). */
+  scan?(lines: readonly string[]): InlineItem[];
 }
 
 /** What the integration test (smd._blockEditorStatus) reads. */
@@ -428,6 +502,117 @@ export function containerForm(line: string, name: string | undefined): Container
   return { name: name.toLowerCase(), fields };
 }
 
+// ---------------------------------------------------------------------------
+// Inline directives and styled spans
+// ---------------------------------------------------------------------------
+
+/** The field of an inline form for the text in the brackets. */
+export const CONTENT_FIELD = 'content';
+const INLINE_LABELS: Readonly<Record<string, string>> = {
+  badge: 'Badge', kbd: 'Keys', progress: 'Progress bar', mention: 'Mention', status: 'Status', priority: 'Priority', due: 'Due date',
+  metric: 'Metric', [SPAN]: 'Styled text',
+};
+const CONTENT_LABELS: Readonly<Record<string, string>> = {
+  badge: 'Text', kbd: 'Keys', progress: 'Value', mention: 'Who', status: 'Label', priority: 'Priority', due: 'Date', metric: 'Value',
+};
+const INLINE_ATTR_LABELS: Readonly<Record<string, string>> = {
+  color: 'Color', bg: 'Background', border: 'Border', value: 'Value', label: 'Label', delta: 'Change', trend: 'Trend', good: 'Good direction',
+};
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_INLINE_TEXT = 60;
+
+/** Choices, '' first when the value may be left unset, and the value written now when it is not one of them. */
+function choicesWith(choices: readonly string[], value: string, unset: boolean): string[] {
+  return [...(unset ? [''] : []), ...choices, ...(value && !choices.includes(value) ? [value] : [])];
+}
+
+function contentField(item: InlineItem): FormField {
+  const value = item.content ?? '';
+  const label = CONTENT_LABELS[item.name] ?? 'Text';
+  if (item.name === 'priority') return { name: CONTENT_FIELD, kind: 'select', label, value, options: choicesWith(PRIORITY_VALUES, value, false) };
+  // A native date input, unless the date is written some other way (a `{{variable}}`) the input can't show.
+  if (item.name === 'due' && (value === '' || ISO_DATE.test(value))) return { name: CONTENT_FIELD, kind: 'date', label, value };
+  return { name: CONTENT_FIELD, kind: 'text', label, value };
+}
+
+function inlineAttrField(key: string, spec: InlineDirectiveSpec, values: Readonly<Record<string, string>>): FormField {
+  const value = values[key] ?? '';
+  const label = INLINE_ATTR_LABELS[key] ?? fieldLabel(key);
+  const choices = spec.values?.[key];
+  if (choices) return { name: key, kind: 'select', label, value, options: choicesWith(choices, value, true) };
+  if (key === 'color') return { ...colorField(key, value), label };
+  return { name: key, kind: 'text', label, value };
+}
+
+/**
+ * The form of an inline item: a styled span's color, background and border; a directive's content (a select for
+ * :priority, a date for :due) and its attributes (INLINE_DIRECTIVES[name].attrs, with .values as choices). Undefined
+ * for an item that is not on one line, which only the source can change.
+ */
+export function inlineFields(item: InlineItem): FormField[] | undefined {
+  if (!item.at) return undefined;
+  if (item.kind === SPAN) return COLOR_KEYS.map((key) => ({ ...colorField(key, item.values[key] ?? ''), label: INLINE_ATTR_LABELS[key] }));
+  const spec = INLINE_DIRECTIVES[item.name];
+  if (!spec) return undefined;
+  const content = item.at.content ? [contentField(item)] : [];
+  return [...content, ...spec.attrs.map((key) => inlineAttrField(key, spec, item.values))];
+}
+
+const sameValues = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>) =>
+  Object.keys(a).length === Object.keys(b).length && Object.keys(a).every((k) => Object.hasOwn(b, k) && a[k] === b[k]);
+
+/** A scanned item and a rendered one are the same directive: name, values and (front matter variables replaced) content. */
+function sameItem(item: InlineItem, rendered: RenderedInline, variables: Variables): boolean {
+  if (item.kind !== rendered.kind || item.name !== rendered.name || !sameValues(item.values, rendered.values)) return false;
+  if (item.kind === SPAN) return true;
+  const raw = item.content ?? '';
+  return raw === rendered.content || substituteLine(raw, variables) === rendered.content;
+}
+
+/**
+ * Whether a block's items as scanned in its source are the ones its HTML numbers, one for one. When they are not,
+ * the numbers can't be trusted for any of them, and none is edited through a form.
+ */
+export function inlineAgree(items: readonly InlineItem[], rendered: readonly RenderedInline[], variables: Variables): boolean {
+  return items.length === rendered.length && items.every((item, i) => sameItem(item, rendered[i], variables));
+}
+
+/** What an item is after a change: its values with the change's set or removed, and its new content. */
+function changedItem(item: InlineItem, change: InlineChange): Pick<InlineItem, 'name' | 'content' | 'values'> {
+  const attrs = change.attrs ?? {};
+  const kept = Object.entries(item.values).filter(([key]) => !Object.hasOwn(attrs, key));
+  const set = Object.entries(attrs).filter((entry): entry is [string, string] => entry[1] !== null);
+  return { name: item.name, content: change.content ?? item.content, values: Object.fromEntries([...kept, ...set]) };
+}
+
+/** After the edit, the block holds the same items, the one changed as asked and every other as it was. */
+function changedAsAsked(before: readonly InlineItem[], after: readonly InlineItem[], index: number, change: InlineChange): boolean {
+  return after.length === before.length && after.every((a, i) => {
+    const b = i === index ? changedItem(before[i], change) : before[i];
+    return a.kind === before[i].kind && a.name === b.name && a.content === b.content && sameValues(a.values, b.values);
+  });
+}
+
+/** The change only touches what the item's form offers. */
+function offered(m: SetInlineMessage, fields: readonly FormField[]): boolean {
+  const names = new Set(fields.map((f) => f.name));
+  if (m.content !== undefined && !names.has(CONTENT_FIELD)) return false;
+  return Object.keys(m.attrs ?? {}).every((key) => key !== CONTENT_FIELD && names.has(key));
+}
+
+function inlineView(index: number, rendered: RenderedInline, item: InlineItem | undefined, agree: boolean): InlineView {
+  const text = item?.content ?? rendered.content;
+  const view: InlineView = {
+    index,
+    name: rendered.name,
+    label: INLINE_LABELS[rendered.name] ?? fieldLabel(rendered.name),
+    text: text.length > MAX_INLINE_TEXT ? `${text.slice(0, MAX_INLINE_TEXT - 1)}…` : text,
+  };
+  const fields = agree && item ? inlineFields(item) : undefined;
+  if (fields?.length) view.fields = fields;
+  return view;
+}
+
 /** The problems on lines [start, end). */
 function problemsIn(diagnostics: readonly LineDiagnostic[], start: number, end: number): BlockProblems | undefined {
   const inside = diagnostics.filter((d) => d.line >= start && d.line < end);
@@ -482,6 +667,8 @@ export class BlockEditorSession {
   private last: { version: number; keys: string[]; blocks: number } | null = null;
   private renders = 0;
   private requests = 0;
+  /** The inline items each top-level block's HTML numbered in the last render, by key. */
+  private inlineRendered: { version: number; items: Map<string, readonly RenderedInline[]> } = { version: -1, items: new Map() };
   /** The document version the session's last edit made. */
   private applied = 0;
   private readonly waiting = new Map<number, () => void>();
@@ -545,7 +732,14 @@ export class BlockEditorSession {
       this.known.set(s.key, { start: s.start, end: s.end, version, text: lines.slice(s.start, s.end).join('\n') });
     }
     const html = new Map(result.blocks.map((b) => [b.key, b.html]));
-    const view = (s: Segment, top: boolean): BlockView => this.blockView(s, lines, top ? html : undefined, diagnostics);
+    const inline = new Map(result.blocks.map((b) => [b.key, b.inline]));
+    this.inlineRendered = { version, items: new Map() };
+    const view = (s: Segment): BlockView => {
+      const v = this.blockView(s, lines, html, diagnostics);
+      const items = this.inlineViews(s.key, lines.slice(s.start, s.end), inline.get(s.key), result.frontMatter);
+      if (items) v.inline = items;
+      return v;
+    };
     const first = result.segments[0];
     const frontMatter = first?.kind === FRONT_MATTER ? this.frontMatterView(first, lines, diagnostics) : null;
     const message: RenderMessage = {
@@ -557,7 +751,7 @@ export class BlockEditorSession {
       tail: result.tail,
       themePref: this.options.themePref?.(result.frontMatter) ?? 'auto',
       frontMatter,
-      blocks: result.segments.filter((s) => s.kind !== FRONT_MATTER).map((s) => view(s, true)),
+      blocks: result.segments.filter((s) => s.kind !== FRONT_MATTER).map(view),
       ...this.pinned(result.segments, version),
       templates: this.options.templates.map((t) => (t.description ? { name: t.name, description: t.description } : { name: t.name })),
     };
@@ -565,6 +759,19 @@ export class BlockEditorSession {
     this.last = { version, keys, blocks: keys.length };
     this.renders++;
     return message;
+  }
+
+  /** A top-level block's inline items, by number; each has a form when the source and the HTML agree on every one. */
+  private inlineViews(key: string, lines: readonly string[], rendered: readonly RenderedInline[] | undefined, variables: Variables): InlineView[] | undefined {
+    if (!rendered?.length) return undefined;
+    this.inlineRendered.items.set(key, rendered);
+    const items = this.scan(lines);
+    const agree = inlineAgree(items, rendered, variables);
+    return rendered.map((r, i) => inlineView(i, r, items[i], agree));
+  }
+
+  private scan(lines: readonly string[]): InlineItem[] {
+    return this.options.scan?.(lines) ?? scanInline(lines);
   }
 
   private frontMatterView(s: Segment, lines: readonly string[], diagnostics: readonly LineDiagnostic[]): FrontMatterView {
@@ -636,6 +843,8 @@ export class BlockEditorSession {
       case 'setAttr':
       case 'setTitle':
         return this.editHeader(message);
+      case 'setInline':
+        return this.setInline(message);
       case 'addFrontMatter':
         return this.addFrontMatter(message.editId);
     }
@@ -738,6 +947,61 @@ export class BlockEditorSession {
     const text = [next, ...found.lines.slice(found.range.start + 1, found.range.end)].join('\n');
     this.pin(m.key, { ...found.range, version: this.version(), text });
     this.ack(m.editId, { line: found.range.start });
+  }
+
+  /**
+   * Change one inline item of a block, if the block still holds the text the page was given, its source and its
+   * HTML agree on every item (so number `index` is the same item in both), the item is the one the page named and
+   * the change is one its form offers. Only that item's own text changes, on its one line; afterwards the block
+   * must hold the same items with only that one changed as asked. Anything else: the page is told to edit the
+   * block's source instead.
+   */
+  private async setInline(m: SetInlineMessage): Promise<void> {
+    const found = this.found(m.key, m.editId);
+    if (!found) return;
+    const { range } = found;
+    const lines = found.lines.slice(range.start, range.end);
+    const items = this.scan(lines);
+    const item = this.inlineItem(m, found, items);
+    if (!item) return this.fallback(m, 'This item can\'t be edited here: edit the block\'s source instead.');
+    if (!offered(m, inlineFields(item) ?? [])) return this.notice(m.editId, `The form of this ${(INLINE_LABELS[item.name] ?? item.name).toLowerCase()} has no such field.`);
+    const change: InlineChange = { ...(m.content === undefined ? {} : { content: m.content }), ...(m.attrs ? { attrs: m.attrs } : {}) };
+    const at = item.at!.line;
+    const next = editInline(lines[at], item, change) ?? lines[at];
+    const after = [...lines.slice(0, at), next, ...lines.slice(at + 1)];
+    if (!changedAsAsked(items, this.scan(after), m.index, change)) {
+      return this.fallback(m, 'That value can\'t be written here: edit the block\'s source instead.');
+    }
+    const span = lineSpan(found.text, { start: range.start + at, end: range.start + at + 1 })!;
+    const edit = minimalEdit(lines[at], next);
+    if (edit && !(await this.apply([{ from: span.from + edit.from, to: span.from + edit.to, insert: edit.insert }]))) {
+      return this.notice(m.editId, NOT_APPLIED);
+    }
+    // The next change from the same form, before the next render, still finds the block.
+    this.pin(m.key, { ...range, version: this.version(), text: after.join('\n') });
+    this.ack(m.editId, { line: range.start, inline: m.index });
+  }
+
+  /** The item a setInline names, when the block's source and HTML agree on every item and it has a form; else undefined. */
+  private inlineItem(m: SetInlineMessage, found: Found, items: readonly InlineItem[]): InlineItem | undefined {
+    const item = items[m.index];
+    if (item?.name !== m.name || !inlineFields(item)) return undefined;
+    const rendered = this.renderedInline(m.key, found);
+    return rendered && inlineAgree(items, rendered, parseFrontMatter(found.text).data) ? item : undefined;
+  }
+
+  /** What the HTML numbers in a block now: from the last render when the document is as it was then, else rendered again. */
+  private renderedInline(key: string, found: Found): readonly RenderedInline[] | undefined {
+    const known = this.known.get(key);
+    const unchanged = this.inlineRendered.version === this.doc.version && known?.start === found.range.start && known.end === found.range.end;
+    if (unchanged) return this.inlineRendered.items.get(key);
+    const block = this.options.render(found.text).blocks.find((b) => b.start === found.range.start && b.end === found.range.end);
+    return block?.inline;
+  }
+
+  /** Refuse an inline change, and have the page open the block's source instead. */
+  private fallback(m: SetInlineMessage, text: string): void {
+    this.options.post(m.editId === undefined ? { type: 'notice', text, fallback: m.key } : { type: 'notice', editId: m.editId, text, fallback: m.key });
   }
 
   private async addFrontMatter(editId: string | undefined): Promise<void> {
