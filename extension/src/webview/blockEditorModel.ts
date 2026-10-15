@@ -90,6 +90,46 @@ export function fixesAnnouncement(fixes: readonly Pick<FixView, 'title' | 'scope
   return fixes.length ? `${fixes.length} quick fixes.` : 'No quick fixes.';
 }
 
+/**
+ * Where a dragged block would be dropped among its siblings (their boxes, top to bottom): the boundary nearest to
+ * `y`, as the index of the sibling it goes before (`boxes.length`: after the last one).
+ */
+export function dropIndex(boxes: readonly { top: number; bottom: number }[], y: number): number {
+  let best = 0;
+  let distance = Infinity;
+  for (let i = 0; i <= boxes.length; i++) {
+    const at = boundaryY(boxes, i);
+    if (Math.abs(y - at) < distance) {
+      distance = Math.abs(y - at);
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** The y of the boundary before sibling `i` (after the last one for `boxes.length`): midway in the space between. */
+export function boundaryY(boxes: readonly { top: number; bottom: number }[], i: number): number {
+  if (!boxes.length) return 0;
+  if (i <= 0) return boxes[0].top;
+  if (i >= boxes.length) return boxes.at(-1)!.bottom;
+  return (boxes[i - 1].bottom + boxes[i].top) / 2;
+}
+
+/** A drop at boundary `index` moves the block at `from`: not right before or after itself. */
+export const dropMoves = (index: number, from: number): boolean => index !== from && index !== from + 1;
+
+/** The move a drop asks for: before the sibling at `index`, or 'end'. */
+export function dropTo(keys: readonly string[], index: number): string {
+  return index < keys.length ? keys[index] : 'end';
+}
+
+/** What is announced when a dropped block has moved: "Paragraph moved before heading, line 5." */
+export function dropAnnouncement(moved: Pick<BlockView, 'type' | 'container'>, before: Pick<BlockView, 'type' | 'container' | 'start' | 'end'> | undefined): string {
+  if (!before) return `${blockName(moved)} moved to the end.`;
+  const name = blockName(before);
+  return `${blockName(moved)} moved before ${name.charAt(0).toLowerCase()}${name.slice(1)}, ${linesLabel(before)}.`;
+}
+
 /** Rendered HTML without its source line numbers, to tell whether a block that only moved looks the same. */
 export function withoutLines(html: string): string {
   return html.replaceAll(/ data-(?:task-)?line="\d*"/g, '');

@@ -27,6 +27,8 @@ import { substituteLine, type Variables } from './core/variables';
 /** Where a template goes when it isn't put after a block. */
 export type InsertPosition = 'start' | 'end';
 export type MoveDirection = 'up' | 'down';
+/** Where a dropped block goes when it isn't put before a sibling: after the last one. */
+export const END = 'end';
 
 /** What the editor page asks for. Anything else it sends is ignored. */
 export type EditorMessage =
@@ -34,7 +36,7 @@ export type EditorMessage =
   | { type: 'edit'; key: string; baseVersion: number; oldText: string; newText: string; editId: string }
   | { type: 'insert'; template: string; atKey?: string; position?: InsertPosition; editId?: string }
   | { type: 'delete'; key: string; editId?: string }
-  | { type: 'move'; key: string; direction: MoveDirection; editId?: string }
+  | MoveMessage
   | { type: 'setAttr'; key: string; name: string; value: string | true | null; editId?: string }
   | { type: 'setTitle'; key: string; title: string; editId?: string }
   | SetInlineMessage
@@ -73,6 +75,14 @@ export type TableMessage =
   | { type: 'tableRow'; key: string; op: 'insert' | 'delete'; at: number; editId?: string }
   | { type: 'tableCol'; key: string; op: 'insert' | 'delete' | 'align'; at: number; align?: TableAlign; editId?: string }
   | { type: 'tableAlign'; key: string; editId?: string };
+
+/**
+ * Move a block among its siblings: one place up or down (`direction`, Alt+↑/↓), or, dropped, before the sibling
+ * block `to` names, or after the last one (`to: 'end'`).
+ */
+export type MoveMessage =
+  | { type: 'move'; key: string; direction: MoveDirection; to?: undefined; editId?: string }
+  | { type: 'move'; key: string; to: string; direction?: undefined; editId?: string };
 
 /**
  * Set a known front matter key (FRONT_MATTER_FIELDS) of the front matter block `key`: a text, a list's items, or
@@ -358,6 +368,13 @@ function readTableCol(m: Raw): EditorMessage | undefined {
   return align ? withId({ type: 'tableCol', key: m.key, op: 'align', at: m.at, align }, m.editId) : undefined;
 }
 
+/** A move: Alt+↑/↓ (`direction`), or a drop (`to`: the key of a sibling block, or 'end'), not both. */
+function readMove(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || !optionalId(m.editId)) return undefined;
+  if (m.to === undefined) return m.direction === 'up' || m.direction === 'down' ? withId({ type: 'move', key: m.key, direction: m.direction }, m.editId) : undefined;
+  return m.direction === undefined && (isKey(m.to) || m.to === END) ? withId({ type: 'move', key: m.key, to: m.to }, m.editId) : undefined;
+}
+
 /** The most items a front matter list may get from the form. */
 const MAX_LIST_ITEMS = 200;
 /** A single-line value: no line breaks. */
@@ -390,10 +407,7 @@ const READERS: Readonly<Record<string, Reader>> = {
       : undefined,
   insert: readInsert,
   delete: (m) => (isKey(m.key) && optionalId(m.editId) ? withId({ type: 'delete', key: m.key }, m.editId) : undefined),
-  move: (m) =>
-    isKey(m.key) && (m.direction === 'up' || m.direction === 'down') && optionalId(m.editId)
-      ? withId({ type: 'move', key: m.key, direction: m.direction }, m.editId)
-      : undefined,
+  move: readMove,
   setAttr: readSetAttr,
   setTitle: (m) =>
     isKey(m.key) && isText(m.title, MAX_VALUE) && optionalId(m.editId) ? withId({ type: 'setTitle', key: m.key, title: m.title }, m.editId) : undefined,
@@ -851,6 +865,12 @@ function moveTarget(siblings: readonly Segment[], index: number, direction: Move
   return undefined;
 }
 
+/** Why a block didn't move: it is at the edge for Alt+↑/↓, or already where it was dropped. */
+function moveRefusal(direction: MoveDirection | undefined): string {
+  if (!direction) return 'The block is already there.';
+  return direction === 'up' ? 'The block is already at the top.' : 'The block is already at the bottom.';
+}
+
 /** A YAML scalar for a title: plain when that is safe, else double-quoted as JSON (which YAML reads). */
 export function yamlScalar(text: string): string {
   return /^[A-Za-z0-9][\w .,()/-]*$/.test(text) && !text.endsWith(' ') ? text : JSON.stringify(text);
@@ -1075,7 +1095,7 @@ export class BlockEditorSession {
       case 'delete':
         return this.remove(message.key, message.editId);
       case 'move':
-        return this.move(message.key, message.direction, message.editId);
+        return this.move(message);
       case 'setAttr':
       case 'setTitle':
         return this.editHeader(message);
@@ -1165,20 +1185,44 @@ export class BlockEditorSession {
     if (await this.applyLines(found.text, [edit], editId)) this.ack(editId, { line: edit.start });
   }
 
-  private async move(key: string, direction: MoveDirection, editId: string | undefined): Promise<void> {
+  /**
+   * Move a block among its siblings (the top-level blocks, or the blocks of its container): up or down past one
+   * (Alt+↑/↓), or, dropped, before a sibling block or after the last one. Only those segment boundaries are taken;
+   * any other place is refused.
+   */
+  private async move(m: MoveMessage): Promise<void> {
+    const { key, editId } = m;
     const found = this.found(key, editId);
     if (!found) return;
     const segments = this.options.segment?.(found.text) ?? this.options.render(found.text).segments;
     const place = findSiblings(segments, found.range);
     if (place?.siblings[place.index].kind !== BLOCK) return this.notice(editId, 'Only blocks can be moved.');
-    const target = moveTarget(place.siblings, place.index, direction);
+    const target = m.direction ? moveTarget(place.siblings, place.index, m.direction) : this.dropTarget(place.siblings, m.to ?? END, found.lines);
+    if (target === undefined && !m.direction) return this.notice(editId, 'A block can only be dropped among the blocks next to it: in its own container, or at the top level.');
     const moved = target === undefined ? null : moveBlock(found.lines, found.range, target);
-    if (!moved) return this.notice(editId, direction === 'up' ? 'The block is already at the top.' : 'The block is already at the bottom.');
+    if (!moved) return this.notice(editId, moveRefusal(m.direction));
     if (!(await this.applyLines(found.text, moved.edits, editId))) return;
     // The same block, on other lines: a second move before the next render still finds it.
     const size = found.range.end - found.range.start;
     this.pin(key, { start: moved.line, end: moved.line + size, version: this.version(), text: found.lines.slice(found.range.start, found.range.end).join('\n') });
     this.ack(editId, { line: moved.line });
+  }
+
+  /**
+   * Where a dropped block goes: before the sibling `to` names now, or after the last sibling ('end'). The siblings
+   * are what the page shows: blocks, and gaps with lines that render nothing (link definitions); not blank lines.
+   */
+  private dropTarget(siblings: readonly Segment[], to: string, lines: readonly string[]): number | undefined {
+    const shown = siblings.filter((s) => s.kind === BLOCK || (s.kind === GAP && !isBlankText(lines.slice(s.start, s.end).join('\n'))));
+    const last = shown.at(-1);
+    if (to === END) {
+      // After the last sibling's last line that isn't blank (a gap holds the blank lines after it).
+      let end = last?.end;
+      while (last && end !== undefined && end > last.start + 1 && isBlankText(lines[end - 1])) end--;
+      return end;
+    }
+    const range = this.locate(to);
+    return range && shown.find((s) => s.start === range.start && s.end === range.end)?.start;
   }
 
   private async editHeader(m: Extract<EditorMessage, { type: 'setAttr' | 'setTitle' }>): Promise<void> {

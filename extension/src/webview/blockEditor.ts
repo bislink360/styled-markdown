@@ -12,7 +12,7 @@ import type {
 import {
   FROZEN, blockLabel, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
   gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement,
-  itemForLine, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  itemForLine, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, boundaryY, dropAnnouncement, dropIndex, dropMoves, dropTo, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction, type GridCell, type GridRequest, type GridSize, type LineRange,
 } from './blockEditorModel';
 
@@ -169,6 +169,8 @@ function start(rt: Runtime): void {
   const chromes = new WeakMap<HTMLElement, Chrome>();
   /** The problems an item's badge shows: its own, and those of children not found in its HTML. */
   const shownProblems = new WeakMap<HTMLElement, BlockProblems | undefined>();
+  /** A child's sibling blocks in its container (empty when some of them are not in the HTML: no drop there). */
+  const siblingGroups = new WeakMap<HTMLElement, HTMLElement[]>();
   let fmNode: HTMLElement | null = null;
   let currentKey: string | null = null;
   let currentLine = 0;
@@ -289,17 +291,22 @@ function start(rt: Runtime): void {
    */
   function annotateChildren(scope: HTMLElement, children: readonly BlockView[] | undefined): BlockProblems | undefined {
     let lost: BlockProblems | undefined;
+    const group: HTMLElement[] = [];
     for (const child of children ?? []) {
       if (child.kind !== 'block') continue;
       const el = scope.querySelector<HTMLElement>(`[data-line="${child.start}"]`);
       if (el && !el.classList.contains(ITEM)) {
         markItem(el, child);
         el.classList.add(CHILD);
+        group.push(el);
         updateChrome(el, mergeProblems(child.problems, annotateChildren(el, child.children)), true);
       } else {
         lost = mergeProblems(lost, child.problems, annotateChildren(el ?? scope, child.children));
       }
     }
+    // The children a dragged child can be dropped among (only when every one of them was found).
+    const complete = group.length === (children ?? []).filter((c) => c.kind === 'block').length;
+    for (const el of group) siblingGroups.set(el, complete ? group : []);
     return lost;
   }
 
@@ -739,6 +746,7 @@ function start(rt: Runtime): void {
   function onAck(editId: string, version: number, focus: FocusRequest | undefined): void {
     acked = Math.max(acked, version);
     fixApplied(editId);
+    dropped(editId);
     closedDrafts.delete(editId);
     cellEdits.delete(editId);
     if (editing?.pending.delete(editId)) editing.acked = Math.max(editing.acked, version);
@@ -807,6 +815,7 @@ function start(rt: Runtime): void {
         if (msg.editId) {
           gridRefused(msg.editId);
           fixRefused(msg.editId);
+          drops.delete(msg.editId);
         }
         if (msg.fallback) editSourceOf(msg.fallback);
         break;
@@ -1001,6 +1010,116 @@ function start(rt: Runtime): void {
     post(view ? { type: 'insert', template: name, atKey: view.key, editId: nextId() } : { type: 'insert', template: name, position: 'end', editId: nextId() });
   }
 
+  // ---- Drag and drop: moving a block among its siblings ---------------------------------------
+  // One drag handle (in a closed shadow root) shows next to the block under the mouse: a top-level block, or a block
+  // inside a container. Dragged, a line shows where it would go among its siblings; dropped, the page sends move
+  // with the key of the sibling it goes before (or 'end'), and the extension takes only those boundaries. Alt+↑/↓
+  // does the same from the keyboard; a drop is announced once it is made.
+  const DRAG_TYPE = 'application/x-smd-block';
+  const dragHost = h(DIV, { className: 'smd-ed-drag-host' });
+  const handle = h(DIV, {
+    className: 'handle',
+    text: '⠿',
+    attrs: { draggable: TRUE, 'aria-hidden': TRUE, title: 'Drag to move this block (Alt+Up and Alt+Down from the keyboard)' },
+  });
+  chromeRoot(dragHost).append(handle);
+  dragHost.hidden = true;
+  const dropLine = h(DIV, { className: 'smd-ed-drop', attrs: { 'aria-hidden': TRUE } });
+  dropLine.hidden = true;
+  document.body.append(dragHost, dropLine);
+  let handleItem: HTMLElement | null = null;
+  let dragging: { item: HTMLElement; view: ItemView; siblings: HTMLElement[]; index: number } | null = null;
+  const drops = new Map<string, string>();
+
+  /** The blocks a dragged item can be dropped among: the top-level items, or its container's children. */
+  function dragSiblings(item: HTMLElement): HTMLElement[] {
+    if (!item.classList.contains(CHILD)) return (Array.from(blocksEl.children) as HTMLElement[]).filter((el) => el.classList.contains(ITEM));
+    return siblingGroups.get(item) ?? [];
+  }
+
+  /** A block that can be dragged: a block (not lines that render nothing, not the front matter) not being edited. */
+  function draggable(item: HTMLElement | null): item is HTMLElement {
+    const view = item && viewOf.get(item);
+    return !!view && view.type !== 'gap' && view.type !== 'frontmatter' && !held() && dragSiblings(item!).length > 1;
+  }
+
+  rootEl.addEventListener('mouseover', (event) => {
+    if (dragging) return;
+    const item = (event.target as HTMLElement).closest?.<HTMLElement>(`.${ITEM}`) ?? null;
+    if (!draggable(item)) return;
+    handleItem = item;
+    const rect = item.getBoundingClientRect();
+    dragHost.hidden = false;
+    dragHost.style.top = `${rect.top + window.scrollY}px`;
+    dragHost.style.left = `${Math.max(0, rect.left + window.scrollX - 22)}px`;
+  });
+
+  handle.addEventListener('dragstart', (event) => {
+    const item = handleItem;
+    if (!item?.isConnected || !draggable(item) || !event.dataTransfer) {
+      event.preventDefault();
+      return;
+    }
+    const siblings = dragSiblings(item);
+    dragging = { item, view: viewOf.get(item)!, siblings, index: siblings.indexOf(item) };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(DRAG_TYPE, dragging.view.key);
+    event.dataTransfer.setDragImage(item, 0, 0);
+    setCurrent(item, false);
+  });
+
+  handle.addEventListener('dragend', () => endDrag());
+
+  function endDrag(): void {
+    dragging = null;
+    dropLine.hidden = true;
+  }
+
+  /** The boundary nearest the pointer among the dragged block's siblings, shown as a line; -1 where it wouldn't move. */
+  function dropAt(y: number): number {
+    const d = dragging!;
+    const boxes = d.siblings.map((el) => el.getBoundingClientRect());
+    const index = dropIndex(boxes, y);
+    if (!dropMoves(index, d.index)) {
+      dropLine.hidden = true;
+      return -1;
+    }
+    const left = Math.min(...boxes.map((b) => b.left));
+    const right = Math.max(...boxes.map((b) => b.right));
+    dropLine.hidden = false;
+    dropLine.style.top = `${boundaryY(boxes, index) + window.scrollY - 1}px`;
+    dropLine.style.left = `${left + window.scrollX}px`;
+    dropLine.style.width = `${right - left}px`;
+    return index;
+  }
+
+  document.addEventListener('dragover', (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = dropAt(event.clientY) < 0 ? 'none' : 'move';
+  });
+
+  document.addEventListener('drop', (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    const d = dragging;
+    const index = dropAt(event.clientY);
+    endDrag();
+    if (index < 0 || !d.item.isConnected) return;
+    const keys = d.siblings.map((el) => viewOf.get(el)?.key ?? '');
+    const editId = nextId();
+    drops.set(editId, dropAnnouncement(d.view, index < d.siblings.length ? viewOf.get(d.siblings[index]) : undefined));
+    post({ type: 'move', key: d.view.key, to: dropTo(keys, index), editId });
+  });
+
+  /** A drop was made: say where the block went. */
+  function dropped(editId: string): void {
+    const text = drops.get(editId);
+    if (text === undefined) return;
+    drops.delete(editId);
+    rt.announce(text);
+  }
+
   // ---- The toolbar -----------------------------------------------------------------------
   const barRoot = chromeRoot(toolbarHost);
   const buttons: Record<Action, HTMLButtonElement> = {
@@ -1056,6 +1175,8 @@ function start(rt: Runtime): void {
   }
 
   function updateToolbar(): void {
+    // No dragging while a block is edited in its source or the grid.
+    if (held()) dragHost.hidden = true;
     const view = currentView();
     status.textContent = view ? blockLabel(view) : 'No block selected';
     for (const action of ['edit', 'up', 'down', 'del', 'reveal'] as const) setDisabled(buttons[action], !view);

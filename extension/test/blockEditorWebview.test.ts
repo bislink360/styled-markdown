@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import {
   FROZEN, blockLabel, blockName, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
   gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement, itemForLine,
-  linesLabel, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  linesLabel, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, boundaryY, dropAnnouncement, dropIndex, dropMoves, dropTo, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction,
 } from '../src/webview/blockEditorModel';
 import type { BlockView } from '../src/blockEditorSession';
@@ -304,6 +304,33 @@ test('page: the front matter\'s fields are in the Properties panel, labelled, wi
   assert.match(pageSource, /if \(view\?\.type === 'frontmatter'\) \{\n\s+fillFrontMatterProps\(view\);/);
   assert.match(pageSource, /control\.setAttribute\('aria-describedby', notes\.map\(\(n\) => n\.id\)\.join\(' '\)\)/, 'list and refusal notes are read with the field');
   assert.match(pageSource, /button\('Edit YAML'/);
+});
+
+test('drag and drop: the boundary nearest the pointer, never right next to the block, and what is announced', () => {
+  const boxes = [{ top: 0, bottom: 20 }, { top: 30, bottom: 50 }, { top: 60, bottom: 100 }];
+  assert.deepEqual([0, 1, 2, 3].map((i) => boundaryY(boxes, i)), [0, 25, 55, 100]);
+  assert.equal(boundaryY([], 0), 0);
+  assert.equal(dropIndex(boxes, -40), 0);
+  assert.equal(dropIndex(boxes, 10), 0, 'nearer the top of the first box than the space after it');
+  assert.equal(dropIndex(boxes, 20), 1);
+  assert.equal(dropIndex(boxes, 60), 2);
+  assert.equal(dropIndex(boxes, 90), 3, 'after the last one');
+  assert.equal(dropIndex([], 5), 0);
+  assert.equal(dropMoves(1, 1), false, 'right before itself');
+  assert.equal(dropMoves(2, 1), false, 'right after itself');
+  assert.equal(dropMoves(0, 1), true);
+  assert.equal(dropMoves(3, 1), true);
+  assert.equal(dropTo(['a#0', 'b#0'], 1), 'b#0');
+  assert.equal(dropTo(['a#0', 'b#0'], 2), 'end');
+  assert.equal(dropAnnouncement({ type: 'paragraph' }, view('h', 4, 5, { type: 'heading' })), 'Paragraph moved before heading, line 5.');
+  assert.equal(dropAnnouncement({ type: 'container', container: 'note' }, undefined), 'Note container moved to the end.');
+});
+
+test('page: one drag handle in a closed shadow root; a drop sends move with a sibling key, never lines', () => {
+  assert.match(pageSource, /attrs: \{ draggable: TRUE, 'aria-hidden': TRUE, title: 'Drag to move this block \(Alt\+Up and Alt\+Down from the keyboard\)' \}/);
+  assert.match(pageSource, /post\(\{ type: 'move', key: d\.view\.key, to: dropTo\(keys, index\), editId \}\)/);
+  assert.match(pageSource, /drops\.set\(editId, dropAnnouncement\(/, 'the result of a drop is announced');
+  assert.match(pageSource, /siblingGroups\.set\(el, complete \? group : \[\]\)/, 'children are dropped only among their own siblings');
 });
 
 test('textareaRows grows with the text, within limits', () => {

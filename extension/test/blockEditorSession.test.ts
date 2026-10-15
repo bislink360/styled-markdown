@@ -685,6 +685,16 @@ function assertMoved(before: string, after: string, target: BlockView, name: str
   assert.ok(Math.abs(a.length - b.length) <= 2, `${name}: at most two blank lines differ`);
 }
 
+/** The views next to a block: the top-level ones, or its container's children. */
+function siblingsOf(views: readonly BlockView[], key: string): BlockView[] {
+  if (views.some((v) => v.key === key)) return [...views];
+  for (const v of views) {
+    const found = v.children && siblingsOf(v.children, key);
+    if (found?.length) return found;
+  }
+  return [];
+}
+
 test('property: insert, move and delete never change a line they do not add, move or remove', async () => {
   const random = prng(7);
   const documents = [...readDir(examplesDir), ...readDir(corpusDir)];
@@ -702,8 +712,14 @@ test('property: insert, move and delete never change a line they do not add, mov
       } else if (op === 1) {
         await h.send({ type: 'delete', key: target.key, editId: `d${i}` });
         onlyInserted(h.doc.text, before);
-      } else {
+      } else if (i === 2) {
         await h.send({ type: 'move', key: target.key, direction: random() < 0.5 ? 'up' : 'down', editId: `m${i}` });
+        assertMoved(before, h.doc.text, target, d.name);
+      } else {
+        // Dropped before a sibling (a block or lines that render nothing), or at the end of its siblings.
+        const siblings = siblingsOf(r.blocks, target.key).filter((s) => !s.blank);
+        const to = random() < 0.2 ? 'end' : siblings[Math.floor(random() * siblings.length)].key;
+        await h.send({ type: 'move', key: target.key, to, editId: `m${i}` });
         assertMoved(before, h.doc.text, target, d.name);
       }
     }
@@ -1385,5 +1401,77 @@ test('setFrontMatter in a CRLF document keeps CRLF', async () => {
   await h.send({ type: 'setFrontMatter', key: fm.key, name: 'owners', value: ['@a', '@maya'], editId: 'a' });
   await h.send({ type: 'setFrontMatter', key: fm.key, name: 'lang', value: 'de', editId: 'b' });
   assert.ok(h.doc.text.startsWith('---\r\ntitle: "Plan"   # shown\r\n# owners\r\nowners:\r\n  - "@a"\r\n  - "@maya"\r\ntags: [a, b]\r\nlang: de\r\n---\r\n'), JSON.stringify(h.doc.text));
+  assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
+});
+
+// ---------------------------------------------------------------------------
+// Drag and drop: move to a sibling boundary
+// ---------------------------------------------------------------------------
+
+test('readEditorMessage: a move goes up, down, before a sibling\'s key or to the end, and only one of them', () => {
+  const key = 'abc123#0';
+  assert.deepEqual(readEditorMessage({ type: 'move', key, to: 'def456#1', editId: 'd' }), { type: 'move', key, to: 'def456#1', editId: 'd' });
+  assert.deepEqual(readEditorMessage({ type: 'move', key, to: 'end' }), { type: 'move', key, to: 'end' });
+  for (const bad of [
+    { type: 'move', key }, { type: 'move', key, to: 'start' }, { type: 'move', key, to: 'not a key' }, { type: 'move', key, to: 3 },
+    { type: 'move', key, to: 'end', direction: 'up' }, { type: 'move', key, to: { line: 3 } },
+  ]) {
+    assert.equal(readEditorMessage(bad), undefined, JSON.stringify(bad));
+  }
+});
+
+test('move to: a dropped block goes before the sibling named, or after the last one; never into another container', async () => {
+  const h = harness(DOC);
+  let r = h.render();
+  const last = block(r, 'Last');
+  const reply = await h.send({ type: 'move', key: last.key, to: block(r, '# Plan').key, editId: 'd1' });
+  assert.equal(reply?.type, 'ack');
+  assert.ok(h.doc.text.startsWith('---\ntitle: Plan\n---\n\nLast paragraph.\n\n# Plan\n\nFirst paragraph\n'), h.doc.text);
+  assert.deepEqual((reply as { focus: unknown }).focus, { line: 4 });
+  r = h.render();
+  await h.send({ type: 'move', key: block(r, 'Last').key, to: 'end', editId: 'd2' });
+  assert.equal(h.doc.text, DOC, 'at the end: after the link definitions, which the page shows');
+  r = h.render();
+  await h.send({ type: 'move', key: block(r, 'Last').key, to: r.blocks.find((b) => b.kind === 'gap' && !b.blank)!.key, editId: 'd2b' });
+  assert.ok(h.doc.text.endsWith(':::\n\nLast paragraph.\n\n[ref]: https://example.com\n'), 'before them');
+  await h.send({ type: 'move', key: block(h.render(), 'Last').key, to: 'end', editId: 'd2c' });
+  assert.equal(h.doc.text, DOC);
+  r = h.render();
+  // Children, among their own siblings.
+  await h.send({ type: 'move', key: block(r, '- [ ]').key, to: block(r, 'Inside').key, editId: 'd3' });
+  assert.ok(h.doc.text.includes(':::warning{collapsible} Heads up\n- [ ] a task\n\nInside the callout.\n:::'), h.doc.text);
+  r = h.render();
+  const before = h.doc.text;
+  const into = await h.send({ type: 'move', key: block(r, 'Last').key, to: block(r, 'Inside').key, editId: 'd4' });
+  assert.equal(into?.type, 'notice', 'a top-level block is not dropped into a container');
+  const out = await h.send({ type: 'move', key: block(r, 'Inside').key, to: block(r, '# Plan').key, editId: 'd5' });
+  assert.equal(out?.type, 'notice', 'a child is not dropped out of its container');
+  const here = await h.send({ type: 'move', key: block(r, 'Last').key, to: 'end', editId: 'd6' });
+  assert.deepEqual(here, { type: 'notice', editId: 'd6', text: 'The block is already there.' });
+  const gone = await h.send({ type: 'move', key: block(r, 'Last').key, to: 'zzz999#0', editId: 'd7' });
+  assert.equal(gone?.type, 'notice', 'a key the extension never gave');
+  assert.equal(h.doc.text, before);
+});
+
+test('move to: next to a container, a blank line keeps the block off its fences (the 1.8.0 limitation)', async () => {
+  const text = '# T\n\n:::note\nIn.\n:::\nTight after.\n';
+  const h = harness(text);
+  const r = h.render();
+  await h.send({ type: 'move', key: block(r, 'Tight').key, to: block(r, ':::note').key, editId: 'a' });
+  assert.equal(h.doc.text, '# T\n\nTight after.\n\n:::note\nIn.\n:::\n', 'a blank line before the opening line, none left behind after the closing one');
+  const r2 = h.render();
+  await h.send({ type: 'move', key: block(r2, 'Tight').key, to: 'end', editId: 'b' });
+  assert.equal(h.doc.text, '# T\n\n:::note\nIn.\n:::\n\nTight after.\n', 'and a blank line after the closing one');
+});
+
+test('move to: the target found where a text editor moved it, and a CRLF document stays CRLF', async () => {
+  const crlf = DOC.replaceAll('\n', '\r\n');
+  const h = harness(crlf);
+  const r = h.render();
+  // Meanwhile a text editor adds lines at the top of the body.
+  const at = h.doc.text.indexOf('# Plan');
+  h.doc.type(at, at, 'Added.\r\n\r\n');
+  await h.send({ type: 'move', key: block(r, 'Last').key, to: block(r, 'First').key, editId: 'a' });
+  assert.ok(h.doc.text.includes('Added.\r\n\r\n# Plan\r\n\r\nLast paragraph.\r\n\r\nFirst paragraph\r\n'), JSON.stringify(h.doc.text));
   assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
 });

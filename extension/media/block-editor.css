@@ -43,10 +43,23 @@
 .smd-ed-item [data-smd-inline]:focus { outline: 2px solid var(--vscode-focusBorder, #0078d4); outline-offset: 2px; }
 .smd-ed-pop-host { position: absolute; z-index: 30; }
 
+/* Drag and drop: the handle next to the block under the mouse, and the line where a dragged block would go. */
+.smd-ed-drag-host { position: absolute; z-index: 15; }
+.smd-ed-drop {
+  position: absolute;
+  z-index: 20;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+  /* A border, not a background: forced-colors mode keeps borders. */
+  border-top: 2px solid var(--vscode-focusBorder, #0078d4);
+}
+
 @media (forced-colors: active) {
   .smd-ed-item:focus { outline: 2px solid Highlight; }
   .smd-ed-item [data-smd-inline]:focus { outline: 2px solid Highlight; }
   .smd-ed-raw { border-color: CanvasText; color: CanvasText; }
+  .smd-ed-drop { border-top-color: Highlight; }
 }
 
 /* ---- The editor's controls (inside shadow roots) ----------------------------------------------------------- */
@@ -194,6 +207,18 @@
 :host table.grid input.align-right { text-align: right; }
 :host table.grid input:focus { outline: 2px solid var(--vscode-focusBorder, #0078d4); outline-offset: -2px; }
 :host table.grid[aria-busy="true"] { opacity: 0.7; }
+
+/* The drag handle. */
+:host .handle {
+  width: 18px;
+  line-height: 22px;
+  text-align: center;
+  cursor: grab;
+  user-select: none;
+  color: var(--vscode-descriptionForeground, inherit);
+  opacity: 0.7;
+}
+:host .handle:hover { opacity: 1; color: var(--vscode-foreground, inherit); }
 
 /* An item's controls: the problem badge at the right. */
 :host .chrome { position: relative; height: 0; }
