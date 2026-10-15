@@ -33,11 +33,33 @@
 }
 .smd-ed-pending { opacity: 0.8; }
 
-.smd-ed-badge-host { position: absolute; top: 2px; right: 0; z-index: 1; }
+/* An item's controls (problem badge): a line of no height at the top of the block, over its content. */
+.smd-ed-chrome { position: absolute; top: 2px; left: 0; right: 0; height: 0; z-index: 1; }
+.smd-ed-chrome-child { position: relative; top: 0; display: block; margin: 0; padding: 0; }
+
+/* Inline directives and styled spans: a click (or Enter, once the block is current) opens a small form. */
+.smd-ed-item [data-smd-inline] { cursor: pointer; border-radius: 3px; }
+.smd-ed-item [data-smd-inline]:hover { outline: 1px dashed var(--vscode-focusBorder, #0078d4); outline-offset: 1px; }
+.smd-ed-item [data-smd-inline]:focus { outline: 2px solid var(--vscode-focusBorder, #0078d4); outline-offset: 2px; }
+.smd-ed-pop-host { position: absolute; z-index: 30; }
+
+/* Drag and drop: the handle next to the block under the mouse, and the line where a dragged block would go. */
+.smd-ed-drag-host { position: absolute; z-index: 15; }
+.smd-ed-drop {
+  position: absolute;
+  z-index: 20;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+  /* A border, not a background: forced-colors mode keeps borders. */
+  border-top: 2px solid var(--vscode-focusBorder, #0078d4);
+}
 
 @media (forced-colors: active) {
   .smd-ed-item:focus { outline: 2px solid Highlight; }
+  .smd-ed-item [data-smd-inline]:focus { outline: 2px solid Highlight; }
   .smd-ed-raw { border-color: CanvasText; color: CanvasText; }
+  .smd-ed-drop { border-top-color: Highlight; }
 }
 
 /* ---- The editor's controls (inside shadow roots) ----------------------------------------------------------- */
@@ -115,6 +137,25 @@
 :host .field label { min-width: 8em; }
 :host .field.flag label { min-width: 0; }
 :host .field input[type="text"] { flex: 1; min-width: 8em; padding: 2px 4px; }
+:host .props .field { flex-wrap: wrap; }
+:host .props .field .hint { margin: 0; }
+:host .props .actions { margin-top: 6px; }
+:host .field input:disabled, :host .field select:disabled { opacity: 0.6; }
+
+/* The form of an inline directive or styled span. */
+:host .pop {
+  min-width: 16em;
+  max-width: min(28em, 90vw);
+  padding: 8px;
+  color: var(--vscode-editorWidget-foreground, var(--vscode-foreground, inherit));
+  background: var(--vscode-editorWidget-background, Canvas);
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-widget-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.5))));
+  border-radius: 3px;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+:host .pop-title { margin: 0 0 6px; font-weight: 600; overflow-wrap: anywhere; }
+:host .pop .field input[type="date"] { flex: 1; padding: 2px 4px; }
+:host .pop .actions { margin-top: 6px; }
 
 /* The source editor of a block. */
 :host .editor { margin: 0.5em 0; }
@@ -140,6 +181,59 @@
 :host .notice p { margin: 0 0 6px; }
 :host .actions { display: flex; flex-wrap: wrap; gap: 6px; }
 
+/* A table edited cell by cell. */
+:host .grid-editor { margin: 0.5em 0; }
+:host .grid-editor .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 2px 0 6px; }
+:host .grid-scroll { overflow-x: auto; }
+:host table.grid { border-collapse: collapse; }
+:host table.grid th, :host table.grid td {
+  padding: 0;
+  border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.45)));
+}
+:host table.grid th { background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.1)); }
+:host table.grid input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 8em;
+  padding: 3px 6px;
+  border-width: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+  font-size: var(--vscode-editor-font-size, 13px);
+}
+:host table.grid th input { font-weight: 600; }
+:host table.grid input.align-center { text-align: center; }
+:host table.grid input.align-right { text-align: right; }
+:host table.grid input:focus { outline: 2px solid var(--vscode-focusBorder, #0078d4); outline-offset: -2px; }
+:host table.grid[aria-busy="true"] { opacity: 0.7; }
+
+/* The drag handle. */
+:host .handle {
+  width: 18px;
+  line-height: 22px;
+  text-align: center;
+  cursor: grab;
+  user-select: none;
+  color: var(--vscode-descriptionForeground, inherit);
+  opacity: 0.7;
+}
+:host .handle:hover { opacity: 1; color: var(--vscode-foreground, inherit); }
+
+/* An item's controls: the problem badge at the right. */
+:host .chrome { position: relative; height: 0; }
+:host .chrome .badge { position: absolute; top: 0; right: 0; }
+:host .chrome.child .badge { top: 2px; }
+
+/* A block's problems, listed (Ctrl+.). */
+:host .problems { margin: 0 0 6px; padding-left: 1.2em; max-height: 40vh; overflow: auto; }
+:host .problems li { margin: 2px 0; overflow-wrap: anywhere; }
+:host .fixes { margin: 0 0 6px; }
+:host .fixes-title { margin: 0 0 4px; font-weight: 600; }
+:host .fix-list { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+:host .fix-list button { text-align: left; overflow-wrap: anywhere; }
+:host .confirm { margin: 0 0 6px; overflow-wrap: anywhere; }
+
 /* Problem count on a block; the messages are in its tooltip and in the block's accessible description. */
 :host .badge {
   display: inline-block;
@@ -157,7 +251,9 @@
 :host .badge.error { background: var(--vscode-inputValidation-errorBackground, rgba(190, 17, 0, 0.2)); border-color: var(--vscode-inputValidation-errorBorder, #be1100); }
 
 @media (forced-colors: active) {
-  :host button, :host .badge, :host .notice, :host .menu { border: 1px solid ButtonText; }
+  :host button, :host .badge, :host .notice, :host .menu, :host .pop { border: 1px solid ButtonText; }
   :host :focus-visible, :host textarea:focus, :host .menu button:focus { outline: 2px solid Highlight; }
+  :host table.grid th, :host table.grid td { border-color: CanvasText; }
+  :host table.grid input:focus { outline: 2px solid Highlight; }
   :host button[aria-disabled="true"] { color: GrayText; }
 }

@@ -208,10 +208,16 @@ function nameStart(prefix: string): number | undefined {
   return prefix.length - m[1].length;
 }
 
-/** Is `line` inside a code fence, `$$` math or an HTML comment that starts on an earlier body line? */
-function insideBlock(lines: string[], from: number, line: number): boolean {
+/**
+ * Is `line` inside a code fence, `$$` math or an HTML comment that starts on an earlier body line? `isCode` tells
+ * which lines are code as rendering reads them (see findVariables): a `$$` line there opens no math.
+ */
+function insideBlock(lines: string[], from: number, line: number, isCode: (line: number) => boolean): boolean {
   let block: Block = null;
-  for (let i = from; i < line; i++) block = block ? stillInside(block, lines[i]) : opens(lines[i]);
+  for (let i = from; i < line; i++) {
+    block = block ? stillInside(block, lines[i]) : opens(lines[i]);
+    if (block?.kind === 'math' && isCode(i)) block = null;
+  }
   return block !== null;
 }
 
@@ -223,24 +229,34 @@ export interface VariableCompletion {
   names: VariableName[];
 }
 
-/** Front matter names to offer after `{{` at a zero-based line and column of a document's body text. */
-export function variableCompletion(text: string, line: number, column: number): VariableCompletion | undefined {
+/**
+ * Front matter names to offer after `{{` at a zero-based line and column of a document's body text. `isCode` tells which
+ * lines are code as rendering reads them (see ParseResult.code); it is asked only about `$$` lines, so it can parse lazily.
+ */
+export function variableCompletion(
+  text: string, line: number, column: number, isCode: (line: number) => boolean = () => false,
+): VariableCompletion | undefined {
   const lines = text.split(/\r?\n/);
   const lineText = lines[line] ?? '';
   const from = nameStart(lineText.slice(0, column));
   if (from === undefined) return undefined;
   const fm = parseFrontMatter(text);
-  if (line < fm.bodyStartLine || insideBlock(lines, fm.bodyStartLine, line)) return undefined;
+  if (line < fm.bodyStartLine || insideBlock(lines, fm.bodyStartLine, line, isCode)) return undefined;
   const close = !/^[\w.-]*[ \t]*\}\}/.test(lineText.slice(column));
   return { from, close, names: variableNames(fm.data) };
 }
 
-/** Markdown describing the `{{name}}` at a zero-based line and column of a document, and its span on that line. */
-export function variableHover(text: string, line: number, column: number): { markdown: string; start: number; end: number } | undefined {
+/**
+ * Markdown describing the `{{name}}` at a zero-based line and column of a document, and its span on that line. `isCode`
+ * is as for variableCompletion.
+ */
+export function variableHover(
+  text: string, line: number, column: number, isCode: (line: number) => boolean = () => false,
+): { markdown: string; start: number; end: number } | undefined {
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);
   if (line < fm.bodyStartLine || !lines[line]?.includes('{{')) return undefined;
-  const ref = findVariables(lines.slice(0, line + 1), fm.bodyStartLine).find((r) => r.line === line && column >= r.column && column <= r.endColumn);
+  const ref = findVariables(lines.slice(0, line + 1), fm.bodyStartLine, isCode).find((r) => r.line === line && column >= r.column && column <= r.endColumn);
   if (!ref) return undefined;
   return { markdown: `**{{${ref.name}}}** — ${valueDescription(lookupVariable(fm.data, ref.name))}`, start: ref.column, end: ref.endColumn };
 }

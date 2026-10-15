@@ -272,7 +272,7 @@ const blockEditorPage = readFileSync(join(__dirname, '..', 'src', 'webview', 'bl
 test('a11y block editor: blocks are named groups in one tab stop; the arrow keys move between them', () => {
   assert.match(blockEditorPage, /node\.setAttribute\('role', 'group'\);\n\s+node\.setAttribute\('aria-roledescription', 'block'\);/);
   assert.match(blockEditorPage, /node\.setAttribute\(ARIA_LABEL, problems \? `\$\{blockLabel\(view\)\}, \$\{problems\}` : blockLabel\(view\)\)/, 'the label says the kind, the lines and the problems');
-  assert.match(blockEditorPage, /if \(view\.problems\) node\.setAttribute\('aria-description', view\.problems\.messages\.join\('; '\)\)/, 'problem messages are read, not only shown on hover');
+  assert.match(blockEditorPage, /if \(shown\) node\.setAttribute\('aria-description', shown\.messages\.join\('; '\)\)/, 'problem messages are read, not only shown on hover');
   assert.match(blockEditorPage, /el\.setAttribute\(TABINDEX, '0'\)/);
   assert.match(blockEditorPage, /listKeyTarget\(event\.key, list\.indexOf\(item\), list\.length\)/);
 });

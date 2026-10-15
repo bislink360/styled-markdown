@@ -18,6 +18,7 @@ import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from '.
 import { frontMatterProperty } from './core/frontmatterSchema';
 import { termHover } from './core/glossary';
 import { documentPreview, documentSymbols, embedPreview, fuzzyMatch, sectionExcerpt, type SmdSymbol } from './core/symbols';
+import { codeLines, lazyLineSet } from './core/parse';
 import { variableCompletion, variableHover, type VariableCompletion } from './core/variables';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
@@ -308,6 +309,21 @@ function directiveSnippet(name: string): string {
   return DIRECTIVE_SNIPPETS.get(name) ?? `${name}[\${1:text}]{color=\${2|${NAMED_COLORS.join(',')}|}}`;
 }
 
+/** Each open document's code-line test, for the version it was made for. */
+const codeTests = new WeakMap<vscode.TextDocument, { version: number; isCode: (line: number) => boolean }>();
+
+/**
+ * Which lines of a document (`text` is its text) are code as rendering reads them, for `{{` completion and hover: made
+ * once per document version, and it parses only when first asked, which happens only for a `$$` line before the cursor.
+ */
+function codeLineTest(document: vscode.TextDocument, text: string): (line: number) => boolean {
+  const cached = codeTests.get(document);
+  if (cached?.version === document.version) return cached.isCode;
+  const isCode = lazyLineSet(() => codeLines(text));
+  codeTests.set(document, { version: document.version, isCode });
+  return isCode;
+}
+
 /** Front matter names after `{{`, each with its value. */
 function variableItems(found: VariableCompletion, position: vscode.Position): vscode.CompletionItem[] {
   const range = new vscode.Range(position.line, found.from, position.line, position.character);
@@ -327,7 +343,8 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     const prefix = document.lineAt(position.line).text.slice(0, position.character);
     const link = pathCompletionContext(document.getText(), position.line, position.character);
     if (link) return linkCompletions(document, position, link);
-    const variable = variableCompletion(document.getText(), position.line, position.character);
+    const text = document.getText();
+    const variable = variableCompletion(text, position.line, position.character, codeLineTest(document, text));
     if (variable) return variableItems(variable, position);
     const fm = parseFrontMatter(document.getText());
 
@@ -438,7 +455,8 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 
 class HoverProvider implements vscode.HoverProvider {
   provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
-    const variable = variableHover(document.getText(), position.line, position.character);
+    const text = document.getText();
+    const variable = variableHover(text, position.line, position.character, codeLineTest(document, text));
     if (variable) {
       return new vscode.Hover(new vscode.MarkdownString(variable.markdown), new vscode.Range(position.line, variable.start, position.line, variable.end));
     }

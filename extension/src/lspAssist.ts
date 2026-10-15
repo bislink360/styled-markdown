@@ -12,6 +12,7 @@ import { frontMatterProperty } from './core/frontmatterSchema';
 import { anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext } from './core/links';
 import { termHover } from './core/glossary';
 import { documentPreview, embedPreview, sectionExcerpt } from './core/symbols';
+import { codeLines, lazyLineSet } from './core/parse';
 import { variableCompletion, variableHover } from './core/variables';
 
 /** LSP CompletionItemKind values used here. */
@@ -181,9 +182,15 @@ function frontMatterValueItems(key: string, env: AssistEnv): AssistItem[] {
   return frontMatterValues(key).map((label) => ({ label, kind }));
 }
 
+/**
+ * Which lines of a document are code as rendering reads them, for `{{` completion and hover. It parses only when first
+ * asked, which happens only for a `$$` line before the cursor, and the parse is cached by text: once per document version.
+ */
+const codeLineTest = (text: string) => lazyLineSet(() => codeLines(text));
+
 /** Front matter names after `{{` in the body, each with its value. */
 function variableCompletionProvider(cursor: Cursor): Completion | undefined {
-  const found = variableCompletion(cursor.text, cursor.line, cursor.column);
+  const found = variableCompletion(cursor.text, cursor.line, cursor.column, codeLineTest(cursor.text));
   if (!found) return undefined;
   const items = found.names.map(({ name, text }, i) => ({
     label: name, kind: COMPLETION_KIND.variable, detail: text, documentation: VARIABLE_SYNTAX.description,
@@ -289,7 +296,7 @@ export interface AssistHover {
 /** What the text at a zero-based line and UTF-16 column is: a front matter variable, container, directive, glossary term, link or code embed. */
 export function hoverAt(text: string, line: number, column: number, env: AssistEnv = {}): AssistHover | undefined {
   const lineText = text.split(/\r?\n/)[line] ?? '';
-  return variableHover(text, line, column) ?? containerHover(lineText, column) ?? directiveHover(lineText, column) ?? footnoteHover(text, line, column)
+  return variableHover(text, line, column, codeLineTest(text)) ?? containerHover(lineText, column) ?? directiveHover(lineText, column) ?? footnoteHover(text, line, column)
     ?? termHover(text, line, column) ?? linkHover(text, line, column, env) ?? embedHover(lineText, env);
 }
 

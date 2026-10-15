@@ -183,11 +183,11 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-1.8.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+1. Download **`styled-markdown-1.9.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
 2. Install it:
 
    ```bash
-   code --install-extension styled-markdown-1.8.0.vsix
+   code --install-extension styled-markdown-1.9.0.vsix
    ```
 
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
@@ -201,10 +201,15 @@ An optional editor for `.smd` files: the document as the preview renders it, edi
 
 - **Open it:** right-click a `.smd` file or its tab → **Open With…** → **Styled Markdown Block Editor (Preview)**, or run **Styled Markdown: Open Block Editor**. **Styled Markdown: Reopen in Text Editor** (also the icon in the editor's title bar) goes back. It is never the default editor for `.smd`.
 - **Edit:** click a block, or press `Enter` (or `F2`), to edit its Markdown source in place. What you type goes into the document when you pause, leave the block, press `Ctrl+Enter` (done) or save. `Escape` puts the block back as it was when you started editing it.
-- **Keys:** `↑` `↓` go from block to block, into callouts, tabs and other containers too (`Home` `End`: first and last); `Alt+↑` `Alt+↓` move a block; `Ctrl+/` opens the insert menu, whose templates come from the snippets and go after the current block. The toolbar also has **Delete**, **Move up**, **Move down**, **Properties** (a container's title and attributes, such as a risk's impact or a callout's color), **Edit in text editor** and, for a document without one, **Add front matter**. Task checkboxes tick as in the preview, and each block shows how many problems it has.
+- **Inline items:** click a badge, status, priority, progress bar, due date, metric, key or mention, or a styled `[text]{…}` span, to change it in a small form without opening the block's source: its text, a date picker for `:due`, a list for `:priority` and other values with fixed choices, and the colors (`color`, and `bg` and `border` on spans). From the keyboard, `Tab` from the current block goes through its items and `Enter` opens one; in the form, `Enter` applies and `Escape` cancels, and focus goes back to the item. Only that item's own text changes. An item the form can't change safely (one that runs over two lines, say) opens the block's source instead.
+- **Tables:** press `Enter` on a table, click a cell or choose **Edit as grid** to edit it cell by cell. Arrow keys and `Tab` move between cells, `Enter` writes the cell and goes down, `Escape` undoes the cell or closes the grid; the grid's toolbar adds and deletes rows and columns, sets a column's alignment and has **Align table**. Only the cell you edit changes (a row: its one line; a column: its cell and pipe on each line), and nothing is realigned unless you ask. `F2` edits the table's source; a table with rows of different lengths always opens there.
+- **Problems:** each block shows how many problems it has, blocks inside containers too (a problem counts on the innermost block that holds its line). Click the badge, press `Ctrl+.` on the block or choose **Problems…** to list them with their quick fixes; choose a fix to apply it. A fix that also changes other lines or files asks first.
+- **Front matter:** select it and choose **Properties** to edit its standard keys in a form (a list of choices for `status`, a date picker for `updated`, comma-separated `owners` and `tags`). Only that key's value changes; comments, order and quoting stay. Front matter the form can't edit safely opens as YAML, and `Enter` always edits the YAML.
+- **Images:** paste an image (`Ctrl+V`) to add it after the current block, or drop image files from your file manager onto a block (if VS Code opens the file instead, hold `Shift` while dropping). Files from the Explorer can't be dropped here: a webview gets a dropped file's contents, not its location. They are saved in `smd.images.folder`, as image paste in the text editor saves them, and linked with `![…](…)`. Up to 10 MB each; PNG, JPEG, GIF, WebP, BMP, AVIF or SVG.
+- **Keys:** `↑` `↓` go from block to block, into callouts, tabs and other containers too (`Home` `End`: first and last); `Alt+↑` `Alt+↓` move a block, as dragging its handle (left of the block under the mouse) does, among the blocks next to it; `Ctrl+/` opens the insert menu, whose templates come from the snippets and go after the current block. The toolbar also has **Delete**, **Move up**, **Move down**, **Properties** (a container's title and attributes, such as a risk's impact or a callout's color), **Edit in text editor** and, for a document without one, **Add front matter**. Task checkboxes tick as in the preview.
 - **What changes:** only the lines of the block you edit, or the lines a toolbar action adds, moves or removes. Lines you did not edit never change, and nothing is reformatted. If a text editor changes the block you are editing, your text is kept and you choose which version stays.
 - **Undo:** in a block's text box (and in the Properties text fields), `Ctrl+Z` and `Ctrl+Y` undo and redo your typing there. Anywhere else, `Ctrl+Z` undoes the document, as in the text editor: each written edit, insert, move or delete is a step. **Edit → Undo** in the menu always undoes the document.
-- **Not yet:** formatted (WYSIWYG) text editing, drag and drop, or selecting several blocks. Link and footnote definitions show as small source boxes you can edit; lines inside a container that render nothing are edited with the container.
+- **Not yet:** formatted (WYSIWYG) text editing, dragging a block into or out of a container, or selecting several blocks. Link and footnote definitions show as small source boxes you can edit; lines inside a container that render nothing are edited with the container.
 
 ### Web playground
 
@@ -215,8 +220,8 @@ Try `.smd` in the browser without installing anything: edit on the left; the pre
 Install the package straight from the release:
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.8.0/styled-markdown-1.8.0.tgz   # the smd command
-npm install https://github.com/bislink360/styled-markdown/releases/download/v1.8.0/styled-markdown-1.8.0.tgz      # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.9.0/styled-markdown-1.9.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v1.9.0/styled-markdown-1.9.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -241,7 +246,7 @@ Full instructions, building from source and troubleshooting: **[docs/INSTALL.md]
 ### Agent skills
 
 ```bash
-curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.8.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v1.9.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs skills install --global
 ```
 
@@ -293,7 +298,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v1.8.0
+      - uses: bislink360/styled-markdown/validate@v1.9.0
         with:
           paths: docs        # one per line; default: the whole repository
           fail-on: warning   # error (default), warning or never
@@ -394,7 +399,7 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-1.8.0.vsix
+npm run package        # → styled-markdown-1.9.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
 npm run build:playground  # → dist/playground (the web playground; open its index.html)
 ```

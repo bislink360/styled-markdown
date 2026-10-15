@@ -1,7 +1,7 @@
 // The Block Editor page's logic that needs no DOM: labels, which blocks to keep, the order to put them in, keys.
 // The page (blockEditor.ts) does the DOM work; the unit tests import this module directly. Types only from the
 // session module: nothing of the .smd engine reaches the page.
-import type { BlockProblems, BlockView, FormField, RenderMessage } from '../blockEditorSession';
+import type { BlockProblems, BlockView, FixView, FormField, InlineView, RenderMessage } from '../blockEditorSession';
 
 export interface LineRange {
   start: number;
@@ -55,6 +55,99 @@ export function editLabel(view: Pick<BlockView, 'type' | 'container' | 'start' |
 export function problemsLabel(problems: BlockProblems | undefined): string {
   if (!problems?.count) return '';
   return `${problems.count} ${problems.count === 1 ? 'problem' : 'problems'}`;
+}
+
+const SEVERITY_ORDER: readonly BlockProblems['severity'][] = ['error', 'warning', 'info'];
+/** As many messages as the extension sends for one block (MAX_PROBLEM_MESSAGES). */
+const MAX_MESSAGES = 10;
+
+/**
+ * Problems of several blocks as one: a container shows its own and those of children the page could not find in
+ * its HTML (so no problem goes unseen). Undefined when there are none.
+ */
+export function mergeProblems(...lists: (BlockProblems | undefined)[]): BlockProblems | undefined {
+  const all = lists.filter((p): p is BlockProblems => !!p?.count);
+  if (all.length <= 1) return all[0];
+  const severity = SEVERITY_ORDER.find((s) => all.some((p) => p.severity === s)) ?? 'info';
+  return { count: all.reduce((n, p) => n + p.count, 0), severity, messages: all.flatMap((p) => p.messages).slice(0, MAX_MESSAGES) };
+}
+
+/** How a block is announced as it becomes current: "Paragraph, lines 3–5", with its problems when it has some. */
+export function itemAnnouncement(view: Pick<BlockView, 'type' | 'container' | 'start' | 'end'>, problems: BlockProblems | undefined): string {
+  const count = problemsLabel(problems);
+  return count ? `${blockLabel(view)}, ${count}. Ctrl+. shows them.` : blockLabel(view);
+}
+
+/** A quick fix's button: its title, and what more it changes than the block. */
+export function fixLabel(fix: Pick<FixView, 'title' | 'scope'>): string {
+  if (fix.scope === 'lines') return `${fix.title} (also changes other lines)`;
+  return fix.scope === 'files' ? `${fix.title} (also changes other files)` : fix.title;
+}
+
+/** "1 quick fix: Change to "note".", "3 quick fixes." */
+export function fixesAnnouncement(fixes: readonly Pick<FixView, 'title' | 'scope'>[]): string {
+  if (fixes.length === 1) return `1 quick fix: ${fixLabel(fixes[0])}.`;
+  return fixes.length ? `${fixes.length} quick fixes.` : 'No quick fixes.';
+}
+
+/**
+ * Where a dragged block would be dropped among its siblings (their boxes, top to bottom): the boundary nearest to
+ * `y`, as the index of the sibling it goes before (`boxes.length`: after the last one).
+ */
+export function dropIndex(boxes: readonly { top: number; bottom: number }[], y: number): number {
+  let best = 0;
+  let distance = Infinity;
+  for (let i = 0; i <= boxes.length; i++) {
+    const at = boundaryY(boxes, i);
+    if (Math.abs(y - at) < distance) {
+      distance = Math.abs(y - at);
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** The y of the boundary before sibling `i` (after the last one for `boxes.length`): midway in the space between. */
+export function boundaryY(boxes: readonly { top: number; bottom: number }[], i: number): number {
+  if (!boxes.length) return 0;
+  if (i <= 0) return boxes[0].top;
+  if (i >= boxes.length) return boxes.at(-1)!.bottom;
+  return (boxes[i - 1].bottom + boxes[i].top) / 2;
+}
+
+/** A drop at boundary `index` moves the block at `from`: not right before or after itself. */
+export const dropMoves = (index: number, from: number): boolean => index !== from && index !== from + 1;
+
+/** The move a drop asks for: before the sibling at `index`, or 'end'. */
+export function dropTo(keys: readonly string[], index: number): string {
+  return index < keys.length ? keys[index] : 'end';
+}
+
+/** What is announced when a dropped block has moved: "Paragraph moved before heading, line 5." */
+export function dropAnnouncement(moved: Pick<BlockView, 'type' | 'container'>, before: Pick<BlockView, 'type' | 'container' | 'start' | 'end'> | undefined): string {
+  if (!before) return `${blockName(moved)} moved to the end.`;
+  const name = blockName(before);
+  return `${blockName(moved)} moved before ${name.charAt(0).toLowerCase()}${name.slice(1)}, ${linesLabel(before)}.`;
+}
+
+/** The image types the page sends (IMAGE_TYPES in the session), and the largest it sends: 10 MB. */
+export const IMAGE_MIMES: readonly string[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/avif', 'image/svg+xml'];
+export const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+/** Why a pasted or dropped file is not sent, or undefined when it is an image the extension takes. */
+export function imageProblem(file: { name?: string; type: string; size: number }): string | undefined {
+  const name = file.name ? `"${file.name}"` : 'The pasted file';
+  if (!IMAGE_MIMES.includes(file.type)) return `${name} is not a PNG, JPEG, GIF, WebP, BMP, AVIF or SVG image.`;
+  if (file.size > MAX_IMAGE_SIZE) return `${name} is larger than 10 MB.`;
+  if (file.size === 0) return `${name} is empty.`;
+  return undefined;
+}
+
+/** Bytes as base64, in chunks (a 10 MB image is too many arguments for one String.fromCharCode). */
+export function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
 }
 
 /** Rendered HTML without its source line numbers, to tell whether a block that only moved looks the same. */
@@ -174,6 +267,59 @@ export function formRequest(field: Pick<FormField, 'name' | 'kind'>, value: stri
   return { type: 'setAttr', name: field.name, value: text === '' ? null : text };
 }
 
+/**
+ * What a front matter field asks for (setFrontMatter's value): its text trimmed, a list's items (split on commas,
+ * trimmed, empty ones left out); null, which removes the key, when that leaves nothing.
+ */
+export function frontMatterValue(field: Pick<FormField, 'kind'>, value: string): string | string[] | null {
+  if (field.kind === 'list') {
+    const items = value.split(',').map((item) => item.trim()).filter(Boolean);
+    return items.length ? items : null;
+  }
+  const text = value.trim();
+  return text === '' ? null : text;
+}
+
+/** The field of an inline form for the text in the brackets (CONTENT_FIELD in the session). */
+const CONTENT = 'content';
+
+/** What an inline form asks for: new content, attributes to set or remove (null). */
+export interface InlineRequest {
+  content?: string;
+  attrs?: Record<string, string | null>;
+}
+
+/**
+ * The setInline fields for an inline form's values (by field name): only what changed, trimmed; an emptied
+ * attribute is removed. Null when nothing changed.
+ */
+export function inlineRequest(fields: readonly Pick<FormField, 'name' | 'value'>[], values: Readonly<Record<string, string>>): InlineRequest | null {
+  const request: InlineRequest = {};
+  const attrs: Record<string, string | null> = {};
+  for (const field of fields) {
+    const value = (values[field.name] ?? field.value).trim();
+    if (value === field.value) continue;
+    if (field.name === CONTENT) request.content = value;
+    else attrs[field.name] = value === '' ? null : value;
+  }
+  if (Object.keys(attrs).length) request.attrs = attrs;
+  return request.content === undefined && !request.attrs ? null : request;
+}
+
+/** How an inline item is named to a screen reader: 'Badge "Shipped", press Enter to edit'. */
+export function inlineItemLabel(view: Pick<InlineView, 'label' | 'text'>): string {
+  return view.text ? `${view.label} "${view.text}", press Enter to edit` : `${view.label}, press Enter to edit`;
+}
+
+/** What is announced when an inline form is applied: 'Badge: Text "Done", Color green.' */
+export function inlineAnnouncement(view: Pick<InlineView, 'label' | 'fields'>, request: InlineRequest): string {
+  const label = (name: string) => view.fields?.find((f) => f.name === name)?.label ?? name;
+  const parts: string[] = [];
+  if (request.content !== undefined) parts.push(`${label(CONTENT)} "${request.content}"`);
+  for (const [name, value] of Object.entries(request.attrs ?? {})) parts.push(value === null ? `${label(name)} removed` : `${label(name)} ${value}`);
+  return `${view.label}: ${parts.join(', ')}.`;
+}
+
 /** A block of the render (top-level or child, at any depth) by key. */
 export function findView(blocks: readonly BlockView[], key: string): BlockView | undefined {
   for (const b of blocks) {
@@ -213,6 +359,115 @@ export function followEdit(render: Pick<RenderMessage, 'blocks' | 'renamed' | 'p
 export function topRange(blocks: readonly Pick<BlockView, 'start' | 'end'>[], range: LineRange): LineRange {
   const holder = blocks.find((b) => b.start <= range.start && range.end <= b.end);
   return holder ? { start: holder.start, end: holder.end } : range;
+}
+
+// ---- Tables: the grid ----------------------------------------------------------------------------------
+
+/** A cell of the grid: row 0 is the header row (the delimiter row is not one), columns from 0. */
+export interface GridCell {
+  row: number;
+  col: number;
+}
+
+export interface GridSize {
+  rows: number;
+  cols: number;
+}
+
+/** The label of a table grid: "Table grid, lines 3–7". */
+export function gridLabel(view: Pick<BlockView, 'start' | 'end'>): string {
+  return `Table grid, ${linesLabel(view)}`;
+}
+
+/** A cell's input label: "Header, column 2 of 3", or "Age, row 4 of 5" (by its column's header, else its number). */
+export function cellLabel(header: readonly string[], cell: GridCell, rows: number): string {
+  if (cell.row === 0) return `Header, column ${cell.col + 1} of ${header.length}`;
+  const name = header[cell.col]?.trim() || `Column ${cell.col + 1}`;
+  return `${name}, row ${cell.row} of ${rows - 1}`;
+}
+
+/**
+ * Where a key moves in the grid: ↑ ↓ to the cell above or below, ← → to the cell before or after once the caret
+ * is at the start or end of the text, Enter down (Shift+Enter up). Null for other keys and past the edges.
+ */
+export function gridKeyTarget(key: string, cell: GridCell, size: GridSize, caret: { atStart: boolean; atEnd: boolean }, shift = false): GridCell | null {
+  const moves: Readonly<Record<string, GridCell | null>> = {
+    ArrowUp: { row: cell.row - 1, col: cell.col },
+    ArrowDown: { row: cell.row + 1, col: cell.col },
+    Enter: { row: cell.row + (shift ? -1 : 1), col: cell.col },
+    ArrowLeft: caret.atStart ? { row: cell.row, col: cell.col - 1 } : null,
+    ArrowRight: caret.atEnd ? { row: cell.row, col: cell.col + 1 } : null,
+  };
+  const to = Object.hasOwn(moves, key) ? moves[key] : null;
+  return to && to.row >= 0 && to.row < size.rows && to.col >= 0 && to.col < size.cols ? to : null;
+}
+
+/** A cell inside the grid (the nearest one when the grid shrank). */
+export function clampCell(cell: GridCell, size: GridSize): GridCell {
+  return { row: Math.max(0, Math.min(cell.row, size.rows - 1)), col: Math.max(0, Math.min(cell.col, size.cols - 1)) };
+}
+
+/** A cell's text as the extension writes it (cellText in core/tableEdit.ts): trimmed, every unescaped `|` escaped. */
+export function cellSource(text: string): string {
+  const trimmed = text.trim();
+  let out = '';
+  for (let i = 0; i < trimmed.length; i++) out += trimmed[i] === '|' && trimmed[i - 1] !== '\\' ? '\\|' : trimmed[i];
+  return out;
+}
+
+/**
+ * What a cell's input shows after a render brings `next`: the user's own text while they are in the cell and it is
+ * what was written; text they typed and that is not written yet; else the cell's text now.
+ */
+export function refreshedValue(value: string, committed: string, next: string, focused: boolean): string {
+  if (focused && cellSource(value) === next) return value;
+  return cellSource(value) === cellSource(committed) ? next : value;
+}
+
+export type GridAction = 'rowAbove' | 'rowBelow' | 'delRow' | 'colLeft' | 'colRight' | 'delCol' | 'alignTable';
+
+/** A grid change as the page asks for it (tableRow, tableCol, tableAlign, without key and editId). */
+export type GridRequest =
+  | { type: 'tableRow'; op: 'insert' | 'delete'; at: number }
+  | { type: 'tableCol'; op: 'insert' | 'delete' | 'align'; at: number; align?: string }
+  | { type: 'tableAlign' };
+
+/** Whether an action can be taken from a cell: no row above the header, and the header and last column stay. */
+export function gridActionEnabled(action: GridAction, cell: GridCell, size: GridSize): boolean {
+  if (action === 'rowAbove' || action === 'delRow') return cell.row > 0;
+  return action !== 'delCol' || size.cols > 1;
+}
+
+export function gridRequest(action: GridAction, cell: GridCell): GridRequest {
+  switch (action) {
+    case 'rowAbove':
+      return { type: 'tableRow', op: 'insert', at: cell.row };
+    case 'rowBelow':
+      return { type: 'tableRow', op: 'insert', at: cell.row + 1 };
+    case 'delRow':
+      return { type: 'tableRow', op: 'delete', at: cell.row };
+    case 'colLeft':
+      return { type: 'tableCol', op: 'insert', at: cell.col };
+    case 'colRight':
+      return { type: 'tableCol', op: 'insert', at: cell.col + 1 };
+    case 'delCol':
+      return { type: 'tableCol', op: 'delete', at: cell.col };
+    default:
+      return { type: 'tableAlign' };
+  }
+}
+
+const ALIGN_WORDS: Readonly<Record<string, string>> = { left: 'left', center: 'centered', right: 'right' };
+
+/** What is announced once a grid change is made: "Row 3 added.", "Column 2 aligned right.", "Table aligned." */
+export function gridAnnouncement(request: GridRequest): string {
+  if (request.type === 'tableAlign') return 'Table aligned.';
+  if (request.type === 'tableRow') return `Row ${request.at} ${request.op === 'insert' ? 'added' : 'deleted'}.`;
+  if (request.op === 'align') {
+    const word = ALIGN_WORDS[request.align ?? ''];
+    return word ? `Column ${request.at + 1} aligned ${word}.` : `Column ${request.at + 1} alignment removed.`;
+  }
+  return `Column ${request.at + 1} ${request.op === 'insert' ? 'added' : 'deleted'}.`;
 }
 
 /** The number of rows a textarea needs for a text (at least 2, at most 40). */

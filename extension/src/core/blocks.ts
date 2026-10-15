@@ -1,6 +1,7 @@
 import type { Token } from 'markdown-it';
 import { CONTAINER_CLOSE } from './containers';
-import type { ContainerMeta } from './markdownItRules';
+import { numberedInlineTokens, SPAN, type RenderedInline } from './inlineEdit';
+import type { ContainerMeta, DirectiveMeta, SpanMeta } from './markdownItRules';
 import { documentFrame, parseSmdTokens, type Heading, type ParsedTokens, type RenderOptions } from './render';
 
 /**
@@ -41,6 +42,18 @@ export interface RenderedBlock {
   start: number;
   end: number;
   html: string;
+  /** With `inlineIndex`: the block's inline directives and styled spans, by their `data-smd-inline` number. */
+  inline?: RenderedInline[];
+}
+
+/** renderBlocks' options: renderSmd's, and what only the Block Editor asks for. */
+export interface BlockRenderOptions extends RenderOptions {
+  /**
+   * Number each inline directive and styled span of a block, in order from 0, as `data-smd-inline="n"` (on the span,
+   * or on a `<span>` around the directive), and list them in RenderedBlock.inline: the Block Editor finds them in the
+   * source in the same order (scanInline). Off by default, so the HTML is renderSmd's.
+   */
+  inlineIndex?: boolean;
 }
 
 /** A document rendered block by block: the parts of renderSmd's HTML, and what renderSmd returns besides. */
@@ -223,11 +236,12 @@ export function segmentSmd(text: string, options: RenderOptions = {}): Segment[]
  * Render a document block by block, from one parse with every rule renderSmd runs. `open`, `header`, `toc`, the
  * blocks' HTML in order and `tail`, then `</article>`, make exactly renderSmd's HTML (see blocksHtml).
  */
-export function renderBlocks(text: string, options: RenderOptions = {}): BlockRender {
+export function renderBlocks(text: string, options: BlockRenderOptions = {}): BlockRender {
   const parsed = parseSmdTokens(text, options);
   const { segments, groups, owner } = segmentParsed(text, parsed);
   const { md, env } = parsed;
   const html = segments.map(() => '');
+  const inline = options.inlineIndex ? numberInline(groups, owner, segments.length) : undefined;
   let pending = '';
   groups.forEach((group, i) => {
     const out = pending + md.renderer.render(group, md.options, env);
@@ -238,9 +252,43 @@ export function renderBlocks(text: string, options: RenderOptions = {}): BlockRe
       pending = '';
     }
   });
-  const blocks = segments.flatMap((s, i) => (s.kind === BLOCK ? [{ key: s.key, start: s.start, end: s.end, html: html[i] }] : []));
+  const blocks = segments.flatMap((s, i): RenderedBlock[] => {
+    if (s.kind !== BLOCK) return [];
+    const block: RenderedBlock = { key: s.key, start: s.start, end: s.end, html: html[i] };
+    if (inline) block.inline = inline[i];
+    return [block];
+  });
   const frame = documentFrame(parsed);
   return { segments, blocks, ...frame, tail: pending, frontMatter: parsed.data, headings: env.headings, lang: parsed.lang };
+}
+
+/**
+ * Number the inline directives and styled spans of each segment's token groups in order (see inlineIndex): the
+ * tokens are marked before rendering, and what each says of itself is listed per segment.
+ */
+function numberInline(groups: readonly Token[][], owner: readonly number[], count: number): RenderedInline[][] {
+  const lists = Array.from({ length: count }, (): RenderedInline[] => []);
+  groups.forEach((group, i) => {
+    if (owner[i] < 0) return;
+    const list = lists[owner[i]];
+    for (const { token } of numberedInlineTokens(group)) {
+      for (const child of token.children ?? []) markInline(child, list);
+    }
+  });
+  return lists;
+}
+
+function markInline(token: Token, list: RenderedInline[]): void {
+  const n = String(list.length);
+  if (token.type === 'smd_span_open') {
+    token.attrSet('data-smd-inline', n);
+    list.push({ kind: 'span', name: SPAN, content: '', values: { ...(token.meta as SpanMeta).values } });
+    return;
+  }
+  const meta = token.meta as DirectiveMeta | null;
+  if (token.type !== 'html_inline' || !meta?.directive) return;
+  token.content = `<span data-smd-inline="${n}">${token.content}</span>`;
+  list.push({ kind: 'directive', name: meta.directive, content: meta.content, values: { ...meta.values } });
 }
 
 /** The whole document's HTML from its blocks: what renderSmd returns for the same text and options. */

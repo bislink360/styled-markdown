@@ -6,10 +6,14 @@
 // The document's rendered HTML goes into the page as in the preview. The editor's own controls (toolbar, menus,
 // forms, the source editor, notices, problem badges) live in closed shadow roots and are built with createElement
 // and textContent only.
-import type { BlockView, FocusRequest, FormField, FrontMatterView, HostMessage, RenderMessage } from '../blockEditorSession';
+import type {
+  BlockProblems, BlockView, FixesMessage, FixView, FocusRequest, FormField, FrontMatterView, HostMessage, InlineView, RenderMessage, TableView,
+} from '../blockEditorSession';
 import {
-  FROZEN, blockLabel, desiredOrder, editLabel, findView, followEdit, formRequest, isUndoRedo, itemForLine, listKeyTarget, orderMoves,
-  problemsLabel, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines, type LineRange,
+  FROZEN, blockLabel, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
+  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement,
+  itemForLine, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, boundaryY, dropAnnouncement, dropIndex, dropMoves, dropTo, imageProblem, toBase64, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  type GridAction, type GridCell, type GridRequest, type GridSize, type LineRange,
 } from './blockEditorModel';
 
 interface Runtime {
@@ -52,8 +56,40 @@ interface Editing {
   timer?: ReturnType<typeof setTimeout>;
 }
 
-type ItemView = Pick<BlockView, 'key' | 'type' | 'container' | 'start' | 'end' | 'source' | 'problems' | 'form' | 'children'>;
-type Action = 'insert' | 'edit' | 'props' | 'up' | 'down' | 'del' | 'reveal' | 'fm';
+/** A table block edited cell by cell: the grid that stands in for its rendering, and what the extension has of it. */
+interface Grid {
+  key: string;
+  /** The table's element, hidden behind the grid, and the top-level block it is in (which keeps its place). */
+  item: HTMLElement;
+  top: HTMLElement;
+  host: HTMLElement;
+  root: ShadowRoot;
+  range: LineRange;
+  /** Every cell's text as the extension has it, as far as the page knows. */
+  rows: string[][];
+  aligns: string[];
+  table: HTMLTableElement;
+  inputs: HTMLInputElement[][];
+  tools: Record<GridAction, HTMLButtonElement>;
+  align: HTMLSelectElement;
+  /** The cell focus was last in, and its text when focus came to it (Escape goes back to that). */
+  cell: GridCell;
+  entry: string;
+  /** A row or column change on its way: the grid waits, read-only, for the render that has it. */
+  busy: { editId: string; version?: number } | null;
+  /** Something was written from the grid (the table is rendered again when the grid closes). */
+  changed: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/** An item's controls: the shadow host and the problem badge. */
+interface Chrome {
+  host: HTMLElement;
+  badge: HTMLButtonElement;
+}
+
+type ItemView = Pick<BlockView, 'key' | 'type' | 'container' | 'start' | 'end' | 'source' | 'problems' | 'form' | 'children' | 'inline' | 'table'>;
+type Action = 'insert' | 'edit' | 'grid' | 'props' | 'problems' | 'up' | 'down' | 'del' | 'reveal' | 'fm';
 
 const AUTOSAVE_DELAY = 800;
 const DIV = 'div';
@@ -70,11 +106,24 @@ const HIDDEN = 'smd-ed-hidden';
 const CONTENT = 'smd-ed-content';
 const RAW = 'smd-ed-raw';
 const EDITOR = 'smd-ed-editor';
+const GRID_HOST = 'smd-ed-grid-host';
+const CHROME = 'smd-ed-chrome';
+const CHROME_CHILD = 'smd-ed-chrome-child';
+/** Child elements that can't hold the editor's controls (they go right before them). */
+const OUTSIDE_CHROME = new Set(['TABLE', 'DETAILS', 'HR', 'IMG', 'PRE']);
 const ARIA_EXPANDED = 'aria-expanded';
 const ARIA_DISABLED = 'aria-disabled';
 const ARIA_LABEL = 'aria-label';
+const ARIA_DESCRIBEDBY = 'aria-describedby';
+const FRONT_MATTER = 'frontmatter';
 const TABINDEX = 'tabindex';
-const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role="tab"], audio, video, iframe, [contenteditable], .smd-ed-editor';
+const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role="tab"], audio, video, iframe, [contenteditable], .smd-ed-editor, .smd-ed-grid-host';
+/** The alignments a grid column can have, as the alignment list shows them. */
+const ALIGN_CHOICES: readonly (readonly [string, string])[] = [['none', 'Default'], ['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
+/** An inline directive or styled span the extension numbered (renderBlocks' inlineIndex). */
+const INLINE = '[data-smd-inline]';
+/** The input type of a form field that is not a select. */
+const INPUT_TYPES: Readonly<Partial<Record<FormField['kind'], string>>> = { flag: 'checkbox', date: 'date' };
 
 const runtime = (globalThis as { smdRuntime?: Runtime }).smdRuntime;
 if (typeof document !== 'undefined' && runtime?.mode === 'block-editor') start(runtime);
@@ -119,11 +168,21 @@ function start(rt: Runtime): void {
   const signature = new WeakMap<HTMLElement, string>();
   const nodeIds = new WeakMap<HTMLElement, string>();
   const shown = new WeakMap<HTMLElement, string>();
-  const badges = new WeakMap<HTMLElement, { host: HTMLElement; span: HTMLElement }>();
+  const chromes = new WeakMap<HTMLElement, Chrome>();
+  /** The problems an item's badge shows: its own, and those of children not found in its HTML. */
+  const shownProblems = new WeakMap<HTMLElement, BlockProblems | undefined>();
+  /** A child's sibling blocks in its container (empty when some of them are not in the HTML: no drop there). */
+  const siblingGroups = new WeakMap<HTMLElement, HTMLElement[]>();
   let fmNode: HTMLElement | null = null;
   let currentKey: string | null = null;
   let currentLine = 0;
   let editing: Editing | null = null;
+  let grid: Grid | null = null;
+  /** Row and column changes sent from the grid and not answered yet, and cell edits, by editId. */
+  const gridOps = new Map<string, GridRequest>();
+  const cellEdits = new Map<string, { cell: GridCell; previous: string }>();
+  /** The block being edited, in its source or in the grid: it keeps its place and its rendering until that ends. */
+  const held = (): Pick<Grid, 'key' | 'item' | 'top' | 'range'> | null => editing ?? grid;
   let pendingFocus: { version: number; focus: FocusRequest } | null = null;
   /** Drafts of edits sent as editing ended, in case one of them comes back as a conflict. */
   const closedDrafts = new Map<string, { key: string; range: LineRange; draft: string; original: string }>();
@@ -180,55 +239,86 @@ function start(rt: Runtime): void {
     viewOf.set(el, view);
   }
 
-  /** The problem count badge of a top-level block (in a shadow root; its text is also in the block's label). */
-  function updateBadge(node: HTMLElement, view: ItemView): void {
-    let badge = badges.get(node);
-    if (!view.problems) {
-      if (badge) badge.host.hidden = true;
-      return;
-    }
-    if (!badge) {
-      const host = h(DIV, { className: 'smd-ed-badge-host' });
-      const span = h('span', { className: 'badge', attrs: { 'aria-hidden': TRUE } });
-      chromeRoot(host).append(span);
-      badge = { host, span };
-      badges.set(node, badge);
-      node.prepend(host);
-    }
-    badge.host.hidden = false;
-    badge.span.textContent = `⚠ ${view.problems.count}`;
-    badge.span.className = `badge ${view.problems.severity}`;
-    badge.span.title = view.problems.messages.join('\n');
+  /**
+   * The editor's controls on an item (in a shadow root): its problem badge, which opens the list of problems and
+   * quick fixes. A top-level block holds them; a child gets them as its first element (or right before it, where
+   * an element can't hold them), so they show and hide with it, as a tab or a closed details hides its content.
+   */
+  function chromeFor(el: HTMLElement, child: boolean): Chrome {
+    const known = chromes.get(el);
+    if (known?.host.isConnected) return known;
+    const host = h(DIV, { className: child ? `${CHROME} ${CHROME_CHILD}` : CHROME });
+    const badge = h('button', { className: 'badge', attrs: { type: 'button', [TABINDEX]: '-1', 'aria-hidden': TRUE } });
+    badge.addEventListener('click', (event) => {
+      event.stopPropagation();
+      setCurrent(el, false);
+      openProblems(el);
+    });
+    chromeRoot(host).append(h(DIV, { className: child ? 'chrome child' : 'chrome' }, [badge]));
+    const chrome: Chrome = { host, badge };
+    chromes.set(el, chrome);
+    if (!child) el.prepend(host);
+    else if (OUTSIDE_CHROME.has(el.tagName) || el.parentElement?.classList.contains('smd-table-wrap')) el.before(host);
+    else el.prepend(host);
+    return chrome;
   }
 
-  function decorateTop(node: HTMLElement, view: ItemView): void {
+  /** Show an item's problem count (the messages are in the badge's tooltip, the item's label and the problems list). */
+  function updateChrome(el: HTMLElement, problems: BlockProblems | undefined, child: boolean): void {
+    shownProblems.set(el, problems);
+    const chrome = problems || chromes.has(el) ? chromeFor(el, child) : undefined;
+    if (!chrome) return;
+    chrome.badge.hidden = !problems;
+    if (!problems) return;
+    chrome.badge.textContent = `⚠ ${problems.count}`;
+    chrome.badge.className = `badge ${problems.severity}`;
+    chrome.badge.title = `${problems.messages.join('\n')}\n\nClick, or press Ctrl+. on the block, for quick fixes.`;
+  }
+
+  function decorateTop(node: HTMLElement, view: ItemView, lost?: BlockProblems): void {
     markItem(node, view);
     node.setAttribute('role', 'group');
     node.setAttribute('aria-roledescription', 'block');
-    const problems = problemsLabel(view.problems);
+    const shown = mergeProblems(view.problems, lost);
+    const problems = problemsLabel(shown);
     node.setAttribute(ARIA_LABEL, problems ? `${blockLabel(view)}, ${problems}` : blockLabel(view));
-    if (view.problems) node.setAttribute('aria-description', view.problems.messages.join('; '));
+    if (shown) node.setAttribute('aria-description', shown.messages.join('; '));
     else node.removeAttribute('aria-description');
-    updateBadge(node, view);
+    updateChrome(node, shown, false);
   }
 
-  /** Mark a container's children (found in its HTML by their first line) as items of their own. */
-  function annotateChildren(scope: HTMLElement, children: readonly BlockView[] | undefined): void {
+  /**
+   * Mark a container's children (found in its HTML by their first line) as items of their own, each with its problem
+   * badge. Returns the problems of children that are not in the HTML, which their container shows instead.
+   */
+  function annotateChildren(scope: HTMLElement, children: readonly BlockView[] | undefined): BlockProblems | undefined {
+    let lost: BlockProblems | undefined;
+    const group: HTMLElement[] = [];
     for (const child of children ?? []) {
       if (child.kind !== 'block') continue;
       const el = scope.querySelector<HTMLElement>(`[data-line="${child.start}"]`);
       if (el && !el.classList.contains(ITEM)) {
         markItem(el, child);
         el.classList.add(CHILD);
+        group.push(el);
+        updateChrome(el, mergeProblems(child.problems, annotateChildren(el, child.children)), true);
+      } else {
+        lost = mergeProblems(lost, child.problems, annotateChildren(el ?? scope, child.children));
       }
-      annotateChildren(el ?? scope, child.children);
     }
+    // The children a dragged child can be dropped among (only when every one of them was found).
+    const complete = group.length === (children ?? []).filter((c) => c.kind === 'block').length;
+    for (const el of group) siblingGroups.set(el, complete ? group : []);
+    return lost;
   }
 
   function clearChildren(node: HTMLElement): void {
+    node.querySelectorAll<HTMLElement>(`.${CHROME_CHILD}`).forEach((host) => host.remove());
     node.querySelectorAll<HTMLElement>(`.${CHILD}`).forEach((el) => {
       el.classList.remove(ITEM, CHILD);
       delete el.dataset.smdEdKey;
+      chromes.delete(el);
+      shownProblems.delete(el);
     });
   }
 
@@ -255,8 +345,7 @@ function start(rt: Runtime): void {
       content.innerHTML = view.html ?? '';
     }
     node.append(content);
-    decorateTop(node, view);
-    annotateChildren(content, view.children);
+    decorateTop(node, view, annotateChildren(content, view.children));
     fresh.add(node);
     return node;
   }
@@ -273,15 +362,14 @@ function start(rt: Runtime): void {
   /** The element for a top-level block: the one shown now when it looks the same, else a new one. */
   function nodeFor(view: BlockView): HTMLElement {
     const known = nodes.get(view.key);
-    const old = known === editing?.top ? undefined : known;
+    const old = known === held()?.top ? undefined : known;
     if (view.blank) return blankGap(view, old);
     const sig = signatureOf(view);
     if (old && signature.get(old) === sig && old.classList.contains(ITEM)) {
       const content = old.querySelector<HTMLElement>(`:scope > .${CONTENT}`) ?? old;
       shiftLines(content, view.start - startOf(old));
       clearChildren(content);
-      decorateTop(old, view);
-      annotateChildren(content, view.children);
+      decorateTop(old, view, annotateChildren(content, view.children));
       return old;
     }
     const node = createTop(view);
@@ -300,8 +388,9 @@ function start(rt: Runtime): void {
   }
 
   function reconcile(msg: RenderMessage): void {
-    const frozenNode = editing && editing.top !== fmNode ? editing.top : null;
-    const frozen = frozenNode && editing ? topRange(msg.blocks, editing.range) : null;
+    const hold = held();
+    const frozenNode = hold && hold.top !== fmNode ? hold.top : null;
+    const frozen = frozenNode && hold ? topRange(msg.blocks, hold.range) : null;
     const byKey = new Map(msg.blocks.map((b) => [b.key, b]));
     const order = desiredOrder(msg.blocks, frozen);
     const next = new Map<string, HTMLElement>();
@@ -338,7 +427,7 @@ function start(rt: Runtime): void {
       fmNode = null;
       return;
     }
-    const view: ItemView = { key: fm.key, type: 'frontmatter', start: fm.start, end: fm.end, source: fm.source, problems: fm.problems };
+    const view: ItemView = { key: fm.key, type: FRONT_MATTER, start: fm.start, end: fm.end, source: fm.source, problems: fm.problems };
     if (fmNode && signature.get(fmNode) === fm.source) {
       decorateTop(fmNode, view);
       return;
@@ -366,10 +455,11 @@ function start(rt: Runtime): void {
 
   /** After a render: the current item is the one with the current key, else the one on the current line. */
   function ensureCurrent(focus: boolean): void {
-    if (editing) {
-      // The block being edited stays current (its own element is hidden behind the editor).
-      currentKey = editing.key;
-      currentLine = editing.range.start;
+    const hold = held();
+    if (hold) {
+      // The block being edited stays current (its own element is hidden behind the editor or the grid).
+      currentKey = hold.key;
+      currentLine = hold.range.start;
       updateToolbar();
       return;
     }
@@ -383,12 +473,13 @@ function start(rt: Runtime): void {
     setCurrent(item, focus);
   }
 
-  const currentItem = (): HTMLElement | undefined => editing?.item ?? itemsAll().find((i) => i.dataset.smdEdKey === currentKey);
+  const currentItem = (): HTMLElement | undefined => held()?.item ?? itemsAll().find((i) => i.dataset.smdEdKey === currentKey);
   /** The current block; while one is edited, that one, with its key and lines as they are now. */
   const currentView = (): ItemView | undefined => {
-    if (editing) {
-      const view = viewOf.get(editing.item);
-      return view && { ...view, key: editing.key, start: editing.range.start, end: editing.range.end };
+    const hold = held();
+    if (hold) {
+      const view = viewOf.get(hold.item);
+      return view && { ...view, key: hold.key, start: hold.range.start, end: hold.range.end };
     }
     const item = currentItem();
     return item && viewOf.get(item);
@@ -400,9 +491,15 @@ function start(rt: Runtime): void {
     pendingFocus = null;
     const list = itemsAll();
     if (!list.length) return;
+    if (focus.cell) {
+      focusGridCell(focus.line, focus.cell);
+      return;
+    }
     const item = list[itemForLine(list.map(startOf), focus.line)];
     setCurrent(item, true);
     if (focus.edit) startEdit(item, { select: focus.select });
+    // After an inline form: focus goes back to the item it changed.
+    if (focus.inline !== undefined) item.querySelector<HTMLElement>(`[data-smd-inline="${focus.inline}"]`)?.focus();
   }
 
   // ---- Editing a block's source ----------------------------------------------------
@@ -425,9 +522,10 @@ function start(rt: Runtime): void {
 
   /** The element to edit once any other edit has ended (which may render its block, and this one, again). */
   function editTarget(target: HTMLElement): HTMLElement | undefined {
-    if (!editing) return target;
+    if (!editing && !grid) return target;
     const key = target.dataset.smdEdKey;
     finishEdit(false);
+    closeGrid(false);
     return target.isConnected ? target : itemsAll().find((i) => i.dataset.smdEdKey === key);
   }
 
@@ -631,24 +729,46 @@ function start(rt: Runtime): void {
       editing.key = followed.key;
       editing.range = followed.range;
     }
+    if (grid) {
+      const followed = followEdit(msg, grid.key, grid.range);
+      grid.key = followed.key;
+      grid.range = followed.range;
+    }
     const active = document.activeElement;
     const hadFocus = !active || active === document.body || rootEl.contains(active);
     renderAll(msg);
+    refreshGrid(msg);
     // A block that had focus and was rendered again: focus goes to the block now in its place.
-    if (hadFocus && !editing && !rootEl.contains(document.activeElement)) currentItem()?.focus();
+    if (hadFocus && !editing && !grid && !rootEl.contains(document.activeElement)) currentItem()?.focus();
     if (!restored) restore();
     applyPendingFocus();
+    openPending();
   }
 
   function onAck(editId: string, version: number, focus: FocusRequest | undefined): void {
     acked = Math.max(acked, version);
+    fixApplied(editId);
+    dropped(editId);
     closedDrafts.delete(editId);
+    cellEdits.delete(editId);
     if (editing?.pending.delete(editId)) editing.acked = Math.max(editing.acked, version);
-    if (focus) pendingFocus = { version, focus };
+    const request = gridOps.get(editId);
+    gridOps.delete(editId);
+    if (request) gridAcked(editId, version, request);
+    // A cell's own edit moves no focus (the user may be in another cell by now); a row or column change does.
+    const wanted = focus?.cell ? gridFocus(request, focus) : focus;
+    if (wanted) pendingFocus = { version, focus: wanted };
     applyPendingFocus();
   }
 
   function onConflict(editId: string, currentText: string | null): void {
+    const cell = cellEdits.has(editId);
+    if (gridRefused(editId)) {
+      showNotice(cell
+        ? 'This table was changed in another editor. What you typed is kept in its cell: press Enter to write it.'
+        : 'This table was changed in another editor. Try again.');
+      return;
+    }
     if (editing?.pending.has(editId)) {
       showConflict(editing, currentText);
       return;
@@ -672,6 +792,7 @@ function start(rt: Runtime): void {
 
   function onFlush(requestId: number): void {
     if (editing) commit(editing);
+    if (grid) commitCell(grid, grid.cell);
     post({ type: 'flushed', requestId });
   }
 
@@ -693,9 +814,21 @@ function start(rt: Runtime): void {
         break;
       case 'notice':
         showNotice(msg.text);
+        if (msg.editId) {
+          gridRefused(msg.editId);
+          fixRefused(msg.editId);
+          drops.delete(msg.editId);
+        }
+        if (msg.fallback) editSourceOf(msg.fallback);
         break;
       case 'flush':
         onFlush(msg.requestId);
+        break;
+      case 'fixes':
+        onFixes(msg);
+        break;
+      case 'confirmFix':
+        onConfirmFix(msg.editId, msg.index, msg.text);
         break;
     }
   });
@@ -732,6 +865,12 @@ function start(rt: Runtime): void {
   // ---- Keyboard and mouse on the blocks --------------------------------------------
   rootEl.addEventListener(KEYDOWN, (event) => {
     const item = event.target as HTMLElement;
+    if (item.dataset?.smdInline !== undefined && ['Enter', ' ', 'F2'].includes(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      activateInline(item);
+      return;
+    }
     if (!item.classList?.contains(ITEM)) return;
     if (blockKey(item, event)) {
       event.preventDefault();
@@ -745,7 +884,11 @@ function start(rt: Runtime): void {
       return true;
     }
     if ((event.key === 'Enter' && !event.ctrlKey && !event.metaKey) || event.key === 'F2') {
-      startEdit(item);
+      openByKey(item, event.key);
+      return true;
+    }
+    if (event.key === '.' && (event.ctrlKey || event.metaKey) && !event.altKey) {
+      openProblems(item);
       return true;
     }
     if (event.altKey || event.ctrlKey || event.metaKey) return false;
@@ -753,7 +896,7 @@ function start(rt: Runtime): void {
     const to = listKeyTarget(event.key, list.indexOf(item), list.length);
     if (to < 0) return false;
     setCurrent(list[to], true);
-    if (list[to].classList.contains(CHILD)) rt.announce(blockLabel(viewOf.get(list[to])!));
+    if (list[to].classList.contains(CHILD)) rt.announce(itemAnnouncement(viewOf.get(list[to])!, shownProblems.get(list[to])));
     return true;
   }
 
@@ -766,12 +909,36 @@ function start(rt: Runtime): void {
     const target = event.target as HTMLElement;
     if (!target.closest || target.closest(INTERACTIVE)) return;
     if (String(globalThis.getSelection?.() ?? '') !== '') return;
+    const inline = target.closest<HTMLElement>(INLINE);
+    if (inline && rootEl.contains(inline) && !inline.closest(`.${EDITOR}, .${HIDDEN}`)) {
+      activateInline(inline);
+      return;
+    }
     const item = target.closest<HTMLElement>(`.${ITEM}`);
     if (item && editing?.item !== item) {
       setCurrent(item, false);
-      startEdit(item);
+      openItem(item, renderedCell(item, target));
     }
   });
+
+  /** Open a block to edit it: a table that the grid can edit in the grid at `cell`, anything else in its source. */
+  function openItem(item: HTMLElement, cell: GridCell | undefined): void {
+    if (cell && viewOf.get(item)?.table?.rows) openGrid(item, cell);
+    else startEdit(item);
+  }
+
+  /** Enter opens a table in the grid (at its first cell); F2, and Enter on anything else, the block's source. */
+  function openByKey(item: HTMLElement, key: string): void {
+    openItem(item, key === 'Enter' ? { row: 0, col: 0 } : undefined);
+  }
+
+  /** The cell of a rendered table a click landed in (row 0: the header row). */
+  function renderedCell(item: HTMLElement, target: HTMLElement): GridCell | undefined {
+    const cell = target.closest<HTMLTableCellElement>('td, th');
+    const row = cell?.parentElement;
+    if (!cell || !(row instanceof HTMLTableRowElement) || !item.contains(cell)) return undefined;
+    return { row: row.rowIndex, col: cell.cellIndex };
+  }
 
   document.addEventListener(KEYDOWN, (event) => {
     if (event.key === '/' && (event.ctrlKey || event.metaKey) && !event.altKey) {
@@ -782,7 +949,9 @@ function start(rt: Runtime): void {
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && editing) commit(editing);
+    if (document.visibilityState !== 'hidden') return;
+    if (editing) commit(editing);
+    if (grid) commitCell(grid, grid.cell);
   });
 
   // ---- Requests ----------------------------------------------------------------------
@@ -803,16 +972,27 @@ function start(rt: Runtime): void {
       case 'props':
         toggleProps();
         return;
+      case 'problems': {
+        const item = currentItem();
+        if (item) openProblems(item);
+        return;
+      }
       default:
         blockAction(action);
     }
   }
 
   /** An action on the current block. */
-  function blockAction(action: 'edit' | 'up' | 'down' | 'del' | 'reveal'): void {
+  function blockAction(action: 'edit' | 'grid' | 'up' | 'down' | 'del' | 'reveal'): void {
     const view = currentView();
     if (!view) return;
+    if (action === 'grid') {
+      const item = currentItem();
+      if (item && view.table?.rows) openGrid(item);
+      return;
+    }
     if (editing) finishEdit(false);
+    closeGrid(false);
     if (action === 'edit') {
       const item = currentItem();
       if (item) startEdit(item);
@@ -832,12 +1012,180 @@ function start(rt: Runtime): void {
     post(view ? { type: 'insert', template: name, atKey: view.key, editId: nextId() } : { type: 'insert', template: name, position: 'end', editId: nextId() });
   }
 
+  // ---- Drag and drop: moving a block among its siblings ---------------------------------------
+  // One drag handle (in a closed shadow root) shows next to the block under the mouse: a top-level block, or a block
+  // inside a container. Dragged, a line shows where it would go among its siblings; dropped, the page sends move
+  // with the key of the sibling it goes before (or 'end'), and the extension takes only those boundaries. Alt+↑/↓
+  // does the same from the keyboard; a drop is announced once it is made.
+  const DRAG_TYPE = 'application/x-smd-block';
+  const dragHost = h(DIV, { className: 'smd-ed-drag-host' });
+  const handle = h(DIV, {
+    className: 'handle',
+    text: '⠿',
+    attrs: { draggable: TRUE, 'aria-hidden': TRUE, title: 'Drag to move this block (Alt+Up and Alt+Down from the keyboard)' },
+  });
+  chromeRoot(dragHost).append(handle);
+  dragHost.hidden = true;
+  const dropLine = h(DIV, { className: 'smd-ed-drop', attrs: { 'aria-hidden': TRUE } });
+  dropLine.hidden = true;
+  document.body.append(dragHost, dropLine);
+  let handleItem: HTMLElement | null = null;
+  let dragging: { item: HTMLElement; view: ItemView; siblings: HTMLElement[]; index: number } | null = null;
+  const drops = new Map<string, string>();
+
+  /** The blocks a dragged item can be dropped among: the top-level items, or its container's children. */
+  function dragSiblings(item: HTMLElement): HTMLElement[] {
+    if (!item.classList.contains(CHILD)) return (Array.from(blocksEl.children) as HTMLElement[]).filter((el) => el.classList.contains(ITEM));
+    return siblingGroups.get(item) ?? [];
+  }
+
+  /** A block that can be dragged: a block (not lines that render nothing, not the front matter) not being edited. */
+  function draggable(item: HTMLElement | null): item is HTMLElement {
+    const view = item && viewOf.get(item);
+    return !!view && view.type !== 'gap' && view.type !== FRONT_MATTER && !held() && dragSiblings(item!).length > 1;
+  }
+
+  rootEl.addEventListener('mouseover', (event) => {
+    if (dragging) return;
+    const item = (event.target as HTMLElement).closest?.<HTMLElement>(`.${ITEM}`) ?? null;
+    if (!draggable(item)) return;
+    handleItem = item;
+    const rect = item.getBoundingClientRect();
+    dragHost.hidden = false;
+    dragHost.style.top = `${rect.top + window.scrollY}px`;
+    dragHost.style.left = `${Math.max(0, rect.left + window.scrollX - 22)}px`;
+  });
+
+  handle.addEventListener('dragstart', (event) => {
+    const item = handleItem;
+    if (!item?.isConnected || !draggable(item) || !event.dataTransfer) {
+      event.preventDefault();
+      return;
+    }
+    const siblings = dragSiblings(item);
+    dragging = { item, view: viewOf.get(item)!, siblings, index: siblings.indexOf(item) };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(DRAG_TYPE, dragging.view.key);
+    event.dataTransfer.setDragImage(item, 0, 0);
+    setCurrent(item, false);
+  });
+
+  handle.addEventListener('dragend', () => endDrag());
+
+  function endDrag(): void {
+    dragging = null;
+    dropLine.hidden = true;
+  }
+
+  /** The boundary nearest the pointer among the dragged block's siblings, shown as a line; -1 where it wouldn't move. */
+  function dropAt(y: number): number {
+    const d = dragging!;
+    const boxes = d.siblings.map((el) => el.getBoundingClientRect());
+    const index = dropIndex(boxes, y);
+    if (!dropMoves(index, d.index)) {
+      dropLine.hidden = true;
+      return -1;
+    }
+    const left = Math.min(...boxes.map((b) => b.left));
+    const right = Math.max(...boxes.map((b) => b.right));
+    dropLine.hidden = false;
+    dropLine.style.top = `${boundaryY(boxes, index) + window.scrollY - 1}px`;
+    dropLine.style.left = `${left + window.scrollX}px`;
+    dropLine.style.width = `${right - left}px`;
+    return index;
+  }
+
+  document.addEventListener('dragover', (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = dropAt(event.clientY) < 0 ? 'none' : 'move';
+  });
+
+  document.addEventListener('drop', (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    const d = dragging;
+    const index = dropAt(event.clientY);
+    endDrag();
+    if (index < 0 || !d.item.isConnected) return;
+    const keys = d.siblings.map((el) => viewOf.get(el)?.key ?? '');
+    const editId = nextId();
+    drops.set(editId, dropAnnouncement(d.view, index < d.siblings.length ? viewOf.get(d.siblings[index]) : undefined));
+    post({ type: 'move', key: d.view.key, to: dropTo(keys, index), editId });
+  });
+
+  // ---- Images: pasted, or dropped from the file manager ------------------------------------------
+  // A pasted image (Ctrl+V) goes after the current block; a dropped image file after the block it is dropped on. The
+  // page reads the file's bytes (a webview gets the file itself, never its path) and sends them, base64, with its
+  // type and name; the extension saves it where it saves images and inserts the link.
+  const imageFiles = (data: DataTransfer | null): File[] => Array.from(data?.files ?? []);
+  const hasFiles = (data: DataTransfer | null) => !!data && Array.from(data.types).includes('Files');
+
+  async function sendImages(files: readonly File[], atKey: string | undefined, named = true): Promise<void> {
+    const problems = files.map((f) => imageProblem(f)).filter((p): p is string => p !== undefined);
+    if (problems.length) showNotice(problems.join(' '));
+    const images = files.filter((f) => !imageProblem(f));
+    if (!images.length) return;
+    rt.announce(images.length === 1 ? 'Adding the image…' : `Adding ${images.length} images…`);
+    // Each goes right after the block: sent last first, they end up in the order given.
+    for (const file of [...images].reverse()) {
+      const data = toBase64(new Uint8Array(await file.arrayBuffer()));
+      const place = atKey ? { atKey } : { position: 'end' };
+      post({ type: 'image', mime: file.type, data, ...(named && file.name ? { name: file.name } : {}), ...place, editId: nextId() });
+    }
+  }
+
+  document.addEventListener('paste', (event) => {
+    const files = imageFiles(event.clipboardData);
+    if (!files.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const key = currentView()?.key;
+    if (editing) finishEdit(false);
+    // A pasted image's name is the browser's ("image.png"): the extension names it after the document instead.
+    void sendImages(files, key, false);
+  }, true);
+
+  document.addEventListener('dragover', (event) => {
+    if (dragging || !hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  });
+
+  document.addEventListener('drop', (event) => {
+    if (dragging || !event.dataTransfer) return;
+    const files = imageFiles(event.dataTransfer);
+    if (!files.length) {
+      // From VS Code's Explorer a drop brings a link to the file, not the file: only the text editor can use it.
+      if (Array.from(event.dataTransfer.types).some((t) => t === 'text/uri-list' || t === 'application/vnd.code.uri-list')) {
+        event.preventDefault();
+        showNotice('Drop image files from your file manager here, or paste an image. Files from the Explorer can be dropped in the text editor.');
+      }
+      return;
+    }
+    event.preventDefault();
+    const item = (event.target as HTMLElement).closest?.<HTMLElement>(`.${ITEM}`);
+    const key = item ? viewOf.get(item)?.key : currentView()?.key;
+    if (editing) finishEdit(false);
+    void sendImages(files, key);
+  });
+
+  /** A drop was made: say where the block went. */
+  function dropped(editId: string): void {
+    const text = drops.get(editId);
+    if (text === undefined) return;
+    drops.delete(editId);
+    rt.announce(text);
+  }
+
   // ---- The toolbar -----------------------------------------------------------------------
   const barRoot = chromeRoot(toolbarHost);
   const buttons: Record<Action, HTMLButtonElement> = {
     insert: button('Insert…', () => act('insert'), { title: 'Insert a block after this one (Ctrl+/)', 'aria-haspopup': 'menu', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'menu' }),
-    edit: button('Edit', () => act('edit'), { title: 'Edit the source of this block (Enter)' }),
-    props: button('Properties', () => act('props'), { title: 'Title and attributes of this container', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'props' }),
+    edit: button('Edit', () => act('edit'), { title: 'Edit the source of this block (Enter, or F2 on a table)' }),
+    grid: button('Edit as grid', () => act('grid'), { title: 'Edit this table cell by cell (Enter)' }),
+    props: button('Properties', () => act('props'), { title: 'A container\'s title and attributes, or the front matter\'s fields', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'props' }),
+    problems: button('Problems…', () => act('problems'), { title: 'This block\'s problems and their quick fixes (Ctrl+.)', 'aria-haspopup': 'dialog' }),
     up: button('Move up', () => act('up'), { title: 'Move this block up (Alt+Up)' }),
     down: button('Move down', () => act('down'), { title: 'Move this block down (Alt+Down)' }),
     del: button('Delete', () => act('del'), { title: 'Delete this block (Ctrl+Z undoes it)' }),
@@ -851,7 +1199,7 @@ function start(rt: Runtime): void {
   const props = h(DIV, { className: 'props', attrs: { id: 'props', role: 'group' } });
   menu.hidden = true;
   props.hidden = true;
-  toolbar.setAttribute('aria-describedby', 'status');
+  toolbar.setAttribute(ARIA_DESCRIBEDBY, 'status');
   barRoot.append(h(DIV, { className: 'bar' }, [toolbar, status]), noticeEl, menu, props);
   let barIndex = 0;
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -885,13 +1233,26 @@ function start(rt: Runtime): void {
   }
 
   function updateToolbar(): void {
+    // No dragging while a block is edited in its source or the grid.
+    if (held()) dragHost.hidden = true;
     const view = currentView();
     status.textContent = view ? blockLabel(view) : 'No block selected';
     for (const action of ['edit', 'up', 'down', 'del', 'reveal'] as const) setDisabled(buttons[action], !view);
-    setDisabled(buttons.props, !view?.form);
+    setDisabled(buttons.props, !view?.form && view?.type !== FRONT_MATTER);
+    const item = currentItem();
+    setDisabled(buttons.problems, !item || !shownProblems.get(item));
+    updateGridButton(view?.table);
     buttons.fm.hidden = !model || model.frontMatter !== null;
     rovingBar();
     if (!props.hidden) fillProps();
+    updateInlineStops();
+  }
+
+  /** "Edit as grid": shown for a table, unavailable (with the reason) when only its source can change it, or while it is open. */
+  function updateGridButton(table: TableView | undefined): void {
+    buttons.grid.hidden = !table;
+    setDisabled(buttons.grid, !table?.rows || grid !== null);
+    buttons.grid.title = table?.refused ? `${table.refused} Edit the table's source instead.` : 'Edit this table cell by cell (Enter)';
   }
 
   function showNotice(text: string): void {
@@ -973,7 +1334,7 @@ function start(rt: Runtime): void {
       select.value = field.value;
       return select;
     }
-    const input = h('input', { attrs: { id, type: field.kind === 'flag' ? 'checkbox' : 'text' } });
+    const input = h('input', { attrs: { id, type: INPUT_TYPES[field.kind] ?? 'text' } });
     if (field.kind === 'flag') input.checked = field.value === TRUE;
     else input.value = field.value;
     return input;
@@ -990,11 +1351,56 @@ function start(rt: Runtime): void {
     return h(DIV, { className: `field ${field.kind}`, attrs: { 'data-field': field.name } }, field.kind === 'flag' ? [control, label] : [label, control]);
   }
 
-  /** Fill the form for the current container; the control with focus keeps it. */
+  /**
+   * A front matter field: a text field (a list's items separated by commas), a date or a list of choices. Changing
+   * it sets that key (setFrontMatter); emptying it removes the key. One the form can't change is shown, disabled,
+   * with the reason.
+   */
+  function frontMatterRow(key: string, field: FormField): HTMLElement {
+    const id = `field-${field.name}`;
+    const control = fieldControl(field, id);
+    const label = h('label', { text: field.label, attrs: { for: id } });
+    const notes: HTMLElement[] = [];
+    if (field.kind === 'list') notes.push(h('span', { className: 'hint', text: 'Separated by commas', attrs: { id: `${id}-hint` } }));
+    if (field.refused) {
+      control.disabled = true;
+      notes.push(h('span', { className: 'hint', text: `Written as ${field.refused}: edit the YAML.`, attrs: { id: `${id}-refused` } }));
+    }
+    if (notes.length) control.setAttribute(ARIA_DESCRIBEDBY, notes.map((n) => n.id).join(' '));
+    control.addEventListener('change', () => {
+      post({ type: 'setFrontMatter', key, name: field.name, value: frontMatterValue(field, control.value), editId: nextId() });
+    });
+    return h(DIV, { className: `field ${field.kind}`, attrs: { 'data-field': field.name } }, [label, control, ...notes]);
+  }
+
+  /** The front matter's fields, or why only its YAML can be edited; Edit YAML opens its text. */
+  function fillFrontMatterProps(view: ItemView): void {
+    const fm = model?.frontMatter;
+    props.setAttribute(ARIA_LABEL, 'Front matter fields');
+    const yaml = button('Edit YAML', () => {
+      closeProps(false);
+      const item = currentItem();
+      if (item) startEdit(item);
+    }, { title: 'Edit the front matter as YAML text (Enter on the block)' });
+    const actions = h(DIV, { className: 'actions' }, [yaml, button('Done', () => closeProps(true))]);
+    const title = h('p', { className: 'props-title', text: 'Front matter' });
+    if (!fm?.fields) {
+      props.replaceChildren(title, h('p', { text: fm?.formRefused ?? 'The front matter can only be edited as YAML.' }), actions);
+      return;
+    }
+    props.replaceChildren(title, ...fm.fields.map((f) => frontMatterRow(view.key, f)), actions);
+  }
+
+  /** Fill the form for the current container or front matter; the control with focus keeps it. */
   function fillProps(): void {
     const view = currentView();
     const form = view?.form;
     const focused = (barRoot.activeElement as HTMLElement | null)?.closest<HTMLElement>('.field')?.dataset.field;
+    if (view?.type === FRONT_MATTER) {
+      fillFrontMatterProps(view);
+      if (focused) props.querySelector<HTMLElement>(`[data-field="${focused}"] input, [data-field="${focused}"] select`)?.focus();
+      return;
+    }
     if (!view || !form) {
       props.replaceChildren(h('p', { text: 'The current block is not a container: it has no properties.' }));
       return;
@@ -1017,6 +1423,651 @@ function start(rt: Runtime): void {
       currentItem()?.focus();
     }
   });
+
+  // ---- Tables: the grid -----------------------------------------------------------------------------------
+  // A table the extension can edit cell by cell (BlockView.table.rows) opens in a grid of labelled text fields, in
+  // place of its rendering: Enter on the table, a click in one of its cells, or "Edit as grid". Each cell is written
+  // on its own (tableCell) when the user pauses, leaves it or presses Enter; rows and columns change from the grid's
+  // toolbar (tableRow, tableCol, tableAlign), one change at a time: the grid waits for the render that has it.
+  const cellOfInput = new WeakMap<HTMLInputElement, GridCell>();
+  let pendingOpen: { line: number; cell?: GridCell } | null = null;
+
+  const gridSize = (g: Grid): GridSize => ({ rows: g.rows.length, cols: g.rows[0]?.length ?? 0 });
+  /** Every edit sent has been answered and rendered: the views the page has are the document's. */
+  const settled = () => model !== null && model.version >= acked && closedDrafts.size === 0 && cellEdits.size === 0 && gridOps.size === 0;
+
+  /** Open the block on a line once every edit sent is rendered: in the grid at `cell`, else in its source. */
+  function openWhenSettled(line: number, cell?: GridCell): void {
+    pendingOpen = cell ? { line, cell } : { line };
+    openPending();
+  }
+
+  function openPending(): void {
+    if (!pendingOpen || !settled()) return;
+    const { line, cell } = pendingOpen;
+    pendingOpen = null;
+    const list = itemsAll();
+    if (!list.length) return;
+    const item = list[itemForLine(list.map(startOf), line)];
+    setCurrent(item, false);
+    if (cell) openGrid(item, cell);
+    else startEdit(item);
+  }
+
+  function openGrid(target: HTMLElement, cell: GridCell = { row: 0, col: 0 }): void {
+    if (grid?.item === target) {
+      focusCell(grid, clampCell(cell, gridSize(grid)));
+      return;
+    }
+    const item = editTarget(target);
+    const view = item && viewOf.get(item);
+    const table = view?.table;
+    if (!item || !view || !table?.rows || !table.aligns) {
+      if (table?.refused) showNotice(`${table.refused} Edit the table's source instead.`);
+      return;
+    }
+    // An edit of this table may not be rendered yet: then the grid opens on the table as it is once it is.
+    if (!settled()) {
+      openWhenSettled(view.start, cell);
+      return;
+    }
+    const top = (item.closest('.smd-ed-block') as HTMLElement | null) ?? item;
+    const rows = table.rows.map((r) => [...r]);
+    const g: Grid = {
+      key: view.key, item, top, range: { start: view.start, end: view.end }, rows, aligns: [...table.aligns], inputs: [],
+      cell: clampCell(cell, { rows: rows.length, cols: rows[0].length }), entry: '', busy: null, changed: false, ...gridChrome(view),
+    };
+    // The grid takes the place of the table's rendering, which stays in the page, hidden.
+    if (item === top) {
+      item.querySelector<HTMLElement>(`:scope > .${CONTENT}`)?.setAttribute('hidden', '');
+      item.append(g.host);
+    } else {
+      item.classList.add(HIDDEN);
+      item.after(g.host);
+    }
+    grid = g;
+    fillGrid(g);
+    wireGrid(g);
+    focusCell(g, g.cell);
+    updateToolbar();
+  }
+
+  function gridChrome(view: ItemView): Pick<Grid, 'host' | 'root' | 'table' | 'tools' | 'align'> {
+    const host = h(DIV, { className: GRID_HOST });
+    const root = chromeRoot(host);
+    const label = h('p', { className: 'label', text: gridLabel(view), attrs: { id: 'grid-label' } });
+    const tools: Record<GridAction, HTMLButtonElement> = {
+      rowAbove: button('Row above', () => gridAction('rowAbove'), { title: 'Add a row above this one' }),
+      rowBelow: button('Row below', () => gridAction('rowBelow'), { title: 'Add a row below this one' }),
+      delRow: button('Delete row', () => gridAction('delRow'), { title: 'Delete this row' }),
+      colLeft: button('Column left', () => gridAction('colLeft'), { title: 'Add a column left of this one' }),
+      colRight: button('Column right', () => gridAction('colRight'), { title: 'Add a column right of this one' }),
+      delCol: button('Delete column', () => gridAction('delCol'), { title: 'Delete this column' }),
+      alignTable: button('Align table', () => gridAction('alignTable'), { title: 'Pad the columns so they line up, as smd fmt does' }),
+    };
+    const align = h('select', { attrs: { [ARIA_LABEL]: 'Column alignment' } });
+    for (const [value, text] of ALIGN_CHOICES) align.append(h('option', { text, attrs: { value } }));
+    align.addEventListener('change', () => {
+      if (grid) sendGridOp(grid, { type: 'tableCol', op: 'align', at: grid.cell.col, align: align.value });
+    });
+    const buttons = Object.values(tools);
+    const bar = h(DIV, { className: 'toolbar', attrs: { role: 'toolbar', [ARIA_LABEL]: 'Table rows and columns' } }, [
+      ...buttons, align, button('Edit source', () => gridToSource(), { title: 'Edit the table\'s Markdown source (F2)' }), button('Done', () => closeGrid(true)),
+    ]);
+    const table = h('table', { className: 'grid', attrs: { role: 'grid', 'aria-labelledby': 'grid-label' } });
+    const hint = h('p', {
+      className: 'hint',
+      text: 'Arrow keys, Tab: move between cells. Enter: write the cell and go down. Escape: undo the cell, or close the grid.',
+    });
+    root.append(h(DIV, { className: 'grid-editor' }, [label, bar, h(DIV, { className: 'grid-scroll' }, [table]), hint]));
+    return { host, root, table, tools, align };
+  }
+
+  /** The grid's rows of labelled cell fields, from what the extension has. */
+  function fillGrid(g: Grid): void {
+    const head = h('thead');
+    const body = h('tbody');
+    const size = gridSize(g);
+    g.inputs = g.rows.map((cells, row) => {
+      const tr = h('tr');
+      const inputs = cells.map((text, col) => {
+        const input = h('input', { attrs: { type: 'text', spellcheck: FALSE, autocomplete: 'off' } });
+        input.value = text;
+        cellOfInput.set(input, { row, col });
+        tr.append(row === 0 ? h('th', { attrs: { scope: 'col' } }, [input]) : h('td', {}, [input]));
+        return input;
+      });
+      (row === 0 ? head : body).append(tr);
+      return inputs;
+    });
+    g.table.replaceChildren(head, body);
+    labelCells(g);
+    g.table.setAttribute('aria-rowcount', String(size.rows));
+    g.table.setAttribute('aria-colcount', String(size.cols));
+  }
+
+  /** Each field's label (its column's header and its row) and its column's alignment. */
+  function labelCells(g: Grid): void {
+    g.inputs.forEach((inputs, row) => inputs.forEach((input, col) => {
+      input.setAttribute(ARIA_LABEL, cellLabel(g.rows[0], { row, col }, g.rows.length));
+      input.className = `align-${g.aligns[col] ?? 'none'}`;
+    }));
+  }
+
+  function wireGrid(g: Grid): void {
+    g.table.addEventListener('focusin', (event) => {
+      const input = event.target as HTMLInputElement;
+      const cell = cellOfInput.get(input);
+      if (!cell) return;
+      g.cell = cell;
+      g.entry = input.value;
+      updateGridTools(g);
+    });
+    g.table.addEventListener('focusout', (event) => {
+      const cell = cellOfInput.get(event.target as HTMLInputElement);
+      if (cell) commitCell(g, cell);
+    });
+    g.table.addEventListener('input', (event) => {
+      const cell = cellOfInput.get(event.target as HTMLInputElement);
+      if (!cell) return;
+      clearTimeout(g.timer);
+      g.timer = setTimeout(() => commitCell(g, cell), AUTOSAVE_DELAY);
+    });
+    g.table.addEventListener(KEYDOWN, (event) => onGridKey(g, event));
+    g.root.addEventListener(KEYDOWN, (event) => gridChromeKey(event as KeyboardEvent));
+    const bar = g.tools.rowAbove.parentElement!;
+    bar.addEventListener(KEYDOWN, (event) => gridBarKey(g, event));
+    g.root.addEventListener('focusout', () => {
+      // Focus left the grid for another part of the page: the grid closes. Leaving the window keeps it open.
+      setTimeout(() => {
+        if (grid === g && !g.root.activeElement && document.hasFocus()) closeGrid(false);
+      }, 0);
+    });
+  }
+
+  /**
+   * Keys anywhere in the grid: Ctrl+Z in a cell is the field's own undo; F2 opens the source; Ctrl+Enter (done), and
+   * Escape outside a cell, close the grid.
+   */
+  function gridChromeKey(event: KeyboardEvent): void {
+    const inCell = cellOfInput.has(event.target as HTMLInputElement);
+    if (isUndoRedo(event)) {
+      if (inCell) event.stopPropagation();
+      return;
+    }
+    const source = event.key === 'F2';
+    const done = (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) || (event.key === ESCAPE && !inCell);
+    if (!source && !done) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (source) gridToSource();
+    else closeGrid(true);
+  }
+
+  /** The grid toolbar's buttons: one tab stop, arrow keys between them (the alignment list is a stop of its own). */
+  function gridBarKey(g: Grid, event: KeyboardEvent): void {
+    const list = Object.values(g.tools);
+    const index = list.indexOf(event.target as HTMLButtonElement);
+    const to = index < 0 ? -1 : toolbarKeyTarget(event.key, index, list.length);
+    if (to < 0) return;
+    event.preventDefault();
+    list.forEach((b, i) => b.setAttribute(TABINDEX, i === to ? '0' : '-1'));
+    list[to].focus();
+  }
+
+  function onGridKey(g: Grid, event: KeyboardEvent): void {
+    const input = event.target as HTMLInputElement;
+    const cell = cellOfInput.get(input);
+    if (!cell || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.key === ESCAPE) {
+      event.preventDefault();
+      event.stopPropagation();
+      escapeCell(g, input, cell);
+      return;
+    }
+    const length = input.value.length;
+    const caret = {
+      atStart: input.selectionStart === 0 && input.selectionEnd === 0,
+      atEnd: input.selectionStart === length && input.selectionEnd === length,
+    };
+    const to = gridKeyTarget(event.key, cell, gridSize(g), caret, event.shiftKey);
+    if (event.key === 'Enter') commitCell(g, cell);
+    else if (!to) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (to) focusCell(g, to);
+  }
+
+  /** Escape: the cell goes back to its text when focus came to it; when it has that text, the grid closes. */
+  function escapeCell(g: Grid, input: HTMLInputElement, cell: GridCell): void {
+    if (input.value === g.entry) {
+      closeGrid(true);
+      return;
+    }
+    input.value = g.entry;
+    commitCell(g, cell);
+    rt.announce('Cell restored.');
+  }
+
+  function focusCell(g: Grid, cell: GridCell): void {
+    const input = g.inputs[cell.row]?.[cell.col];
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  function focusGridCell(line: number, cell: GridCell): void {
+    if (grid && grid.range.start === line) {
+      focusCell(grid, clampCell(cell, gridSize(grid)));
+      return;
+    }
+    const list = itemsAll();
+    const item = list[itemForLine(list.map(startOf), line)];
+    if (item) openGrid(item, cell);
+  }
+
+  /** Send a cell's text when it differs from what the extension has. */
+  function commitCell(g: Grid, cell: GridCell): void {
+    clearTimeout(g.timer);
+    g.timer = undefined;
+    const input = g.inputs[cell.row]?.[cell.col];
+    // A grid that was closed writes nothing (removing it blurs its field), nor does one waiting for a change.
+    if (!input || g.busy || grid !== g) return;
+    const text = cellSource(input.value);
+    const previous = g.rows[cell.row][cell.col];
+    if (text === previous) return;
+    const editId = nextId();
+    cellEdits.set(editId, { cell, previous });
+    g.rows[cell.row][cell.col] = text;
+    g.changed = true;
+    post({ type: 'tableCell', key: g.key, row: cell.row, col: cell.col, text: input.value, editId });
+  }
+
+  function gridAction(action: GridAction): void {
+    const g = grid;
+    if (!g || !gridActionEnabled(action, g.cell, gridSize(g))) return;
+    sendGridOp(g, gridRequest(action, g.cell));
+  }
+
+  /** Send a row or column change: the cell's text first; then the grid waits, read-only, until it is rendered. */
+  function sendGridOp(g: Grid, request: GridRequest): void {
+    if (g.busy) return;
+    commitCell(g, g.cell);
+    const editId = nextId();
+    g.busy = { editId };
+    g.changed = true;
+    gridOps.set(editId, request);
+    setGridBusy(g, true);
+    post({ ...request, key: g.key, editId });
+  }
+
+  function setGridBusy(g: Grid, busy: boolean): void {
+    g.table.setAttribute('aria-busy', busy ? TRUE : FALSE);
+    g.inputs.flat().forEach((input) => (input.readOnly = busy));
+    updateGridTools(g);
+  }
+
+  /** The grid toolbar for the cell focus is in: what it can do there, and the column's alignment. */
+  function updateGridTools(g: Grid): void {
+    const size = gridSize(g);
+    for (const [action, b] of Object.entries(g.tools) as [GridAction, HTMLButtonElement][]) {
+      setDisabled(b, g.busy !== null || !gridActionEnabled(action, g.cell, size));
+    }
+    g.align.disabled = g.busy !== null;
+    g.align.value = g.aligns[g.cell.col] ?? 'none';
+    g.align.setAttribute(ARIA_LABEL, `Alignment of column ${g.cell.col + 1}`);
+    const list = Object.values(g.tools);
+    if (!list.some((b) => b.getAttribute(TABINDEX) === '0')) list.forEach((b, i) => b.setAttribute(TABINDEX, i === 0 ? '0' : '-1'));
+  }
+
+  /** A row or column change was made: once the render that has it comes, the grid shows it. */
+  function gridAcked(editId: string, version: number, request: GridRequest): void {
+    rt.announce(gridAnnouncement(request));
+    if (grid?.busy?.editId !== editId) return;
+    grid.busy.version = version;
+    if (model && model.version >= version) refreshGrid(model);
+  }
+
+  /** Where focus goes after a grid change: the cell the extension names (a row change keeps the column). */
+  function gridFocus(request: GridRequest | undefined, focus: FocusRequest): FocusRequest | undefined {
+    if (!request || !grid || !focus.cell) return undefined;
+    return request.type === 'tableRow' ? { ...focus, cell: { row: focus.cell.row, col: grid.cell.col } } : focus;
+  }
+
+  /**
+   * A grid edit that was not made (a conflict, or a notice): the grid stops waiting, and a cell keeps what was typed
+   * in it, not written. True when the edit came from the grid.
+   */
+  function gridRefused(editId: string): boolean {
+    const cellEdit = cellEdits.get(editId);
+    const op = gridOps.delete(editId);
+    cellEdits.delete(editId);
+    if (grid && cellEdit && grid.rows[cellEdit.cell.row]?.[cellEdit.cell.col] !== undefined) {
+      grid.rows[cellEdit.cell.row][cellEdit.cell.col] = cellEdit.previous;
+    }
+    if (grid?.busy?.editId === editId) {
+      grid.busy = null;
+      setGridBusy(grid, false);
+    }
+    return cellEdit !== undefined || op;
+  }
+
+  /** A render while the grid is open: the cells follow the document, except what the user typed and has not written. */
+  function refreshGrid(msg: RenderMessage): void {
+    const g = grid;
+    if (!g || (g.busy && (g.busy.version === undefined || msg.version < g.busy.version))) return;
+    const table = findView(msg.blocks, g.key)?.table;
+    if (!table?.rows || !table.aligns) {
+      closeGrid(g.root.activeElement !== null, false);
+      showNotice(table?.refused ?? 'This table can no longer be edited as a grid.');
+      return;
+    }
+    g.busy = null;
+    const sameSize = table.rows.length === g.rows.length && table.rows[0].length === g.rows[0].length;
+    if (sameSize) updateCells(g, table.rows);
+    g.rows = table.rows.map((r) => [...r]);
+    g.aligns = [...table.aligns];
+    if (sameSize) labelCells(g);
+    else rebuildGrid(g);
+    setGridBusy(g, false);
+  }
+
+  /** The table has other rows or columns now: new fields, and focus on the same cell (or the nearest) if it was in the grid. */
+  function rebuildGrid(g: Grid): void {
+    const focused = g.root.activeElement !== null;
+    fillGrid(g);
+    g.cell = clampCell(g.cell, gridSize(g));
+    if (focused) focusCell(g, g.cell);
+  }
+
+  function updateCells(g: Grid, rows: readonly string[][]): void {
+    const active = g.root.activeElement;
+    rows.forEach((cells, row) => cells.forEach((next, col) => {
+      const input = g.inputs[row][col];
+      const value = refreshedValue(input.value, g.rows[row][col], next, input === active);
+      if (value === input.value) return;
+      input.value = value;
+      if (input === active) g.entry = value;
+    }));
+  }
+
+  function gridToSource(): void {
+    const g = grid;
+    if (!g) return;
+    const line = g.range.start;
+    closeGrid(false);
+    openWhenSettled(line);
+  }
+
+  /** Leave the grid: the table is shown rendered again (from the next render when something was written). */
+  function closeGrid(refocus: boolean, commit = true): void {
+    const g = grid;
+    if (!g) return;
+    if (commit) commitCell(g, g.cell);
+    grid = null;
+    clearTimeout(g.timer);
+    g.host.remove();
+    const content = g.item === g.top ? g.item.querySelector<HTMLElement>(`:scope > .${CONTENT}`) : null;
+    content?.removeAttribute('hidden');
+    g.item.classList.remove(HIDDEN);
+    currentKey = g.key;
+    currentLine = g.range.start;
+    if (g.changed) signature.set(g.top, '');
+    if (model) renderAll(model);
+    updateToolbar();
+    saveState();
+    if (refocus) ensureCurrent(true);
+  }
+
+  // ---- Inline items: a small form for one directive or styled span -------------------------------
+  // The editable items of the current block are tab stops right after it, so Tab from the block goes through them.
+  // Clicking one, or Enter on it, opens its form; an item the form can't change opens the block's source instead.
+  let inlineStops: HTMLElement[] = [];
+  const INLINE_STOP_ATTRS = ['role', 'aria-haspopup', ARIA_LABEL, TABINDEX];
+
+  /** The top-level block an inline element is in, its key, and what the extension says of the element. */
+  function inlineOf(el: HTMLElement): { key: string; view: InlineView } | undefined {
+    const top = el.closest<HTMLElement>('.smd-ed-block');
+    const key = top?.dataset.smdEdKey;
+    const view = top ? viewOf.get(top)?.inline?.[Number(el.dataset.smdInline)] : undefined;
+    return key && view ? { key, view } : undefined;
+  }
+
+  function updateInlineStops(): void {
+    for (const el of inlineStops) INLINE_STOP_ATTRS.forEach((name) => el.removeAttribute(name));
+    const item = held() ? undefined : currentItem();
+    inlineStops = item ? Array.from(item.querySelectorAll<HTMLElement>(INLINE)).filter((el) => inlineOf(el)?.view.fields) : [];
+    for (const el of inlineStops) {
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-haspopup', 'dialog');
+      el.setAttribute(ARIA_LABEL, inlineItemLabel(inlineOf(el)!.view));
+      el.setAttribute(TABINDEX, '0');
+    }
+  }
+
+  function activateInline(el: HTMLElement): void {
+    const found = inlineOf(el);
+    const item = el.closest<HTMLElement>(`.${ITEM}`);
+    if (!found?.view.fields) {
+      if (found) showNotice(`${found.view.label}: edit the block's source to change it.`);
+      if (item) {
+        setCurrent(item, false);
+        startEdit(item);
+      }
+      return;
+    }
+    if (editing) finishEdit(false);
+    // Ending the edit may have shown the block again as text: then there is no item to edit any more.
+    if (!el.isConnected) return;
+    if (item && item.dataset.smdEdKey !== currentKey) setCurrent(item, false);
+    openInline(el, found.key, found.view);
+  }
+
+  function editSourceOf(key: string): void {
+    if (grid?.key === key) {
+      // A grid edit was refused: the table's source opens once what the grid did write is rendered.
+      const line = grid.range.start;
+      closeGrid(false, false);
+      openWhenSettled(line);
+      return;
+    }
+    const item = itemsAll().find((i) => i.dataset.smdEdKey === key);
+    if (!item) return;
+    setCurrent(item, false);
+    startEdit(item);
+  }
+
+  const popHost = h(DIV, { className: 'smd-ed-pop-host' });
+  const popRoot = chromeRoot(popHost);
+  const pop = h(DIV, { className: 'pop', attrs: { role: 'dialog', 'aria-labelledby': 'pop-title' } });
+  popRoot.append(pop);
+  popHost.hidden = true;
+  document.body.append(popHost);
+  let popTarget: { el: HTMLElement; key: string; view: InlineView; controls: Map<string, HTMLInputElement | HTMLSelectElement> } | null = null;
+
+  function openInline(el: HTMLElement, key: string, view: InlineView): void {
+    closeProblems(false);
+    const controls = new Map<string, HTMLInputElement | HTMLSelectElement>();
+    const rows = (view.fields ?? []).map((field) => {
+      const id = `inline-${field.name}`;
+      const control = fieldControl(field, id);
+      controls.set(field.name, control);
+      return h(DIV, { className: `field ${field.kind}` }, [h('label', { text: field.label, attrs: { for: id } }), control]);
+    });
+    const title = h('p', { className: 'pop-title', text: view.text ? `${view.label}: ${view.text}` : view.label, attrs: { id: 'pop-title' } });
+    const hint = h('p', { className: 'hint', text: 'Enter: apply. Escape: cancel.' });
+    const actions = h(DIV, { className: 'actions' }, [button('Apply', applyInline), button('Cancel', () => closeInline(true))]);
+    pop.replaceChildren(title, ...rows, hint, actions);
+    popTarget = { el, key, view, controls };
+    popHost.hidden = false;
+    const rect = el.getBoundingClientRect();
+    popHost.style.top = `${rect.bottom + window.scrollY + 4}px`;
+    popHost.style.left = `${Math.max(0, rect.left + window.scrollX)}px`;
+    rows[0]?.querySelector<HTMLElement>('input, select')?.focus();
+  }
+
+  function applyInline(): void {
+    const target = popTarget;
+    if (!target) return;
+    const values = Object.fromEntries([...target.controls].map(([name, control]) => [name, control.value]));
+    const request = inlineRequest(target.view.fields ?? [], values);
+    closeInline(true);
+    if (!request) return;
+    post({ type: 'setInline', key: target.key, index: target.view.index, name: target.view.name, ...request, editId: nextId() });
+    rt.announce(inlineAnnouncement(target.view, request));
+  }
+
+  function closeInline(refocus: boolean): void {
+    const target = popTarget;
+    if (!target) return;
+    popTarget = null;
+    popHost.hidden = true;
+    pop.replaceChildren();
+    if (!refocus) return;
+    const el = target.el.isConnected ? target.el : nodes.get(target.key)?.querySelector<HTMLElement>(`[data-smd-inline="${target.view.index}"]`);
+    (el ?? currentItem())?.focus();
+  }
+
+  pop.addEventListener(KEYDOWN, (event) => {
+    // In a text field, Ctrl+Z is the field's own undo, as in the source editor.
+    if (isUndoRedo(event) && (event.target as HTMLInputElement).type === 'text') {
+      event.stopPropagation();
+      return;
+    }
+    const escape = event.key === ESCAPE;
+    // Enter applies an inline form, except on a button, which Enter presses.
+    const enter = event.key === 'Enter' && popTarget !== null && !(event.target instanceof HTMLButtonElement);
+    if (!escape && !enter) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (escape) closePop(true);
+    else applyInline();
+  });
+
+  pop.addEventListener('focusout', (event) => {
+    if (!pop.contains(event.relatedTarget as Node | null)) setTimeout(() => {
+      if (!pop.contains(popRoot.activeElement)) closePop(false);
+    }, 0);
+  });
+
+  /** Close the inline form or the problems list. */
+  function closePop(refocus: boolean): void {
+    closeInline(refocus);
+    closeProblems(refocus);
+  }
+
+  function placePop(el: HTMLElement): void {
+    popHost.hidden = false;
+    const rect = el.getBoundingClientRect();
+    popHost.style.top = `${rect.top + window.scrollY + Math.min(rect.height, 24) + 4}px`;
+    popHost.style.left = `${Math.max(0, rect.left + window.scrollX)}px`;
+  }
+
+  // ---- Problems: the list of a block's problems, and their quick fixes ----------------------------------------
+  // The badge on a block (or Ctrl+. on it, or Problems… in the toolbar) opens a list of its problems and asks the
+  // extension for their quick fixes. The page shows their titles and sends the one chosen by number (applyFix); the
+  // extension keeps the fixes themselves, and asks first when one changes more than the block.
+  let problemsTarget: {
+    item: HTMLElement; key: string; requestId: number; fixes: HTMLElement; version?: number; list?: FixView[]; editId?: string;
+  } | null = null;
+  let fixRequests = 0;
+
+  function openProblems(item: HTMLElement): void {
+    const view = viewOf.get(item);
+    const problems = shownProblems.get(item);
+    if (!view || !problems) {
+      showNotice('This block has no problems.');
+      return;
+    }
+    // Whatever was typed is written first, so the fixes are for the block as it is.
+    if (editing) finishEdit(false);
+    closePop(false);
+    const title = h('p', { className: 'pop-title', text: `Problems: ${blockLabel(view)}`, attrs: { id: 'pop-title' } });
+    const list = h('ul', { className: 'problems' }, problems.messages.map((m) => h('li', { text: m })));
+    const more = problems.count > problems.messages.length ? h('p', { className: 'hint', text: `And ${problems.count - problems.messages.length} more.` }) : null;
+    const fixes = h(DIV, { className: 'fixes', attrs: { role: 'group', [ARIA_LABEL]: 'Quick fixes', 'aria-live': 'polite' } }, [
+      h('p', { className: 'hint', text: 'Looking for quick fixes…' }),
+    ]);
+    const actions = h(DIV, { className: 'actions' }, [
+      button('Edit source', () => {
+        closeProblems(false);
+        startEdit(item);
+      }),
+      button('Close', () => closeProblems(true)),
+    ]);
+    pop.replaceChildren(title, list, ...(more ? [more] : []), fixes, actions);
+    const requestId = ++fixRequests;
+    problemsTarget = { item, key: view.key, requestId, fixes };
+    placePop(item);
+    actions.querySelector('button')?.focus();
+    rt.announce(`${problemsLabel(problems)}: ${problems.messages.join('. ')}`);
+    post({ type: 'getFixes', key: view.key, requestId });
+  }
+
+  /** The quick fixes arrived: one button each, or why there are none. */
+  function onFixes(msg: FixesMessage): void {
+    const target = problemsTarget;
+    if (target?.requestId !== msg.requestId) return;
+    target.version = msg.version;
+    target.list = msg.fixes;
+    if (!msg.fixes.length) {
+      target.fixes.replaceChildren(h('p', { className: 'hint', text: msg.error ?? 'No quick fixes for these problems.' }));
+      return;
+    }
+    const buttons = msg.fixes.map((fix, index) => button(fixLabel(fix), () => applyFix(index, false), { title: fix.title }));
+    target.fixes.replaceChildren(h('p', { className: 'fixes-title', text: 'Quick fixes' }), h(DIV, { className: 'fix-list' }, buttons));
+    rt.announce(fixesAnnouncement(msg.fixes));
+  }
+
+  function applyFix(index: number, confirm: boolean): void {
+    const target = problemsTarget;
+    if (!target || target.version === undefined) return;
+    target.editId = nextId();
+    post({ type: 'applyFix', key: target.key, index, version: target.version, ...(confirm ? { confirm: true } : {}), editId: target.editId });
+  }
+
+  /** The extension asks before a fix that changes more than the block: Apply or Cancel, in the list. */
+  function onConfirmFix(editId: string | undefined, index: number, text: string): void {
+    const target = problemsTarget;
+    if (!target || target.editId !== editId) return;
+    const title = target.list?.[index]?.title ?? 'This fix';
+    const apply = button('Apply anyway', () => applyFix(index, true));
+    const cancel = button('Cancel', () => closeProblems(true));
+    target.fixes.replaceChildren(h('p', { className: 'confirm', text: `${title}: ${text} Apply it?` }), h(DIV, { className: 'actions' }, [apply, cancel]));
+    apply.focus();
+    rt.announce(`${text} Apply it?`);
+  }
+
+  /** A fix was not applied (the document changed since it was listed): the list asks for the fixes again. */
+  function fixRefused(editId: string): void {
+    const target = problemsTarget;
+    if (!target || target.editId !== editId) return;
+    target.editId = undefined;
+    target.version = undefined;
+    target.requestId = ++fixRequests;
+    target.fixes.replaceChildren(h('p', { className: 'hint', text: 'Looking for quick fixes…' }));
+    post({ type: 'getFixes', key: target.key, requestId: target.requestId });
+  }
+
+  /** A fix was applied: the list closes, and focus goes back to the block once it is rendered again. */
+  function fixApplied(editId: string): boolean {
+    const target = problemsTarget;
+    if (!target || target.editId !== editId) return false;
+    closeProblems(false);
+    rt.announce('Quick fix applied. Ctrl+Z undoes it.');
+    return true;
+  }
+
+  function closeProblems(refocus: boolean): void {
+    const target = problemsTarget;
+    if (!target) return;
+    problemsTarget = null;
+    popHost.hidden = true;
+    pop.replaceChildren();
+    if (!refocus) return;
+    const item = target.item.isConnected ? target.item : itemsAll().find((i) => i.dataset.smdEdKey === target.key);
+    (item ?? currentItem())?.focus();
+  }
 
   updateToolbar();
   post({ type: 'ready' });
