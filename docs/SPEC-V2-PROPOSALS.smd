@@ -1,0 +1,311 @@
+---
+smd: 1
+title: "RFC: Styled Markdown spec v2"
+summary: The breaking changes proposed for Styled Markdown 2.0, gathered from v1.0–v1.9, with evidence, breakage, migration and a recommendation for each. Feedback is needed on every proposal marked proposed before any of them is built.
+status: review
+owners: ["@roshanmadhushanka"]
+tags: [rfc, spec, v2]
+updated: 2026-10-15
+toc: true
+---
+
+## How to read this
+
+This RFC lists every change considered for spec v2. Each one is a `:::decision` with status **proposed**; the maintainer accepts or rejects it in review. Nothing here is built yet. 2.0 ships only the accepted ones.
+
+Every proposal belongs to one of three groups:
+
+- :badge[all documents]{color=red}: a tool change that applies whatever `smd:` says. It is breaking only because documents that fail today now fail differently, or because a CI check gets stricter.
+- :badge[smd: 2]{color=indigo}: a change in meaning that applies only to documents that opt in with `smd: 2`. Documents with `smd: 1` or no `smd` key keep v1 rules throughout 2.x.
+- :badge[1.x]{color=green}: a fix that is not breaking and can ship before 2.0 in a 1.x minor.
+
+## Versioning rules for `smd:`
+
+Today `smd:` is read only by the validator. Rendering, the agent view, `to-md`, `tasks` and `query` ignore it, and `Number()` coercion lets `smd: true`, `"1"` or `1.0` pass silently, while the JSON Schema allows only the integer `1`. v2 needs the key to mean something.
+
+:::decision{status=proposed} The `smd:` key selects the spec version
+1. The value is a positive integer; a digit string is tolerated. Booleans, lists and decimals give a `frontmatter/version` warning. Versions are majors only: features are found by graceful degradation, never by `smd: 1.6`.
+2. `smd: 1` selects v1 rules, and **a missing `smd` key means v1 throughout 2.x.** That covers every existing document and every `.md` file. The info fix for a missing key suggests `smd migrate`. The default is revisited in 3.0.
+3. `smd: 2` selects v2 rules (the :badge[smd: 2]{color=indigo} proposals below). 2.x tools keep a complete v1 mode for at least one major cycle.
+4. A version newer than the tool knows renders with the newest rules the tool has, with a warning, so the document stays readable.
+5. v1 tools reading an `smd: 2` document warn and use v1 rules. The v2 rules are chosen so that a document in `smd fmt` canonical form reads the same in v1, apart from typography, attribute escapes and unknown-directive content.
+6. Hosts that cannot see the front matter (the markdown-it plugin, remark) get a `spec: 1 | 2` option, and the catalog gets a per-entry `smd`.
+:::
+
+## Proposals at a glance
+
+| #   | Proposal                                                        | Group         | Value       | Breakage        | Recommendation               |
+| --- | --------------------------------------------------------------- | ------------- | ----------- | --------------- | ---------------------------- |
+| 1   | Front matter that fails to parse no longer hides content        | all documents | High        | Very low        | Adopt                        |
+| 2   | `$$` display math: own-line delimiters, opaque to containers    | 1.x + smd: 2  | High        | Very low        | Adopt                        |
+| 3   | A closing fence closes the container with the same colon count  | smd: 2        | High        | Low             | Adopt                        |
+| 4   | Duplicate attributes and conflicting titles are errors          | all documents | Medium      | Very low        | Adopt                        |
+| 5   | A heading's trailing `{word}` or `{}` is text                   | smd: 2        | Medium      | Very low        | Adopt                        |
+| 6   | Escapes in quoted attribute values                              | 1.x + smd: 2  | Medium      | Very low        | Adopt                        |
+| 7   | Unknown containers keep their title; unknown directives degrade | 1.x + smd: 2  | Medium      | Low             | Adopt                        |
+| 8   | No typographer or fuzzy links by default                        | smd: 2        | Medium-high | Medium (visual) | Adopt, opt-in to keep        |
+| 9   | `:::include section=` matches exactly                           | smd: 2        | Low-medium  | Very low        | Adopt                        |
+| 10  | Variables keep their YAML spelling                              | smd: 2        | Low-medium  | Low             | Adopt                        |
+| 11  | Vocabulary is case-insensitive                                  | 1.x + smd: 2  | Low         | Very low        | Adopt values; names optional |
+| 12  | `:::agent{priority}` is defined or removed                      | 1.x then 2.0  | Low         | Very low        | Deprecate                    |
+| 13  | Heading ids are specified, with GitHub aliases                  | 1.x           | High        | None (option A) | Option A now, defer B        |
+
+## Proposals
+
+### 1. Front matter that fails to parse no longer hides content {#v2-1}
+
+:badge[all documents]{color=red}
+
+- **Today:** front matter that is never closed is not front matter. But if a later `---` thematic break exists, it is taken as the closer: the YAML fails to parse, the renderer still emits front matter with empty data, and **everything above that `---` disappears** from the render and the agent view. Only `smd validate` reports it (`frontmatter/invalid`). `...` is also accepted as a closer, which SPEC §2.1 doesn't say.
+- **Example:** `---`, `smd: 1`, `title: F`, then `# Intro`, a paragraph, a list, a `---` rule and `## After rule`. The rendered document shows only "After rule". Forgetting the closing `---` is the most likely front matter typo.
+
+:::decision{status=proposed} Broken front matter renders visibly
+Front matter whose YAML is not a mapping renders as a visible error block holding the raw YAML, and the body after the closer renders as usual. `...` is written into the spec as a closer.
+
+Alternative: treat such front matter as not front matter, and render from the first line.
+:::
+
+- **Breakage:** only documents that already fail `smd validate` with an error. None in the corpus. `blocks.test.ts` pins the current behaviour.
+- **Migration:** none needed.
+
+### 2. `$$` display math: own-line delimiters, opaque to containers {#v2-2}
+
+:badge[1.x]{color=green} :badge[smd: 2]{color=indigo}
+
+- **Today:** any line *starting* with `$$` opens display math, which can interrupt a paragraph, and it closes on any later line *ending* with `$$`. The container scan skips code fences but not `$$`, while the validator does treat `$$` as opaque, so the two disagree.
+- **Examples:** `Pricing:` followed by `$$5 per seat…` swallows the next `## Plans` heading until a line ending in `costs $$`. A `:::` line inside `$$` inside a `:::note` closes the note in the renderer, and the validator reports nothing.
+
+:::decision{status=proposed} `$$` opens and closes only on its own line
+Display math opens on a line that is only `$$` (or a one-line `$$…$$`), and closes on a line that is only `$$`. Math blocks are opaque to the container scan, as code fences are.
+:::
+
+- **Group:** opacity is a v1.x fix, since the spec's intent and the validator already agree. The delimiter rules apply with `smd: 2`.
+- **Breakage:** documents with content on a `$$` delimiter line. The corpus uses only own-line delimiters.
+- **Migration:** `smd migrate` moves delimiters onto their own lines, which v1 tools read the same way.
+
+### 3. A closing fence closes the container with the same colon count {#v2-3}
+
+:badge[smd: 2]{color=indigo}
+
+- **Today:** SPEC §3 says "a closing fence always closes the innermost open container. Colon count is cosmetic." One missing `:::` therefore makes the rest of the document part of a tab, and `container/unclosed` fires at the far end. `smd fmt` already rewrites closers to match their openers.
+- **The problem:** there is no error recovery, and SPEC principle 3 claims alignment with remark-directive and MyST, whose closers are length-based.
+
+:::decision{status=proposed} Colon counts pair openers and closers
+A closer with N colons closes the innermost open container that was opened with exactly N colons. Containers opened inside it close with it and are reported. If no open container has N colons, the closer closes the innermost one, as in v1, with a new `container/colons` warning.
+
+Alternative: the MyST rule (a closer at least as long as its opener). It interoperates better but does not fix recovery.
+:::
+
+- **Breakage:** only closers that don't match their opener. None in the corpus, since `examples/` and `docs/gallery/` are `smd fmt --check`ed in CI. The Tree-sitter scanner and the Block Editor's segmenter must follow the same rule.
+- **Migration:** `smd fmt` already produces matching closers. A 1.10 hint flags mismatched ones.
+
+### 4. Duplicate attributes and conflicting titles are errors {#v2-4}
+
+:badge[all documents]{color=red}
+
+- **Today:** the last duplicate key and the last `#id` win silently. Duplicate classes are emitted twice. `title=` in a container's attributes beats the title text after them, which is dropped silently: `:::note{title="Attr title"} Text title` renders "Attr title". The Block Editor then edits the attribute while the visible text says something else.
+
+:::decision{status=proposed} Report what v1 resolves silently
+New errors `attrs/duplicate` and `container/title-conflict`. Rendering keeps v1's resolution (the last duplicate wins, and the attribute beats the text), so no document changes meaning.
+:::
+
+- **Breakage:** new errors fail `smd validate` in CI, which needs a major. None in the corpus.
+- **Migration:** `smd fmt` already collapses duplicates. `smd migrate` drops ignored title text. 1.10 reports both as hints first.
+
+### 5. A heading's trailing `{word}` or `{}` is text {#v2-5}
+
+:badge[smd: 2]{color=indigo}
+
+- **Today:** any trailing `{…}` that parses is taken as heading attributes. `## Returns {ok}` renders "Returns" with an `attrs/unknown` warning, and `## Object {}` renders "Object" with no diagnostic. GitHub shows the braces, which contradicts SPEC principle 1 (".md files keep identical meaning").
+
+:::decision{status=proposed} Heading attributes need recognisable items
+A trailing list is attributes only if it is non-empty and every item is `#id`, `.class` or `key=value`. Otherwise it is part of the heading text.
+:::
+
+- **Breakage:** none meaningful, since headings accept only `#id`, `.class` and `agent=skip`. The ids of the affected headings change.
+- **Migration:** `smd migrate` removes a bare `{word}` (keeping v1's rendering) or reports it. 1.10 warns about an empty `{}`.
+
+### 6. Escapes in quoted attribute values {#v2-6}
+
+:badge[1.x]{color=green} :badge[smd: 2]{color=indigo}
+
+- **Today:** quoted values have no escapes. `[q]{title="say \"hi\""}` is an `attrs/syntax` error and renders as literal text. `smd fmt` single-quotes any value containing `"`, so a value with both kinds of quote cannot be written at all. The Block Editor refuses such content.
+
+:::decision{status=proposed} `\"`, `\'` and `\\` inside quoted values
+Inside a quoted value, `\"`, `\'` and `\\` are escapes. Any other backslash stays literal, so Windows paths are unchanged.
+:::
+
+- **Group:** `\"` and `\'` are errors today, so making them valid breaks nothing and can ship in 1.x. Only `\\` changes meaning, so it waits for `smd: 2`.
+- **Migration:** v1 tools show escaped lists as text and report `attrs/syntax`.
+
+### 7. Unknown containers keep their title; unknown directives degrade {#v2-7}
+
+:badge[1.x]{color=green} :badge[smd: 2]{color=indigo}
+
+- **Today:** an unknown container renders as a plain box and **drops its title** in the render, the agent view and `to-md`. An unknown `:name[…]` stays literal text, and the spec says nothing about either. So each new directive changes the meaning of existing text (`:ref` did in 1.6), and older tools show raw syntax.
+
+:::decision{status=proposed} Graceful degradation is specified
+(a) Unknown containers render their title: a box title, a `Title:` line in the agent view, and `**Title**` in `to-md`.
+
+(b) Any `:name[content]{attrs}` that meets the directive prefix rule is a directive. An unknown one renders its content in a `smd-directive smd-directive-<name>` span.
+:::
+
+- **Group:** (a) ships in 1.10, so v1 readers degrade better before v2 arrives. (b) applies with `smd: 2`.
+- **Breakage:** (b) affects prose such as ` :x[1]`. The corpus uses only the nine known directive names.
+- **Migration:** `smd migrate` escapes literal unknown `:word[` as `\:word[`.
+
+### 8. No typographer or fuzzy links by default {#v2-8}
+
+:badge[smd: 2]{color=indigo}
+
+- **Today:** `renderSmd` turns on markdown-it's typographer and fuzzy linkify. The Obsidian plugin turns the typographer off, and markdown-it hosts follow their own settings, so the same file renders differently in the preview, in Obsidian and elsewhere. The spec never defines either rule.
+- **Examples:**
+  - `"Quotes" -- dash (c)` renders as curly quotes, an en dash and ©.
+  - `example.com` becomes a link, while GitHub links only `www.` or scheme URLs.
+  - A glossary term with an apostrophe is never marked in rendered text, because its `'` became `’`.
+  - Variable values are curled only when their paragraph's source has a quote character.
+
+:::decision{status=proposed} Typography is opt-in
+No typographic replacements by default, with an opt-in front matter key such as `typography: true`. Links follow GFM autolink literals only. The agent view and `to-md` are unaffected, since they already keep the source text.
+
+Alternative: make today's behaviour normative and align every integration with it.
+:::
+
+- **Breakage:** visual only: same structure and classes. 16 of the 36 corpus files have straight quotes that would stop curling. `release-check` compares classes, not text, so it would not flag this; a test would.
+- **Migration:** `smd migrate` can add `typography: true` to keep the current look. In 1.x, glossary matching should normalise quotes either way.
+
+### 9. `:::include section=` matches exactly {#v2-9}
+
+:badge[smd: 2]{color=indigo}
+
+- **Today:** an include prefers an exact id, then takes the first heading whose text *contains* the query (SPEC §3.4). `section="deploy"` includes `## Rapid deployment`, and renaming the target heading silently includes some other section.
+
+:::decision{status=proposed} Includes match an exact id or heading
+`section=` matches an exact heading id, or the exact heading text ignoring case. `smd agent --section` keeps its fuzzy matching, which is for people typing.
+:::
+
+- **Migration:** `smd migrate` rewrites each `section=` to the id it matched. 1.10 adds an info diagnostic when a substring match is used.
+
+### 10. Variables keep their YAML spelling {#v2-10}
+
+:badge[smd: 2]{color=indigo}
+
+- **Today:** `version: 2.10` is a YAML number, so the header shows `v2.1` and `{{version}}` renders `2.1`. SPEC §4.7 tells authors to quote it.
+
+:::decision{status=proposed} Displayed values keep their source spelling
+Scalars shown in the page header and through `{{key}}` keep the spelling they have in the YAML source.
+:::
+
+### 11. Vocabulary is case-insensitive {#v2-11}
+
+:badge[1.x]{color=green} :badge[smd: 2]{color=indigo}
+
+- **Today:** container names are case-insensitive (`:::Warning` works), but directive names are not (`:Badge[x]` stays text). Container values ignore case, directive values don't (`trend=Up` is an error), and front matter is mixed (`status` ignores case, `audience: Both` warns).
+
+:::decision{status=proposed} One case rule for the vocabulary
+All values are case-insensitive, which is not breaking and can ship in 1.x. Directive names become case-insensitive with `smd: 2`. `smd fmt` writes lower case.
+:::
+
+### 12. `:::agent{priority}` is defined or removed {#v2-12}
+
+:badge[1.x]{color=green}
+
+- **Today:** `priority` is accepted on `:::agent` but no tool reads it, and it has no allowed values.
+
+:::decision{status=proposed} Deprecate `:::agent{priority}`
+Deprecate it in 1.10 with a hint, and remove it in 2.0, unless a meaning is agreed first (for example, which agent blocks survive `--max-tokens`).
+:::
+
+### 13. Heading ids are specified, with GitHub aliases {#v2-13}
+
+:badge[1.x]{color=green}
+
+- **Today:** the spec doesn't define heading ids. `slugify` drops `_` and most punctuation, so `## foo_bar` gets `#foobar` where GitHub uses `#foo_bar`. `[x](#max_tokens)` is then reported as a missing anchor, and `to-md` writes links that break on GitHub. Three corpus headings get different ids than on GitHub. The compatibility rules forbid changing the algorithm.
+
+:::decision{status=proposed} Specify today's ids and accept GitHub's
+Option A: write the current algorithm into the spec. `to-md` adds `<a id>` where GitHub's id differs, and the validator accepts GitHub ids as aliases. This is not breaking and ships in 1.x.
+
+Option B, deferred: switch to GitHub's algorithm, with `smd migrate` pinning `{#old-id}` on every heading whose id changes.
+:::
+
+:::warning Option B breaks links
+Switching the algorithm changes the ids of headings with `_`, `&` or dashes, which are common in API docs and release notes. Every link to them, from inside and outside the document, would break. It needs its own major and an id-pinning migration.
+:::
+
+## Tool and API changes for 2.0
+
+These aren't spec changes, but 2.0 is the time to make them.
+
+| Area | Change | Why |
+|---|---|---|
+| Node | `engines.node` from `>=18` to `>=22` | Node 18 and 20 are past end of life. CI already runs 20, and publishing needs 22 |
+| VS Code | Minimum from `1.90` to `1.97` (optional) | Removes the paste-API feature detection |
+| npm API | `inlineText` takes an options object instead of six positional arguments | The current signature is hard to extend |
+| npm API | One `readFile(relativePath, env)` signature for `renderSmd` and the markdown-it plugin | The two differ today |
+| npm API | The exported vocabulary (`CONTAINERS`, …) becomes read-only | Callers can mutate shared tables today |
+| npm API | A `spec: 1 \| 2` option on `renderSmd`, the plugin and remark; a `preset: 'smd'` for the plugin | Hosts can't see front matter, and the plugin's defaults differ from `renderSmd`'s |
+| Validation | `mermaid/syntax` becomes an error | Parked for 2.0 since #26 |
+| Validation | `figure/kind` folds into `attrs/value` (deprecated in 1.10 first) | One code per kind of problem |
+| Settings | `smd.markdownPreview.enabled` applies to `.md` files only when they opt in (or defaults to off) | Since 1.6 it substitutes `{{key}}` in every `.md` preview |
+| CLI | `smd migrate --to 2`; export commands gathered under `smd export --to …`, keeping the old names as aliases | One migration path, one export command |
+
+## Not proposed
+
+These came up during v1.x and are fixed in the tools or kept as they are, not changed in the spec.
+
+- **Indented task lines that continue a paragraph:** `foo` followed by `    - [ ] x` is text in the renderer and on GitHub, but `smd tasks` lists it. Fix the task scanner in 1.x, as 1.7.1 did for code.
+- **Inline items across line breaks:** the renderer accepts `:badge[foo` on one line and `bar]` on the next, as CommonMark link text may span lines. The agent view, `to-md` and the validator mishandle it. Fix the tools; don't forbid it in the spec.
+- **A `|` in a code span inside a table cell** splits the cell, as on GitHub. Keep it, and add an info hint.
+- **`{{variables}}`** shipped in 1.6 with a documented meaning change, and documents rely on it. Keep it.
+- **The `{…}` attribute syntax** clashes with MDX, but Pandoc and remark-directive alignment matters more. Keep it.
+- **GitHub alerts (`> [!WARNING]`)** rendering as callouts is additive and can ship in 1.x.
+
+## Rollout and migration
+
+1. **1.10, before 2.0:**
+   - Ship every :badge[1.x]{color=green} change: math opacity, `\"` and `\'` escapes, titles of unknown containers, case-insensitive values, and specified heading ids with GitHub aliases.
+   - Add hints for everything 2.0 will reject or reinterpret: duplicate attributes, title conflicts, mismatched closers, empty heading `{}`, substring `section=` matches, and `:::agent{priority}`.
+   - Add `smd migrate --to 2 --dry-run`, which reports what it would change.
+   - Add corpus documents for each case first, as the compatibility rules require.
+2. **2.0:**
+   - Ship the :badge[all documents]{color=red} changes and the `smd: 2` rule set.
+   - Make `smd migrate --to 2` able to write.
+   - Change `smd init` templates, `from-md` and the other writers to `smd: 2`.
+3. **2.x:** keep v1 mode for every document without `smd: 2`. Revisit the default in 3.0.
+
+:::warning Compatibility
+Documents without `smd: 2` keep v1 meaning throughout 2.x. What can still break them in 2.0:
+- The :badge[all documents]{color=red} validation changes: new errors for duplicates and title conflicts, and `mermaid/syntax` as an error, which can fail CI.
+- The visible error block for broken front matter.
+- The Node 22 minimum.
+
+Each is listed in the 2.0 changelog under Breaking changes, with its migration.
+:::
+
+## Open questions
+
+:::question Which proposals are accepted?
+The maintainer decides each `:::decision` above, in the review of this RFC, before work on 2.0 starts. Unaccepted proposals stay out of 2.0.
+:::
+
+:::question Typography: off by default, or normative?
+Proposal 8 is the most visible change. Decide between opt-in typography and making today's behaviour the standard everywhere.
+:::
+
+:::question Is `smd migrate` a new command or a mode of `smd fmt`?
+Decide before 1.10. `smd fmt --to 2` would reuse fmt's machinery; a separate command is clearer about changing meaning.
+:::
+
+:::agent Implementation constraints
+- Build nothing from this RFC until its proposal is marked accepted.
+- Documents without `smd: 2` must keep v1 rendering, agent view and `to-md` output byte for byte, except for proposals marked "all documents".
+- Add corpus documents for each changed case before changing behaviour.
+- Every v2 rule must be implemented the same way in the renderer, validator, formatter, agent view, `to-md`, the Block Editor's segmenter and the Tree-sitter grammar.
+- Each removal needs a 1.x deprecation hint first.
+:::
+
+## Background {agent=skip}
+
+The evidence was gathered from `docs/SPEC.md`, the changelog, the release skill's compatibility and versioning rules, the core sources and tests, and every pull request since 1.0. No GitHub issues exist. Each behaviour above was checked on throwaway documents with the 1.9.0 CLI. The 36 tracked `.smd` files (examples, gallery, compatibility corpus and writer templates) were scanned to estimate breakage.
+
+No deprecations exist in 1.x: there is no `### Deprecated` changelog entry, no `deprecated/*` code and no `@deprecated` in the code. The versioning rules deprecate in a minor with a hint and remove in the next major, so anything 2.0 removes must first be deprecated in 1.10.
