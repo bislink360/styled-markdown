@@ -338,7 +338,11 @@ function splitRow(row: string): string[] {
   return cells;
 }
 
-function formatTable(rows: string[]): string[] {
+/**
+ * A pipe table's lines (header, delimiter row, body rows) aligned as `smd fmt` writes them. Exported for the Block
+ * Editor's "Align table" (tableEdit.ts); not part of the npm API.
+ */
+export function formatTable(rows: string[]): string[] {
   // Pipes inside inline code are ambiguous between renderers: leave such tables alone.
   if (rows.some((r) => [...r.matchAll(/(`+)([\s\S]*?)\1/g)].some((m) => m[2].includes('|')))) return rows.map((r) => r.trimEnd());
   const indent = /^\s*/.exec(rows[0])![0];

@@ -255,6 +255,115 @@ export function topRange(blocks: readonly Pick<BlockView, 'start' | 'end'>[], ra
   return holder ? { start: holder.start, end: holder.end } : range;
 }
 
+// ---- Tables: the grid ----------------------------------------------------------------------------------
+
+/** A cell of the grid: row 0 is the header row (the delimiter row is not one), columns from 0. */
+export interface GridCell {
+  row: number;
+  col: number;
+}
+
+export interface GridSize {
+  rows: number;
+  cols: number;
+}
+
+/** The label of a table grid: "Table grid, lines 3–7". */
+export function gridLabel(view: Pick<BlockView, 'start' | 'end'>): string {
+  return `Table grid, ${linesLabel(view)}`;
+}
+
+/** A cell's input label: "Header, column 2 of 3", or "Age, row 4 of 5" (by its column's header, else its number). */
+export function cellLabel(header: readonly string[], cell: GridCell, rows: number): string {
+  if (cell.row === 0) return `Header, column ${cell.col + 1} of ${header.length}`;
+  const name = header[cell.col]?.trim() || `Column ${cell.col + 1}`;
+  return `${name}, row ${cell.row} of ${rows - 1}`;
+}
+
+/**
+ * Where a key moves in the grid: ↑ ↓ to the cell above or below, ← → to the cell before or after once the caret
+ * is at the start or end of the text, Enter down (Shift+Enter up). Null for other keys and past the edges.
+ */
+export function gridKeyTarget(key: string, cell: GridCell, size: GridSize, caret: { atStart: boolean; atEnd: boolean }, shift = false): GridCell | null {
+  const moves: Readonly<Record<string, GridCell | null>> = {
+    ArrowUp: { row: cell.row - 1, col: cell.col },
+    ArrowDown: { row: cell.row + 1, col: cell.col },
+    Enter: { row: cell.row + (shift ? -1 : 1), col: cell.col },
+    ArrowLeft: caret.atStart ? { row: cell.row, col: cell.col - 1 } : null,
+    ArrowRight: caret.atEnd ? { row: cell.row, col: cell.col + 1 } : null,
+  };
+  const to = Object.hasOwn(moves, key) ? moves[key] : null;
+  return to && to.row >= 0 && to.row < size.rows && to.col >= 0 && to.col < size.cols ? to : null;
+}
+
+/** A cell inside the grid (the nearest one when the grid shrank). */
+export function clampCell(cell: GridCell, size: GridSize): GridCell {
+  return { row: Math.max(0, Math.min(cell.row, size.rows - 1)), col: Math.max(0, Math.min(cell.col, size.cols - 1)) };
+}
+
+/** A cell's text as the extension writes it (cellText in core/tableEdit.ts): trimmed, every unescaped `|` escaped. */
+export function cellSource(text: string): string {
+  const trimmed = text.trim();
+  let out = '';
+  for (let i = 0; i < trimmed.length; i++) out += trimmed[i] === '|' && trimmed[i - 1] !== '\\' ? '\\|' : trimmed[i];
+  return out;
+}
+
+/**
+ * What a cell's input shows after a render brings `next`: the user's own text while they are in the cell and it is
+ * what was written; text they typed and that is not written yet; else the cell's text now.
+ */
+export function refreshedValue(value: string, committed: string, next: string, focused: boolean): string {
+  if (focused && cellSource(value) === next) return value;
+  return cellSource(value) === cellSource(committed) ? next : value;
+}
+
+export type GridAction = 'rowAbove' | 'rowBelow' | 'delRow' | 'colLeft' | 'colRight' | 'delCol' | 'alignTable';
+
+/** A grid change as the page asks for it (tableRow, tableCol, tableAlign, without key and editId). */
+export type GridRequest =
+  | { type: 'tableRow'; op: 'insert' | 'delete'; at: number }
+  | { type: 'tableCol'; op: 'insert' | 'delete' | 'align'; at: number; align?: string }
+  | { type: 'tableAlign' };
+
+/** Whether an action can be taken from a cell: no row above the header, and the header and last column stay. */
+export function gridActionEnabled(action: GridAction, cell: GridCell, size: GridSize): boolean {
+  if (action === 'rowAbove' || action === 'delRow') return cell.row > 0;
+  return action !== 'delCol' || size.cols > 1;
+}
+
+export function gridRequest(action: GridAction, cell: GridCell): GridRequest {
+  switch (action) {
+    case 'rowAbove':
+      return { type: 'tableRow', op: 'insert', at: cell.row };
+    case 'rowBelow':
+      return { type: 'tableRow', op: 'insert', at: cell.row + 1 };
+    case 'delRow':
+      return { type: 'tableRow', op: 'delete', at: cell.row };
+    case 'colLeft':
+      return { type: 'tableCol', op: 'insert', at: cell.col };
+    case 'colRight':
+      return { type: 'tableCol', op: 'insert', at: cell.col + 1 };
+    case 'delCol':
+      return { type: 'tableCol', op: 'delete', at: cell.col };
+    default:
+      return { type: 'tableAlign' };
+  }
+}
+
+const ALIGN_WORDS: Readonly<Record<string, string>> = { left: 'left', center: 'centered', right: 'right' };
+
+/** What is announced once a grid change is made: "Row 3 added.", "Column 2 aligned right.", "Table aligned." */
+export function gridAnnouncement(request: GridRequest): string {
+  if (request.type === 'tableAlign') return 'Table aligned.';
+  if (request.type === 'tableRow') return `Row ${request.at} ${request.op === 'insert' ? 'added' : 'deleted'}.`;
+  if (request.op === 'align') {
+    const word = ALIGN_WORDS[request.align ?? ''];
+    return word ? `Column ${request.at + 1} aligned ${word}.` : `Column ${request.at + 1} alignment removed.`;
+  }
+  return `Column ${request.at + 1} ${request.op === 'insert' ? 'added' : 'deleted'}.`;
+}
+
 /** The number of rows a textarea needs for a text (at least 2, at most 40). */
 export function textareaRows(text: string): number {
   return Math.min(40, Math.max(2, text.split('\n').length + 1));

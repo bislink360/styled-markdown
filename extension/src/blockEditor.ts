@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import { BlockEditorSession, readEditorMessage, type BlockEditorStatus, type DiagnosticSeverity, type DocumentPort, type LineDiagnostic } from './blockEditorSession';
 import { renderBlocks, segmentSmd } from './core/blocks';
 import { scanInline } from './core/inlineEdit';
+import { readTable } from './core/tableEdit';
 import { blockTemplates, type Snippet } from './core/templates';
 import { renderOptions, themePreference } from './preview';
 import { openLink, revealLine, toggleTask } from './webviewActions';
@@ -59,6 +60,8 @@ class BlockEditorPanel implements vscode.Disposable {
       // Numbered inline directives and spans: the page edits them in small forms (setInline).
       render: (text) => renderBlocks(text, { ...options(), inlineIndex: true }),
       scan: (lines) => scanInline(lines, { allowHtml: options().allowHtml }),
+      // Table blocks: the grid (tableCell, tableRow, tableCol, tableAlign).
+      table: (lines) => readTable(lines, { allowHtml: options().allowHtml }),
       segment: (text) => segmentSmd(text, options()),
       templates: blockTemplates(snippets as Record<string, Snippet>),
       post: (message) => void this.panel.webview.postMessage(message),
