@@ -5,14 +5,14 @@ import { FigureCounter, figureTargets, type FigureNumber } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
 import { renderInlineDirective, withoutDueNotes } from './markdownItHtml';
-import { slugify } from './sections';
+import { HEADING_ATTRS, slugify } from './sections';
 import { INLINE_DIRECTIVES } from './spec';
 import type { IncludeResult, IncludeScope } from './include';
 import type { SmdContext } from './markdownItSetup';
 import type { Env, Heading } from './render';
 import { substituteLine, variableAt, lookupVariable, type Variables } from './variables';
 
-export { slugify } from './sections';
+export { HEADING_ATTRS, slugify } from './sections';
 
 /**
  * The markdown-it rules behind .smd syntax: block containers, inline spans and directives, math,
@@ -748,9 +748,6 @@ function includedSlugs(tokens: Token[], later: Array<[Token, Heading, string]>):
     if (slug !== own) from.renames.set(own, slug);
   }
 }
-
-/** `## Title {#custom-id .class agent=skip}` — trailing attribute list on a heading. */
-export const HEADING_ATTRS = /\s+\{([^{}]*)\}\s*$/; // NOSONAR(typescript:S5852): matched against one heading line
 
 export function headingAttrs(state: StateCore): void {
   const tokens = state.tokens;
