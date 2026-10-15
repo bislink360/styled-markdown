@@ -62,7 +62,7 @@ vim.api.nvim_create_autocmd('User', {
     require('nvim-treesitter.parsers').smd = {
       install_info = {
         url = 'https://github.com/bislink360/styled-markdown',
-        revision = 'v1.7.1',
+        revision = 'v1.7.2',
         location = 'integrations/tree-sitter-smd',
         queries = 'integrations/tree-sitter-smd/queries',
       },
@@ -89,7 +89,7 @@ local parsers = require('nvim-treesitter.parsers').get_parser_configs()
 parsers.smd = {
   install_info = {
     url = 'https://github.com/bislink360/styled-markdown',
-    revision = 'v1.7.1',
+    revision = 'v1.7.2',
     location = 'integrations/tree-sitter-smd',
     files = { 'src/parser.c', 'src/scanner.c' },
   },
@@ -124,7 +124,7 @@ indent = { tab-width = 2, unit = "  " }
 
 [[grammar]]
 name = "smd"
-source = { git = "https://github.com/bislink360/styled-markdown", rev = "v1.7.1", subpath = "integrations/tree-sitter-smd" }
+source = { git = "https://github.com/bislink360/styled-markdown", rev = "v1.7.2", subpath = "integrations/tree-sitter-smd" }
 ```
 
 Then:
