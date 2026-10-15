@@ -1,4 +1,5 @@
 import type { Heading } from './render';
+import { lazyLineSet, literalLines } from './parse';
 import { openTaskLines } from './taskLines';
 
 /**
@@ -61,26 +62,33 @@ const KEY_CONTENT = [
 const within = (inner: BudgetSection, outer: BudgetSection) => inner.start >= outer.start && inner.end <= outer.end;
 const overlaps = (a: BudgetSection, b: BudgetSection) => a.start <= b.end && b.start <= a.end;
 
+/**
+ * A test for whether a section of a document (given as its lines) has a line that matches one of `patterns` and is
+ * text: a container line in code or display math is shown as written, so it opens nothing (see literalLines). The
+ * document is parsed only when a line matches.
+ */
+function markedSections(lines: string[], patterns: RegExp[]): (s: BudgetSection) => boolean {
+  const isLiteral = lazyLineSet(() => literalLines(lines.join('\n')));
+  return (s) => lines.slice(s.start, s.end + 1).some((l, k) => patterns.some((re) => re.test(l)) && !isLiteral(s.start + k));
+}
+
 /** Sections that may be omitted: not level 1, not skipped, no agent instructions, not requested. */
 export function omittableSections(sections: BudgetSection[], lines: string[], requested: BudgetSection[] | null): BudgetSection[] {
+  const hasAgentBlock = markedSections(lines, [AGENT_BLOCK]);
   return sections.filter((s) =>
     s.heading.level > 1
     && s.heading.agent !== 'skip'
     && !requested?.some((r) => overlaps(s, r))
-    && !lines.slice(s.start, s.end + 1).some((l) => AGENT_BLOCK.test(l)));
-}
-
-/** 1 when the section has content worth keeping longer (see the module comment), else 0. */
-function keepTier(s: BudgetSection, lines: string[], openTasks: number[]): number {
-  const keyContent = openTasks.some((l) => l >= s.start && l <= s.end)
-    || lines.slice(s.start, s.end + 1).some((l) => KEY_CONTENT.some((re) => re.test(l)));
-  return keyContent ? 1 : 0;
+    && !hasAgentBlock(s));
 }
 
 /** Omission order: least important first (see the module comment). `lines` are the whole document's. */
 export function omissionOrder(candidates: BudgetSection[], lines: string[], cost: (s: BudgetSection) => number): BudgetSection[] {
   const openTasks = candidates.length ? openTaskLines(lines.join('\n')) : [];
-  const ranked = candidates.map((s) => ({ s, tier: keepTier(s, lines, openTasks), tokens: cost(s) }));
+  const hasKeyContent = markedSections(lines, KEY_CONTENT);
+  // 1 when the section has content worth keeping longer (see the module comment), else 0.
+  const keepTier = (s: BudgetSection) => (openTasks.some((l) => l >= s.start && l <= s.end) || hasKeyContent(s) ? 1 : 0);
+  const ranked = candidates.map((s) => ({ s, tier: keepTier(s), tokens: cost(s) }));
   ranked.sort((a, b) => a.tier - b.tier
     || b.s.heading.level - a.s.heading.level
     || b.tokens - a.tokens

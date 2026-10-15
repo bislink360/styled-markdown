@@ -8,7 +8,7 @@ import smd from '../src/core/markdownIt';
 import {
   agentView, applyFixes, extractTasks, formatSmd, outline, parseSmd, querySmd, renderSmd, smdToMarkdown, validateSmd, type Diagnostic,
 } from '../src/core';
-import { resetParseCache } from '../src/core/parse';
+import { codeLines, resetParseCache } from '../src/core/parse';
 import {
   findVariables, lookupVariable, substituteLine, variableCompletion, variableHover, variableNames, variablesIn, variableText,
 } from '../src/core/variables';
@@ -248,6 +248,24 @@ test('variables: completion after {{ and hover on a variable, in the language se
   assert.equal(hover.markdown, '**{{version}}** — front matter value: `2.10`');
   assert.match(hoverAt(text, 10, 26)!.markdown, /Maya <b>Chen<\/b>/);
   assert.match(variableHover(doc('{{nope}}'), 8, 3)!.markdown, /not defined in the front matter/);
+});
+
+test('variables: a `$$` line in indented code opens no math for completion and hover, given the code lines', () => {
+  const text = doc('Example:', '', '    $$', '    x', '', 'Version {{ve', '', 'Version {{version}}.', '', '$$', '{{ve', '$$');
+  const isCode = (line: number) => line === 10 || line === 11;
+  // Without the code lines, the `$$` reads as opening math that runs to the end.
+  assert.equal(variableCompletion(text, 13, 12), undefined);
+  assert.equal(variableHover(text, 15, 10), undefined);
+  // With them, it is code: the text after it is text.
+  assert.equal(variableCompletion(text, 13, 12, isCode)?.from, 10);
+  assert.deepEqual(variableHover(text, 15, 10, isCode), { markdown: '**{{version}}** — front matter value: `2.10`', start: 8, end: 19 });
+  assert.deepEqual(findVariables(text.split('\n'), 8, isCode).map((v) => [v.line, v.name]), [[15, 'version']]);
+  // Display math outside code still hides `{{`.
+  assert.equal(variableCompletion(text, 18, 4, isCode), undefined);
+  // The editors pass the lines rendering reads as code.
+  assert.deepEqual([...codeLines(text)], [10, 11]);
+  assert.equal(completionsAt(text, 13, 12)?.from, 10);
+  assert.deepEqual([hoverAt(text, 15, 10)?.start, hoverAt(text, 15, 10)?.end], [8, 19]);
 });
 
 test('variables: values, names and spans', () => {

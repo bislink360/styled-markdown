@@ -75,6 +75,8 @@ interface Block {
   math: Array<[number, number]>;
   /** Inline math on the lines of inline text that runs over several lines (see ParseResult.inlineMath), body-relative lines. */
   inlineMath: LineSpans[];
+  /** The opening lines of the fenced code blocks in the block (nested ones too), body-relative. */
+  fences: number[];
   /** Definitions after the previous block, up to the end of this one (inside it too). */
   definitions: Definition[];
   /** Footnote definitions in the block, with the ids inside each: they render only if the footnote does. */
@@ -165,6 +167,8 @@ function inPlaceFootnotes(instance: MarkdownIt): MarkdownIt {
 /** Recent documents: the final results by text, and the block states edits start from. */
 const results: Array<{ text: string; result: ParseResult }> = [];
 const states: State[] = [];
+/** The opening lines of the fenced code blocks of each result (see fenceLines): zero-based, in the whole document. */
+const fenceStarts = new WeakMap<ParseResult, number[]>();
 
 /** Forget every cached parse. For tests: the next parse of each document is a full one. */
 export function resetParseCache(): void {
@@ -213,6 +217,7 @@ export function parseSmd(text: string): ParseResult {
   const math = state.blocks.flatMap((b) => b.math).map(inDocument);
   const inlineMath = new Map(state.blocks.flatMap((b) => b.inlineMath).map(([line, spans]) => [line + fm.bodyStartLine, spans]));
   const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code, math, inlineMath };
+  fenceStarts.set(result, state.blocks.flatMap((b) => b.fences).map((line) => line + fm.bodyStartLine));
   results.unshift({ text, result });
   results.length = Math.min(results.length, 3);
   return result;
@@ -232,6 +237,23 @@ export function figureIndex(text: string): FigureIndex {
 /** The zero-based lines of a document that are code (see ParseResult.code), plus `offset`. */
 export function codeLines(text: string, offset = 0): Set<number> {
   return linesIn(parseSmd(text).code, offset);
+}
+
+/**
+ * The zero-based lines of a document that open fenced code (```` ``` ````, `~~~`), nested ones included, as markdown-it
+ * reads them: a fence-shaped line in other code, in display math or in raw HTML opens nothing.
+ */
+export function fenceLines(text: string): Set<number> {
+  return new Set(fenceStarts.get(parseSmd(text)));
+}
+
+/**
+ * A test for a set of lines that is only computed when first asked, e.g. `lazyLineSet(() => codeLines(text))`:
+ * a scan that asks only about lines of a rare shape parses nothing for a document without them.
+ */
+export function lazyLineSet(lines: () => ReadonlySet<number>): (line: number) => boolean {
+  let set: ReadonlySet<number> | undefined;
+  return (line) => (set ??= lines()).has(line);
 }
 
 /**
@@ -415,6 +437,7 @@ function shift(block: Block, delta: number): Block {
     code: block.code.map(([start, end]) => [start + delta, end + delta]),
     math: block.math.map(([start, end]) => [start + delta, end + delta]),
     inlineMath: block.inlineMath.map(([line, spans]) => [line + delta, spans]),
+    fences: block.fences.map((line) => line + delta),
     definitions: block.definitions.map((d) => ({ ...d, line: d.line + delta })),
   };
 }
@@ -460,7 +483,8 @@ function parseRange(
   for (const g of groups) {
     const block: Block = {
       start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), code: linesOf(g.tokens, from, CODE_TOKENS),
-      math: linesOf(g.tokens, from, MATH_TOKENS), inlineMath: multiLineMath(g.tokens, lines, from), definitions: [], notes: [], noteRefs: [],
+      math: linesOf(g.tokens, from, MATH_TOKENS), inlineMath: multiLineMath(g.tokens, lines, from),
+      fences: linesOf(g.tokens, from, ['fence']).map(([first]) => first), definitions: [], notes: [], noteRefs: [],
     };
     while (h < env.headings.length && env.headings[h].line < g.end) {
       if (env.headings[h].line >= g.start) { block.headings.push(env.headings[h]); block.bases.push(env.bases![h]); }
