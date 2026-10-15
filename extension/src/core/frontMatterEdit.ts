@@ -212,15 +212,19 @@ export function readFrontMatterBlock(lines: readonly string[]): FrontMatterBlock
     const m = KEY_LINE.exec(lines[i]);
     if (!m) continue;
     if (entries.some((e) => e.key === m[1])) return refuse(`${NOT_SAFE} ("${m[1]}" is set twice): edit it as text.`);
-    const entry: FrontMatterEntry = { key: m[1], line: i, end: valueEnd(lines, i, close), style: 'empty' };
-    keyValue(entry, lines[i], m[0].length);
-    if (!entry.refused && entry.end > i + 1) {
-      if (entry.style === 'empty') blockItems(entry, lines);
-      else entry.refused = SEVERAL_LINES;
-    }
-    entries.push(entry);
+    entries.push(readEntry(lines, i, m, close));
   }
   return { entries, close };
+}
+
+/** A key and its value: on its line, or (after an empty `key:`) a block list on the lines under it. */
+function readEntry(lines: readonly string[], line: number, m: RegExpExecArray, close: number): FrontMatterEntry {
+  const entry: FrontMatterEntry = { key: m[1], line, end: valueEnd(lines, line, close), style: 'empty' };
+  keyValue(entry, lines[line], m[0].length);
+  if (entry.refused || entry.end === line + 1) return entry;
+  if (entry.style === 'empty') blockItems(entry, lines);
+  else entry.refused = SEVERAL_LINES;
+  return entry;
 }
 
 // ---------------------------------------------------------------------------
@@ -420,7 +424,9 @@ function field(key: string, value: unknown, entry: FrontMatterEntry | undefined)
     f = { name: key, kind: 'date', value: text };
   } else {
     const choices = frontMatterValues(key);
-    f = choices.length ? { name: key, kind: 'select', value: text, options: ['', ...choices, ...(text && !choices.includes(text) ? [text] : [])] } : { name: key, kind: 'text', value: text };
+    // A value that is not one of the choices stays one, so the list shows what is written.
+    const extra = text && !choices.includes(text) ? [text] : [];
+    f = choices.length ? { name: key, kind: 'select', value: text, options: ['', ...choices, ...extra] } : { name: key, kind: 'text', value: text };
   }
   if (refused) f.refused = refused;
   return f;

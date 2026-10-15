@@ -301,8 +301,8 @@ test('front matter form: a field\'s value as setFrontMatter takes it', () => {
 
 test('page: the front matter\'s fields are in the Properties panel, labelled, with the YAML a button away', () => {
   assert.match(pageSource, /post\(\{ type: 'setFrontMatter', key, name: field\.name, value: frontMatterValue\(field, control\.value\), editId: nextId\(\) \}\)/);
-  assert.match(pageSource, /if \(view\?\.type === 'frontmatter'\) \{\n\s+fillFrontMatterProps\(view\);/);
-  assert.match(pageSource, /control\.setAttribute\('aria-describedby', notes\.map\(\(n\) => n\.id\)\.join\(' '\)\)/, 'list and refusal notes are read with the field');
+  assert.match(pageSource, /if \(view\?\.type === FRONT_MATTER\) \{\n\s+fillFrontMatterProps\(view\);/);
+  assert.match(pageSource, /control\.setAttribute\(ARIA_DESCRIBEDBY, notes\.map\(\(n\) => n\.id\)\.join\(' '\)\)/, 'list and refusal notes are read with the field');
   assert.match(pageSource, /button\('Edit YAML'/);
 });
 

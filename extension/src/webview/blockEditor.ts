@@ -114,6 +114,8 @@ const OUTSIDE_CHROME = new Set(['TABLE', 'DETAILS', 'HR', 'IMG', 'PRE']);
 const ARIA_EXPANDED = 'aria-expanded';
 const ARIA_DISABLED = 'aria-disabled';
 const ARIA_LABEL = 'aria-label';
+const ARIA_DESCRIBEDBY = 'aria-describedby';
+const FRONT_MATTER = 'frontmatter';
 const TABINDEX = 'tabindex';
 const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role="tab"], audio, video, iframe, [contenteditable], .smd-ed-editor, .smd-ed-grid-host';
 /** The alignments a grid column can have, as the alignment list shows them. */
@@ -425,7 +427,7 @@ function start(rt: Runtime): void {
       fmNode = null;
       return;
     }
-    const view: ItemView = { key: fm.key, type: 'frontmatter', start: fm.start, end: fm.end, source: fm.source, problems: fm.problems };
+    const view: ItemView = { key: fm.key, type: FRONT_MATTER, start: fm.start, end: fm.end, source: fm.source, problems: fm.problems };
     if (fmNode && signature.get(fmNode) === fm.source) {
       decorateTop(fmNode, view);
       return;
@@ -1040,7 +1042,7 @@ function start(rt: Runtime): void {
   /** A block that can be dragged: a block (not lines that render nothing, not the front matter) not being edited. */
   function draggable(item: HTMLElement | null): item is HTMLElement {
     const view = item && viewOf.get(item);
-    return !!view && view.type !== 'gap' && view.type !== 'frontmatter' && !held() && dragSiblings(item!).length > 1;
+    return !!view && view.type !== 'gap' && view.type !== FRONT_MATTER && !held() && dragSiblings(item!).length > 1;
   }
 
   rootEl.addEventListener('mouseover', (event) => {
@@ -1197,7 +1199,7 @@ function start(rt: Runtime): void {
   const props = h(DIV, { className: 'props', attrs: { id: 'props', role: 'group' } });
   menu.hidden = true;
   props.hidden = true;
-  toolbar.setAttribute('aria-describedby', 'status');
+  toolbar.setAttribute(ARIA_DESCRIBEDBY, 'status');
   barRoot.append(h(DIV, { className: 'bar' }, [toolbar, status]), noticeEl, menu, props);
   let barIndex = 0;
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1236,7 +1238,7 @@ function start(rt: Runtime): void {
     const view = currentView();
     status.textContent = view ? blockLabel(view) : 'No block selected';
     for (const action of ['edit', 'up', 'down', 'del', 'reveal'] as const) setDisabled(buttons[action], !view);
-    setDisabled(buttons.props, !view?.form && view?.type !== 'frontmatter');
+    setDisabled(buttons.props, !view?.form && view?.type !== FRONT_MATTER);
     const item = currentItem();
     setDisabled(buttons.problems, !item || !shownProblems.get(item));
     updateGridButton(view?.table);
@@ -1364,7 +1366,7 @@ function start(rt: Runtime): void {
       control.disabled = true;
       notes.push(h('span', { className: 'hint', text: `Written as ${field.refused}: edit the YAML.`, attrs: { id: `${id}-refused` } }));
     }
-    if (notes.length) control.setAttribute('aria-describedby', notes.map((n) => n.id).join(' '));
+    if (notes.length) control.setAttribute(ARIA_DESCRIBEDBY, notes.map((n) => n.id).join(' '));
     control.addEventListener('change', () => {
       post({ type: 'setFrontMatter', key, name: field.name, value: frontMatterValue(field, control.value), editId: nextId() });
     });
@@ -1394,7 +1396,7 @@ function start(rt: Runtime): void {
     const view = currentView();
     const form = view?.form;
     const focused = (barRoot.activeElement as HTMLElement | null)?.closest<HTMLElement>('.field')?.dataset.field;
-    if (view?.type === 'frontmatter') {
+    if (view?.type === FRONT_MATTER) {
       fillFrontMatterProps(view);
       if (focused) props.querySelector<HTMLElement>(`[data-field="${focused}"] input, [data-field="${focused}"] select`)?.focus();
       return;
