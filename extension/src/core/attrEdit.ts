@@ -261,7 +261,7 @@ export function removeContainerAttr(line: string, key: string): string | null {
 export function setContainerTitle(line: string, title: string): string | null {
   const h = containerHeader(line);
   if (!h) return null;
-  const text = title.replaceAll(/\s*[\r\n]+\s*/g, ' ').trim();
+  const text = title.split(/\r\n|[\r\n]/).map((part) => part.trim()).filter(Boolean).join(' ');
   const inner = h.attrs ? line.slice(h.attrs.start + 1, h.attrs.end - 1) : '';
   if (h.attrs && lexAttrs(inner)?.some((i) => i.kind === KEY && i.name === TITLE)) {
     if (text) return editHeaderAttrs(line, h, (src) => setAttr(src, TITLE, text, containerOrder(h.nameText)));
