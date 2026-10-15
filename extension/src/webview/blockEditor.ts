@@ -625,7 +625,7 @@ function start(rt: Runtime): void {
 
   function onRender(msg: RenderMessage): void {
     model = msg;
-    document.documentElement.setAttribute('data-smd-theme-pref', msg.themePref);
+    document.documentElement.dataset.smdThemePref = msg.themePref;
     if (editing) {
       const followed = followEdit(msg, editing.key, editing.range);
       editing.key = followed.key;
@@ -676,6 +676,9 @@ function start(rt: Runtime): void {
   }
 
   window.addEventListener('message', (event: MessageEvent) => {
+    // VS Code's webview host forwards the extension's messages from this page's own origin
+    // (contentWindow.postMessage(message, window.origin)); anything else is not ours.
+    if (event.origin !== window.origin) return;
     const msg = event.data as HostMessage | null;
     if (!msg || typeof msg !== 'object') return;
     switch (msg.type) {
@@ -991,7 +994,7 @@ function start(rt: Runtime): void {
   function fillProps(): void {
     const view = currentView();
     const form = view?.form;
-    const focused = (barRoot.activeElement as HTMLElement | null)?.closest('.field')?.getAttribute('data-field');
+    const focused = (barRoot.activeElement as HTMLElement | null)?.closest<HTMLElement>('.field')?.dataset.field;
     if (!view || !form) {
       props.replaceChildren(h('p', { text: 'The current block is not a container: it has no properties.' }));
       return;

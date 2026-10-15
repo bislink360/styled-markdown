@@ -159,6 +159,7 @@ test('page: the editor chrome is built with createElement and textContent; inner
   assert.doesNotMatch(pageSource, /insertAdjacentHTML|outerHTML\s*=|document\.write/);
   assert.match(pageSource, /attachShadow\(\{ mode: 'closed' \}\)/);
   assert.doesNotMatch(pageSource, /postMessage\([^)]*,\s*['"]\*['"]/, 'no postMessage to any origin');
+  assert.match(pageSource, /if \(event\.origin !== window\.origin\) return;/, 'host messages only from the page\'s own origin');
   assert.doesNotMatch(pageSource, /acquireVsCodeApi|setState\(/, 'the runtime owns the VS Code handle and the saved state');
 });
 
