@@ -4,8 +4,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   FROZEN, blockLabel, blockName, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
-  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemForLine, linesLabel,
-  listKeyTarget, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement, itemForLine,
+  linesLabel, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, boundaryY, dropAnnouncement, dropIndex, dropMoves, dropTo, imageProblem, toBase64, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction,
 } from '../src/webview/blockEditorModel';
 import type { BlockView } from '../src/blockEditorSession';
@@ -167,7 +167,7 @@ test('page: inline items get a popover in a closed shadow root, keyboard stops i
   assert.match(pageSource, /const popRoot = chromeRoot\(popHost\);/);
   assert.match(pageSource, /type: 'setInline'/);
   assert.match(pageSource, /rt\.announce\(inlineAnnouncement\(/);
-  assert.match(pageSource, /if \(escape\) closeInline\(true\);/);
+  assert.match(pageSource, /if \(escape\) closePop\(true\);/);
   assert.match(pageSource, /if \(msg\.fallback\) editSourceOf\(msg\.fallback\);/, 'a refused inline change opens the block\'s source');
   assert.match(pageSource, /el\.setAttribute\(TABINDEX, '0'\);/);
 });
@@ -250,6 +250,106 @@ test('page: the grid is a labelled role="grid" table of text fields in a closed 
   assert.match(pageSource, /post\(\{ \.\.\.request, key: g\.key, editId \}\)/);
   assert.match(pageSource, /rt\.announce\(gridAnnouncement\(request\)\)/);
   assert.match(pageSource, /g\.timer = setTimeout\(\(\) => commitCell\(g, cell\), AUTOSAVE_DELAY\)/, 'typing is written after a pause, as in the source editor');
+});
+
+test('problems: merged for a container that shows a lost child\'s, and announced with the block', () => {
+  const warn = { count: 1, severity: 'warning' as const, messages: ['Line 3: a'] };
+  const err = { count: 2, severity: 'error' as const, messages: ['Line 5: b', 'Line 6: c'] };
+  assert.equal(mergeProblems(), undefined);
+  assert.equal(mergeProblems(undefined, undefined), undefined);
+  assert.equal(mergeProblems(warn, undefined), warn, 'one list is itself');
+  assert.deepEqual(mergeProblems(warn, err), { count: 3, severity: 'error', messages: ['Line 3: a', 'Line 5: b', 'Line 6: c'] });
+  const many = { count: 12, severity: 'info' as const, messages: Array.from({ length: 10 }, (_, i) => `m${i}`) };
+  assert.equal(mergeProblems(many, warn)!.messages.length, 10, 'at most as many messages as the extension sends');
+  assert.equal(mergeProblems(many, warn)!.count, 13);
+  assert.equal(itemAnnouncement(view('a', 2, 4), undefined), 'Paragraph, lines 3–4');
+  assert.equal(itemAnnouncement(view('a', 2, 4), err), 'Paragraph, lines 3–4, 2 problems. Ctrl+. shows them.');
+});
+
+test('page: problem badges on top-level blocks and children, in closed shadow roots, open the problems list', () => {
+  assert.match(pageSource, /updateChrome\(el, mergeProblems\(child\.problems, annotateChildren\(el, child\.children\)\), true\)/, 'children get badges');
+  assert.match(pageSource, /lost = mergeProblems\(lost, child\.problems/, 'a child not in the HTML: its container shows its problems');
+  assert.match(pageSource, /h\('button', \{ className: 'badge', attrs: \{ type: 'button', \[TABINDEX\]: '-1', 'aria-hidden': TRUE \} \}\)/, 'one tab stop: the badge is for the mouse');
+  assert.match(pageSource, /event\.key === '\.' && \(event\.ctrlKey \|\| event\.metaKey\)/, 'Ctrl+. on a block');
+  assert.match(pageSource, /problems: button\('Problems…'/);
+  assert.match(pageSource, /h\('ul', \{ className: 'problems' \}, problems\.messages\.map\(\(m\) => h\('li', \{ text: m \}\)\)\)/);
+});
+
+test('quick fixes: each button says what more than the block it changes, and the list is announced', () => {
+  assert.equal(fixLabel({ title: 'Change to "blue"', scope: 'block' }), 'Change to "blue"');
+  assert.equal(fixLabel({ title: 'Add ":::"', scope: 'lines' }), 'Add ":::" (also changes other lines)');
+  assert.equal(fixLabel({ title: 'Rename', scope: 'files' }), 'Rename (also changes other files)');
+  assert.equal(fixesAnnouncement([]), 'No quick fixes.');
+  assert.equal(fixesAnnouncement([{ title: 'Change to "blue"', scope: 'block' }]), '1 quick fix: Change to "blue".');
+  assert.equal(fixesAnnouncement([{ title: 'a', scope: 'block' }, { title: 'b', scope: 'lines' }]), '2 quick fixes.');
+});
+
+test('page: quick fixes are asked for by block and applied by number; the page never sends an edit of its own', () => {
+  assert.match(pageSource, /post\(\{ type: 'getFixes', key: view\.key, requestId \}\)/);
+  assert.match(pageSource, /post\(\{ type: 'applyFix', key: target\.key, index, version: target\.version, \.\.\.\(confirm \? \{ confirm: true \} : \{\}\), editId: target\.editId \}\)/);
+  assert.match(pageSource, /case 'confirmFix':\n\s+onConfirmFix\(msg\.editId, msg\.index, msg\.text\);/, 'a fix that changes more than the block is confirmed first');
+  assert.match(pageSource, /'aria-live': 'polite'/, 'the fixes arriving are read');
+});
+
+test('front matter form: a field\'s value as setFrontMatter takes it', () => {
+  assert.equal(frontMatterValue({ kind: 'text' }, '  New title '), 'New title');
+  assert.equal(frontMatterValue({ kind: 'select' }, ''), null, 'emptied: the key is removed');
+  assert.equal(frontMatterValue({ kind: 'date' }, '2026-10-15'), '2026-10-15');
+  assert.deepEqual(frontMatterValue({ kind: 'list' }, '@maya, @api ,, x y'), ['@maya', '@api', 'x y']);
+  assert.equal(frontMatterValue({ kind: 'list' }, ' , '), null);
+});
+
+test('page: the front matter\'s fields are in the Properties panel, labelled, with the YAML a button away', () => {
+  assert.match(pageSource, /post\(\{ type: 'setFrontMatter', key, name: field\.name, value: frontMatterValue\(field, control\.value\), editId: nextId\(\) \}\)/);
+  assert.match(pageSource, /if \(view\?\.type === FRONT_MATTER\) \{\n\s+fillFrontMatterProps\(view\);/);
+  assert.match(pageSource, /control\.setAttribute\(ARIA_DESCRIBEDBY, notes\.map\(\(n\) => n\.id\)\.join\(' '\)\)/, 'list and refusal notes are read with the field');
+  assert.match(pageSource, /button\('Edit YAML'/);
+});
+
+test('drag and drop: the boundary nearest the pointer, never right next to the block, and what is announced', () => {
+  const boxes = [{ top: 0, bottom: 20 }, { top: 30, bottom: 50 }, { top: 60, bottom: 100 }];
+  assert.deepEqual([0, 1, 2, 3].map((i) => boundaryY(boxes, i)), [0, 25, 55, 100]);
+  assert.equal(boundaryY([], 0), 0);
+  assert.equal(dropIndex(boxes, -40), 0);
+  assert.equal(dropIndex(boxes, 10), 0, 'nearer the top of the first box than the space after it');
+  assert.equal(dropIndex(boxes, 20), 1);
+  assert.equal(dropIndex(boxes, 60), 2);
+  assert.equal(dropIndex(boxes, 90), 3, 'after the last one');
+  assert.equal(dropIndex([], 5), 0);
+  assert.equal(dropMoves(1, 1), false, 'right before itself');
+  assert.equal(dropMoves(2, 1), false, 'right after itself');
+  assert.equal(dropMoves(0, 1), true);
+  assert.equal(dropMoves(3, 1), true);
+  assert.equal(dropTo(['a#0', 'b#0'], 1), 'b#0');
+  assert.equal(dropTo(['a#0', 'b#0'], 2), 'end');
+  assert.equal(dropAnnouncement({ type: 'paragraph' }, view('h', 4, 5, { type: 'heading' })), 'Paragraph moved before heading, line 5.');
+  assert.equal(dropAnnouncement({ type: 'container', container: 'note' }, undefined), 'Note container moved to the end.');
+});
+
+test('page: one drag handle in a closed shadow root; a drop sends move with a sibling key, never lines', () => {
+  assert.match(pageSource, /attrs: \{ draggable: TRUE, 'aria-hidden': TRUE, title: 'Drag to move this block \(Alt\+Up and Alt\+Down from the keyboard\)' \}/);
+  assert.match(pageSource, /post\(\{ type: 'move', key: d\.view\.key, to: dropTo\(keys, index\), editId \}\)/);
+  assert.match(pageSource, /drops\.set\(editId, dropAnnouncement\(/, 'the result of a drop is announced');
+  assert.match(pageSource, /siblingGroups\.set\(el, complete \? group : \[\]\)/, 'children are dropped only among their own siblings');
+});
+
+test('images: what the page sends, and what it doesn\'t', () => {
+  assert.equal(imageProblem({ name: 'a.png', type: 'image/png', size: 100 }), undefined);
+  assert.equal(imageProblem({ type: 'image/svg+xml', size: 100 }), undefined);
+  assert.equal(imageProblem({ name: 'a.tiff', type: 'image/tiff', size: 100 }), '"a.tiff" is not a PNG, JPEG, GIF, WebP, BMP, AVIF or SVG image.');
+  assert.equal(imageProblem({ type: 'text/plain', size: 1 }), 'The pasted file is not a PNG, JPEG, GIF, WebP, BMP, AVIF or SVG image.');
+  assert.equal(imageProblem({ name: 'big.png', type: 'image/png', size: 10 * 1024 * 1024 + 1 }), '"big.png" is larger than 10 MB.');
+  assert.equal(imageProblem({ name: 'e.png', type: 'image/png', size: 0 }), '"e.png" is empty.');
+  const bytes = new Uint8Array(100_000).map((_, i) => (i * 31) % 256);
+  assert.equal(toBase64(bytes), Buffer.from(bytes).toString('base64'), 'in chunks, the same as in one go');
+  assert.equal(toBase64(new Uint8Array()), '');
+});
+
+test('page: pasted and dropped images go to the extension as bytes with a type, never as a path', () => {
+  assert.match(pageSource, /post\(\{ type: 'image', mime: file\.type, data, \.\.\.\(named && file\.name \? \{ name: file\.name \} : \{\}\), \.\.\.place, editId: nextId\(\) \}\)/);
+  assert.match(pageSource, /document\.addEventListener\('paste', \(event\) => \{/);
+  assert.match(pageSource, /data: DataTransfer \| null\): File\[\] => Array\.from\(data\?\.files \?\? \[\]\)/);
+  assert.doesNotMatch(pageSource, /\.path\b.*type: 'image'/);
 });
 
 test('textareaRows grows with the text, within limits', () => {

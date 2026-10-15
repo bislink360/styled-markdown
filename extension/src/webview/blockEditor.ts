@@ -6,11 +6,13 @@
 // The document's rendered HTML goes into the page as in the preview. The editor's own controls (toolbar, menus,
 // forms, the source editor, notices, problem badges) live in closed shadow roots and are built with createElement
 // and textContent only.
-import type { BlockView, FocusRequest, FormField, FrontMatterView, HostMessage, InlineView, RenderMessage, TableView } from '../blockEditorSession';
+import type {
+  BlockProblems, BlockView, FixesMessage, FixView, FocusRequest, FormField, FrontMatterView, HostMessage, InlineView, RenderMessage, TableView,
+} from '../blockEditorSession';
 import {
   FROZEN, blockLabel, cellLabel, cellSource, clampCell, desiredOrder, editLabel, findView, followEdit, formRequest, gridActionEnabled,
-  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemForLine,
-  listKeyTarget, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
+  gridAnnouncement, gridKeyTarget, gridLabel, gridRequest, inlineAnnouncement, inlineItemLabel, inlineRequest, isUndoRedo, itemAnnouncement,
+  itemForLine, listKeyTarget, mergeProblems, fixLabel, fixesAnnouncement, frontMatterValue, boundaryY, dropAnnouncement, dropIndex, dropMoves, dropTo, imageProblem, toBase64, orderMoves, problemsLabel, refreshedValue, shiftLine, textareaRows, toolbarKeyTarget, topRange, typeAhead, withoutLines,
   type GridAction, type GridCell, type GridRequest, type GridSize, type LineRange,
 } from './blockEditorModel';
 
@@ -80,8 +82,14 @@ interface Grid {
   timer?: ReturnType<typeof setTimeout>;
 }
 
+/** An item's controls: the shadow host and the problem badge. */
+interface Chrome {
+  host: HTMLElement;
+  badge: HTMLButtonElement;
+}
+
 type ItemView = Pick<BlockView, 'key' | 'type' | 'container' | 'start' | 'end' | 'source' | 'problems' | 'form' | 'children' | 'inline' | 'table'>;
-type Action = 'insert' | 'edit' | 'grid' | 'props' | 'up' | 'down' | 'del' | 'reveal' | 'fm';
+type Action = 'insert' | 'edit' | 'grid' | 'props' | 'problems' | 'up' | 'down' | 'del' | 'reveal' | 'fm';
 
 const AUTOSAVE_DELAY = 800;
 const DIV = 'div';
@@ -99,9 +107,15 @@ const CONTENT = 'smd-ed-content';
 const RAW = 'smd-ed-raw';
 const EDITOR = 'smd-ed-editor';
 const GRID_HOST = 'smd-ed-grid-host';
+const CHROME = 'smd-ed-chrome';
+const CHROME_CHILD = 'smd-ed-chrome-child';
+/** Child elements that can't hold the editor's controls (they go right before them). */
+const OUTSIDE_CHROME = new Set(['TABLE', 'DETAILS', 'HR', 'IMG', 'PRE']);
 const ARIA_EXPANDED = 'aria-expanded';
 const ARIA_DISABLED = 'aria-disabled';
 const ARIA_LABEL = 'aria-label';
+const ARIA_DESCRIBEDBY = 'aria-describedby';
+const FRONT_MATTER = 'frontmatter';
 const TABINDEX = 'tabindex';
 const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role="tab"], audio, video, iframe, [contenteditable], .smd-ed-editor, .smd-ed-grid-host';
 /** The alignments a grid column can have, as the alignment list shows them. */
@@ -154,7 +168,11 @@ function start(rt: Runtime): void {
   const signature = new WeakMap<HTMLElement, string>();
   const nodeIds = new WeakMap<HTMLElement, string>();
   const shown = new WeakMap<HTMLElement, string>();
-  const badges = new WeakMap<HTMLElement, { host: HTMLElement; span: HTMLElement }>();
+  const chromes = new WeakMap<HTMLElement, Chrome>();
+  /** The problems an item's badge shows: its own, and those of children not found in its HTML. */
+  const shownProblems = new WeakMap<HTMLElement, BlockProblems | undefined>();
+  /** A child's sibling blocks in its container (empty when some of them are not in the HTML: no drop there). */
+  const siblingGroups = new WeakMap<HTMLElement, HTMLElement[]>();
   let fmNode: HTMLElement | null = null;
   let currentKey: string | null = null;
   let currentLine = 0;
@@ -221,55 +239,86 @@ function start(rt: Runtime): void {
     viewOf.set(el, view);
   }
 
-  /** The problem count badge of a top-level block (in a shadow root; its text is also in the block's label). */
-  function updateBadge(node: HTMLElement, view: ItemView): void {
-    let badge = badges.get(node);
-    if (!view.problems) {
-      if (badge) badge.host.hidden = true;
-      return;
-    }
-    if (!badge) {
-      const host = h(DIV, { className: 'smd-ed-badge-host' });
-      const span = h('span', { className: 'badge', attrs: { 'aria-hidden': TRUE } });
-      chromeRoot(host).append(span);
-      badge = { host, span };
-      badges.set(node, badge);
-      node.prepend(host);
-    }
-    badge.host.hidden = false;
-    badge.span.textContent = `⚠ ${view.problems.count}`;
-    badge.span.className = `badge ${view.problems.severity}`;
-    badge.span.title = view.problems.messages.join('\n');
+  /**
+   * The editor's controls on an item (in a shadow root): its problem badge, which opens the list of problems and
+   * quick fixes. A top-level block holds them; a child gets them as its first element (or right before it, where
+   * an element can't hold them), so they show and hide with it, as a tab or a closed details hides its content.
+   */
+  function chromeFor(el: HTMLElement, child: boolean): Chrome {
+    const known = chromes.get(el);
+    if (known?.host.isConnected) return known;
+    const host = h(DIV, { className: child ? `${CHROME} ${CHROME_CHILD}` : CHROME });
+    const badge = h('button', { className: 'badge', attrs: { type: 'button', [TABINDEX]: '-1', 'aria-hidden': TRUE } });
+    badge.addEventListener('click', (event) => {
+      event.stopPropagation();
+      setCurrent(el, false);
+      openProblems(el);
+    });
+    chromeRoot(host).append(h(DIV, { className: child ? 'chrome child' : 'chrome' }, [badge]));
+    const chrome: Chrome = { host, badge };
+    chromes.set(el, chrome);
+    if (!child) el.prepend(host);
+    else if (OUTSIDE_CHROME.has(el.tagName) || el.parentElement?.classList.contains('smd-table-wrap')) el.before(host);
+    else el.prepend(host);
+    return chrome;
   }
 
-  function decorateTop(node: HTMLElement, view: ItemView): void {
+  /** Show an item's problem count (the messages are in the badge's tooltip, the item's label and the problems list). */
+  function updateChrome(el: HTMLElement, problems: BlockProblems | undefined, child: boolean): void {
+    shownProblems.set(el, problems);
+    const chrome = problems || chromes.has(el) ? chromeFor(el, child) : undefined;
+    if (!chrome) return;
+    chrome.badge.hidden = !problems;
+    if (!problems) return;
+    chrome.badge.textContent = `⚠ ${problems.count}`;
+    chrome.badge.className = `badge ${problems.severity}`;
+    chrome.badge.title = `${problems.messages.join('\n')}\n\nClick, or press Ctrl+. on the block, for quick fixes.`;
+  }
+
+  function decorateTop(node: HTMLElement, view: ItemView, lost?: BlockProblems): void {
     markItem(node, view);
     node.setAttribute('role', 'group');
     node.setAttribute('aria-roledescription', 'block');
-    const problems = problemsLabel(view.problems);
+    const shown = mergeProblems(view.problems, lost);
+    const problems = problemsLabel(shown);
     node.setAttribute(ARIA_LABEL, problems ? `${blockLabel(view)}, ${problems}` : blockLabel(view));
-    if (view.problems) node.setAttribute('aria-description', view.problems.messages.join('; '));
+    if (shown) node.setAttribute('aria-description', shown.messages.join('; '));
     else node.removeAttribute('aria-description');
-    updateBadge(node, view);
+    updateChrome(node, shown, false);
   }
 
-  /** Mark a container's children (found in its HTML by their first line) as items of their own. */
-  function annotateChildren(scope: HTMLElement, children: readonly BlockView[] | undefined): void {
+  /**
+   * Mark a container's children (found in its HTML by their first line) as items of their own, each with its problem
+   * badge. Returns the problems of children that are not in the HTML, which their container shows instead.
+   */
+  function annotateChildren(scope: HTMLElement, children: readonly BlockView[] | undefined): BlockProblems | undefined {
+    let lost: BlockProblems | undefined;
+    const group: HTMLElement[] = [];
     for (const child of children ?? []) {
       if (child.kind !== 'block') continue;
       const el = scope.querySelector<HTMLElement>(`[data-line="${child.start}"]`);
       if (el && !el.classList.contains(ITEM)) {
         markItem(el, child);
         el.classList.add(CHILD);
+        group.push(el);
+        updateChrome(el, mergeProblems(child.problems, annotateChildren(el, child.children)), true);
+      } else {
+        lost = mergeProblems(lost, child.problems, annotateChildren(el ?? scope, child.children));
       }
-      annotateChildren(el ?? scope, child.children);
     }
+    // The children a dragged child can be dropped among (only when every one of them was found).
+    const complete = group.length === (children ?? []).filter((c) => c.kind === 'block').length;
+    for (const el of group) siblingGroups.set(el, complete ? group : []);
+    return lost;
   }
 
   function clearChildren(node: HTMLElement): void {
+    node.querySelectorAll<HTMLElement>(`.${CHROME_CHILD}`).forEach((host) => host.remove());
     node.querySelectorAll<HTMLElement>(`.${CHILD}`).forEach((el) => {
       el.classList.remove(ITEM, CHILD);
       delete el.dataset.smdEdKey;
+      chromes.delete(el);
+      shownProblems.delete(el);
     });
   }
 
@@ -296,8 +345,7 @@ function start(rt: Runtime): void {
       content.innerHTML = view.html ?? '';
     }
     node.append(content);
-    decorateTop(node, view);
-    annotateChildren(content, view.children);
+    decorateTop(node, view, annotateChildren(content, view.children));
     fresh.add(node);
     return node;
   }
@@ -321,8 +369,7 @@ function start(rt: Runtime): void {
       const content = old.querySelector<HTMLElement>(`:scope > .${CONTENT}`) ?? old;
       shiftLines(content, view.start - startOf(old));
       clearChildren(content);
-      decorateTop(old, view);
-      annotateChildren(content, view.children);
+      decorateTop(old, view, annotateChildren(content, view.children));
       return old;
     }
     const node = createTop(view);
@@ -380,7 +427,7 @@ function start(rt: Runtime): void {
       fmNode = null;
       return;
     }
-    const view: ItemView = { key: fm.key, type: 'frontmatter', start: fm.start, end: fm.end, source: fm.source, problems: fm.problems };
+    const view: ItemView = { key: fm.key, type: FRONT_MATTER, start: fm.start, end: fm.end, source: fm.source, problems: fm.problems };
     if (fmNode && signature.get(fmNode) === fm.source) {
       decorateTop(fmNode, view);
       return;
@@ -700,6 +747,8 @@ function start(rt: Runtime): void {
 
   function onAck(editId: string, version: number, focus: FocusRequest | undefined): void {
     acked = Math.max(acked, version);
+    fixApplied(editId);
+    dropped(editId);
     closedDrafts.delete(editId);
     cellEdits.delete(editId);
     if (editing?.pending.delete(editId)) editing.acked = Math.max(editing.acked, version);
@@ -765,11 +814,21 @@ function start(rt: Runtime): void {
         break;
       case 'notice':
         showNotice(msg.text);
-        if (msg.editId) gridRefused(msg.editId);
+        if (msg.editId) {
+          gridRefused(msg.editId);
+          fixRefused(msg.editId);
+          drops.delete(msg.editId);
+        }
         if (msg.fallback) editSourceOf(msg.fallback);
         break;
       case 'flush':
         onFlush(msg.requestId);
+        break;
+      case 'fixes':
+        onFixes(msg);
+        break;
+      case 'confirmFix':
+        onConfirmFix(msg.editId, msg.index, msg.text);
         break;
     }
   });
@@ -828,12 +887,16 @@ function start(rt: Runtime): void {
       openByKey(item, event.key);
       return true;
     }
+    if (event.key === '.' && (event.ctrlKey || event.metaKey) && !event.altKey) {
+      openProblems(item);
+      return true;
+    }
     if (event.altKey || event.ctrlKey || event.metaKey) return false;
     const list = items();
     const to = listKeyTarget(event.key, list.indexOf(item), list.length);
     if (to < 0) return false;
     setCurrent(list[to], true);
-    if (list[to].classList.contains(CHILD)) rt.announce(blockLabel(viewOf.get(list[to])!));
+    if (list[to].classList.contains(CHILD)) rt.announce(itemAnnouncement(viewOf.get(list[to])!, shownProblems.get(list[to])));
     return true;
   }
 
@@ -909,6 +972,11 @@ function start(rt: Runtime): void {
       case 'props':
         toggleProps();
         return;
+      case 'problems': {
+        const item = currentItem();
+        if (item) openProblems(item);
+        return;
+      }
       default:
         blockAction(action);
     }
@@ -944,13 +1012,180 @@ function start(rt: Runtime): void {
     post(view ? { type: 'insert', template: name, atKey: view.key, editId: nextId() } : { type: 'insert', template: name, position: 'end', editId: nextId() });
   }
 
+  // ---- Drag and drop: moving a block among its siblings ---------------------------------------
+  // One drag handle (in a closed shadow root) shows next to the block under the mouse: a top-level block, or a block
+  // inside a container. Dragged, a line shows where it would go among its siblings; dropped, the page sends move
+  // with the key of the sibling it goes before (or 'end'), and the extension takes only those boundaries. Alt+↑/↓
+  // does the same from the keyboard; a drop is announced once it is made.
+  const DRAG_TYPE = 'application/x-smd-block';
+  const dragHost = h(DIV, { className: 'smd-ed-drag-host' });
+  const handle = h(DIV, {
+    className: 'handle',
+    text: '⠿',
+    attrs: { draggable: TRUE, 'aria-hidden': TRUE, title: 'Drag to move this block (Alt+Up and Alt+Down from the keyboard)' },
+  });
+  chromeRoot(dragHost).append(handle);
+  dragHost.hidden = true;
+  const dropLine = h(DIV, { className: 'smd-ed-drop', attrs: { 'aria-hidden': TRUE } });
+  dropLine.hidden = true;
+  document.body.append(dragHost, dropLine);
+  let handleItem: HTMLElement | null = null;
+  let dragging: { item: HTMLElement; view: ItemView; siblings: HTMLElement[]; index: number } | null = null;
+  const drops = new Map<string, string>();
+
+  /** The blocks a dragged item can be dropped among: the top-level items, or its container's children. */
+  function dragSiblings(item: HTMLElement): HTMLElement[] {
+    if (!item.classList.contains(CHILD)) return (Array.from(blocksEl.children) as HTMLElement[]).filter((el) => el.classList.contains(ITEM));
+    return siblingGroups.get(item) ?? [];
+  }
+
+  /** A block that can be dragged: a block (not lines that render nothing, not the front matter) not being edited. */
+  function draggable(item: HTMLElement | null): item is HTMLElement {
+    const view = item && viewOf.get(item);
+    return !!view && view.type !== 'gap' && view.type !== FRONT_MATTER && !held() && dragSiblings(item!).length > 1;
+  }
+
+  rootEl.addEventListener('mouseover', (event) => {
+    if (dragging) return;
+    const item = (event.target as HTMLElement).closest?.<HTMLElement>(`.${ITEM}`) ?? null;
+    if (!draggable(item)) return;
+    handleItem = item;
+    const rect = item.getBoundingClientRect();
+    dragHost.hidden = false;
+    dragHost.style.top = `${rect.top + window.scrollY}px`;
+    dragHost.style.left = `${Math.max(0, rect.left + window.scrollX - 22)}px`;
+  });
+
+  handle.addEventListener('dragstart', (event) => {
+    const item = handleItem;
+    if (!item?.isConnected || !draggable(item) || !event.dataTransfer) {
+      event.preventDefault();
+      return;
+    }
+    const siblings = dragSiblings(item);
+    dragging = { item, view: viewOf.get(item)!, siblings, index: siblings.indexOf(item) };
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(DRAG_TYPE, dragging.view.key);
+    event.dataTransfer.setDragImage(item, 0, 0);
+    setCurrent(item, false);
+  });
+
+  handle.addEventListener('dragend', () => endDrag());
+
+  function endDrag(): void {
+    dragging = null;
+    dropLine.hidden = true;
+  }
+
+  /** The boundary nearest the pointer among the dragged block's siblings, shown as a line; -1 where it wouldn't move. */
+  function dropAt(y: number): number {
+    const d = dragging!;
+    const boxes = d.siblings.map((el) => el.getBoundingClientRect());
+    const index = dropIndex(boxes, y);
+    if (!dropMoves(index, d.index)) {
+      dropLine.hidden = true;
+      return -1;
+    }
+    const left = Math.min(...boxes.map((b) => b.left));
+    const right = Math.max(...boxes.map((b) => b.right));
+    dropLine.hidden = false;
+    dropLine.style.top = `${boundaryY(boxes, index) + window.scrollY - 1}px`;
+    dropLine.style.left = `${left + window.scrollX}px`;
+    dropLine.style.width = `${right - left}px`;
+    return index;
+  }
+
+  document.addEventListener('dragover', (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = dropAt(event.clientY) < 0 ? 'none' : 'move';
+  });
+
+  document.addEventListener('drop', (event) => {
+    if (!dragging) return;
+    event.preventDefault();
+    const d = dragging;
+    const index = dropAt(event.clientY);
+    endDrag();
+    if (index < 0 || !d.item.isConnected) return;
+    const keys = d.siblings.map((el) => viewOf.get(el)?.key ?? '');
+    const editId = nextId();
+    drops.set(editId, dropAnnouncement(d.view, index < d.siblings.length ? viewOf.get(d.siblings[index]) : undefined));
+    post({ type: 'move', key: d.view.key, to: dropTo(keys, index), editId });
+  });
+
+  // ---- Images: pasted, or dropped from the file manager ------------------------------------------
+  // A pasted image (Ctrl+V) goes after the current block; a dropped image file after the block it is dropped on. The
+  // page reads the file's bytes (a webview gets the file itself, never its path) and sends them, base64, with its
+  // type and name; the extension saves it where it saves images and inserts the link.
+  const imageFiles = (data: DataTransfer | null): File[] => Array.from(data?.files ?? []);
+  const hasFiles = (data: DataTransfer | null) => !!data && Array.from(data.types).includes('Files');
+
+  async function sendImages(files: readonly File[], atKey: string | undefined, named = true): Promise<void> {
+    const problems = files.map((f) => imageProblem(f)).filter((p): p is string => p !== undefined);
+    if (problems.length) showNotice(problems.join(' '));
+    const images = files.filter((f) => !imageProblem(f));
+    if (!images.length) return;
+    rt.announce(images.length === 1 ? 'Adding the image…' : `Adding ${images.length} images…`);
+    // Each goes right after the block: sent last first, they end up in the order given.
+    for (const file of [...images].reverse()) {
+      const data = toBase64(new Uint8Array(await file.arrayBuffer()));
+      const place = atKey ? { atKey } : { position: 'end' };
+      post({ type: 'image', mime: file.type, data, ...(named && file.name ? { name: file.name } : {}), ...place, editId: nextId() });
+    }
+  }
+
+  document.addEventListener('paste', (event) => {
+    const files = imageFiles(event.clipboardData);
+    if (!files.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const key = currentView()?.key;
+    if (editing) finishEdit(false);
+    // A pasted image's name is the browser's ("image.png"): the extension names it after the document instead.
+    void sendImages(files, key, false);
+  }, true);
+
+  document.addEventListener('dragover', (event) => {
+    if (dragging || !hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  });
+
+  document.addEventListener('drop', (event) => {
+    if (dragging || !event.dataTransfer) return;
+    const files = imageFiles(event.dataTransfer);
+    if (!files.length) {
+      // From VS Code's Explorer a drop brings a link to the file, not the file: only the text editor can use it.
+      if (Array.from(event.dataTransfer.types).some((t) => t === 'text/uri-list' || t === 'application/vnd.code.uri-list')) {
+        event.preventDefault();
+        showNotice('Drop image files from your file manager here, or paste an image. Files from the Explorer can be dropped in the text editor.');
+      }
+      return;
+    }
+    event.preventDefault();
+    const item = (event.target as HTMLElement).closest?.<HTMLElement>(`.${ITEM}`);
+    const key = item ? viewOf.get(item)?.key : currentView()?.key;
+    if (editing) finishEdit(false);
+    void sendImages(files, key);
+  });
+
+  /** A drop was made: say where the block went. */
+  function dropped(editId: string): void {
+    const text = drops.get(editId);
+    if (text === undefined) return;
+    drops.delete(editId);
+    rt.announce(text);
+  }
+
   // ---- The toolbar -----------------------------------------------------------------------
   const barRoot = chromeRoot(toolbarHost);
   const buttons: Record<Action, HTMLButtonElement> = {
     insert: button('Insert…', () => act('insert'), { title: 'Insert a block after this one (Ctrl+/)', 'aria-haspopup': 'menu', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'menu' }),
     edit: button('Edit', () => act('edit'), { title: 'Edit the source of this block (Enter, or F2 on a table)' }),
     grid: button('Edit as grid', () => act('grid'), { title: 'Edit this table cell by cell (Enter)' }),
-    props: button('Properties', () => act('props'), { title: 'Title and attributes of this container', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'props' }),
+    props: button('Properties', () => act('props'), { title: 'A container\'s title and attributes, or the front matter\'s fields', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'props' }),
+    problems: button('Problems…', () => act('problems'), { title: 'This block\'s problems and their quick fixes (Ctrl+.)', 'aria-haspopup': 'dialog' }),
     up: button('Move up', () => act('up'), { title: 'Move this block up (Alt+Up)' }),
     down: button('Move down', () => act('down'), { title: 'Move this block down (Alt+Down)' }),
     del: button('Delete', () => act('del'), { title: 'Delete this block (Ctrl+Z undoes it)' }),
@@ -964,7 +1199,7 @@ function start(rt: Runtime): void {
   const props = h(DIV, { className: 'props', attrs: { id: 'props', role: 'group' } });
   menu.hidden = true;
   props.hidden = true;
-  toolbar.setAttribute('aria-describedby', 'status');
+  toolbar.setAttribute(ARIA_DESCRIBEDBY, 'status');
   barRoot.append(h(DIV, { className: 'bar' }, [toolbar, status]), noticeEl, menu, props);
   let barIndex = 0;
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -998,10 +1233,14 @@ function start(rt: Runtime): void {
   }
 
   function updateToolbar(): void {
+    // No dragging while a block is edited in its source or the grid.
+    if (held()) dragHost.hidden = true;
     const view = currentView();
     status.textContent = view ? blockLabel(view) : 'No block selected';
     for (const action of ['edit', 'up', 'down', 'del', 'reveal'] as const) setDisabled(buttons[action], !view);
-    setDisabled(buttons.props, !view?.form);
+    setDisabled(buttons.props, !view?.form && view?.type !== FRONT_MATTER);
+    const item = currentItem();
+    setDisabled(buttons.problems, !item || !shownProblems.get(item));
     updateGridButton(view?.table);
     buttons.fm.hidden = !model || model.frontMatter !== null;
     rovingBar();
@@ -1112,11 +1351,56 @@ function start(rt: Runtime): void {
     return h(DIV, { className: `field ${field.kind}`, attrs: { 'data-field': field.name } }, field.kind === 'flag' ? [control, label] : [label, control]);
   }
 
-  /** Fill the form for the current container; the control with focus keeps it. */
+  /**
+   * A front matter field: a text field (a list's items separated by commas), a date or a list of choices. Changing
+   * it sets that key (setFrontMatter); emptying it removes the key. One the form can't change is shown, disabled,
+   * with the reason.
+   */
+  function frontMatterRow(key: string, field: FormField): HTMLElement {
+    const id = `field-${field.name}`;
+    const control = fieldControl(field, id);
+    const label = h('label', { text: field.label, attrs: { for: id } });
+    const notes: HTMLElement[] = [];
+    if (field.kind === 'list') notes.push(h('span', { className: 'hint', text: 'Separated by commas', attrs: { id: `${id}-hint` } }));
+    if (field.refused) {
+      control.disabled = true;
+      notes.push(h('span', { className: 'hint', text: `Written as ${field.refused}: edit the YAML.`, attrs: { id: `${id}-refused` } }));
+    }
+    if (notes.length) control.setAttribute(ARIA_DESCRIBEDBY, notes.map((n) => n.id).join(' '));
+    control.addEventListener('change', () => {
+      post({ type: 'setFrontMatter', key, name: field.name, value: frontMatterValue(field, control.value), editId: nextId() });
+    });
+    return h(DIV, { className: `field ${field.kind}`, attrs: { 'data-field': field.name } }, [label, control, ...notes]);
+  }
+
+  /** The front matter's fields, or why only its YAML can be edited; Edit YAML opens its text. */
+  function fillFrontMatterProps(view: ItemView): void {
+    const fm = model?.frontMatter;
+    props.setAttribute(ARIA_LABEL, 'Front matter fields');
+    const yaml = button('Edit YAML', () => {
+      closeProps(false);
+      const item = currentItem();
+      if (item) startEdit(item);
+    }, { title: 'Edit the front matter as YAML text (Enter on the block)' });
+    const actions = h(DIV, { className: 'actions' }, [yaml, button('Done', () => closeProps(true))]);
+    const title = h('p', { className: 'props-title', text: 'Front matter' });
+    if (!fm?.fields) {
+      props.replaceChildren(title, h('p', { text: fm?.formRefused ?? 'The front matter can only be edited as YAML.' }), actions);
+      return;
+    }
+    props.replaceChildren(title, ...fm.fields.map((f) => frontMatterRow(view.key, f)), actions);
+  }
+
+  /** Fill the form for the current container or front matter; the control with focus keeps it. */
   function fillProps(): void {
     const view = currentView();
     const form = view?.form;
     const focused = (barRoot.activeElement as HTMLElement | null)?.closest<HTMLElement>('.field')?.dataset.field;
+    if (view?.type === FRONT_MATTER) {
+      fillFrontMatterProps(view);
+      if (focused) props.querySelector<HTMLElement>(`[data-field="${focused}"] input, [data-field="${focused}"] select`)?.focus();
+      return;
+    }
     if (!view || !form) {
       props.replaceChildren(h('p', { text: 'The current block is not a container: it has no properties.' }));
       return;
@@ -1602,6 +1886,7 @@ function start(rt: Runtime): void {
   let popTarget: { el: HTMLElement; key: string; view: InlineView; controls: Map<string, HTMLInputElement | HTMLSelectElement> } | null = null;
 
   function openInline(el: HTMLElement, key: string, view: InlineView): void {
+    closeProblems(false);
     const controls = new Map<string, HTMLInputElement | HTMLSelectElement>();
     const rows = (view.fields ?? []).map((field) => {
       const id = `inline-${field.name}`;
@@ -1650,20 +1935,139 @@ function start(rt: Runtime): void {
       return;
     }
     const escape = event.key === ESCAPE;
-    // Enter applies, except on a button, which Enter presses.
-    const enter = event.key === 'Enter' && !(event.target instanceof HTMLButtonElement);
+    // Enter applies an inline form, except on a button, which Enter presses.
+    const enter = event.key === 'Enter' && popTarget !== null && !(event.target instanceof HTMLButtonElement);
     if (!escape && !enter) return;
     event.preventDefault();
     event.stopPropagation();
-    if (escape) closeInline(true);
+    if (escape) closePop(true);
     else applyInline();
   });
 
   pop.addEventListener('focusout', (event) => {
     if (!pop.contains(event.relatedTarget as Node | null)) setTimeout(() => {
-      if (!pop.contains(popRoot.activeElement)) closeInline(false);
+      if (!pop.contains(popRoot.activeElement)) closePop(false);
     }, 0);
   });
+
+  /** Close the inline form or the problems list. */
+  function closePop(refocus: boolean): void {
+    closeInline(refocus);
+    closeProblems(refocus);
+  }
+
+  function placePop(el: HTMLElement): void {
+    popHost.hidden = false;
+    const rect = el.getBoundingClientRect();
+    popHost.style.top = `${rect.top + window.scrollY + Math.min(rect.height, 24) + 4}px`;
+    popHost.style.left = `${Math.max(0, rect.left + window.scrollX)}px`;
+  }
+
+  // ---- Problems: the list of a block's problems, and their quick fixes ----------------------------------------
+  // The badge on a block (or Ctrl+. on it, or Problems… in the toolbar) opens a list of its problems and asks the
+  // extension for their quick fixes. The page shows their titles and sends the one chosen by number (applyFix); the
+  // extension keeps the fixes themselves, and asks first when one changes more than the block.
+  let problemsTarget: {
+    item: HTMLElement; key: string; requestId: number; fixes: HTMLElement; version?: number; list?: FixView[]; editId?: string;
+  } | null = null;
+  let fixRequests = 0;
+
+  function openProblems(item: HTMLElement): void {
+    const view = viewOf.get(item);
+    const problems = shownProblems.get(item);
+    if (!view || !problems) {
+      showNotice('This block has no problems.');
+      return;
+    }
+    // Whatever was typed is written first, so the fixes are for the block as it is.
+    if (editing) finishEdit(false);
+    closePop(false);
+    const title = h('p', { className: 'pop-title', text: `Problems: ${blockLabel(view)}`, attrs: { id: 'pop-title' } });
+    const list = h('ul', { className: 'problems' }, problems.messages.map((m) => h('li', { text: m })));
+    const more = problems.count > problems.messages.length ? h('p', { className: 'hint', text: `And ${problems.count - problems.messages.length} more.` }) : null;
+    const fixes = h(DIV, { className: 'fixes', attrs: { role: 'group', [ARIA_LABEL]: 'Quick fixes', 'aria-live': 'polite' } }, [
+      h('p', { className: 'hint', text: 'Looking for quick fixes…' }),
+    ]);
+    const actions = h(DIV, { className: 'actions' }, [
+      button('Edit source', () => {
+        closeProblems(false);
+        startEdit(item);
+      }),
+      button('Close', () => closeProblems(true)),
+    ]);
+    pop.replaceChildren(title, list, ...(more ? [more] : []), fixes, actions);
+    const requestId = ++fixRequests;
+    problemsTarget = { item, key: view.key, requestId, fixes };
+    placePop(item);
+    actions.querySelector('button')?.focus();
+    rt.announce(`${problemsLabel(problems)}: ${problems.messages.join('. ')}`);
+    post({ type: 'getFixes', key: view.key, requestId });
+  }
+
+  /** The quick fixes arrived: one button each, or why there are none. */
+  function onFixes(msg: FixesMessage): void {
+    const target = problemsTarget;
+    if (target?.requestId !== msg.requestId) return;
+    target.version = msg.version;
+    target.list = msg.fixes;
+    if (!msg.fixes.length) {
+      target.fixes.replaceChildren(h('p', { className: 'hint', text: msg.error ?? 'No quick fixes for these problems.' }));
+      return;
+    }
+    const buttons = msg.fixes.map((fix, index) => button(fixLabel(fix), () => applyFix(index, false), { title: fix.title }));
+    target.fixes.replaceChildren(h('p', { className: 'fixes-title', text: 'Quick fixes' }), h(DIV, { className: 'fix-list' }, buttons));
+    rt.announce(fixesAnnouncement(msg.fixes));
+  }
+
+  function applyFix(index: number, confirm: boolean): void {
+    const target = problemsTarget;
+    if (!target || target.version === undefined) return;
+    target.editId = nextId();
+    post({ type: 'applyFix', key: target.key, index, version: target.version, ...(confirm ? { confirm: true } : {}), editId: target.editId });
+  }
+
+  /** The extension asks before a fix that changes more than the block: Apply or Cancel, in the list. */
+  function onConfirmFix(editId: string | undefined, index: number, text: string): void {
+    const target = problemsTarget;
+    if (!target || target.editId !== editId) return;
+    const title = target.list?.[index]?.title ?? 'This fix';
+    const apply = button('Apply anyway', () => applyFix(index, true));
+    const cancel = button('Cancel', () => closeProblems(true));
+    target.fixes.replaceChildren(h('p', { className: 'confirm', text: `${title}: ${text} Apply it?` }), h(DIV, { className: 'actions' }, [apply, cancel]));
+    apply.focus();
+    rt.announce(`${text} Apply it?`);
+  }
+
+  /** A fix was not applied (the document changed since it was listed): the list asks for the fixes again. */
+  function fixRefused(editId: string): void {
+    const target = problemsTarget;
+    if (!target || target.editId !== editId) return;
+    target.editId = undefined;
+    target.version = undefined;
+    target.requestId = ++fixRequests;
+    target.fixes.replaceChildren(h('p', { className: 'hint', text: 'Looking for quick fixes…' }));
+    post({ type: 'getFixes', key: target.key, requestId: target.requestId });
+  }
+
+  /** A fix was applied: the list closes, and focus goes back to the block once it is rendered again. */
+  function fixApplied(editId: string): boolean {
+    const target = problemsTarget;
+    if (!target || target.editId !== editId) return false;
+    closeProblems(false);
+    rt.announce('Quick fix applied. Ctrl+Z undoes it.');
+    return true;
+  }
+
+  function closeProblems(refocus: boolean): void {
+    const target = problemsTarget;
+    if (!target) return;
+    problemsTarget = null;
+    popHost.hidden = true;
+    pop.replaceChildren();
+    if (!refocus) return;
+    const item = target.item.isConnected ? target.item : itemsAll().find((i) => i.dataset.smdEdKey === target.key);
+    (item ?? currentItem())?.focus();
+  }
 
   updateToolbar();
   post({ type: 'ready' });

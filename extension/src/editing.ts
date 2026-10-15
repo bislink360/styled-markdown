@@ -89,6 +89,20 @@ export function pastedImageBase(documentPath: string, now: Date): string {
   return `${path.basename(documentPath, path.extname(documentPath))}-${stamp}`;
 }
 
+/**
+ * The name (without extension) for an image the Block Editor saves: a dropped file's own name, made safe (letters,
+ * digits, `-`, `_` and `.` only, at most 60 characters, no dot or dash at either end), else a pasted image's name.
+ */
+export function imageBaseName(documentPath: string, fileName: string | undefined, now: Date): string {
+  const name = path.basename(fileName ?? '');
+  const safe = path.basename(name, path.extname(name)).replaceAll(/[^\w.-]+/g, '-').slice(0, 60);
+  let start = 0;
+  let end = safe.length;
+  while (start < end && '.-'.includes(safe[start])) start++;
+  while (end > start && '.-'.includes(safe[end - 1])) end--;
+  return safe.slice(start, end) || pastedImageBase(documentPath, now);
+}
+
 /** `name.ext`, or `name-1.ext`, `name-2.ext`… when taken. */
 export function uniqueFileName(base: string, ext: string, taken: (name: string) => boolean): string {
   let name = `${base}${ext}`;

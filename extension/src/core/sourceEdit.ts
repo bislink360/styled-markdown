@@ -40,9 +40,16 @@ export interface LineRange {
 
 const LINE_BREAK = /\r?\n/;
 const isBlank = (line: string | undefined) => line !== undefined && /^[ \t\r]*$/.test(line);
-const isFence = (line: string) => CONTAINER_OPEN.test(line) || CONTAINER_CLOSE.test(line);
-/** A line a new block may sit right next to: blank, a container fence, or the edge of the document. */
-const isSeparator = (line: string | undefined) => line === undefined || isBlank(line) || isFence(line);
+/**
+ * A line a block may follow directly: the edge of the document, a blank line, or a container's opening line (the
+ * block is then its first child). After a closing `:::` a block needs a blank line, as after any other block.
+ */
+const freeBelow = (line: string | undefined) => line === undefined || isBlank(line) || CONTAINER_OPEN.test(line);
+/**
+ * A line a block may come directly before: the edge of the document, a blank line, or a container's closing `:::`
+ * (the block is then its last child). Before an opening line a block needs a blank line, as before any other block.
+ */
+const freeAbove = (line: string | undefined) => line === undefined || isBlank(line) || CONTAINER_CLOSE.test(line);
 
 /** The lines of a text, split as everything else here splits them (a lone `\r` stays in its line). */
 export function splitLines(text: string): string[] {
@@ -146,15 +153,16 @@ function trimBlankEdges(lines: readonly string[]): string[] {
 /** Insert `block` before line `at`, with a blank line on each side where it would touch another block. */
 function insertLines(lines: readonly string[], at: number, block: readonly string[]): BlockInsert {
   const line = Math.min(Math.max(0, at), lines.length);
-  const lead = isSeparator(lines[line - 1]) ? [] : [''];
-  const trail = isSeparator(lines[line]) ? [] : [''];
+  const lead = freeBelow(lines[line - 1]) ? [] : [''];
+  const trail = freeAbove(lines[line]) ? [] : [''];
   return { edit: { start: line, end: line, lines: [...lead, ...block, ...trail] }, line: line + lead.length };
 }
 
 /**
  * Insert a snippet as a block of its own before line `atLine` (0 to lines.length). Only new lines are added: a
- * blank line goes on either side where the neighbour is text, none next to a blank line, a container fence or the
- * edge of the document. Blank lines around the snippet are dropped.
+ * blank line goes on either side where the neighbour is another block (a container's closing line above it, or its
+ * opening line below it, too), none next to a blank line, the edge of the document, or the fences of the container
+ * it goes into. Blank lines around the snippet are dropped.
  */
 export function insertBlock(lines: readonly string[], atLine: number, snippet: string): BlockInsert {
   return insertLines(lines, atLine, trimBlankEdges(splitLines(snippet)));
@@ -168,9 +176,10 @@ export function deleteBlock(lines: readonly string[], seg: LineRange): LineEdit 
   const { start, end } = seg;
   const before = lines[start - 1];
   const after = lines[end];
-  if (isBlank(after) && isSeparator(before)) return { start, end: end + 1, lines: [] };
-  if (isBlank(before) && isSeparator(after)) return { start: start - 1, end, lines: [] };
-  if (!isSeparator(before) && !isSeparator(after)) return { start, end, lines: [''] };
+  // The lines left on either side meet: a blank line goes only where neither may touch the other.
+  if (isBlank(after) && freeBelow(before)) return { start, end: end + 1, lines: [] };
+  if (isBlank(before) && freeAbove(after)) return { start: start - 1, end, lines: [] };
+  if (!freeBelow(before) && !freeAbove(after)) return { start, end, lines: [''] };
   return { start, end, lines: [] };
 }
 

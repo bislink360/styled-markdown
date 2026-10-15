@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  BlockEditorSession, EditLog, containerForm, inlineAgree, inlineFields, lineSpan, mapBoundary, readEditorMessage, yamlScalar,
-  type BlockView, type DocumentPort, type HostMessage, type LineDiagnostic, type RenderMessage, type SessionMessage, type SessionOptions, type TextChange,
+  BlockEditorSession, EditLog, containerForm, inlineAgree, inlineFields, innermostSegment, lineSpan, mapBoundary, problemOwners, readEditorMessage, yamlScalar,
+  fixScope, imageBytes, MAX_IMAGE_BYTES,
+  type BlockView, type DocumentPort, type HostMessage, type LineDiagnostic, type QuickFix, type RenderMessage, type SessionMessage, type SessionOptions,
+  type TextChange,
 } from '../src/blockEditorSession';
+import { validateSmd } from '../src/core/validate';
 import { renderBlocks, segmentSmd, type BlockRenderOptions, type Segment } from '../src/core/blocks';
 import { scanInline, type RenderedInline } from '../src/core/inlineEdit';
 import { blockTemplates, type Snippet } from '../src/core/templates';
-import type { TextEdit } from '../src/core/sourceEdit';
+import type { LineRange, TextEdit } from '../src/core/sourceEdit';
 import { prng } from './fuzz/generate';
 
 // The Block Editor's host side (src/blockEditorSession.ts) against a fake document: every message, validation,
@@ -66,7 +69,16 @@ interface Harness {
   send(message: SessionMessage): Promise<HostMessage | undefined>;
 }
 
-function harness(text: string, options: { diagnostics?: LineDiagnostic[]; render?: BlockRenderOptions; title?: string; scan?: SessionOptions['scan'] } = {}): Harness {
+interface HarnessOptions {
+  diagnostics?: LineDiagnostic[];
+  render?: BlockRenderOptions;
+  title?: string;
+  scan?: SessionOptions['scan'];
+  quickFixes?: (doc: FakeDoc, range: LineRange) => PromiseLike<readonly QuickFix[]>;
+  saveImage?: SessionOptions['saveImage'];
+}
+
+function harness(text: string, options: HarnessOptions = {}): Harness {
   const doc = new FakeDoc(text);
   const sent: HostMessage[] = [];
   const renderOptions = { today: TODAY, ...options.render };
@@ -79,6 +91,8 @@ function harness(text: string, options: { diagnostics?: LineDiagnostic[]; render
     themePref: () => 'auto',
     title: options.title,
     scan: options.scan,
+    quickFixes: options.quickFixes && ((range) => options.quickFixes!(doc, range)),
+    saveImage: options.saveImage,
   });
   doc.onChange = (version, changes) => session.recordChange(version, changes);
   return {
@@ -245,8 +259,9 @@ test('render: the front matter, top-level blocks with their HTML, gaps, children
   assert.match(callout.html!, /smd-callout-warning/);
   assert.deepEqual(callout.children!.map((c) => c.type), ['paragraph', 'list'], 'blank gaps inside containers are left out');
   assert.equal(callout.children![0].html, undefined, 'children are found in the container HTML');
-  assert.deepEqual(callout.problems, { count: 2, severity: 'error', messages: ['Line 11: Odd', 'Line 13: Bad'] });
-  assert.deepEqual(callout.children![1].problems?.count, 1);
+  assert.equal(callout.problems, undefined, 'each problem is on the innermost block: here, the container\'s children');
+  assert.deepEqual(callout.children![0].problems, { count: 1, severity: 'warning', messages: ['Line 11: Odd'] });
+  assert.deepEqual(callout.children![1].problems, { count: 1, severity: 'error', messages: ['Line 13: Bad'] });
   assert.equal(callout.form?.name, 'warning');
   assert.deepEqual(callout.form!.fields.map((f) => [f.name, f.kind, f.value]), [
     ['title', 'title', 'Heads up'], ['collapsible', 'flag', 'true'], ['color', 'color', ''], ['bg', 'color', ''], ['border', 'color', ''],
@@ -254,6 +269,27 @@ test('render: the front matter, top-level blocks with their HTML, gaps, children
   assert.equal(r.blocks.find((b) => b.kind === 'gap' && !b.blank)?.source, '\n[ref]: https://example.com\n');
   assert.ok(r.templates.some((t) => t.name === 'Callout'));
   assert.deepEqual(h.session.status().blocks, 4);
+});
+
+test('problems go to the innermost block: a child, a nested child, else the container, the front matter or a gap', () => {
+  const text = [
+    '---', 'title: T', 'statsu: draft', '---', '',
+    '::::tabs', ':::tab One', 'Para one', '', '- item', ':::', '', '[x]: https://example.com', '::::', '',
+    '[y]: https://example.com', '',
+  ].join('\n');
+  const at = (line: number): LineDiagnostic => ({ line, message: `on ${line}`, severity: 'warning' });
+  const h = harness(text, { diagnostics: [2, 5, 6, 7, 9, 12, 15].map(at) });
+  const r = h.render();
+  const messages = (v: { problems?: { messages: string[] } } | null | undefined) => v?.problems?.messages ?? [];
+  assert.deepEqual(messages(r.frontMatter), ['Line 3: on 2']);
+  assert.deepEqual(messages(block(r, '::::tabs')), ['Line 6: on 5', 'Line 13: on 12'], 'its fence, and a gap inside it');
+  assert.deepEqual(messages(block(r, ':::tab')), ['Line 7: on 6'], 'the opening line of the inner container');
+  assert.deepEqual(messages(block(r, 'Para one')), ['Line 8: on 7']);
+  assert.deepEqual(messages(block(r, '- item')), ['Line 10: on 9']);
+  assert.deepEqual(messages(r.blocks.find((b) => b.kind === 'gap' && b.source.includes('[y]'))), ['Line 16: on 15']);
+  assert.equal(innermostSegment(segmentSmd(text), 99), undefined, 'past the end');
+  const owners = problemOwners(segmentSmd(text), [at(7), at(7)]);
+  assert.deepEqual([...owners.values()].map((l) => l.length), [2], 'two problems on one line, one owner');
 });
 
 test('containerForm: enumerated values, colors, flags and text, from CONTAINERS', () => {
@@ -651,6 +687,16 @@ function assertMoved(before: string, after: string, target: BlockView, name: str
   assert.ok(Math.abs(a.length - b.length) <= 2, `${name}: at most two blank lines differ`);
 }
 
+/** The views next to a block: the top-level ones, or its container's children. */
+function siblingsOf(views: readonly BlockView[], key: string): BlockView[] {
+  if (views.some((v) => v.key === key)) return [...views];
+  for (const v of views) {
+    const found = v.children && siblingsOf(v.children, key);
+    if (found?.length) return found;
+  }
+  return [];
+}
+
 test('property: insert, move and delete never change a line they do not add, move or remove', async () => {
   const random = prng(7);
   const documents = [...readDir(examplesDir), ...readDir(corpusDir)];
@@ -668,8 +714,14 @@ test('property: insert, move and delete never change a line they do not add, mov
       } else if (op === 1) {
         await h.send({ type: 'delete', key: target.key, editId: `d${i}` });
         onlyInserted(h.doc.text, before);
-      } else {
+      } else if (i === 2) {
         await h.send({ type: 'move', key: target.key, direction: random() < 0.5 ? 'up' : 'down', editId: `m${i}` });
+        assertMoved(before, h.doc.text, target, d.name);
+      } else {
+        // Dropped before a sibling (a block or lines that render nothing), or at the end of its siblings.
+        const siblings = siblingsOf(r.blocks, target.key).filter((s) => !s.blank);
+        const to = random() < 0.2 ? 'end' : siblings[Math.floor(random() * siblings.length)].key;
+        await h.send({ type: 'move', key: target.key, to, editId: `m${i}` });
         assertMoved(before, h.doc.text, target, d.name);
       }
     }
@@ -1109,3 +1161,433 @@ test('property: a random grid change to every table of every example and corpus 
   }
   assert.ok(applied > 10, `table edits applied (${applied})`);
 });
+
+// ---------------------------------------------------------------------------
+// Quick fixes
+// ---------------------------------------------------------------------------
+
+/** The offset of a line and column in a text whose lines end in \n or \r\n. */
+function offsetAt(text: string, line: number, character: number): number {
+  let offset = 0;
+  for (let i = 0; i < line; i++) {
+    const next = text.indexOf('\n', offset);
+    offset = next < 0 ? text.length : next + 1;
+  }
+  return offset + character;
+}
+
+/** As language.ts's QuickFixProvider: the core fixes of the problems on the lines asked about, applied to the document. */
+function coreFixes(doc: FakeDoc, range: LineRange): Promise<QuickFix[]> {
+  const fixes = validateSmd(doc.text, { today: TODAY })
+    .filter((d) => d.fix && d.line >= range.start && d.line < range.end)
+    .map((d): QuickFix => {
+      const fix = d.fix!;
+      const start = { line: fix.line, character: fix.column };
+      const end = { line: fix.line, character: fix.endColumn };
+      return {
+        title: fix.title,
+        edits: [{ start, end }],
+        elsewhere: false,
+        diagnostics: [d.line],
+        apply: () => doc.applyEdits([{ from: offsetAt(doc.text, fix.line, fix.column), to: offsetAt(doc.text, fix.line, fix.endColumn), insert: fix.replacement.replaceAll('\n', doc.eol) }]),
+      };
+    });
+  return Promise.resolve(fixes);
+}
+
+const FIX_DOC = [
+  '---', 'title: Fixes', 'statsu: draft', 'smd: 1', '---', '',
+  ':::warnin Heads up', 'Body.', ':::', '',
+  ':::note{color=bleu} Inside', 'First child :badge[x]{color=gren}.', ':::', '',
+  'Last paragraph.', '',
+].join('\n');
+
+test('readEditorMessage: getFixes and applyFix name a block, a request or a listed fix, and nothing else', () => {
+  const key = 'abc123#0';
+  assert.deepEqual(readEditorMessage({ type: 'getFixes', key, requestId: 3, edits: [] }), { type: 'getFixes', key, requestId: 3 });
+  assert.deepEqual(readEditorMessage({ type: 'applyFix', key, index: 0, version: 4, editId: 'f' }), { type: 'applyFix', key, index: 0, version: 4, editId: 'f' });
+  assert.deepEqual(readEditorMessage({ type: 'applyFix', key, index: 1, version: 4, confirm: true }), { type: 'applyFix', key, index: 1, version: 4, confirm: true });
+  assert.deepEqual(
+    readEditorMessage({ type: 'applyFix', key, index: 1, version: 4, edit: { from: 0, to: 9, insert: 'x' } }),
+    { type: 'applyFix', key, index: 1, version: 4 },
+    'edits from the page are dropped',
+  );
+  for (const bad of [
+    { type: 'getFixes', key }, { type: 'getFixes', key: 'x', requestId: 1 }, { type: 'getFixes', key, requestId: -1 },
+    { type: 'applyFix', key, index: 0 }, { type: 'applyFix', key, version: 1 }, { type: 'applyFix', key, index: -1, version: 1 },
+    { type: 'applyFix', key, index: 50, version: 1 }, { type: 'applyFix', key, index: 0.5, version: 1 },
+    { type: 'applyFix', key, index: 0, version: 1, confirm: 'yes' }, { type: 'applyFix', key, index: 0, version: 1, editId: 'a b' },
+  ]) {
+    assert.equal(readEditorMessage(bad), undefined, JSON.stringify(bad));
+  }
+});
+
+test('fixScope: inside the block\'s lines, other lines too, or other files', () => {
+  const at = (sl: number, sc: number, el: number, ec: number) => ({ start: { line: sl, character: sc }, end: { line: el, character: ec } });
+  const range = { start: 4, end: 7 };
+  assert.equal(fixScope({ edits: [at(4, 0, 6, 9)], elsewhere: false }, range), 'block');
+  assert.equal(fixScope({ edits: [], elsewhere: false }, range), 'block');
+  assert.equal(fixScope({ edits: [at(3, 9, 4, 0)], elsewhere: false }, range), 'lines', 'from the line above');
+  assert.equal(fixScope({ edits: [at(6, 9, 7, 0)], elsewhere: false }, range), 'lines', 'to the start of the line below');
+  assert.equal(fixScope({ edits: [at(5, 0, 5, 1), at(20, 0, 20, 0)], elsewhere: false }, range), 'lines');
+  assert.equal(fixScope({ edits: [at(5, 0, 5, 1)], elsewhere: true }, range), 'files');
+});
+
+test('getFixes lists the fixes for the block\'s own problems; applyFix applies one, by number, inside the block', async () => {
+  const h = harness(FIX_DOC, { quickFixes: coreFixes });
+  const r = h.render();
+  const note = block(r, ':::note');
+  const child = block(r, 'First child');
+  const listed = await h.send({ type: 'getFixes', key: note.key, requestId: 1 });
+  assert.deepEqual(listed, { type: 'fixes', requestId: 1, key: note.key, version: 1, fixes: [{ title: 'Change to "blue"', scope: 'block' }] }, 'not the child\'s fix');
+  const own = await h.send({ type: 'getFixes', key: child.key, requestId: 2 });
+  assert.deepEqual(own?.type === 'fixes' && own.fixes, [{ title: 'Change to "green"', scope: 'block' }]);
+  const fm = await h.send({ type: 'getFixes', key: r.frontMatter!.key, requestId: 3 });
+  assert.deepEqual(fm?.type === 'fixes' && fm.fixes.map((f) => f.title), ['Change to "status"'], 'the front matter too');
+  const before = h.doc.text;
+  const reply = await h.send({ type: 'applyFix', key: child.key, index: 0, version: 1, editId: 'f1' });
+  assert.deepEqual(reply, { type: 'ack', editId: 'f1', version: 2, focus: { line: child.start } });
+  assert.ok(h.doc.text.includes(':badge[x]{color=green}'));
+  onlyLinesChanged(before, h.doc.text, child.start, child.end);
+  // Applied once: the list is gone with the version it belonged to.
+  assert.equal((await h.send({ type: 'applyFix', key: child.key, index: 0, version: 2, editId: 'f2' }))?.type, 'notice');
+});
+
+test('applyFix: a fix that writes outside the block, or to other files, is applied only once the page confirms it', async () => {
+  const outside = (doc: FakeDoc, range: LineRange): Promise<QuickFix[]> => Promise.resolve([{
+    title: 'Close it at the end',
+    edits: [{ start: { line: range.end + 2, character: 0 }, end: { line: range.end + 2, character: 0 } }],
+    elsewhere: false,
+    diagnostics: [],
+    apply: () => doc.applyEdits([{ from: doc.text.length, to: doc.text.length, insert: 'Added.\n' }]),
+  }, {
+    title: 'Rename the file',
+    edits: [],
+    elsewhere: true,
+    diagnostics: [],
+    apply: () => true,
+  }]);
+  const h = harness(FIX_DOC, { quickFixes: outside });
+  const r = h.render();
+  const warn = block(r, ':::warnin');
+  const listed = await h.send({ type: 'getFixes', key: warn.key, requestId: 1 });
+  assert.deepEqual(listed?.type === 'fixes' && listed.fixes.map((f) => f.scope), ['lines', 'files']);
+  const ask = await h.send({ type: 'applyFix', key: warn.key, index: 0, version: 1, editId: 'a' });
+  assert.deepEqual(ask, { type: 'confirmFix', editId: 'a', key: warn.key, index: 0, version: 1, text: 'This fix also changes lines outside this block.' });
+  assert.equal(h.doc.version, 1, 'nothing written');
+  const files = await h.send({ type: 'applyFix', key: warn.key, index: 1, version: 1 });
+  assert.equal(files?.type === 'confirmFix' && files.text, 'This fix also changes other files.');
+  assert.equal((await h.send({ type: 'applyFix', key: warn.key, index: 0, version: 1, confirm: true, editId: 'b' }))?.type, 'ack');
+  assert.ok(h.doc.text.endsWith('Last paragraph.\nAdded.\n'));
+});
+
+test('applyFix refuses a fix for another version, one never listed, and a block changed meanwhile', async () => {
+  const h = harness(FIX_DOC, { quickFixes: coreFixes });
+  const r = h.render();
+  const note = block(r, ':::note');
+  assert.equal((await h.send({ type: 'applyFix', key: note.key, index: 0, version: 1, editId: 'x' }))?.type, 'notice', 'not listed yet');
+  await h.send({ type: 'getFixes', key: note.key, requestId: 1 });
+  assert.equal((await h.send({ type: 'applyFix', key: note.key, index: 3, version: 1, editId: 'y' }))?.type, 'notice', 'no such fix');
+  assert.equal((await h.send({ type: 'applyFix', key: note.key, index: 0, version: 7, editId: 'z' }))?.type, 'notice', 'another version');
+  // A text editor changes the document: the fixes' ranges may be wrong now.
+  const at = h.doc.text.indexOf('Last');
+  h.doc.type(at, at, 'Very ');
+  const stale = await h.send({ type: 'applyFix', key: note.key, index: 0, version: 1, editId: 'w' });
+  assert.deepEqual(stale, { type: 'notice', editId: 'w', text: 'The document changed since the fixes were listed: choose the fix again.' });
+  assert.ok(h.doc.text.includes('color=bleu'), 'nothing applied');
+  // The block itself changed in a text editor: no fixes for it.
+  const body = h.doc.text.indexOf('Inside');
+  h.doc.type(body, body, 'Still ');
+  const gone = await h.send({ type: 'getFixes', key: note.key, requestId: 2 });
+  assert.deepEqual(gone?.type === 'fixes' && [gone.fixes, gone.error], [[], 'That block is no longer in the document.']);
+});
+
+test('getFixes: none without a provider, and none when the document changes while they are fetched', async () => {
+  const plain = harness(FIX_DOC);
+  const r = plain.render();
+  const none = await plain.send({ type: 'getFixes', key: block(r, ':::note').key, requestId: 1 });
+  assert.deepEqual(none?.type === 'fixes' && [none.fixes, none.error], [[], 'Quick fixes are not available here.']);
+  const racing = harness(FIX_DOC, {
+    quickFixes: (doc, range) => {
+      doc.type(doc.text.length, doc.text.length, 'More.\n');
+      return coreFixes(doc, range);
+    },
+  });
+  const r2 = racing.render();
+  const raced = await racing.send({ type: 'getFixes', key: block(r2, ':::note').key, requestId: 1 });
+  assert.deepEqual(raced?.type === 'fixes' && [raced.fixes, raced.error], [[], 'The document changed since the fixes were listed: choose the fix again.']);
+});
+
+test('quick fixes in a CRLF document: the same lines, and the document stays CRLF', async () => {
+  const crlf = FIX_DOC.replaceAll('\n', '\r\n');
+  const h = harness(crlf, { quickFixes: coreFixes });
+  const r = h.render();
+  const warn = block(r, ':::warnin');
+  const listed = await h.send({ type: 'getFixes', key: warn.key, requestId: 1 });
+  assert.deepEqual(listed?.type === 'fixes' && listed.fixes, [{ title: 'Change to ":::warning"', scope: 'block' }]);
+  await h.send({ type: 'applyFix', key: warn.key, index: 0, version: 1, editId: 'c' });
+  assert.ok(h.doc.text.includes('\r\n:::warning Heads up\r\nBody.\r\n'));
+  assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
+  onlyLinesChanged(crlf, h.doc.text, warn.start, warn.end);
+});
+
+// ---------------------------------------------------------------------------
+// The front matter form
+// ---------------------------------------------------------------------------
+
+const FM_DOC = [
+  '---', 'title: "Plan"   # shown', '# owners', 'owners:', '  - "@maya"', 'tags: [a, b]', '---', '', '# Plan', '', 'Text.', '',
+].join('\n');
+
+test('readEditorMessage: setFrontMatter takes a known key and a line of text, a list of them, or null', () => {
+  const key = 'abc123#0';
+  assert.deepEqual(readEditorMessage({ type: 'setFrontMatter', key, name: 'title', value: 'New', editId: 'f' }), { type: 'setFrontMatter', key, name: 'title', value: 'New', editId: 'f' });
+  assert.deepEqual(readEditorMessage({ type: 'setFrontMatter', key, name: 'tags', value: ['a', 'b'] }), { type: 'setFrontMatter', key, name: 'tags', value: ['a', 'b'] });
+  assert.deepEqual(readEditorMessage({ type: 'setFrontMatter', key, name: 'status', value: null }), { type: 'setFrontMatter', key, name: 'status', value: null });
+  for (const bad of [
+    { type: 'setFrontMatter', key, name: 'custom', value: 'x' }, { type: 'setFrontMatter', key, name: '__proto__', value: 'x' },
+    { type: 'setFrontMatter', key, name: 'title', value: 'two\nlines' }, { type: 'setFrontMatter', key, name: 'title', value: 3 },
+    { type: 'setFrontMatter', key, name: 'title' }, { type: 'setFrontMatter', key, name: 'tags', value: ['a', 3] },
+    { type: 'setFrontMatter', key, name: 'tags', value: ['a', ' '] }, { type: 'setFrontMatter', key, name: 'tags', value: Array.from({ length: 201 }, () => 'x') },
+    { type: 'setFrontMatter', key, name: 'title', value: 'x'.repeat(2001) }, { type: 'setFrontMatter', key: 'k', name: 'title', value: 'x' },
+  ]) {
+    assert.equal(readEditorMessage(bad), undefined, JSON.stringify(bad).slice(0, 100));
+  }
+});
+
+test('render: the front matter comes with its fields, or why only its YAML can be edited', () => {
+  const r = harness(FM_DOC).render();
+  const fields = r.frontMatter?.fields ?? [];
+  assert.deepEqual(fields.slice(0, 4).map((f) => [f.name, f.kind, f.value]), [['title', 'text', 'Plan'], ['summary', 'text', ''], ['status', 'select', ''], ['owners', 'list', '@maya']]);
+  assert.equal(fields.find((f) => f.name === 'toc')?.label, 'Table of contents');
+  const anchored = harness('---\na: &x 1\nb: *x\n---\n\nText.\n').render();
+  assert.equal(anchored.frontMatter?.fields, undefined);
+  assert.match(anchored.frontMatter?.formRefused ?? '', /anchors, aliases or tags/);
+});
+
+test('setFrontMatter changes only that key\'s lines, keeping comments and quotes; a new key goes before ---', async () => {
+  const h = harness(FM_DOC);
+  const fm = h.render().frontMatter!;
+  const reply = await h.send({ type: 'setFrontMatter', key: fm.key, name: 'title', value: 'New plan', editId: 'a' });
+  assert.deepEqual(reply, { type: 'ack', editId: 'a', version: 2 }, 'no focus request: focus stays in the form');
+  assert.equal(lines(h.doc.text)[1], 'title: "New plan"   # shown');
+  onlyLinesChanged(FM_DOC, h.doc.text, 1, 2);
+  // Before the next render, the next field still finds the block.
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'owners', value: ['@maya', '@api'], editId: 'b' });
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'status', value: 'draft', editId: 'c' });
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'tags', value: null, editId: 'd' });
+  assert.deepEqual(lines(h.doc.text).slice(0, 8), ['---', 'title: "New plan"   # shown', '# owners', 'owners:', '  - "@maya"', '  - "@api"', 'status: draft', '---']);
+  assert.ok(h.doc.text.endsWith('---\n\n# Plan\n\nText.\n'), 'the body is untouched');
+});
+
+test('setFrontMatter: a key the form can\'t edit opens the YAML; a block that is not the front matter is refused', async () => {
+  const text = '---\ntitle: x\nsummary: |\n  long\n---\n\nText.\n';
+  const h = harness(text);
+  const r = h.render();
+  const fm = r.frontMatter!;
+  const refused = await h.send({ type: 'setFrontMatter', key: fm.key, name: 'summary', value: 'short', editId: 'a' });
+  assert.deepEqual(refused, { type: 'notice', editId: 'a', text: '"summary" is written as a block scalar (| or >): edit it as text.', fallback: fm.key });
+  assert.equal(h.doc.text, text);
+  const para = block(r, 'Text.');
+  assert.equal((await h.send({ type: 'setFrontMatter', key: para.key, name: 'title', value: 'y', editId: 'b' }))?.type, 'notice');
+  assert.equal(h.doc.text, text);
+  // Changed in a text editor meanwhile: a conflict, nothing written.
+  h.doc.type(4, 11, 'title: other');
+  assert.equal((await h.send({ type: 'setFrontMatter', key: fm.key, name: 'title', value: 'z', editId: 'c' }))?.type, 'conflict');
+});
+
+test('setFrontMatter in a CRLF document keeps CRLF', async () => {
+  const crlf = FM_DOC.replaceAll('\n', '\r\n');
+  const h = harness(crlf);
+  const fm = h.render().frontMatter!;
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'owners', value: ['@a', '@maya'], editId: 'a' });
+  await h.send({ type: 'setFrontMatter', key: fm.key, name: 'lang', value: 'de', editId: 'b' });
+  assert.ok(h.doc.text.startsWith('---\r\ntitle: "Plan"   # shown\r\n# owners\r\nowners:\r\n  - "@a"\r\n  - "@maya"\r\ntags: [a, b]\r\nlang: de\r\n---\r\n'), JSON.stringify(h.doc.text));
+  assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
+});
+
+// ---------------------------------------------------------------------------
+// Drag and drop: move to a sibling boundary
+// ---------------------------------------------------------------------------
+
+test('readEditorMessage: a move goes up, down, before a sibling\'s key or to the end, and only one of them', () => {
+  const key = 'abc123#0';
+  assert.deepEqual(readEditorMessage({ type: 'move', key, to: 'def456#1', editId: 'd' }), { type: 'move', key, to: 'def456#1', editId: 'd' });
+  assert.deepEqual(readEditorMessage({ type: 'move', key, to: 'end' }), { type: 'move', key, to: 'end' });
+  for (const bad of [
+    { type: 'move', key }, { type: 'move', key, to: 'start' }, { type: 'move', key, to: 'not a key' }, { type: 'move', key, to: 3 },
+    { type: 'move', key, to: 'end', direction: 'up' }, { type: 'move', key, to: { line: 3 } },
+  ]) {
+    assert.equal(readEditorMessage(bad), undefined, JSON.stringify(bad));
+  }
+});
+
+test('move to: a dropped block goes before the sibling named, or after the last one; never into another container', async () => {
+  const h = harness(DOC);
+  let r = h.render();
+  const last = block(r, 'Last');
+  const reply = await h.send({ type: 'move', key: last.key, to: block(r, '# Plan').key, editId: 'd1' });
+  assert.equal(reply?.type, 'ack');
+  assert.ok(h.doc.text.startsWith('---\ntitle: Plan\n---\n\nLast paragraph.\n\n# Plan\n\nFirst paragraph\n'), h.doc.text);
+  assert.deepEqual((reply as { focus: unknown }).focus, { line: 4 });
+  r = h.render();
+  await h.send({ type: 'move', key: block(r, 'Last').key, to: 'end', editId: 'd2' });
+  assert.equal(h.doc.text, DOC, 'at the end: after the link definitions, which the page shows');
+  r = h.render();
+  await h.send({ type: 'move', key: block(r, 'Last').key, to: r.blocks.find((b) => b.kind === 'gap' && !b.blank)!.key, editId: 'd2b' });
+  assert.ok(h.doc.text.endsWith(':::\n\nLast paragraph.\n\n[ref]: https://example.com\n'), 'before them');
+  await h.send({ type: 'move', key: block(h.render(), 'Last').key, to: 'end', editId: 'd2c' });
+  assert.equal(h.doc.text, DOC);
+  r = h.render();
+  // Children, among their own siblings.
+  await h.send({ type: 'move', key: block(r, '- [ ]').key, to: block(r, 'Inside').key, editId: 'd3' });
+  assert.ok(h.doc.text.includes(':::warning{collapsible} Heads up\n- [ ] a task\n\nInside the callout.\n:::'), h.doc.text);
+  r = h.render();
+  const before = h.doc.text;
+  const into = await h.send({ type: 'move', key: block(r, 'Last').key, to: block(r, 'Inside').key, editId: 'd4' });
+  assert.equal(into?.type, 'notice', 'a top-level block is not dropped into a container');
+  const out = await h.send({ type: 'move', key: block(r, 'Inside').key, to: block(r, '# Plan').key, editId: 'd5' });
+  assert.equal(out?.type, 'notice', 'a child is not dropped out of its container');
+  const here = await h.send({ type: 'move', key: block(r, 'Last').key, to: 'end', editId: 'd6' });
+  assert.deepEqual(here, { type: 'notice', editId: 'd6', text: 'The block is already there.' });
+  const gone = await h.send({ type: 'move', key: block(r, 'Last').key, to: 'zzz999#0', editId: 'd7' });
+  assert.equal(gone?.type, 'notice', 'a key the extension never gave');
+  assert.equal(h.doc.text, before);
+});
+
+test('move to: next to a container, a blank line keeps the block off its fences (the 1.8.0 limitation)', async () => {
+  const text = '# T\n\n:::note\nIn.\n:::\nTight after.\n';
+  const h = harness(text);
+  const r = h.render();
+  await h.send({ type: 'move', key: block(r, 'Tight').key, to: block(r, ':::note').key, editId: 'a' });
+  assert.equal(h.doc.text, '# T\n\nTight after.\n\n:::note\nIn.\n:::\n', 'a blank line before the opening line, none left behind after the closing one');
+  const r2 = h.render();
+  await h.send({ type: 'move', key: block(r2, 'Tight').key, to: 'end', editId: 'b' });
+  assert.equal(h.doc.text, '# T\n\n:::note\nIn.\n:::\n\nTight after.\n', 'and a blank line after the closing one');
+});
+
+test('move to: the target found where a text editor moved it, and a CRLF document stays CRLF', async () => {
+  const crlf = DOC.replaceAll('\n', '\r\n');
+  const h = harness(crlf);
+  const r = h.render();
+  // Meanwhile a text editor adds lines at the top of the body.
+  const at = h.doc.text.indexOf('# Plan');
+  h.doc.type(at, at, 'Added.\r\n\r\n');
+  await h.send({ type: 'move', key: block(r, 'Last').key, to: block(r, 'First').key, editId: 'a' });
+  assert.ok(h.doc.text.includes('Added.\r\n\r\n# Plan\r\n\r\nLast paragraph.\r\n\r\nFirst paragraph\r\n'), JSON.stringify(h.doc.text));
+  assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
+});
+
+// ---------------------------------------------------------------------------
+// Pasted and dropped images
+// ---------------------------------------------------------------------------
+
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]).toString('base64');
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16]).toString('base64');
+const SVG = Buffer.from('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>').toString('base64');
+
+/** A saveImage that records what it was given, and names files as the provider would. */
+function imageSaver(saved: { bytes: Uint8Array; extension: string; name?: string }[]): NonNullable<SessionOptions['saveImage']> {
+  return (bytes, extension, name) => {
+    saved.push({ bytes, extension, name });
+    const file = `images/${name?.replace(/\.\w+$/, '') ?? 'plan-20261015-101500'}${extension}`;
+    return Promise.resolve({ markdown: `![image](${file})`, path: `docs/${file}` });
+  };
+}
+
+test('readEditorMessage: an image is a known type, base64 bytes of at most 10 MB, and a place; never a path', () => {
+  const key = 'abc123#0';
+  assert.deepEqual(readEditorMessage({ type: 'image', mime: 'image/png', data: PNG, atKey: key, editId: 'i' }), { type: 'image', mime: 'image/png', data: PNG, atKey: key, editId: 'i' });
+  assert.deepEqual(readEditorMessage({ type: 'image', mime: 'image/svg+xml', data: SVG, name: 'logo.svg', position: 'end', path: '/etc/x' }), { type: 'image', mime: 'image/svg+xml', data: SVG, name: 'logo.svg', position: 'end' }, 'a path from the page is dropped');
+  const big = 'A'.repeat(Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 4);
+  for (const bad of [
+    { type: 'image', mime: 'image/tiff', data: PNG, position: 'end' }, { type: 'image', mime: 'text/html', data: PNG, position: 'end' },
+    { type: 'image', mime: 'image/png', data: 'not base64!', position: 'end' }, { type: 'image', mime: 'image/png', data: 'abc', position: 'end' },
+    { type: 'image', mime: 'image/png', data: '', position: 'end' }, { type: 'image', mime: 'image/png', data: big, position: 'end' },
+    { type: 'image', mime: 'image/png', data: PNG }, { type: 'image', mime: 'image/png', data: PNG, atKey: 'x' },
+    { type: 'image', mime: 'image/png', data: PNG, position: 'start' }, { type: 'image', mime: 'image/png', data: PNG, position: 'end', name: 'a\nb' },
+    { type: 'image', mime: '__proto__', data: PNG, position: 'end' },
+  ]) {
+    assert.equal(readEditorMessage(bad), undefined, JSON.stringify(bad).slice(0, 100));
+  }
+});
+
+test('imageBytes: the bytes must be the image type they say they are', () => {
+  assert.ok(imageBytes('image/png', PNG) instanceof Uint8Array);
+  assert.ok(imageBytes('image/jpeg', JPEG) instanceof Uint8Array);
+  assert.ok(imageBytes('image/svg+xml', SVG) instanceof Uint8Array);
+  assert.deepEqual(imageBytes('image/png', JPEG), { refused: 'That file is not the PNG it says it is.' });
+  assert.deepEqual(imageBytes('image/svg+xml', Buffer.from('<html><script>x</script>').toString('base64')), { refused: 'That file is not the SVG it says it is.' });
+  assert.deepEqual(imageBytes('image/gif', Buffer.from('GIF89a').toString('base64')) instanceof Uint8Array, true);
+  assert.deepEqual(imageBytes('image/webp', Buffer.from('RIFF\0\0\0\0WEBPVP8 ').toString('base64')) instanceof Uint8Array, true);
+  assert.deepEqual(imageBytes('image/avif', Buffer.from('\0\0\0\x1cftypavif').toString('base64')) instanceof Uint8Array, true);
+});
+
+test('image: the host saves the bytes and inserts a link after the block, adding only new lines', async () => {
+  const saved: { bytes: Uint8Array; extension: string; name?: string }[] = [];
+  const h = harness(DOC, { saveImage: imageSaver(saved) });
+  const r = h.render();
+  const para = block(r, 'First');
+  const before = h.doc.text;
+  const reply = await h.send({ type: 'image', mime: 'image/png', data: PNG, atKey: para.key, editId: 'i1' });
+  assert.equal(reply?.type, 'ack');
+  assert.deepEqual([saved[0].extension, saved[0].name, saved[0].bytes.length], ['.png', undefined, 16], 'the extension from the type; the name is the host\'s');
+  assert.ok(h.doc.text.includes('First paragraph\nsecond line.\n\n![image](images/plan-20261015-101500.png)\n\n:::warning'), h.doc.text);
+  const notice = h.sent.find((m) => m.type === 'notice');
+  assert.deepEqual(notice, { type: 'notice', text: 'Image saved as docs/images/plan-20261015-101500.png.' });
+  onlyInsertedLines(before, h.doc.text);
+  // Dropped, with its name; at the end of the document.
+  await h.send({ type: 'image', mime: 'image/jpeg', data: JPEG, name: 'photo.jpeg', position: 'end', editId: 'i2' });
+  assert.equal(saved[1].name, 'photo.jpeg');
+  assert.ok(h.doc.text.endsWith('Last paragraph.\n\n![image](images/photo.jpg)\n'), JSON.stringify(h.doc.text));
+});
+
+test('image: refused when it is not what it says, when nothing can save it, when saving fails or the block changed', async () => {
+  const saved: { bytes: Uint8Array; extension: string; name?: string }[] = [];
+  const h = harness(DOC, { saveImage: imageSaver(saved) });
+  const r = h.render();
+  const para = block(r, 'First');
+  assert.deepEqual(await h.send({ type: 'image', mime: 'image/png', data: JPEG, atKey: para.key, editId: 'a' }), { type: 'notice', editId: 'a', text: 'That file is not the PNG it says it is.' });
+  assert.equal(saved.length, 0, 'nothing written');
+  // The block it was to follow changed in a text editor: nothing is saved.
+  const at = h.doc.text.indexOf('second line');
+  h.doc.type(at, at, 'a ');
+  assert.equal((await h.send({ type: 'image', mime: 'image/png', data: PNG, atKey: para.key, editId: 'b' }))?.type, 'conflict');
+  assert.equal(saved.length, 0);
+  const plain = harness(DOC);
+  assert.deepEqual(await plain.send({ type: 'image', mime: 'image/png', data: PNG, position: 'end', editId: 'c' }), { type: 'notice', editId: 'c', text: 'Images can\'t be saved here.' });
+  const failing = harness(DOC, { saveImage: () => Promise.resolve({ refused: 'Save the document first: images are saved in a folder next to it.' }) });
+  const reply = await failing.send({ type: 'image', mime: 'image/png', data: PNG, position: 'end', editId: 'd' });
+  assert.deepEqual(reply, { type: 'notice', editId: 'd', text: 'Save the document first: images are saved in a folder next to it.' });
+  assert.equal(failing.doc.text, DOC);
+  // Saved, but the block changed while the file was written: the link is given in the notice, nothing inserted.
+  const racing = harness(DOC, {
+    saveImage: () => {
+      const p = racing.doc.text.indexOf('second line');
+      racing.doc.type(p, p, 'x ');
+      return Promise.resolve({ markdown: '![a](images/a.png)', path: 'docs/images/a.png' });
+    },
+  });
+  const rr = racing.render();
+  const late = await racing.send({ type: 'image', mime: 'image/png', data: PNG, atKey: block(rr, 'First').key, editId: 'e' });
+  assert.equal(late?.type === 'notice' && late.text, 'The image is saved as docs/images/a.png, but the block it was to follow has changed. Link it with ![a](images/a.png)');
+  assert.doesNotMatch(racing.doc.text, /!\[a\]/);
+});
+
+test('image in a CRLF document: the new lines get CRLF', async () => {
+  const crlf = DOC.replaceAll('\n', '\r\n');
+  const h = harness(crlf, { saveImage: imageSaver([]) });
+  const r = h.render();
+  await h.send({ type: 'image', mime: 'image/png', data: PNG, atKey: block(r, '# Plan').key, editId: 'i' });
+  assert.ok(h.doc.text.includes('# Plan\r\n\r\n![image](images/plan-20261015-101500.png)\r\n\r\nFirst paragraph'), JSON.stringify(h.doc.text));
+  assert.doesNotMatch(h.doc.text.replaceAll('\r\n', ''), /\n/);
+});
+
+/** `after` is `before` with whole lines added and none changed or removed. */
+function onlyInsertedLines(before: string, after: string): void {
+  const a = lines(before);
+  const b = lines(after);
+  let i = 0;
+  for (const line of b) if (i < a.length && line === a[i]) i++;
+  assert.equal(i, a.length, 'every line of before is in after, in order');
+}

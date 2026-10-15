@@ -9,6 +9,7 @@
 import { containerHeader, lexAttrs, removeContainerAttr, setContainerAttr, setContainerTitle } from './core/attrEdit';
 import type { BlockRender, Segment } from './core/blocks';
 import { parseFrontMatter } from './core/frontmatter';
+import { FRONT_MATTER_FIELDS, frontMatterFields, isFrontMatterRefusal, setFrontMatterValue } from './core/frontMatterEdit';
 import { editInline, scanInline, SPAN, type InlineChange, type InlineItem, type RenderedInline } from './core/inlineEdit';
 import { applyLineEdits, deleteBlock, insertBlock, lineEditToTextEdit, minimalEdit, moveBlock, splitLines, type LineEdit, type LineRange, type TextEdit } from './core/sourceEdit';
 import { CONTAINERS, INLINE_DIRECTIVES, NAMED_COLORS, PRIORITY_VALUES, type ContainerSpec, type InlineDirectiveSpec } from './core/spec';
@@ -26,6 +27,8 @@ import { substituteLine, type Variables } from './core/variables';
 /** Where a template goes when it isn't put after a block. */
 export type InsertPosition = 'start' | 'end';
 export type MoveDirection = 'up' | 'down';
+/** Where a dropped block goes when it isn't put before a sibling: after the last one. */
+export const END = 'end';
 
 /** What the editor page asks for. Anything else it sends is ignored. */
 export type EditorMessage =
@@ -33,12 +36,16 @@ export type EditorMessage =
   | { type: 'edit'; key: string; baseVersion: number; oldText: string; newText: string; editId: string }
   | { type: 'insert'; template: string; atKey?: string; position?: InsertPosition; editId?: string }
   | { type: 'delete'; key: string; editId?: string }
-  | { type: 'move'; key: string; direction: MoveDirection; editId?: string }
+  | MoveMessage
   | { type: 'setAttr'; key: string; name: string; value: string | true | null; editId?: string }
   | { type: 'setTitle'; key: string; title: string; editId?: string }
   | SetInlineMessage
   | TableMessage
   | { type: 'addFrontMatter'; editId?: string }
+  | SetFrontMatterMessage
+  | ImageMessage
+  | { type: 'getFixes'; key: string; requestId: number }
+  | ApplyFixMessage
   | { type: 'toggleTask'; line: number }
   | { type: 'openLink'; href: string }
   | { type: 'revealLine'; line: number }
@@ -70,6 +77,54 @@ export type TableMessage =
   | { type: 'tableCol'; key: string; op: 'insert' | 'delete' | 'align'; at: number; align?: TableAlign; editId?: string }
   | { type: 'tableAlign'; key: string; editId?: string };
 
+/**
+ * Move a block among its siblings: one place up or down (`direction`, Alt+↑/↓), or, dropped, before the sibling
+ * block `to` names, or after the last one (`to: 'end'`).
+ */
+export type MoveMessage =
+  | { type: 'move'; key: string; direction: MoveDirection; to?: undefined; editId?: string }
+  | { type: 'move'; key: string; to: string; direction?: undefined; editId?: string };
+
+/**
+ * An image pasted or dropped on the page: its type and bytes (base64), and, dropped, the file's name, which the host
+ * may use for the name it gives the file. It goes after the block `atKey`, or at the end of the document. The host
+ * decides where the file is saved and what it is called.
+ */
+export interface ImageMessage {
+  type: 'image';
+  mime: string;
+  data: string;
+  name?: string;
+  atKey?: string;
+  position?: 'end';
+  editId?: string;
+}
+
+/**
+ * Set a known front matter key (FRONT_MATTER_FIELDS) of the front matter block `key`: a text, a list's items, or
+ * null to remove the key.
+ */
+export interface SetFrontMatterMessage {
+  type: 'setFrontMatter';
+  key: string;
+  name: string;
+  value: string | string[] | null;
+  editId?: string;
+}
+
+/**
+ * Apply the `index`th quick fix the host listed for a block (`fixes`) at document `version`. The page names the fix,
+ * never its edits. `confirm`: the user agreed that it also changes lines outside the block, or other files.
+ */
+export interface ApplyFixMessage {
+  type: 'applyFix';
+  key: string;
+  index: number;
+  version: number;
+  confirm?: true;
+  editId?: string;
+}
+
 /** The messages the session itself answers; the provider runs the others (toggleTask, openLink, revealLine). */
 export type SessionMessage = Exclude<EditorMessage, { type: 'toggleTask' | 'openLink' | 'revealLine' }>;
 
@@ -81,7 +136,8 @@ export interface BlockProblems {
   messages: string[];
 }
 
-export type FormFieldKind = 'title' | 'select' | 'flag' | 'text' | 'color' | 'date';
+/** A form control: 'list' is a text field of items separated by commas (front matter lists). */
+export type FormFieldKind = 'title' | 'select' | 'flag' | 'text' | 'color' | 'date' | 'list';
 
 /** One control of a container's header form. */
 export interface FormField {
@@ -93,6 +149,8 @@ export interface FormField {
   value: string;
   /** Choices of a select or color field ('' first: not set). */
   options?: string[];
+  /** Why the form can't change this field (its text must be edited instead). */
+  refused?: string;
 }
 
 /** A container's header as a form: its title and the attributes its kind takes. */
@@ -156,6 +214,9 @@ export interface FrontMatterView {
   end: number;
   source: string;
   problems?: BlockProblems;
+  /** The known keys as form fields (setFrontMatter); left out when only the YAML can be edited, and `formRefused` says why. */
+  fields?: FormField[];
+  formRefused?: string;
 }
 
 /** A template the insert menu offers. */
@@ -196,8 +257,33 @@ export interface FocusRequest {
   cell?: TableCellRef;
 }
 
+/**
+ * Where a quick fix changes the document: only the block's own lines, lines outside it too, or other files as
+ * well (or it creates, renames or deletes files).
+ */
+export type FixScope = 'block' | 'lines' | 'files';
+
+/** A quick fix as the page lists it: its title and what it changes. */
+export interface FixView {
+  title: string;
+  scope: FixScope;
+}
+
+/** The quick fixes of a block at a document version; `error` says why there are none to offer. */
+export interface FixesMessage {
+  type: 'fixes';
+  requestId: number;
+  key: string;
+  version: number;
+  fixes: FixView[];
+  error?: string;
+}
+
 export type HostMessage =
   | RenderMessage
+  | FixesMessage
+  /** A fix that changes more than the block: the page asks the user, then sends applyFix again with `confirm`. */
+  | { type: 'confirmFix'; editId?: string; key: string; index: number; version: number; text: string }
   | { type: 'ack'; editId: string; version: number; focus?: FocusRequest }
   | { type: 'conflict'; editId: string; key: string; currentText: string | null }
   /** `fallback`: the key of a block to edit in its source instead (an inline item the form can't change). */
@@ -298,6 +384,89 @@ function readTableCol(m: Raw): EditorMessage | undefined {
   return align ? withId({ type: 'tableCol', key: m.key, op: 'align', at: m.at, align }, m.editId) : undefined;
 }
 
+/** The image types the page may send, and the extension each is saved with (as editing.ts's imageExtension). */
+export const IMAGE_TYPES: Readonly<Record<string, string>> = {
+  'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp', 'image/bmp': '.bmp', 'image/avif': '.avif', 'image/svg+xml': '.svg',
+};
+/** The largest image the page may send: 10 MB, and its base64 length. */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_BASE64 = Math.ceil(MAX_IMAGE_BYTES / 3) * 4;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+
+function readImage(m: Raw): EditorMessage | undefined {
+  const typed = typeof m.mime === 'string' && Object.hasOwn(IMAGE_TYPES, m.mime);
+  const data = typeof m.data === 'string' && m.data.length > 0 && m.data.length <= MAX_IMAGE_BASE64 && m.data.length % 4 === 0 && BASE64.test(m.data);
+  if (!typed || !data || (m.name !== undefined && !isLine(m.name)) || !optionalId(m.editId)) return undefined;
+  const message: ImageMessage = { type: 'image', mime: m.mime as string, data: m.data as string };
+  if (typeof m.name === 'string') message.name = m.name.slice(0, 200);
+  if (m.atKey !== undefined) {
+    if (!isKey(m.atKey)) return undefined;
+    message.atKey = m.atKey;
+  } else if (m.position !== 'end') {
+    return undefined;
+  } else {
+    message.position = 'end';
+  }
+  return withId(message, m.editId);
+}
+
+/** The first bytes of each image type (an SVG is text: it is checked for its `<svg` tag instead). */
+const MAGIC: Readonly<Record<string, (b: Uint8Array) => boolean>> = {
+  'image/png': (b) => starts(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  'image/jpeg': (b) => starts(b, [0xff, 0xd8, 0xff]),
+  'image/gif': (b) => starts(b, [0x47, 0x49, 0x46, 0x38]),
+  'image/webp': (b) => starts(b, [0x52, 0x49, 0x46, 0x46]) && ascii(b, 8, 12) === 'WEBP',
+  'image/bmp': (b) => starts(b, [0x42, 0x4d]),
+  'image/avif': (b) => ascii(b, 4, 8) === 'ftyp' && /^avi[fs]$/.test(ascii(b, 8, 12)),
+  'image/svg+xml': (b) => /<svg[\s>]/.test(ascii(b, 0, Math.min(b.length, 4096))),
+};
+const starts = (b: Uint8Array, magic: readonly number[]) => magic.every((byte, i) => b[i] === byte);
+const ascii = (b: Uint8Array, from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
+
+/** An image's bytes, if they are what its type says (by their first bytes); else why it is refused. */
+export function imageBytes(mime: string, data: string): Uint8Array | { refused: string } {
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+  } catch {
+    return { refused: 'The image could not be read.' };
+  }
+  if (bytes.length > MAX_IMAGE_BYTES) return { refused: 'The image is larger than 10 MB.' };
+  const check = MAGIC[mime];
+  return check?.(bytes) ? bytes : { refused: `That file is not the ${IMAGE_TYPES[mime]?.slice(1).toUpperCase() ?? 'image'} it says it is.` };
+}
+
+/** A move: Alt+↑/↓ (`direction`), or a drop (`to`: the key of a sibling block, or 'end'), not both. */
+function readMove(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || !optionalId(m.editId)) return undefined;
+  if (m.to === undefined) return m.direction === 'up' || m.direction === 'down' ? withId({ type: 'move', key: m.key, direction: m.direction }, m.editId) : undefined;
+  return m.direction === undefined && (isKey(m.to) || m.to === END) ? withId({ type: 'move', key: m.key, to: m.to }, m.editId) : undefined;
+}
+
+/** The most items a front matter list may get from the form. */
+const MAX_LIST_ITEMS = 200;
+/** A single-line value: no line breaks. */
+const isLine = (v: unknown): v is string => isText(v, MAX_VALUE) && !/[\r\n]/.test(v);
+
+function readSetFrontMatter(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || typeof m.name !== 'string' || !FRONT_MATTER_FIELDS.includes(m.name) || !optionalId(m.editId)) return undefined;
+  const list = Array.isArray(m.value) && m.value.length <= MAX_LIST_ITEMS && m.value.every((item) => isLine(item) && item.trim() !== '');
+  if (m.value !== null && !isLine(m.value) && !list) return undefined;
+  const value = list ? [...(m.value as string[])] : (m.value as string | null);
+  return withId({ type: 'setFrontMatter', key: m.key, name: m.name, value }, m.editId);
+}
+
+/** The most quick fixes the host lists for a block. */
+export const MAX_FIXES = 50;
+
+function readApplyFix(m: Raw): EditorMessage | undefined {
+  if (!isKey(m.key) || !isCount(m.index) || m.index >= MAX_FIXES || !isCount(m.version) || !optionalId(m.editId)) return undefined;
+  if (m.confirm !== undefined && m.confirm !== true) return undefined;
+  const message: ApplyFixMessage = { type: 'applyFix', key: m.key, index: m.index, version: m.version };
+  if (m.confirm) message.confirm = true;
+  return withId(message, m.editId);
+}
+
 const READERS: Readonly<Record<string, Reader>> = {
   ready: () => ({ type: 'ready' }),
   edit: (m) =>
@@ -306,10 +475,7 @@ const READERS: Readonly<Record<string, Reader>> = {
       : undefined,
   insert: readInsert,
   delete: (m) => (isKey(m.key) && optionalId(m.editId) ? withId({ type: 'delete', key: m.key }, m.editId) : undefined),
-  move: (m) =>
-    isKey(m.key) && (m.direction === 'up' || m.direction === 'down') && optionalId(m.editId)
-      ? withId({ type: 'move', key: m.key, direction: m.direction }, m.editId)
-      : undefined,
+  move: readMove,
   setAttr: readSetAttr,
   setTitle: (m) =>
     isKey(m.key) && isText(m.title, MAX_VALUE) && optionalId(m.editId) ? withId({ type: 'setTitle', key: m.key, title: m.title }, m.editId) : undefined,
@@ -319,6 +485,10 @@ const READERS: Readonly<Record<string, Reader>> = {
   tableCol: readTableCol,
   tableAlign: (m) => (isKey(m.key) && optionalId(m.editId) ? withId({ type: 'tableAlign', key: m.key }, m.editId) : undefined),
   addFrontMatter: (m) => (optionalId(m.editId) ? withId({ type: 'addFrontMatter' }, m.editId) : undefined),
+  setFrontMatter: readSetFrontMatter,
+  image: readImage,
+  getFixes: (m) => (isKey(m.key) && isCount(m.requestId) ? { type: 'getFixes', key: m.key, requestId: m.requestId } : undefined),
+  applyFix: readApplyFix,
   toggleTask: (m) => (isCount(m.line) ? { type: 'toggleTask', line: m.line } : undefined),
   openLink: (m) => (isText(m.href, 4096) && m.href !== '' ? { type: 'openLink', href: m.href } : undefined),
   revealLine: (m) => (isCount(m.line) ? { type: 'revealLine', line: m.line } : undefined),
@@ -453,6 +623,40 @@ export interface SessionOptions {
   scan?(lines: readonly string[]): InlineItem[];
   /** A table block's lines read for the grid (readTable with the render's allowHtml). */
   table?(lines: readonly string[]): TableSource | TableRefusal;
+  /**
+   * Save an image's bytes as a new file where the editor saves images (the host picks the folder and the name, from
+   * the dropped file's `name` or the document's); its Markdown image link, relative to the document, and its path
+   * as the notice shows it; or why it can't be saved.
+   */
+  saveImage?(bytes: Uint8Array, extension: string, name: string | undefined): PromiseLike<{ markdown: string; path: string } | { refused: string }>;
+  /** The quick fixes VS Code has for the problems on lines [start, end): code actions of kind quickfix with an edit. */
+  quickFixes?(range: LineRange): PromiseLike<readonly QuickFix[]>;
+}
+
+/** A position in the document: a zero-based line and a UTF-16 column. */
+export interface DocPosition {
+  line: number;
+  character: number;
+}
+
+/** A quick fix as a provider made it. The session checks where it writes; `apply` writes its whole edit as made. */
+export interface QuickFix {
+  title: string;
+  /** The ranges its text edits replace in this document. */
+  edits: readonly { start: DocPosition; end: DocPosition }[];
+  /** It also changes other files, or creates, renames or deletes files. */
+  elsewhere: boolean;
+  /** The lines of the problems it fixes (empty when the provider didn't say). */
+  diagnostics: readonly number[];
+  /** Apply its WorkspaceEdit exactly as the provider made it; false when that fails. */
+  apply(): PromiseLike<boolean> | boolean;
+}
+
+/** Where a fix writes, against a block's lines [start, end): inside them only, other lines too, or other files. */
+export function fixScope(fix: Pick<QuickFix, 'edits' | 'elsewhere'>, range: LineRange): FixScope {
+  if (fix.elsewhere) return 'files';
+  // An edit that reaches the start of the line after the block changes that line's place: it is outside.
+  return fix.edits.every((e) => e.start.line >= range.start && e.end.line < range.end) ? 'block' : 'lines';
 }
 
 /** What the integration test (smd._blockEditorStatus) reads. */
@@ -490,10 +694,17 @@ const FLAGS = new Set(['collapsible', 'open']);
 const COLOR_KEYS = ['color', 'bg', 'border'];
 const COLOR_ATTRS = new Set(['accent', ...COLOR_KEYS]);
 const LABELS: Readonly<Record<string, string>> = { color: 'Text color', bg: 'Background', border: 'Border', accent: 'Accent color', title: 'Title' };
-const SEVERITY_RANK: Readonly<Record<DiagnosticSeverity, number>> = { error: 0, warning: 1, info: 2 };
+const FRONT_MATTER_LABELS: Readonly<Record<string, string>> = {
+  toc: 'Table of contents', smd: 'Styled Markdown version', lang: 'Language', related: 'Related documents', accent: 'Accent color',
+};
+const SEVERITY_RANK:Readonly<Record<DiagnosticSeverity, number>> = { error: 0, warning: 1, info: 2 };
 const NOT_FOUND = 'That block is no longer in the document.';
 const TABLE = 'table';
 const TABLE_SOURCE = 'Edit the table\'s source instead.';
+const NO_FIXES = 'Quick fixes are not available here.';
+const FIXES_STALE = 'The document changed since the fixes were listed: choose the fix again.';
+/** How many blocks' quick fixes are kept. */
+const MAX_FIX_CACHE = 16;
 
 const lf = (text: string) => text.replaceAll('\r\n', '\n');
 const isBlankText = (text: string) => text.trim() === '';
@@ -671,13 +882,39 @@ function inlineView(index: number, rendered: RenderedInline, item: InlineItem | 
   return view;
 }
 
-/** The problems on lines [start, end). */
-function problemsIn(diagnostics: readonly LineDiagnostic[], start: number, end: number): BlockProblems | undefined {
-  const inside = diagnostics.filter((d) => d.line >= start && d.line < end);
-  if (!inside.length) return undefined;
+/** A list of problems as a block shows them: how many, the worst severity, and the first messages. */
+function problemsOf(inside: readonly LineDiagnostic[] | undefined): BlockProblems | undefined {
+  if (!inside?.length) return undefined;
   const severity = inside.reduce<DiagnosticSeverity>((worst, d) => (SEVERITY_RANK[d.severity] < SEVERITY_RANK[worst] ? d.severity : worst), 'info');
   const messages = inside.slice(0, MAX_PROBLEM_MESSAGES).map((d) => `Line ${d.line + 1}: ${d.message}`);
   return { count: inside.length, severity, messages };
+}
+
+/**
+ * The innermost segment a line belongs to, as the page shows segments: a top-level segment (the front matter, a
+ * block or a gap), then, inside a container, the child block that holds it. A line of a container that no child
+ * block holds (its fences, a gap inside it) belongs to the container.
+ */
+export function innermostSegment(segments: readonly Segment[], line: number): Segment | undefined {
+  const holder = segments.find((s) => s.start <= line && line < s.end);
+  if (!holder?.children) return holder;
+  return innermostSegment(holder.children.filter((c) => c.kind === BLOCK), line) ?? holder;
+}
+
+/** The problems of each segment, by key. */
+type Problems = ReadonlyMap<string, readonly LineDiagnostic[]>;
+
+/** Each diagnostic with the innermost segment its line is in, by that segment's key. */
+export function problemOwners(segments: readonly Segment[], diagnostics: readonly LineDiagnostic[]): Map<string, LineDiagnostic[]> {
+  const owners = new Map<string, LineDiagnostic[]>();
+  for (const d of diagnostics) {
+    const owner = innermostSegment(segments, d.line);
+    if (!owner) continue;
+    const list = owners.get(owner.key);
+    if (list) list.push(d);
+    else owners.set(owner.key, [d]);
+  }
+  return owners;
 }
 
 /** Every segment of a tree, depth first. */
@@ -701,6 +938,12 @@ function moveTarget(siblings: readonly Segment[], index: number, direction: Move
   }
   for (let i = index + 1; i < siblings.length; i++) if (siblings[i].kind === BLOCK) return siblings[i].end;
   return undefined;
+}
+
+/** Why a block didn't move: it is at the edge for Alt+↑/↓, or already where it was dropped. */
+function moveRefusal(direction: MoveDirection | undefined): string {
+  if (!direction) return 'The block is already there.';
+  return direction === 'up' ? 'The block is already at the top.' : 'The block is already at the bottom.';
 }
 
 /** A YAML scalar for a title: plain when that is safe, else double-quoted as JSON (which YAML reads). */
@@ -752,6 +995,8 @@ export class BlockEditorSession {
   private inlineRendered: { version: number; items: Map<string, readonly RenderedInline[]> } = { version: -1, items: new Map() };
   /** The document version the session's last edit made. */
   private applied = 0;
+  /** The quick fixes last listed for each block, and the document version they belong to. */
+  private readonly fixCache = new Map<string, { version: number; range: LineRange; fixes: readonly QuickFix[] }>();
   private readonly waiting = new Map<number, () => void>();
 
   constructor(
@@ -807,7 +1052,7 @@ export class BlockEditorSession {
     const version = this.doc.version;
     const result = this.options.render(text);
     const lines = splitLines(text);
-    const diagnostics = this.options.diagnostics?.() ?? [];
+    const owners = problemOwners(result.segments, this.options.diagnostics?.() ?? []);
     this.known = new Map();
     for (const s of allSegments(result.segments)) {
       this.known.set(s.key, { start: s.start, end: s.end, version, text: lines.slice(s.start, s.end).join('\n') });
@@ -816,13 +1061,13 @@ export class BlockEditorSession {
     const inline = new Map(result.blocks.map((b) => [b.key, b.inline]));
     this.inlineRendered = { version, items: new Map() };
     const view = (s: Segment): BlockView => {
-      const v = this.blockView(s, lines, html, diagnostics);
+      const v = this.blockView(s, lines, html, owners);
       const items = this.inlineViews(s.key, lines.slice(s.start, s.end), inline.get(s.key), result.frontMatter);
       if (items) v.inline = items;
       return v;
     };
     const first = result.segments[0];
-    const frontMatter = first?.kind === FRONT_MATTER ? this.frontMatterView(first, lines, diagnostics) : null;
+    const frontMatter = first?.kind === FRONT_MATTER ? this.frontMatterView(first, lines, owners) : null;
     const message: RenderMessage = {
       type: 'render',
       version,
@@ -855,14 +1100,18 @@ export class BlockEditorSession {
     return this.options.scan?.(lines) ?? scanInline(lines);
   }
 
-  private frontMatterView(s: Segment, lines: readonly string[], diagnostics: readonly LineDiagnostic[]): FrontMatterView {
-    const view: FrontMatterView = { key: s.key, start: s.start, end: s.end, source: lines.slice(s.start, s.end).join('\n') };
-    const problems = problemsIn(diagnostics, s.start, s.end);
+  private frontMatterView(s: Segment, lines: readonly string[], owners: Problems): FrontMatterView {
+    const own = lines.slice(s.start, s.end);
+    const fields = frontMatterFields(own);
+    const view: FrontMatterView = { key: s.key, start: s.start, end: s.end, source: own.join('\n') };
+    if (isFrontMatterRefusal(fields)) view.formRefused = fields.refused;
+    else view.fields = fields.map((f): FormField => ({ ...f, label: FRONT_MATTER_LABELS[f.name] ?? fieldLabel(f.name) }));
+    const problems = problemsOf(owners.get(s.key));
     if (problems) view.problems = problems;
     return view;
   }
 
-  private blockView(s: Segment, lines: readonly string[], html: ReadonlyMap<string, string> | undefined, diagnostics: readonly LineDiagnostic[]): BlockView {
+  private blockView(s: Segment, lines: readonly string[], html: ReadonlyMap<string, string> | undefined, owners: Problems): BlockView {
     const source = lines.slice(s.start, s.end).join('\n');
     const isBlock = s.kind === BLOCK;
     const type = isBlock ? s.type ?? 'paragraph' : GAP;
@@ -870,20 +1119,20 @@ export class BlockEditorSession {
     if (!isBlock && isBlankText(source)) view.blank = true;
     if (s.container) view.container = s.container;
     if (html && isBlock) view.html = html.get(s.key) ?? '';
-    if (s.children) view.children = this.childViews(s.children, lines, diagnostics);
+    if (s.children) view.children = this.childViews(s.children, lines, owners);
     const form = s.type === CONTAINER ? containerForm(lines[s.start], s.container) : undefined;
     if (form) view.form = form;
     if (isBlock && s.type === TABLE) view.table = this.tableView(lines.slice(s.start, s.end));
-    const problems = problemsIn(diagnostics, s.start, s.end);
+    const problems = problemsOf(owners.get(s.key));
     if (problems) view.problems = problems;
     return view;
   }
 
   /** A container's children: its blocks and the gaps that hold more than blank lines. */
-  private childViews(children: readonly Segment[], lines: readonly string[], diagnostics: readonly LineDiagnostic[]): BlockView[] {
+  private childViews(children: readonly Segment[], lines: readonly string[], owners: Problems): BlockView[] {
     return children
       .filter((c) => c.kind === BLOCK || !isBlankText(lines.slice(c.start, c.end).join('\n')))
-      .map((c) => this.blockView(c, lines, undefined, diagnostics));
+      .map((c) => this.blockView(c, lines, undefined, owners));
   }
 
   /** Where the blocks the page edited are now: a new key when their lines are one block again, else their lines. */
@@ -921,7 +1170,7 @@ export class BlockEditorSession {
       case 'delete':
         return this.remove(message.key, message.editId);
       case 'move':
-        return this.move(message.key, message.direction, message.editId);
+        return this.move(message);
       case 'setAttr':
       case 'setTitle':
         return this.editHeader(message);
@@ -934,6 +1183,14 @@ export class BlockEditorSession {
         return this.editTable(message);
       case 'addFrontMatter':
         return this.addFrontMatter(message.editId);
+      case 'setFrontMatter':
+        return this.setFrontMatter(message);
+      case 'image':
+        return this.insertImage(message);
+      case 'getFixes':
+        return this.getFixes(message.key, message.requestId);
+      case 'applyFix':
+        return this.applyFix(message);
     }
   }
 
@@ -945,17 +1202,21 @@ export class BlockEditorSession {
 
   /** The block a key names, if it still holds the text it had when the page got it; else a conflict is sent. */
   private found(key: string, editId: string | undefined): Found | undefined {
+    const result = this.lookup(key);
+    if (!result.found) this.conflict(editId, key, result.current);
+    return result.found;
+  }
+
+  /** The block a key names, if it still holds the text it had when the page got it; else the text on its lines now. */
+  private lookup(key: string): { found?: Found; current: string | null } {
     const text = this.doc.getText();
     const lines = splitLines(text);
     const entry = newer(this.pins.get(key), this.known.get(key));
     const range = entry && this.log.mapRange(entry, entry.version, this.doc.version);
     const inside = range !== undefined && range.end > range.start && range.end <= lines.length;
     const current = inside ? lines.slice(range.start, range.end).join('\n') : undefined;
-    if (!range || current === undefined || current !== entry?.text) {
-      this.conflict(editId, key, current ?? null);
-      return undefined;
-    }
-    return { range, text, lines };
+    if (!range || current === undefined || current !== entry?.text) return { current: current ?? null };
+    return { found: { range, text, lines }, current };
   }
 
   private async edit(m: Extract<EditorMessage, { type: 'edit' }>): Promise<void> {
@@ -1001,20 +1262,44 @@ export class BlockEditorSession {
     if (await this.applyLines(found.text, [edit], editId)) this.ack(editId, { line: edit.start });
   }
 
-  private async move(key: string, direction: MoveDirection, editId: string | undefined): Promise<void> {
+  /**
+   * Move a block among its siblings (the top-level blocks, or the blocks of its container): up or down past one
+   * (Alt+↑/↓), or, dropped, before a sibling block or after the last one. Only those segment boundaries are taken;
+   * any other place is refused.
+   */
+  private async move(m: MoveMessage): Promise<void> {
+    const { key, editId } = m;
     const found = this.found(key, editId);
     if (!found) return;
     const segments = this.options.segment?.(found.text) ?? this.options.render(found.text).segments;
     const place = findSiblings(segments, found.range);
     if (place?.siblings[place.index].kind !== BLOCK) return this.notice(editId, 'Only blocks can be moved.');
-    const target = moveTarget(place.siblings, place.index, direction);
+    const target = m.direction ? moveTarget(place.siblings, place.index, m.direction) : this.dropTarget(place.siblings, m.to ?? END, found.lines);
+    if (target === undefined && !m.direction) return this.notice(editId, 'A block can only be dropped among the blocks next to it: in its own container, or at the top level.');
     const moved = target === undefined ? null : moveBlock(found.lines, found.range, target);
-    if (!moved) return this.notice(editId, direction === 'up' ? 'The block is already at the top.' : 'The block is already at the bottom.');
+    if (!moved) return this.notice(editId, moveRefusal(m.direction));
     if (!(await this.applyLines(found.text, moved.edits, editId))) return;
     // The same block, on other lines: a second move before the next render still finds it.
     const size = found.range.end - found.range.start;
     this.pin(key, { start: moved.line, end: moved.line + size, version: this.version(), text: found.lines.slice(found.range.start, found.range.end).join('\n') });
     this.ack(editId, { line: moved.line });
+  }
+
+  /**
+   * Where a dropped block goes: before the sibling `to` names now, or after the last sibling ('end'). The siblings
+   * are what the page shows: blocks, and gaps with lines that render nothing (link definitions); not blank lines.
+   */
+  private dropTarget(siblings: readonly Segment[], to: string, lines: readonly string[]): number | undefined {
+    const shown = siblings.filter((s) => s.kind === BLOCK || (s.kind === GAP && !isBlankText(lines.slice(s.start, s.end).join('\n'))));
+    const last = shown.at(-1);
+    if (to === END) {
+      // After the last sibling's last line that isn't blank (a gap holds the blank lines after it).
+      let end = last?.end;
+      while (last && end !== undefined && end > last.start + 1 && isBlankText(lines[end - 1])) end--;
+      return end;
+    }
+    const range = this.locate(to);
+    return range && shown.find((s) => s.start === range.start && s.end === range.end)?.start;
   }
 
   private async editHeader(m: Extract<EditorMessage, { type: 'setAttr' | 'setTitle' }>): Promise<void> {
@@ -1087,7 +1372,7 @@ export class BlockEditorSession {
   }
 
   /** Refuse an inline or table change, and have the page open the block's source instead. */
-  private fallback(m: SetInlineMessage | TableMessage, text: string): void {
+  private fallback(m: { key: string; editId?: string }, text: string): void {
     this.options.post(m.editId === undefined ? { type: 'notice', text, fallback: m.key } : { type: 'notice', editId: m.editId, text, fallback: m.key });
   }
 
@@ -1123,7 +1408,7 @@ export class BlockEditorSession {
       if (aligning) return this.notice(m.editId, 'The table can\'t be aligned without changing what its cells hold.');
       return this.fallback(m, `That change can't be written in this table. ${TABLE_SOURCE}`);
     }
-    const edits = this.tableTextEdits(found, change.edits);
+    const edits = this.blockTextEdits(found, change.edits);
     if (edits.length && !(await this.apply(edits))) return this.notice(m.editId, NOT_APPLIED);
     if (aligning && !edits.length) this.notice(m.editId, 'The table is already aligned.');
     // The next change from the grid, before the next render, still finds the block.
@@ -1132,7 +1417,7 @@ export class BlockEditorSession {
   }
 
   /** A table's line edits (against its own lines) as text edits: a line replaced by another, by its smallest splice. */
-  private tableTextEdits(found: Found, edits: readonly LineEdit[]): TextEdit[] {
+  private blockTextEdits(found: Found, edits: readonly LineEdit[]): TextEdit[] {
     const base = found.range.start;
     const starts = lineStarts(found.text);
     return edits.flatMap((e): TextEdit[] => {
@@ -1141,6 +1426,107 @@ export class BlockEditorSession {
       const change = minimalEdit(found.lines[line], e.lines[0]);
       return change ? [{ from: starts[line] + change.from, to: starts[line] + change.to, insert: change.insert }] : [];
     });
+  }
+
+  /**
+   * Save a pasted or dropped image and put a link to it after a block (or at the end): only if its bytes are the
+   * image type it says and the block is still there. The host saves the file (saveImage: its folder and name are
+   * the host's), then inserts `![alt](path)` as a block of its own, adding only new lines.
+   */
+  private async insertImage(m: ImageMessage): Promise<void> {
+    if (!this.options.saveImage) return this.notice(m.editId, 'Images can\'t be saved here.');
+    const bytes = imageBytes(m.mime, m.data);
+    if (!(bytes instanceof Uint8Array)) return this.notice(m.editId, bytes.refused);
+    if (m.atKey && !this.found(m.atKey, m.editId)) return;
+    const saved = await this.options.saveImage(bytes, IMAGE_TYPES[m.mime], m.name);
+    if ('refused' in saved) return this.notice(m.editId, saved.refused);
+    // The document may have changed while the file was written: the block is looked for again.
+    const text = this.doc.getText();
+    const lines = splitLines(text);
+    const after = m.atKey ? this.lookup(m.atKey).found : undefined;
+    if (m.atKey && !after) return this.notice(m.editId, `The image is saved as ${saved.path}, but the block it was to follow has changed. Link it with ${saved.markdown}`);
+    const { edit, line } = insertBlock(lines, after ? after.range.end : endLine(lines), saved.markdown);
+    if (!(await this.applyLines(text, [edit], m.editId))) return;
+    this.notice(undefined, `Image saved as ${saved.path}.`);
+    this.ack(m.editId, { line });
+  }
+
+  /**
+   * Set one known key of the front matter from its form, if the block still holds the text the page was given and
+   * is the front matter. Only that key's value changes (its line, or its list item lines); a new key goes before the
+   * closing `---`. YAML the form can't edit safely, or a value that wouldn't read back as asked, is refused, and the
+   * page opens the front matter's text instead.
+   */
+  private async setFrontMatter(m: SetFrontMatterMessage): Promise<void> {
+    const found = this.found(m.key, m.editId);
+    if (!found) return;
+    const { range } = found;
+    if (range.start !== 0 || parseFrontMatter(found.text).bodyStartLine !== range.end) return this.notice(m.editId, 'That block is not the front matter.');
+    const lines = found.lines.slice(range.start, range.end);
+    const value = Array.isArray(m.value) && !m.value.length ? null : m.value;
+    const edits = setFrontMatterValue(lines, m.name, value);
+    if (isFrontMatterRefusal(edits)) return this.fallback(m, edits.refused);
+    const after = applyLineEdits(lines, edits);
+    const textEdits = this.blockTextEdits(found, edits);
+    if (textEdits.length && !(await this.apply(textEdits))) return this.notice(m.editId, NOT_APPLIED);
+    // The next change from the same form, before the next render, still finds the block. Focus stays in the form.
+    this.pin(m.key, { start: range.start, end: range.start + after.length, version: this.version(), text: after.join('\n') });
+    this.ack(m.editId);
+  }
+
+  /**
+   * List the quick fixes for a block's problems: VS Code's code actions of kind quickfix that carry an edit (the
+   * provider filters them), less those that fix a problem of a block inside it. They are kept, by block and document
+   * version, for applyFix; the page only gets their titles and what they change.
+   */
+  private async getFixes(key: string, requestId: number): Promise<void> {
+    const version = this.doc.version;
+    const reply = (fixes: FixView[], error?: string) =>
+      this.options.post(error === undefined ? { type: 'fixes', requestId, key, version, fixes } : { type: 'fixes', requestId, key, version, fixes, error });
+    const { found } = this.lookup(key);
+    if (!found) return reply([], NOT_FOUND);
+    if (!this.options.quickFixes) return reply([], NO_FIXES);
+    const all = await this.options.quickFixes(found.range);
+    // The fixes' ranges are only good for the document they were made for.
+    if (this.doc.version !== version) return reply([], FIXES_STALE);
+    const fixes = this.ownFixes(all, found).slice(0, MAX_FIXES);
+    this.fixCache.delete(key);
+    this.fixCache.set(key, { version, range: found.range, fixes });
+    if (this.fixCache.size > MAX_FIX_CACHE) this.fixCache.delete(this.fixCache.keys().next().value!);
+    reply(fixes.map((f) => ({ title: f.title.slice(0, MAX_VALUE), scope: fixScope(f, found.range) })));
+  }
+
+  /** The fixes for the block's own problems: not those of a block inside it, which that block lists. */
+  private ownFixes(fixes: readonly QuickFix[], found: Found): QuickFix[] {
+    const segments = this.options.segment?.(found.text) ?? this.options.render(found.text).segments;
+    const owned = (line: number) => {
+      const owner = innermostSegment(segments, line);
+      return owner?.start === found.range.start && owner.end === found.range.end;
+    };
+    return fixes.filter((f) => f.diagnostics.every(owned));
+  }
+
+  /**
+   * Apply a listed quick fix, as its provider made it, if the document is still the version it was listed for and
+   * the block still holds its text. A fix that writes outside the block's lines, or to other files, is applied only
+   * once the page confirms it.
+   */
+  private async applyFix(m: ApplyFixMessage): Promise<void> {
+    const cached = this.fixCache.get(m.key);
+    const fix = cached?.fixes[m.index];
+    if (!cached || !fix || cached.version !== m.version || this.doc.version !== m.version) return this.notice(m.editId, FIXES_STALE);
+    const found = this.found(m.key, m.editId);
+    if (!found) return;
+    const scope = fixScope(fix, found.range);
+    if (scope !== 'block' && !m.confirm) {
+      const text = scope === 'files' ? 'This fix also changes other files.' : 'This fix also changes lines outside this block.';
+      const confirm = { type: 'confirmFix' as const, key: m.key, index: m.index, version: m.version, text };
+      this.options.post(m.editId === undefined ? confirm : { ...confirm, editId: m.editId });
+      return;
+    }
+    this.fixCache.delete(m.key);
+    if (!(await this.applyWith(() => fix.apply()))) return this.notice(m.editId, NOT_APPLIED);
+    this.ack(m.editId, { line: found.range.start });
   }
 
   private async addFrontMatter(editId: string | undefined): Promise<void> {
@@ -1158,9 +1544,14 @@ export class BlockEditorSession {
     return ok;
   }
 
-  private async apply(edits: readonly TextEdit[]): Promise<boolean> {
+  private apply(edits: readonly TextEdit[]): Promise<boolean> {
+    return this.applyWith(() => this.doc.applyEdits(edits));
+  }
+
+  /** Make a change to the document (our edits, or a quick fix's), and remember the version it made. */
+  private async applyWith(write: () => PromiseLike<boolean> | boolean): Promise<boolean> {
     const before = this.doc.version;
-    const ok = (await this.doc.applyEdits(edits)) !== false;
+    const ok = (await write()) !== false;
     // The version our edit made, also if the document reports the change only after the edit resolves.
     this.applied = ok ? Math.max(this.doc.version, before + 1) : this.doc.version;
     return ok;

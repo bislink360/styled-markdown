@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import {
-  imageExtension, imageFolder, imageMarkdown, inCodeBlock, isImagePath, listEnter, mergeLanguageSettings,
+  imageBaseName, imageExtension, imageFolder, imageMarkdown, inCodeBlock, isImagePath, listEnter, mergeLanguageSettings,
   pastedImageBase, smdLanguageSettings, SPELLCHECK_PATTERNS, toRegExp, uniqueFileName,
 } from '../src/editing';
 
@@ -41,6 +41,15 @@ test('image names, folders and links', () => {
   assert.equal(imageExtension('text/plain'), undefined);
   assert.equal(pastedImageBase('/w/docs/checkout-redesign.smd', new Date(2026, 8, 28, 9, 15, 2)), 'checkout-redesign-20260928-091502');
   assert.equal(uniqueFileName('shot', '.png', (n) => ['shot.png', 'shot-1.png'].includes(n)), 'shot-2.png');
+  // The Block Editor: a dropped file's own name, made safe; else the pasted image's name.
+  const now = new Date(2026, 9, 15, 10, 15, 0);
+  assert.equal(imageBaseName('/w/plan.smd', 'Screen Shot 2026.png', now), 'Screen-Shot-2026');
+  assert.equal(imageBaseName('/w/plan.smd', '../../etc/passwd.png', now), 'passwd', 'never a path');
+  assert.equal(imageBaseName('/w/plan.smd', '..png', now), 'plan-20261015-101500', 'nothing left: the pasted name');
+  assert.equal(imageBaseName('/w/plan.smd', '-.x.-.png', now), 'x');
+  assert.equal(imageBaseName('/w/plan.smd', `${'a'.repeat(100)}.png`, now), 'a'.repeat(60));
+  assert.equal(imageBaseName('/w/plan.smd', 'ünïcode日本.gif', now), 'n-code', 'only letters, digits, - _ and .');
+  assert.equal(imageBaseName('/w/plan.smd', undefined, now), 'plan-20261015-101500');
   const root = path.resolve('/w');
   assert.equal(imageFolder(path.join(root, 'docs', 'a.smd'), root, 'docs/images'), path.join(root, 'docs', 'images'));
   assert.equal(imageFolder(path.join(root, 'notes', 'a.smd'), undefined, 'images'), path.join(root, 'notes', 'images'));

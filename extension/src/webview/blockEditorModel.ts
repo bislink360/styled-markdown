@@ -1,7 +1,7 @@
 // The Block Editor page's logic that needs no DOM: labels, which blocks to keep, the order to put them in, keys.
 // The page (blockEditor.ts) does the DOM work; the unit tests import this module directly. Types only from the
 // session module: nothing of the .smd engine reaches the page.
-import type { BlockProblems, BlockView, FormField, InlineView, RenderMessage } from '../blockEditorSession';
+import type { BlockProblems, BlockView, FixView, FormField, InlineView, RenderMessage } from '../blockEditorSession';
 
 export interface LineRange {
   start: number;
@@ -55,6 +55,99 @@ export function editLabel(view: Pick<BlockView, 'type' | 'container' | 'start' |
 export function problemsLabel(problems: BlockProblems | undefined): string {
   if (!problems?.count) return '';
   return `${problems.count} ${problems.count === 1 ? 'problem' : 'problems'}`;
+}
+
+const SEVERITY_ORDER: readonly BlockProblems['severity'][] = ['error', 'warning', 'info'];
+/** As many messages as the extension sends for one block (MAX_PROBLEM_MESSAGES). */
+const MAX_MESSAGES = 10;
+
+/**
+ * Problems of several blocks as one: a container shows its own and those of children the page could not find in
+ * its HTML (so no problem goes unseen). Undefined when there are none.
+ */
+export function mergeProblems(...lists: (BlockProblems | undefined)[]): BlockProblems | undefined {
+  const all = lists.filter((p): p is BlockProblems => !!p?.count);
+  if (all.length <= 1) return all[0];
+  const severity = SEVERITY_ORDER.find((s) => all.some((p) => p.severity === s)) ?? 'info';
+  return { count: all.reduce((n, p) => n + p.count, 0), severity, messages: all.flatMap((p) => p.messages).slice(0, MAX_MESSAGES) };
+}
+
+/** How a block is announced as it becomes current: "Paragraph, lines 3–5", with its problems when it has some. */
+export function itemAnnouncement(view: Pick<BlockView, 'type' | 'container' | 'start' | 'end'>, problems: BlockProblems | undefined): string {
+  const count = problemsLabel(problems);
+  return count ? `${blockLabel(view)}, ${count}. Ctrl+. shows them.` : blockLabel(view);
+}
+
+/** A quick fix's button: its title, and what more it changes than the block. */
+export function fixLabel(fix: Pick<FixView, 'title' | 'scope'>): string {
+  if (fix.scope === 'lines') return `${fix.title} (also changes other lines)`;
+  return fix.scope === 'files' ? `${fix.title} (also changes other files)` : fix.title;
+}
+
+/** "1 quick fix: Change to "note".", "3 quick fixes." */
+export function fixesAnnouncement(fixes: readonly Pick<FixView, 'title' | 'scope'>[]): string {
+  if (fixes.length === 1) return `1 quick fix: ${fixLabel(fixes[0])}.`;
+  return fixes.length ? `${fixes.length} quick fixes.` : 'No quick fixes.';
+}
+
+/**
+ * Where a dragged block would be dropped among its siblings (their boxes, top to bottom): the boundary nearest to
+ * `y`, as the index of the sibling it goes before (`boxes.length`: after the last one).
+ */
+export function dropIndex(boxes: readonly { top: number; bottom: number }[], y: number): number {
+  let best = 0;
+  let distance = Infinity;
+  for (let i = 0; i <= boxes.length; i++) {
+    const at = boundaryY(boxes, i);
+    if (Math.abs(y - at) < distance) {
+      distance = Math.abs(y - at);
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** The y of the boundary before sibling `i` (after the last one for `boxes.length`): midway in the space between. */
+export function boundaryY(boxes: readonly { top: number; bottom: number }[], i: number): number {
+  if (!boxes.length) return 0;
+  if (i <= 0) return boxes[0].top;
+  if (i >= boxes.length) return boxes.at(-1)!.bottom;
+  return (boxes[i - 1].bottom + boxes[i].top) / 2;
+}
+
+/** A drop at boundary `index` moves the block at `from`: not right before or after itself. */
+export const dropMoves = (index: number, from: number): boolean => index !== from && index !== from + 1;
+
+/** The move a drop asks for: before the sibling at `index`, or 'end'. */
+export function dropTo(keys: readonly string[], index: number): string {
+  return index < keys.length ? keys[index] : 'end';
+}
+
+/** What is announced when a dropped block has moved: "Paragraph moved before heading, line 5." */
+export function dropAnnouncement(moved: Pick<BlockView, 'type' | 'container'>, before: Pick<BlockView, 'type' | 'container' | 'start' | 'end'> | undefined): string {
+  if (!before) return `${blockName(moved)} moved to the end.`;
+  const name = blockName(before);
+  return `${blockName(moved)} moved before ${name.charAt(0).toLowerCase()}${name.slice(1)}, ${linesLabel(before)}.`;
+}
+
+/** The image types the page sends (IMAGE_TYPES in the session), and the largest it sends: 10 MB. */
+export const IMAGE_MIMES: readonly string[] = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/avif', 'image/svg+xml'];
+export const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+/** Why a pasted or dropped file is not sent, or undefined when it is an image the extension takes. */
+export function imageProblem(file: { name?: string; type: string; size: number }): string | undefined {
+  const name = file.name ? `"${file.name}"` : 'The pasted file';
+  if (!IMAGE_MIMES.includes(file.type)) return `${name} is not a PNG, JPEG, GIF, WebP, BMP, AVIF or SVG image.`;
+  if (file.size > MAX_IMAGE_SIZE) return `${name} is larger than 10 MB.`;
+  if (file.size === 0) return `${name} is empty.`;
+  return undefined;
+}
+
+/** Bytes as base64, in chunks (a 10 MB image is too many arguments for one String.fromCharCode). */
+export function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
 }
 
 /** Rendered HTML without its source line numbers, to tell whether a block that only moved looks the same. */
@@ -172,6 +265,19 @@ export function formRequest(field: Pick<FormField, 'name' | 'kind'>, value: stri
   if (field.kind === 'flag') return { type: 'setAttr', name: field.name, value: value ? true : null };
   const text = String(value).trim();
   return { type: 'setAttr', name: field.name, value: text === '' ? null : text };
+}
+
+/**
+ * What a front matter field asks for (setFrontMatter's value): its text trimmed, a list's items (split on commas,
+ * trimmed, empty ones left out); null, which removes the key, when that leaves nothing.
+ */
+export function frontMatterValue(field: Pick<FormField, 'kind'>, value: string): string | string[] | null {
+  if (field.kind === 'list') {
+    const items = value.split(',').map((item) => item.trim()).filter(Boolean);
+    return items.length ? items : null;
+  }
+  const text = value.trim();
+  return text === '' ? null : text;
 }
 
 /** The field of an inline form for the text in the brackets (CONTENT_FIELD in the session). */

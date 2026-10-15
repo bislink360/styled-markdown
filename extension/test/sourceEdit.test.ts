@@ -80,8 +80,10 @@ test('insertBlock pads with blank lines only where the snippet would touch text'
   const doc = lines('# Title\nPara\n\n:::note\nIn\n:::\n');
   // Between two blocks with no blank line: a blank line on each side.
   assert.deepEqual(insertBlock(doc, 1, 'New'), { edit: { start: 1, end: 1, lines: ['', 'New', ''] }, line: 2 });
-  // After a blank line, before a container: none (blank lines around the snippet are dropped).
-  assert.deepEqual(insertBlock(doc, 3, '\nNew\n\n'), { edit: { start: 3, end: 3, lines: ['New'] }, line: 3 });
+  // After a blank line, before a container's opening line: one blank line after (blank lines around the snippet are dropped).
+  assert.deepEqual(insertBlock(doc, 3, '\nNew\n\n'), { edit: { start: 3, end: 3, lines: ['New', ''] }, line: 3 });
+  // Right after a container's closing line: a blank line before.
+  assert.deepEqual(insertBlock([':::note', 'In', ':::'], 3, 'New'), { edit: { start: 3, end: 3, lines: ['', 'New'] }, line: 4 });
   // After a blank line, before text: one blank line after.
   assert.deepEqual(insertBlock(['A', '', 'B'], 2, 'New'), { edit: { start: 2, end: 2, lines: ['New', ''] }, line: 2 });
   // Right inside a container, next to its fences: none.
@@ -163,4 +165,91 @@ test('moveBlock keeps every other line and lands the block intact, at any segmen
       assert.equal(segmentSmd(after.join('\n')).filter((s) => s.kind === 'block').length, blocks.length, `moving ${seg.start}-${seg.end} to ${to}: ${JSON.stringify(after)}`);
     }
   }
+});
+
+test('moveBlock next to ::: fences: a blank line between a block and another container, none inside its own fences', () => {
+  const doc = ['Intro', '', ':::note', 'First', '', 'Second', ':::', '', 'After'];
+  const move = (start: number, end: number, to: number) => applyLineEdits(doc, moveBlock(doc, { start, end }, to)!.edits);
+  // A paragraph moved up before a container: a blank line before the opening line (it used to touch it).
+  assert.deepEqual(move(8, 9, 2), ['Intro', '', 'After', '', ':::note', 'First', '', 'Second', ':::']);
+  // A paragraph moved down after a container: a blank line after the closing line (it used to touch it).
+  assert.deepEqual(move(0, 1, 9), [':::note', 'First', '', 'Second', ':::', '', 'After', '', 'Intro']);
+  // Inside: the first and last children stay tight to their fences.
+  assert.deepEqual(move(3, 4, 6), ['Intro', '', ':::note', 'Second', '', 'First', ':::', '', 'After']);
+  assert.deepEqual(move(5, 6, 3), ['Intro', '', ':::note', 'Second', '', 'First', ':::', '', 'After']);
+  // A container moved past a paragraph: blank lines on both sides of its fences.
+  assert.deepEqual(move(2, 7, 9), ['Intro', '', 'After', '', ':::note', 'First', '', 'Second', ':::']);
+  // The blank line it leaves behind is not dropped next to a fence: the paragraph after a closing line keeps it.
+  const tight = ['Para', ':::note', 'x', ':::', '', 'Block', '', 'End'];
+  assert.deepEqual(applyLineEdits(tight, [deleteBlock(tight, { start: 5, end: 6 })]), ['Para', ':::note', 'x', ':::', '', 'End']);
+  const closer = [':::note', 'x', ':::', 'Block', '', 'End'];
+  assert.deepEqual(applyLineEdits(closer, [deleteBlock(closer, { start: 3, end: 4 })]), [':::note', 'x', ':::', '', 'End']);
+  const opener = ['Start', '', 'Block', ':::note', 'x', ':::'];
+  assert.deepEqual(applyLineEdits(opener, [deleteBlock(opener, { start: 2, end: 3 })]), ['Start', '', ':::note', 'x', ':::']);
+});
+
+/** Random documents of paragraphs, headings and containers (nested too), with or without blank lines between them. */
+function fencedDocument(random: () => number): string[] {
+  const out: string[] = [];
+  const blocks = (depth: number, count: number) => {
+    for (let i = 0; i < count; i++) {
+      if (out.length && random() < 0.7) out.push('');
+      const r = random();
+      if (r < 0.3 && depth < 2) {
+        out.push(`${':'.repeat(3 + (1 - depth))}note`);
+        blocks(depth + 1, 1 + Math.floor(random() * 3));
+        if (random() < 0.5) out.push('');
+        out.push(':'.repeat(3 + (1 - depth)));
+      } else if (r < 0.5) {
+        // (Not lists: two lists moved next to each other become one, whatever the fences.)
+        out.push(`## Heading ${out.length}`);
+      } else {
+        out.push(`Paragraph ${out.length}.`);
+      }
+    }
+  };
+  blocks(0, 2 + Math.floor(random() * 4));
+  return out;
+}
+
+test('property: moving a block among its siblings changes no line but its own and blank lines, and leaves no block touching a fence', () => {
+  const random = prng(23);
+  let moves = 0;
+  for (let run = 0; run < 300; run++) {
+    const doc = fencedDocument(random);
+    const segments = segmentSmd(doc.join('\n'));
+    const lists = [segments, ...segments.flatMap(function inner(s): typeof segments[] {
+      return s.children ? [s.children, ...s.children.flatMap(inner)] : [];
+    })];
+    for (const siblings of lists) {
+      const blocks = siblings.filter((s) => s.kind === 'block');
+      const seg = blocks[Math.floor(random() * blocks.length)];
+      if (!seg) continue;
+      const boundaries = [...blocks.map((s) => s.start), (blocks.at(-1) ?? seg).end];
+      const to = boundaries[Math.floor(random() * boundaries.length)];
+      const move = moveBlock(doc, seg, to);
+      if (!move) continue;
+      moves++;
+      const own = new Set(doc.slice(seg.start, seg.end));
+      const context = JSON.stringify({ doc, seg: [seg.start, seg.end], to });
+      for (const edit of move.edits) {
+        // Only the block's own lines and blank lines are removed or added.
+        for (const l of [...doc.slice(edit.start, edit.end), ...edit.lines]) assert.ok(l.trim() === '' || own.has(l), `unrelated line ${JSON.stringify(l)}: ${context}`);
+      }
+      const after = applyLineEdits(doc, move.edits);
+      const size = seg.end - seg.start;
+      assert.deepEqual(after.slice(move.line, move.line + size), doc.slice(seg.start, seg.end), context);
+      // The moved block: a blank line, an edge or its container's own fence on each side.
+      const above = after[move.line - 1];
+      const below = after[move.line + size];
+      assert.ok(above === undefined || above.trim() === '' || /^:{3,}\w/.test(above), `touches the line above: ${context} ${JSON.stringify(after)}`);
+      assert.ok(below === undefined || below.trim() === '' || /^:{3,}$/.test(below), `touches the line below: ${context} ${JSON.stringify(after)}`);
+      // Every block is still a block of its own, in the same container.
+      const count = (l: string[]) => segmentSmd(l.join('\n')).flatMap(function all(s): string[] {
+        return [s.kind, ...(s.children ?? []).flatMap(all)];
+      }).filter((k) => k === 'block').length;
+      assert.equal(count(after), count(doc), `${context} ${JSON.stringify(after)}`);
+    }
+  }
+  assert.ok(moves > 300, `moves ${moves}`);
 });
