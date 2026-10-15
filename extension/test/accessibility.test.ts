@@ -279,11 +279,12 @@ test('a11y block editor: blocks are named groups in one tab stop; the arrow keys
 
 test('a11y block editor: a labelled toolbar, a menu of menu items, and buttons that say what they open', () => {
   assert.match(blockEditorPage, /role: 'toolbar', \[ARIA_LABEL\]: 'Block editor'/);
-  assert.match(blockEditorPage, /'aria-haspopup': 'menu', \[ARIA_EXPANDED\]: 'false', 'aria-controls': 'menu'/);
+  assert.match(blockEditorPage, /'aria-haspopup': 'menu', \[ARIA_EXPANDED\]: FALSE, 'aria-controls': 'menu'/);
   assert.match(blockEditorPage, /role: 'menu', \[ARIA_LABEL\]: 'Insert block'/);
   assert.match(blockEditorPage, /role: 'menuitem', \[TABINDEX\]: '-1'/);
-  assert.match(blockEditorPage, /\[ARIA_EXPANDED\]: 'false', 'aria-controls': 'props'/);
-  assert.match(blockEditorPage, /b\.setAttribute\(ARIA_DISABLED, 'true'\)/, 'unavailable buttons stay in the toolbar, marked disabled');
+  assert.match(blockEditorPage, /\[ARIA_EXPANDED\]: FALSE, 'aria-controls': 'props'/);
+  assert.match(blockEditorPage, /b\.setAttribute\(ARIA_DISABLED, TRUE\)/, 'unavailable buttons stay in the toolbar, marked disabled');
+  assert.match(blockEditorPage, /const TRUE = 'true';\nconst FALSE = 'false';/);
   assert.match(blockEditorPage, /toolbarKeyTarget\(event\.key/);
 });
 

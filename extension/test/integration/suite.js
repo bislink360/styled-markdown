@@ -594,6 +594,39 @@ const checks = {
       console.log('    (markdown.api.render is not available in this VS Code: checked extendMarkdownIt only)');
     }
   },
+
+  async 'block editor opens with Open With, gets its blocks, and reopens in the text editor'() {
+    const all = await vscode.commands.getCommands(true);
+    for (const c of ['smd.openBlockEditor', 'smd.reopenInTextEditor', 'smd._blockEditorStatus']) assert.ok(all.includes(c), `missing command ${c}`);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'smd-block-editor-'));
+    const file = path.join(dir, 'blocks.smd');
+    const text = '# Title\n\nFirst paragraph.\n\n:::note\nInside.\n:::\n';
+    fs.writeFileSync(file, text);
+    const uri = vscode.Uri.file(file);
+    await vscode.commands.executeCommand('vscode.openWith', uri, 'smd.blockEditor');
+    await waitFor(() => vscode.window.tabGroups.activeTabGroup.activeTab?.input instanceof vscode.TabInputCustom, 'the Block Editor tab');
+    assert.equal(vscode.window.tabGroups.activeTabGroup.activeTab.input.viewType, 'smd.blockEditor');
+    // The page asks for the document once it has loaded; the status counts what it was given.
+    const status = await waitFor(async () => {
+      const s = await vscode.commands.executeCommand('smd._blockEditorStatus', uri.toString());
+      return s && s.renders > 0 ? s : undefined;
+    }, 'the Block Editor render', 20000);
+    console.log(`      block editor reported: ${JSON.stringify(status)}`);
+    assert.equal(status.blocks, 3, 'heading, paragraph and callout');
+    assert.equal(status.keys.length, 3);
+    assert.equal(status.lastAck, null, 'nothing edited');
+    const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
+    assert.ok(doc, 'the Block Editor works on the TextDocument');
+    assert.equal(doc.getText(), text, 'opening it changes nothing');
+    assert.equal(doc.isDirty, false);
+
+    await vscode.commands.executeCommand('smd.reopenInTextEditor', uri);
+    await waitFor(() => vscode.window.activeTextEditor?.document.uri.toString() === uri.toString(), 'the text editor');
+    const left = vscode.window.tabGroups.activeTabGroup.tabs.filter((t) => t.input instanceof vscode.TabInputCustom && t.input.uri.toString() === uri.toString());
+    assert.equal(left.length, 0, 'the Block Editor tab is closed');
+    assert.equal(fs.readFileSync(file, 'utf8'), text);
+    await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+  },
 };
 
 async function run() {

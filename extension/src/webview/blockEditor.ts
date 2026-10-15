@@ -56,6 +56,13 @@ type ItemView = Pick<BlockView, 'key' | 'type' | 'container' | 'start' | 'end' |
 type Action = 'insert' | 'edit' | 'props' | 'up' | 'down' | 'del' | 'reveal' | 'fm';
 
 const AUTOSAVE_DELAY = 800;
+const DIV = 'div';
+const KEYDOWN = 'keydown';
+const ARROW_UP = 'ArrowUp';
+const ARROW_DOWN = 'ArrowDown';
+const ESCAPE = 'Escape';
+const TRUE = 'true';
+const FALSE = 'false';
 const NOTICE_TIME = 8000;
 const ITEM = 'smd-ed-item';
 const CHILD = 'smd-ed-child';
@@ -134,11 +141,11 @@ function start(rt: Runtime): void {
   };
 
   // ---- The document's frame -----------------------------------------------------
-  const head = h('div', { className: 'smd-ed-head' });
-  const headerHolder = h('div', { className: 'smd-ed-header' });
-  const tocHolder = h('div', { className: 'smd-ed-toc' });
-  const blocksEl = h('div', { className: 'smd-ed-blocks' });
-  const tailHolder = h('div', { className: 'smd-ed-tail' });
+  const head = h(DIV, { className: 'smd-ed-head' });
+  const headerHolder = h(DIV, { className: 'smd-ed-header' });
+  const tocHolder = h(DIV, { className: 'smd-ed-toc' });
+  const blocksEl = h(DIV, { className: 'smd-ed-blocks' });
+  const tailHolder = h(DIV, { className: 'smd-ed-tail' });
   head.append(headerHolder, tocHolder);
 
   /** Set rendered document HTML (trusted, from the extension's renderer, as in the preview) when it changed. */
@@ -181,8 +188,8 @@ function start(rt: Runtime): void {
       return;
     }
     if (!badge) {
-      const host = h('div', { className: 'smd-ed-badge-host' });
-      const span = h('span', { className: 'badge', attrs: { 'aria-hidden': 'true' } });
+      const host = h(DIV, { className: 'smd-ed-badge-host' });
+      const span = h('span', { className: 'badge', attrs: { 'aria-hidden': TRUE } });
       chromeRoot(host).append(span);
       badge = { host, span };
       badges.set(node, badge);
@@ -239,8 +246,8 @@ function start(rt: Runtime): void {
   const fresh = new Set<HTMLElement>();
 
   function createTop(view: BlockView): HTMLElement {
-    const node = h('div', { className: 'smd-ed-block' });
-    const content = h('div', { className: CONTENT });
+    const node = h(DIV, { className: 'smd-ed-block' });
+    const content = h(DIV, { className: CONTENT });
     if (view.kind === 'gap') {
       node.classList.add('smd-ed-chip');
       content.append(h('pre', { className: RAW, text: view.source }));
@@ -257,7 +264,7 @@ function start(rt: Runtime): void {
   const signatureOf = (view: BlockView) => (view.kind === 'gap' ? `raw:${view.source}` : withoutLines(view.html ?? ''));
 
   function blankGap(view: BlockView, old: HTMLElement | undefined): HTMLElement {
-    const node = old?.classList.contains('smd-ed-gap') ? old : h('div', { className: 'smd-ed-gap', attrs: { 'aria-hidden': 'true' } });
+    const node = old?.classList.contains('smd-ed-gap') ? old : h(DIV, { className: 'smd-ed-gap', attrs: { 'aria-hidden': TRUE } });
     node.dataset.smdEdGap = view.key;
     node.dataset.smdEdStart = String(view.start);
     return node;
@@ -304,16 +311,24 @@ function start(rt: Runtime): void {
       next.set(key, node);
       return node;
     });
+    placeBlocks(desired);
+    nodes = next;
+    fresh.forEach((node) => {
+      if (node.isConnected) void rt.hydrate(node);
+    });
+    fresh.clear();
+  }
+
+  /** Put the top-level elements in order, moving as few as possible (focus and state stay where they are). */
+  function placeBlocks(desired: readonly HTMLElement[]): void {
     const keep = new Set(desired);
-    for (const child of Array.from(blocksEl.children) as HTMLElement[]) if (!keep.has(child)) child.remove();
+    (Array.from(blocksEl.children) as HTMLElement[]).filter((child) => !keep.has(child)).forEach((child) => child.remove());
     const current = (Array.from(blocksEl.children) as HTMLElement[]).map(nodeId);
     const byId = new Map(desired.map((n) => [nodeId(n), n]));
     for (const move of orderMoves(current, desired.map(nodeId))) {
-      blocksEl.insertBefore(byId.get(move.id)!, move.before ? byId.get(move.before)! : null);
+      const before = move.before === null ? null : byId.get(move.before) ?? null;
+      blocksEl.insertBefore(byId.get(move.id)!, before);
     }
-    nodes = next;
-    for (const node of fresh) if (node.isConnected) void rt.hydrate(node);
-    fresh.clear();
   }
 
   function renderFrontMatter(fm: FrontMatterView | null): void {
@@ -328,7 +343,7 @@ function start(rt: Runtime): void {
       decorateTop(fmNode, view);
       return;
     }
-    const node = h('div', { className: 'smd-ed-block smd-ed-fm' }, [h('div', { className: CONTENT }, [h('pre', { className: RAW, text: fm.source })])]);
+    const node = h(DIV, { className: 'smd-ed-block smd-ed-fm' }, [h(DIV, { className: CONTENT }, [h('pre', { className: RAW, text: fm.source })])]);
     decorateTop(node, view);
     signature.set(node, fm.source);
     if (fmNode) fmNode.replaceWith(node);
@@ -392,14 +407,14 @@ function start(rt: Runtime): void {
 
   // ---- Editing a block's source ----------------------------------------------------
   function editorFor(view: ItemView): { host: HTMLElement; root: ShadowRoot; textarea: HTMLTextAreaElement; notice: HTMLElement } {
-    const host = h('div', { className: EDITOR });
+    const host = h(DIV, { className: EDITOR });
     const root = chromeRoot(host);
     const label = h('label', { className: 'label', text: editLabel(view), attrs: { for: 'source' } });
-    const textarea = h('textarea', { className: 'source', attrs: { id: 'source', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off', 'aria-describedby': 'hint' } });
+    const textarea = h('textarea', { className: 'source', attrs: { id: 'source', spellcheck: FALSE, autocapitalize: 'off', autocomplete: 'off', 'aria-describedby': 'hint' } });
     const hint = h('p', { className: 'hint', text: 'Ctrl+Enter: done. Escape: cancel. Your text is written to the document as you pause.', attrs: { id: 'hint' } });
-    const notice = h('div', { className: 'notice', attrs: { role: 'alert' } });
+    const notice = h(DIV, { className: 'notice', attrs: { role: 'alert' } });
     notice.hidden = true;
-    root.append(h('div', { className: 'editor' }, [label, textarea, hint, notice]));
+    root.append(h(DIV, { className: 'editor' }, [label, textarea, hint, notice]));
     return { host, root, textarea, notice };
   }
 
@@ -408,24 +423,29 @@ function start(rt: Runtime): void {
     restore?: NonNullable<SavedState['editing']>;
   }
 
+  /** The element to edit once any other edit has ended (which may render its block, and this one, again). */
+  function editTarget(target: HTMLElement): HTMLElement | undefined {
+    if (!editing) return target;
+    const key = target.dataset.smdEdKey;
+    finishEdit(false);
+    return target.isConnected ? target : itemsAll().find((i) => i.dataset.smdEdKey === key);
+  }
+
   function startEdit(target: HTMLElement, options: StartOptions = {}): void {
     if (editing?.item === target) return;
-    let item: HTMLElement | undefined = target;
-    if (editing) {
-      // Ending the other edit may render its block again, and this one with it when they share a container.
-      const key = target.dataset.smdEdKey;
-      finishEdit(false);
-      if (!item.isConnected) item = itemsAll().find((i) => i.dataset.smdEdKey === key);
-    }
+    const item = editTarget(target);
     const view = item && viewOf.get(item);
-    if (!item || !view) return;
+    if (item && view) openEditor(item, view, options);
+  }
+
+  function openEditor(item: HTMLElement, view: ItemView, options: StartOptions): void {
     const top = (item.closest('.smd-ed-block') as HTMLElement | null) ?? item;
-    const parts = editorFor(view);
-    const original = options.restore?.original ?? view.source;
+    const saved = options.restore;
     const e: Editing = {
-      key: view.key, item, top, ...parts, range: { start: view.start, end: view.end }, original,
-      committed: options.restore?.committed ?? view.source, pending: new Set(), acked: 0, conflict: false,
+      key: view.key, item, top, ...editorFor(view), range: { start: view.start, end: view.end },
+      original: saved?.original ?? view.source, committed: saved?.committed ?? view.source, pending: new Set(), acked: 0, conflict: false,
     };
+    // The editor takes the place of the block's rendering, which stays in the page, hidden.
     if (item === top) {
       item.querySelector<HTMLElement>(`:scope > .${CONTENT}`)?.setAttribute('hidden', '');
       item.append(e.host);
@@ -434,11 +454,11 @@ function start(rt: Runtime): void {
       item.after(e.host);
     }
     editing = e;
-    e.textarea.value = options.restore?.draft ?? view.source;
+    e.textarea.value = saved?.draft ?? view.source;
     e.textarea.rows = textareaRows(e.textarea.value);
     wireEditor(e);
     e.textarea.focus();
-    const select = options.restore ? { from: options.restore.from, to: options.restore.to } : options.select;
+    const select = saved ? { from: saved.from, to: saved.to } : options.select;
     if (select) e.textarea.setSelectionRange(select.from, select.to);
     updateToolbar();
     saveState();
@@ -451,7 +471,7 @@ function start(rt: Runtime): void {
       e.timer = setTimeout(() => commit(e), AUTOSAVE_DELAY);
       saveState();
     });
-    e.textarea.addEventListener('keydown', (event) => onEditorKey(e, event));
+    e.textarea.addEventListener(KEYDOWN, (event) => onEditorKey(e, event));
     e.textarea.addEventListener('blur', () => {
       commit(e);
       // Focus left the editor for another part of the page: editing ends. Leaving the window keeps it open.
@@ -479,13 +499,13 @@ function start(rt: Runtime): void {
       finishEdit(true);
       return true;
     }
-    if (event.key === 'Escape') {
+    if (event.key === ESCAPE) {
       cancelEdit(e);
       return true;
     }
-    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    if (event.altKey && (event.key === ARROW_UP || event.key === ARROW_DOWN)) {
       finishEdit(true);
-      move(event.key === 'ArrowUp' ? 'up' : 'down');
+      move(event.key === ARROW_UP ? 'up' : 'down');
       return true;
     }
     return false;
@@ -531,20 +551,26 @@ function start(rt: Runtime): void {
     e.item.classList.remove(HIDDEN);
     currentKey = e.key;
     currentLine = e.range.start;
-    // The last render already has every edit made here: show it now. Otherwise the next one is on its way.
-    const settled = !!model && (!changed || (e.pending.size === 0 && model.version >= e.acked));
-    if (changed) {
-      signature.set(e.top, '');
-      if (!settled) {
-        const pending = h('pre', { className: `${RAW} smd-ed-pending`, text: e.committed });
-        if (content) content.replaceChildren(pending);
-        else e.item.replaceWith(pending);
-      }
-    }
+    // The block is rendered again: now, when the last render has every edit made here; else from the next one, and
+    // until it comes, what was written shows as text.
+    const settled = isSettled(e, changed);
+    if (changed) signature.set(e.top, '');
+    if (changed && !settled) showWritten(e, content);
     if (settled && model) renderAll(model);
     updateToolbar();
     saveState();
     if (refocus) ensureCurrent(true);
+  }
+
+  function isSettled(e: Editing, changed: boolean): boolean {
+    if (!model) return false;
+    return !changed || (e.pending.size === 0 && model.version >= e.acked);
+  }
+
+  function showWritten(e: Editing, content: HTMLElement | null): void {
+    const written = h('pre', { className: `${RAW} smd-ed-pending`, text: e.committed });
+    if (content) content.replaceChildren(written);
+    else e.item.replaceWith(written);
   }
 
   function showConflict(e: Editing, currentText: string | null): void {
@@ -581,7 +607,7 @@ function start(rt: Runtime): void {
           resolved();
         }),
       ];
-    e.notice.replaceChildren(h('p', { text }), h('div', { className: 'actions' }, actions));
+    e.notice.replaceChildren(h('p', { text }), h(DIV, { className: 'actions' }, actions));
     e.notice.hidden = false;
     rt.announce(text);
   }
@@ -701,7 +727,7 @@ function start(rt: Runtime): void {
   }
 
   // ---- Keyboard and mouse on the blocks --------------------------------------------
-  rootEl.addEventListener('keydown', (event) => {
+  rootEl.addEventListener(KEYDOWN, (event) => {
     const item = event.target as HTMLElement;
     if (!item.classList?.contains(ITEM)) return;
     if (blockKey(item, event)) {
@@ -711,8 +737,8 @@ function start(rt: Runtime): void {
   });
 
   function blockKey(item: HTMLElement, event: KeyboardEvent): boolean {
-    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-      move(event.key === 'ArrowUp' ? 'up' : 'down');
+    if (event.altKey && (event.key === ARROW_UP || event.key === ARROW_DOWN)) {
+      move(event.key === ARROW_UP ? 'up' : 'down');
       return true;
     }
     if ((event.key === 'Enter' && !event.ctrlKey && !event.metaKey) || event.key === 'F2') {
@@ -744,7 +770,7 @@ function start(rt: Runtime): void {
     }
   });
 
-  document.addEventListener('keydown', (event) => {
+  document.addEventListener(KEYDOWN, (event) => {
     if (event.key === '/' && (event.ctrlKey || event.metaKey) && !event.altKey) {
       event.preventDefault();
       event.stopPropagation();
@@ -806,24 +832,24 @@ function start(rt: Runtime): void {
   // ---- The toolbar -----------------------------------------------------------------------
   const barRoot = chromeRoot(toolbarHost);
   const buttons: Record<Action, HTMLButtonElement> = {
-    insert: button('Insert…', () => act('insert'), { title: 'Insert a block after this one (Ctrl+/)', 'aria-haspopup': 'menu', [ARIA_EXPANDED]: 'false', 'aria-controls': 'menu' }),
+    insert: button('Insert…', () => act('insert'), { title: 'Insert a block after this one (Ctrl+/)', 'aria-haspopup': 'menu', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'menu' }),
     edit: button('Edit', () => act('edit'), { title: 'Edit the source of this block (Enter)' }),
-    props: button('Properties', () => act('props'), { title: 'Title and attributes of this container', [ARIA_EXPANDED]: 'false', 'aria-controls': 'props' }),
+    props: button('Properties', () => act('props'), { title: 'Title and attributes of this container', [ARIA_EXPANDED]: FALSE, 'aria-controls': 'props' }),
     up: button('Move up', () => act('up'), { title: 'Move this block up (Alt+Up)' }),
     down: button('Move down', () => act('down'), { title: 'Move this block down (Alt+Down)' }),
     del: button('Delete', () => act('del'), { title: 'Delete this block (Ctrl+Z undoes it)' }),
     reveal: button('Edit in text editor', () => act('reveal'), { title: 'Show this block in the text editor' }),
     fm: button('Add front matter', () => act('fm'), { title: 'Add a front matter block with a title' }),
   };
-  const toolbar = h('div', { className: 'toolbar', attrs: { role: 'toolbar', [ARIA_LABEL]: 'Block editor' } }, Object.values(buttons));
+  const toolbar = h(DIV, { className: 'toolbar', attrs: { role: 'toolbar', [ARIA_LABEL]: 'Block editor' } }, Object.values(buttons));
   const status = h('span', { className: 'status', attrs: { id: 'status' } });
-  const noticeEl = h('div', { className: 'bar-notice', attrs: { role: 'status' } });
-  const menu = h('div', { className: 'menu', attrs: { id: 'menu', role: 'menu', [ARIA_LABEL]: 'Insert block' } });
-  const props = h('div', { className: 'props', attrs: { id: 'props', role: 'group' } });
+  const noticeEl = h(DIV, { className: 'bar-notice', attrs: { role: 'status' } });
+  const menu = h(DIV, { className: 'menu', attrs: { id: 'menu', role: 'menu', [ARIA_LABEL]: 'Insert block' } });
+  const props = h(DIV, { className: 'props', attrs: { id: 'props', role: 'group' } });
   menu.hidden = true;
   props.hidden = true;
   toolbar.setAttribute('aria-describedby', 'status');
-  barRoot.append(h('div', { className: 'bar' }, [toolbar, status]), noticeEl, menu, props);
+  barRoot.append(h(DIV, { className: 'bar' }, [toolbar, status]), noticeEl, menu, props);
   let barIndex = 0;
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -835,7 +861,7 @@ function start(rt: Runtime): void {
     list.forEach((b, i) => b.setAttribute(TABINDEX, i === barIndex ? '0' : '-1'));
   }
 
-  toolbar.addEventListener('keydown', (event) => {
+  toolbar.addEventListener(KEYDOWN, (event) => {
     const list = barButtons();
     const to = toolbarKeyTarget(event.key, list.indexOf(event.target as HTMLButtonElement), list.length);
     if (to < 0) return;
@@ -847,11 +873,11 @@ function start(rt: Runtime): void {
 
   toolbar.addEventListener('click', (event) => {
     const b = event.target as HTMLButtonElement;
-    if (b.getAttribute(ARIA_DISABLED) === 'true') event.stopImmediatePropagation();
+    if (b.getAttribute(ARIA_DISABLED) === TRUE) event.stopImmediatePropagation();
   }, true);
 
   function setDisabled(b: HTMLButtonElement, disabled: boolean): void {
-    if (disabled) b.setAttribute(ARIA_DISABLED, 'true');
+    if (disabled) b.setAttribute(ARIA_DISABLED, TRUE);
     else b.removeAttribute(ARIA_DISABLED);
   }
 
@@ -887,23 +913,23 @@ function start(rt: Runtime): void {
     });
     menu.replaceChildren(...entries);
     menu.hidden = false;
-    buttons.insert.setAttribute(ARIA_EXPANDED, 'true');
+    buttons.insert.setAttribute(ARIA_EXPANDED, TRUE);
     entries[0].focus();
   }
 
   function closeMenu(refocus: boolean): void {
     if (menu.hidden) return;
     menu.hidden = true;
-    buttons.insert.setAttribute(ARIA_EXPANDED, 'false');
+    buttons.insert.setAttribute(ARIA_EXPANDED, FALSE);
     if (refocus) (menuReturn ?? buttons.insert).focus();
   }
 
-  menu.addEventListener('keydown', (event) => {
+  menu.addEventListener(KEYDOWN, (event) => {
     const entries = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
     const index = entries.indexOf(event.target as HTMLButtonElement);
-    if (event.key === 'Escape' || event.key === 'Tab') {
-      if (event.key === 'Escape') event.preventDefault();
-      closeMenu(event.key === 'Escape');
+    if (event.key === ESCAPE || event.key === 'Tab') {
+      if (event.key === ESCAPE) event.preventDefault();
+      closeMenu(event.key === ESCAPE);
       return;
     }
     let to = listKeyTarget(event.key, index, entries.length, true);
@@ -923,7 +949,7 @@ function start(rt: Runtime): void {
   function toggleProps(): void {
     if (props.hidden) {
       props.hidden = false;
-      buttons.props.setAttribute(ARIA_EXPANDED, 'true');
+      buttons.props.setAttribute(ARIA_EXPANDED, TRUE);
       fillProps();
       props.querySelector<HTMLElement>('input, select')?.focus();
     } else {
@@ -933,7 +959,7 @@ function start(rt: Runtime): void {
 
   function closeProps(refocus: boolean): void {
     props.hidden = true;
-    buttons.props.setAttribute(ARIA_EXPANDED, 'false');
+    buttons.props.setAttribute(ARIA_EXPANDED, FALSE);
     if (refocus) buttons.props.focus();
   }
 
@@ -945,7 +971,7 @@ function start(rt: Runtime): void {
       return select;
     }
     const input = h('input', { attrs: { id, type: field.kind === 'flag' ? 'checkbox' : 'text' } });
-    if (field.kind === 'flag') input.checked = field.value === 'true';
+    if (field.kind === 'flag') input.checked = field.value === TRUE;
     else input.value = field.value;
     return input;
   }
@@ -958,7 +984,7 @@ function start(rt: Runtime): void {
       post({ ...formRequest(field, value), key, editId: nextId() });
     });
     const label = h('label', { text: field.label, attrs: { for: id } });
-    return h('div', { className: `field ${field.kind}`, attrs: { 'data-field': field.name } }, field.kind === 'flag' ? [control, label] : [label, control]);
+    return h(DIV, { className: `field ${field.kind}`, attrs: { 'data-field': field.name } }, field.kind === 'flag' ? [control, label] : [label, control]);
   }
 
   /** Fill the form for the current container; the control with focus keeps it. */
@@ -976,8 +1002,13 @@ function start(rt: Runtime): void {
     if (focused) props.querySelector<HTMLElement>(`[data-field="${focused}"] input, [data-field="${focused}"] select`)?.focus();
   }
 
-  props.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
+  props.addEventListener(KEYDOWN, (event) => {
+    // In a text field, Ctrl+Z is the field's own undo, as in the source editor.
+    if (isUndoRedo(event) && (event.target as HTMLInputElement).type === 'text') {
+      event.stopPropagation();
+      return;
+    }
+    if (event.key === ESCAPE) {
       event.preventDefault();
       closeProps(false);
       currentItem()?.focus();

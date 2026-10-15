@@ -230,13 +230,27 @@ const lineBreaks = (text: string) => text.split('\n').length - 1;
  * first line moves down past lines inserted before it (true), its end stays before lines added after it (false).
  */
 export function mapBoundary(line: number, c: TextChange, after: boolean): number {
-  if (c.startLine > line || (c.startLine === line && c.startCharacter > 0)) return line; // the change is after it
+  if (startsAfter(c, line)) return line;
   const breaks = lineBreaks(c.text);
-  const insertion = c.startLine === c.endLine && c.startCharacter === c.endCharacter;
-  if (insertion && c.startLine === line) return after ? line + breaks : line;
-  if (c.endLine < line || (c.endLine === line && c.endCharacter === 0)) return line + breaks - (c.endLine - c.startLine);
+  if (isInsertionAt(c, line)) return after ? line + breaks : line;
+  if (endsBefore(c, line)) return line + breaks - (c.endLine - c.startLine);
   // Inside the replaced text: the block was changed there, which the text check will see.
   return after ? c.startLine : c.startLine + breaks + 1;
+}
+
+/** The change starts after the start of `line`. */
+function startsAfter(c: TextChange, line: number): boolean {
+  return c.startLine > line || (c.startLine === line && c.startCharacter > 0);
+}
+
+/** Text inserted (nothing replaced) right at the start of `line`. */
+function isInsertionAt(c: TextChange, line: number): boolean {
+  return c.startLine === line && c.endLine === line && c.startCharacter === 0 && c.endCharacter === 0;
+}
+
+/** The change ends at or before the start of `line`. */
+function endsBefore(c: TextChange, line: number): boolean {
+  return c.endLine < line || (c.endLine === line && c.endCharacter === 0);
 }
 
 /** Every text change since a version, so a line range from that version can be found in the document now. */
@@ -337,7 +351,10 @@ interface Found {
 export const MAX_PROBLEM_MESSAGES = 10;
 const MAX_PINS = 32;
 const CONTAINER = 'container';
+const BLOCK = 'block';
 const GAP = 'gap';
+const FRONT_MATTER = 'frontmatter';
+const NOT_APPLIED = 'The edit could not be applied.';
 const TITLE = 'title';
 const FLAGS = new Set(['collapsible', 'open']);
 const COLOR_KEYS = ['color', 'bg', 'border'];
@@ -436,10 +453,10 @@ function findSiblings(segments: readonly Segment[], range: LineRange): { sibling
 /** Where a block moves to: before the block above it, or after the block below it (gaps are skipped). */
 function moveTarget(siblings: readonly Segment[], index: number, direction: MoveDirection): number | undefined {
   if (direction === 'up') {
-    for (let i = index - 1; i >= 0; i--) if (siblings[i].kind === 'block') return siblings[i].start;
+    for (let i = index - 1; i >= 0; i--) if (siblings[i].kind === BLOCK) return siblings[i].start;
     return undefined;
   }
-  for (let i = index + 1; i < siblings.length; i++) if (siblings[i].kind === 'block') return siblings[i].end;
+  for (let i = index + 1; i < siblings.length; i++) if (siblings[i].kind === BLOCK) return siblings[i].end;
   return undefined;
 }
 
@@ -528,7 +545,7 @@ export class BlockEditorSession {
     const html = new Map(result.blocks.map((b) => [b.key, b.html]));
     const view = (s: Segment, top: boolean): BlockView => this.blockView(s, lines, top ? html : undefined, diagnostics);
     const first = result.segments[0];
-    const frontMatter = first?.kind === 'frontmatter' ? this.frontMatterView(first, lines, diagnostics) : null;
+    const frontMatter = first?.kind === FRONT_MATTER ? this.frontMatterView(first, lines, diagnostics) : null;
     const message: RenderMessage = {
       type: 'render',
       version,
@@ -538,11 +555,11 @@ export class BlockEditorSession {
       tail: result.tail,
       themePref: this.options.themePref?.(result.frontMatter) ?? 'auto',
       frontMatter,
-      blocks: result.segments.filter((s) => s.kind !== 'frontmatter').map((s) => view(s, true)),
+      blocks: result.segments.filter((s) => s.kind !== FRONT_MATTER).map((s) => view(s, true)),
       ...this.pinned(result.segments, version),
       templates: this.options.templates.map((t) => (t.description ? { name: t.name, description: t.description } : { name: t.name })),
     };
-    const keys = result.segments.filter((s) => s.kind === 'block').map((s) => s.key);
+    const keys = result.segments.filter((s) => s.kind === BLOCK).map((s) => s.key);
     this.last = { version, keys, blocks: keys.length };
     this.renders++;
     return message;
@@ -557,22 +574,25 @@ export class BlockEditorSession {
 
   private blockView(s: Segment, lines: readonly string[], html: ReadonlyMap<string, string> | undefined, diagnostics: readonly LineDiagnostic[]): BlockView {
     const source = lines.slice(s.start, s.end).join('\n');
-    const view: BlockView = { key: s.key, kind: s.kind === 'block' ? 'block' : GAP, type: s.kind === 'block' ? s.type ?? 'paragraph' : GAP, start: s.start, end: s.end, source };
-    if (s.kind !== 'block' && isBlankText(source)) view.blank = true;
+    const isBlock = s.kind === BLOCK;
+    const type = isBlock ? s.type ?? 'paragraph' : GAP;
+    const view: BlockView = { key: s.key, kind: isBlock ? BLOCK : GAP, type, start: s.start, end: s.end, source };
+    if (!isBlock && isBlankText(source)) view.blank = true;
     if (s.container) view.container = s.container;
-    if (html && s.kind === 'block') view.html = html.get(s.key) ?? '';
-    if (s.children) {
-      view.children = s.children
-        .filter((c) => c.kind === 'block' || !isBlankText(lines.slice(c.start, c.end).join('\n')))
-        .map((c) => this.blockView(c, lines, undefined, diagnostics));
-    }
-    if (s.type === CONTAINER) {
-      const form = containerForm(lines[s.start], s.container);
-      if (form) view.form = form;
-    }
+    if (html && isBlock) view.html = html.get(s.key) ?? '';
+    if (s.children) view.children = this.childViews(s.children, lines, diagnostics);
+    const form = s.type === CONTAINER ? containerForm(lines[s.start], s.container) : undefined;
+    if (form) view.form = form;
     const problems = problemsIn(diagnostics, s.start, s.end);
     if (problems) view.problems = problems;
     return view;
+  }
+
+  /** A container's children: its blocks and the gaps that hold more than blank lines. */
+  private childViews(children: readonly Segment[], lines: readonly string[], diagnostics: readonly LineDiagnostic[]): BlockView[] {
+    return children
+      .filter((c) => c.kind === BLOCK || !isBlankText(lines.slice(c.start, c.end).join('\n')))
+      .map((c) => this.blockView(c, lines, undefined, diagnostics));
   }
 
   /** Where the blocks the page edited are now: a new key when their lines are one block again, else their lines. */
@@ -588,7 +608,7 @@ export class BlockEditorSession {
         continue;
       }
       this.pins.set(key, { ...range, version, text: entry.text });
-      const same = all.find((s) => s.start === range.start && s.end === range.end && s.kind !== 'frontmatter');
+      const same = all.find((s) => s.start === range.start && s.end === range.end && s.kind !== FRONT_MATTER);
       if (same && same.key !== key) renamed[key] = same.key;
       if (!same) pins[key] = range;
     }
@@ -651,7 +671,7 @@ export class BlockEditorSession {
     const newText = m.newText.replaceAll(/\r\n?/g, '\n');
     const change = minimalEdit(current, newText.replaceAll('\n', this.doc.eol));
     if (change && !(await this.apply([{ from: span.from + change.from, to: span.from + change.to, insert: change.insert }]))) {
-      return this.notice(m.editId, 'The edit could not be applied.');
+      return this.notice(m.editId, NOT_APPLIED);
     }
     this.pin(m.key, { start: range.start, end: range.start + lineBreaks(newText) + 1, version: this.doc.version, text: newText });
     this.ack(m.editId);
@@ -688,7 +708,7 @@ export class BlockEditorSession {
     if (!found) return;
     const segments = this.options.segment?.(found.text) ?? this.options.render(found.text).segments;
     const place = findSiblings(segments, found.range);
-    if (place?.siblings[place.index].kind !== 'block') return this.notice(editId, 'Only blocks can be moved.');
+    if (place?.siblings[place.index].kind !== BLOCK) return this.notice(editId, 'Only blocks can be moved.');
     const target = moveTarget(place.siblings, place.index, direction);
     const moved = target === undefined ? null : moveBlock(found.lines, found.range, target);
     if (!moved) return this.notice(editId, direction === 'up' ? 'The block is already at the top.' : 'The block is already at the bottom.');
@@ -710,7 +730,7 @@ export class BlockEditorSession {
     const span = lineSpan(found.text, { start: found.range.start, end: found.range.start + 1 })!;
     const change = minimalEdit(line, next);
     if (change && !(await this.apply([{ from: span.from + change.from, to: span.from + change.to, insert: change.insert }]))) {
-      return this.notice(m.editId, 'The edit could not be applied.');
+      return this.notice(m.editId, NOT_APPLIED);
     }
     // The next change from the same form, before the next render, still finds the block.
     const text = [next, ...found.lines.slice(found.range.start + 1, found.range.end)].join('\n');
@@ -729,7 +749,7 @@ export class BlockEditorSession {
   /** Apply line edits (against `text`) in the document's line ending; false (and a notice) when that fails. */
   private async applyLines(text: string, edits: readonly LineEdit[], editId: string | undefined): Promise<boolean> {
     const ok = await this.apply(edits.map((e) => lineEditToTextEdit(text, e, this.doc.eol)));
-    if (!ok) this.notice(editId, 'The edit could not be applied.');
+    if (!ok) this.notice(editId, NOT_APPLIED);
     return ok;
   }
 
