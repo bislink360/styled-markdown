@@ -66,12 +66,44 @@ export interface TermMatcher<T> {
 
 const escapeRegExp = (s: string) => s.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
-/** A term as a pattern: abbreviations exactly, other terms with either case of their first letter. */
+/**
+ * Quotes and dashes the typographer changes (`'` → `’`, `"` → `“`, `--` → `–`, `---` → `—`), each with the pattern
+ * that matches all its forms and its straight form. Rendered text has the typographic forms, the source the ones
+ * written, so a term matches either.
+ */
+const TYPOGRAPHIC = /---|--|['‘’"“”–—]/g;
+const SINGLE_QUOTE = "['‘’]";
+const DOUBLE_QUOTE = '["“”]';
+const EN_DASH = '(?:--|–)';
+const EM_DASH = '(?:---|—)';
+const TYPOGRAPHIC_PATTERN = new Map([
+  ["'", SINGLE_QUOTE], ['‘', SINGLE_QUOTE], ['’', SINGLE_QUOTE], ['"', DOUBLE_QUOTE], ['“', DOUBLE_QUOTE], ['”', DOUBLE_QUOTE],
+  ['--', EN_DASH], ['–', EN_DASH], ['---', EM_DASH], ['—', EM_DASH],
+]);
+const STRAIGHT = new Map([['‘', "'"], ['’', "'"], ['“', '"'], ['”', '"'], ['–', '--'], ['—', '---']]);
+
+/** Text with its typographic quotes and dashes in their straight form, so both forms of a term have one key. */
+const straightened = (s: string) => s.replaceAll(/[‘’“”–—]/g, (c) => STRAIGHT.get(c) ?? c);
+
+/** Literal text as a pattern, its quotes and dashes in any of their forms. */
+function textPattern(s: string): string {
+  let out = '';
+  let pos = 0;
+  for (const m of s.matchAll(TYPOGRAPHIC)) {
+    out += escapeRegExp(s.slice(pos, m.index)) + TYPOGRAPHIC_PATTERN.get(m[0]);
+    pos = m.index + m[0].length;
+  }
+  return out + escapeRegExp(s.slice(pos));
+}
+
+/**
+ * A term as a pattern: abbreviations exactly, other terms with either case of their first letter; quotes and
+ * dashes straight or typographic, as the typographer leaves them in rendered text.
+ */
 function termPattern(term: string): string {
   const first = term.charAt(0);
-  const rest = escapeRegExp(term.slice(1));
-  if (isAbbreviation(term) || first.toLowerCase() === first.toUpperCase()) return escapeRegExp(term);
-  return `(?:${escapeRegExp(first.toLowerCase())}|${escapeRegExp(first.toUpperCase())})${rest}`;
+  if (isAbbreviation(term) || first.toLowerCase() === first.toUpperCase()) return textPattern(term);
+  return `(?:${escapeRegExp(first.toLowerCase())}|${escapeRegExp(first.toUpperCase())})${textPattern(term.slice(1))}`;
 }
 
 /** URLs and e-mail-like words, whose letters are never terms. */
@@ -86,9 +118,10 @@ const blank = (m: string) => ' '.repeat(m.length);
  * terms win over shorter ones they contain. Undefined when there are no terms.
  */
 export function termMatcher<T extends { term: string }>(entries: Iterable<T>): TermMatcher<T> | undefined {
+  // Keyed with straight quotes and dashes, as uses are looked up.
   const byKey = new Map<string, T>();
   for (const entry of entries) {
-    const key = termKey(entry.term);
+    const key = straightened(termKey(entry.term));
     if (!byKey.has(key)) byKey.set(key, entry);
   }
   if (!byKey.size) return undefined;
@@ -100,7 +133,8 @@ export function termMatcher<T extends { term: string }>(entries: Iterable<T>): T
     find(text) {
       const found: Array<TermMatch<T>> = [];
       for (const m of text.replaceAll(URLS, blank).matchAll(pattern)) {
-        const entry = byKey.get(m[0]) ?? byKey.get(lowerFirst(m[0]));
+        const use = straightened(m[0]);
+        const entry = byKey.get(use) ?? byKey.get(lowerFirst(use));
         if (entry) found.push({ index: m.index, text: m[0], entry });
       }
       return found;
