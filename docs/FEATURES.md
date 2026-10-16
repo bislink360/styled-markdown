@@ -614,7 +614,8 @@ An `:::agent` block inside a section marked `{agent=skip}` is omitted with the s
 ## 11. Headings, links and anchors
 
 - `## Title {#custom-id}` sets a stable anchor, and `{.lead}` adds a class (`{.page-break}` starts a new page when printed: [section 16](#pdf-and-printing)).
-- Headings get automatic ids, so `[see API](#api)` works. Broken anchors and missing relative files are reported.
+- Headings get automatic ids, so `[see API](#api)` works. Broken anchors and missing relative files are reported. How ids are made is in [SPEC.md §4.2.3](SPEC.md#423-heading-ids).
+- **GitHub ids** work too. GitHub keeps `_` and doesn't collapse hyphens, so `## max_tokens` is `#maxtokens` here and `#max_tokens` on GitHub. A link by the GitHub id is accepted, with an info note and a quick fix to `#maxtokens` (it doesn't work in the preview), and go to definition, hover, find references and rename follow it. `smd to-md` writes `<a id="maxtokens"></a>` before such headings, so links by either id work on GitHub; `smd from-md` drops those lines again.
 - The outline view and folding follow headings and blocks.
 
 ---
@@ -648,7 +649,7 @@ An `:::agent` block inside a section marked `{agent=skip}` is omitted with the s
 | Go to definition | `F12` or `Ctrl+Click` on `#anchor`, `other.smd#anchor`, a relative file, a `related:` entry or a `[text][label]` reference jumps to the heading, `{#id}` block, file or definition |
 | Format Document | `Shift+Alt+F` or format on save applies the `smd fmt` rules: container fence colons by nesting level, canonical attribute lists, aligned tables, blank lines around blocks. Layout only; the rendered document never changes |
 | Find references | `Shift+F12` on a heading, or on the `#anchor` of a link, lists the heading and every link to it in the workspace's `.smd` and `.md` files |
-| Rename heading | `F2` on a heading renames it and updates every `#anchor` and `other.smd#anchor` link to it across the workspace, including the numbered anchors of later headings with the same text. Headings with an explicit `{#id}` keep their anchor, so links are left alone |
+| Rename heading | `F2` on a heading renames it and updates every `#anchor` and `other.smd#anchor` link to it across the workspace, including the numbered anchors of later headings with the same text. Headings with an explicit `{#id}` keep their anchor, so links are left alone. Links by the heading's GitHub id (`#max_tokens`) follow it too |
 | Refactorings | `Ctrl+.` with a selection wraps it in `:::note`, `:::tip`, `:::warning`, `:::danger`, `:::card`, `:::details`, `:::agent` or `:::human` (a selection that splits a code block or container isn't offered). On a callout's opening line: convert it to another callout type. In a blockquote that starts with `[!NOTE]`-style alerts or a bold label (`**Warning:**`, `**Tip**:`…): convert it to the matching callout |
 | SMD Tasks view | In the Explorer of any workspace with `.smd` files: the open tasks of every `.smd` file. **Group Tasks By…** in the view's title bar switches between owner (Unassigned last), due date (Overdue, Today, This week, Later, No due date) and document, and is remembered per workspace. Inside each group: overdue first, then priority, then due date. Each task shows its priority, due date and owners; hover for its section and file. Click to open it at its line; tick the checkbox to check it off in the file (saved unless it had unsaved changes). The eye button shows completed tasks too; the badge counts overdue tasks. Updates as you type, save, and create or delete files |
 | Document status | The status bar shows the front matter `status` of the active `.smd` file (`Draft`, `Review`, `Approved`, `Deprecated`, `Archived`, each with its icon), **No status** when there is none, and a warning for a value outside the five. Click it, or run **Set Document Status…**, to pick a status: the usual next step (draft → review → approved → deprecated → archived) comes first, the current one is marked, and each says what it means to readers. Only the front matter changes, as one undoable edit that is not saved: the `status:` value is replaced in place (quotes and comments kept), or a `status:` line is added after `summary:` (else `title:`, else at the end); a file without front matter gets `smd: 1` and `status:`. An existing `updated:` is set to today (`smd.status.updateDate`). Front matter that does not parse is left alone |
@@ -690,6 +691,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `file="nope.ts"` | `fence/embed-missing` | — |
 | `:::include{file="nope.smd"}`, `section="Nope"`, `a.smd` including `b.smd` including `a.smd` | `include/missing-file`, `include/missing-section`, `include/cycle` | — |
 | `[x](#rolout)`, `[x](plan.smd#rolout)` | `link/missing-anchor` | → closest heading id |
+| `[x](#max_tokens)` to `## max_tokens` (GitHub's id) | `link/github-anchor` (info) | → `#maxtokens` |
 | `[x](gone.md)`, `related: [gone.smd]` | `link/missing-file` | — |
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
 | `:ref[fig-chekout]` | `figure/unknown-ref` | → closest figure id |
@@ -734,6 +736,7 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 | `attrs/unknown` | exactly one accepted attribute name is close and not already set, e.g. `colr` → `color` |
 | `attrs/value` | exactly one allowed value is close (block and directive values, named colors, `size`, `weight`, `font`, `align`, `:priority[…]`, heading `agent=skip`), or a `date`/`:due[…]` is year-first, e.g. `2026/10/5` → `2026-10-05` |
 | `link/missing-anchor` | a heading id is close |
+| `link/github-anchor` | always: the heading's own id |
 | `footnote/undefined` | exactly one defined footnote label is close, e.g. `[^retires]` → `[^retries]` |
 | `variable/undefined` | a front matter key is close, e.g. `{{verison}}` → `{{version}}` |
 

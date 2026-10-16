@@ -11,6 +11,7 @@ import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from '.
 import { frontMatterProperty } from './core/frontmatterSchema';
 import { anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext } from './core/links';
 import { termHover } from './core/glossary';
+import { headingAlias } from './core/headingAliases';
 import { documentPreview, embedPreview, sectionExcerpt } from './core/symbols';
 import { codeLines, lazyLineSet } from './core/parse';
 import { variableCompletion, variableHover } from './core/variables';
@@ -28,6 +29,8 @@ export interface AssistItem {
   /** Text to insert instead of the label. */
   insertText?: string;
   sortText?: string;
+  /** Text the client matches what is typed against, instead of the label. */
+  filterText?: string;
 }
 
 /** Items that replace the text from column `from` to the cursor. */
@@ -146,12 +149,17 @@ function pathRank(isDirectory: boolean, isDoc: boolean): number {
 }
 
 function anchorItems(text: string, prefix: string): AssistItem[] {
-  return anchorTargets(text).map((t, i) => ({
-    label: `${prefix}${t.id}`,
-    kind: COMPLETION_KIND.reference,
-    detail: anchorDetail(t.text, t.level, t.line),
-    sortText: `3${String(i).padStart(5, '0')}`,
-  }));
+  return anchorTargets(text).map((t, i) => {
+    // Typing a heading's GitHub id (`#foo_bar`) finds it too, and inserts its own id (`#foobar`).
+    const alias = t.text === undefined || t.line === undefined ? undefined : headingAlias(text, t.line);
+    return {
+      label: `${prefix}${t.id}`,
+      kind: COMPLETION_KIND.reference,
+      detail: anchorDetail(t.text, t.level, t.line),
+      sortText: `3${String(i).padStart(5, '0')}`,
+      ...(alias ? { filterText: `${prefix}${t.id} ${prefix}${alias}` } : {}),
+    };
+  });
 }
 
 function anchorDetail(text: string | undefined, level: number | undefined, line: number | undefined): string {

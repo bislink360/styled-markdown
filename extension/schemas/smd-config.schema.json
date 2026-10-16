@@ -580,6 +580,16 @@
           ],
           "description": "Includes read more than a document may (200 includes, 2,000,000 characters)"
         },
+        "link/github-anchor": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Link to a heading by the id GitHub gives it (#foo_bar), which differs from its own id (#foobar)"
+        },
         "link/missing-anchor": {
           "enum": [
             "off",
