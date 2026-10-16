@@ -12,14 +12,19 @@ import {
   includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
 import {
-  expandedFigures, figuresOf, includedAlerts, includedInlineMath, includedLines, includedLiteralLines, includeKey, includeSource, type ExpandedFigures,
+  expandedFigures, figuresOf, includedAlerts, includedInlineItems, includedInlineMath, includedLines, includedLiteralLines, includedTaskLines, includeKey,
+  includeSource, type ExpandedFigures,
 } from './includeText';
-import { alertLines, aroundInlineMath, fenceLines, inlineMathLines, lazyLineSet, literalLines, parseSmd, type AlertLines, type InlineMathLines } from './parse';
+import {
+  alertLines, aroundInlineMath, convertedParts, fenceLines, inlineItemLines, inlineMathLines, lazyLineSet, literalLines, parseSmd, renderedTaskLines,
+  type AlertLines, type InlineItemLines, type InlineMathLines, type InlinePart,
+} from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { quoteCite } from './quote';
 import { CALLOUT_TYPES } from './spec';
 import { openTaskLines } from './taskLines';
+import { own } from './util';
 import { documentVariables, substituteVariables, type Variables } from './variables';
 
 /**
@@ -363,6 +368,10 @@ interface TransformOptions extends AgentViewOptions {
   inlineMath?: InlineMathLines;
   /** The GitHub alerts of `lines` (see alertLines); found in `lines` when left out. */
   alerts?: readonly AlertLines[];
+  /** The inline items of `lines` that run over several lines (see inlineItemLines); found in `lines` when left out. */
+  inlineItems?: InlineItemLines;
+  /** The lines of `lines` where rendering shows a task's checkbox (see renderedTaskLines); found in `lines` when left out. */
+  taskLines?: ReadonlySet<number>;
   /** Receives every emitted line with the source line it came from. */
   collect?: Array<[at: number, line: string]>;
   /** Inside an included document: where its own includes resolve. */
@@ -372,9 +381,13 @@ interface TransformOptions extends AgentViewOptions {
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
-  const { figures, ownFigures, literal, inlineMath, alerts } = documentContext(lines, options);
+  const { figures, ownFigures, literal, inlineMath, alerts, inlineItems, taskLines } = documentContext(lines, options);
   const variables = options.variables ?? documentVariables(lines);
-  const text = (s: string, openTask = false, math?: ReadonlyArray<[number, number]>) => inlineText(s, options.today, openTask, figures.byId, variables, math);
+  const text = (s: string, openTask = false, math?: ReadonlyArray<[number, number]>, parts?: ReadonlyArray<InlinePart>) => {
+    const read: TextContext = { today: options.today, openTask, figures: figures.byId, variables };
+    // An item that runs over several lines is read whole, as rendering reads it; each line shows its part.
+    return styledText(s, read, math, convertedParts(parts, (whole) => styledText(whole, read)));
+  };
   const changelogs = options.changelogs ?? changelogEntries(lines);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
@@ -481,7 +494,9 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     }
 
     // ---- tasks ----
-    const task = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]\s+(.*)$/.exec(line);
+    // A task-shaped line that rendering shows as text (in a paragraph it continues) is not a task.
+    const shape = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\]\s+(.*)$/.exec(line);
+    const task = shape && taskLines.has(i) ? shape : null;
     if (task && task[2] !== ' ' && options.brief) {
       if (inScope(i) && !dropping()) doneTasks++;
       continue;
@@ -498,9 +513,10 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
       continue;
     }
 
-    // Math that runs on from one line to the next is known for the line as written (not with a comment or an alert's
-    // quote marker cut out).
-    const converted = text(line, task ? task[2] === ' ' : false, line === lines[i] ? inlineMath.get(i) : undefined);
+    // Math and items that run on from one line to the next are known for the line as written (not with a comment or an
+    // alert's quote marker cut out).
+    const asWritten = line === lines[i];
+    const converted = text(line, task ? task[2] === ' ' : false, asWritten ? inlineMath.get(i) : undefined, asWritten ? inlineItems.get(i) : undefined);
     emit(converted.trimEnd(), i);
   }
   alertView.end();
@@ -510,18 +526,20 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
 interface DocumentContext {
   figures: ExpandedFigures; ownFigures: ReadonlyMap<number, Figure>; literal: ReadonlySet<number>; inlineMath: InlineMathLines; alerts: readonly AlertLines[];
+  inlineItems: InlineItemLines; taskLines: ReadonlySet<number>;
 }
 
 /**
  * The figures (numbered with the rest of the expanded document), this document's own figures by line, the lines
- * of code and display math, and its GitHub alerts, from `options` when the caller has them, else from `lines`.
+ * of code and display math, its GitHub alerts, multi-line inline items and task lines, from `options` when the
+ * caller has them, else from `lines`.
  */
 function documentContext(lines: string[], options: TransformOptions): DocumentContext {
   const text = lines.join('\n');
   const figures = options.figures ?? expandedFigures(text, viewReader(options));
   return {
     figures, ownFigures: figuresOf(figures, options.figureKey ?? ''), literal: options.literalLines ?? literalLines(text), inlineMath: options.inlineMath ?? inlineMathLines(text),
-    alerts: options.alerts ?? alertLines(text),
+    alerts: options.alerts ?? alertLines(text), inlineItems: options.inlineItems ?? inlineItemLines(text), taskLines: options.taskLines ?? renderedTaskLines(text),
   };
 }
 
@@ -566,7 +584,7 @@ function alertTags(alerts: readonly AlertLines[], lines: string[], emit: (line: 
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
   const text = lines.join('\n');
   const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text), inlineMath: inlineMathLines(text),
-    alerts: alertLines(text) };
+    alerts: alertLines(text), inlineItems: inlineItemLines(text), taskLines: renderedTaskLines(text) };
   return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
 }
 
@@ -597,7 +615,7 @@ function includeView(info: ContainerInfo, lines: string[], line: number, options
   // Included text uses this document's front matter variables, as the rendered HTML does.
   const inner = {
     ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines), literalLines: includedLiteralLines(inc),
-    inlineMath: includedInlineMath(inc), alerts: includedAlerts(inc),
+    inlineMath: includedInlineMath(inc), alerts: includedAlerts(inc), inlineItems: includedInlineItems(inc), taskLines: includedTaskLines(inc),
     // Its figures are numbered with the including document's, and `:ref` resolves across both, as in rendered output.
     figureKey: includeKey(options.figureKey ?? '', line),
   };
@@ -655,10 +673,21 @@ const STATUS_WORDS: Record<string, string> = { green: 'ok', teal: 'ok', red: 'ba
 export function inlineText(
   line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables, math?: ReadonlyArray<[number, number]>,
 ): string {
+  return styledText(line, { today, openTask, figures, variables }, math);
+}
+
+/** How inlineText reads a line: the date for overdue tasks, whether it is an open task's, the figures and front matter. */
+interface TextContext { today?: string; openTask: boolean; figures?: ReadonlyMap<string, FigureNumber>; variables?: Variables }
+
+/**
+ * inlineText, with parts of the line already converted (see convertedParts): they are put back as converted, and the
+ * rest of the line is read around them.
+ */
+function styledText(line: string, read: TextContext, math?: ReadonlyArray<[number, number]>, replaced?: ReadonlyArray<[number, number, string]>): string {
   return aroundInlineMath(line, (text) => text
     .split(/(`+[^`]*`+)/)
-    .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, variables), today, openTask, figures)))
-    .join(''), math);
+    .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, read.variables), read.today, read.openTask, read.figures)))
+    .join(''), math, replaced);
 }
 
 /** `:ref[id]` → `Figure 2 (id)`; references to unknown ids stay as written. */
@@ -674,25 +703,32 @@ function refText(s: string, figures: ReadonlyMap<string, FigureNumber> | undefin
 function plain(s: string, today: string | undefined, openTask: boolean, figures?: ReadonlyMap<string, FigureNumber>): string {
   return refText(s, figures)
     .replace(/!\[([^\]\n]*)\]\([^)\n]*\)/g, (_m, alt) => (alt ? `[image: ${alt}]` : ''))
-    .replace(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]\n]*)\])?(?:\{([^{}\n]*)\})?/g, (m, pre, name, content = '', rawAttrs = '') => {
-      const v = parseAttrs(rawAttrs)?.values ?? {};
-      switch (name) {
-        case 'badge': return `${pre}[${content}]`;
-        case 'priority': return `${pre}[${content}]`;
-        case 'kbd': return `${pre}${content}`;
-        case 'mention': return `${pre}${content}`;
-        case 'status': return `${pre}[status: ${content}${STATUS_WORDS[v.color] ? ` (${STATUS_WORDS[v.color]})` : ''}]`;
-        case 'progress': return `${pre}${v.label ?? `${Math.round(Number(v.value ?? content) || 0)}%`}`;
-        case 'due': {
-          const late = openTask && dueState(content.trim(), today) === 'overdue';
-          return `${pre}(due ${content}${late ? ', OVERDUE' : ''})`;
-        }
-        case 'metric': return `${pre}${v.label ? `${v.label}: ` : ''}${content}${v.delta ? ` (${v.delta})` : ''}`;
-        default: return m;
-      }
-    })
-    .replace(/(!?)\[([^\]\n]*)\]\{([^{}\n]*)\}/g, (m, bang, content, rawAttrs) => (bang || !parseAttrs(rawAttrs) ? m : content))
-    .replace(/==(?=\S)([^=\n]+?)(?<=\S)==/g, '$1');
+    // A name with neither `[content]` nor `{attributes}` is text, as in rendering. Content may run over a line break
+    // when an item is read whole (see convertedParts).
+    .replace(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g, (m, pre: string, name: string, content?: string, rawAttrs?: string) =>
+      (content === undefined && rawAttrs === undefined ? m : directiveText(m, { pre, name, content: content ?? '', rawAttrs: rawAttrs ?? '' }, today, openTask)))
+    .replace(/(!?)\[([^\]]*)\]\{([^{}\n]*)\}/g, (m, bang, content, rawAttrs) => (bang || !parseAttrs(rawAttrs) ? m : content))
+    .replace(/==(?=\S)([^=]+?)(?<=\S)==/g, '$1');
+}
+
+/** One `:name[content]{attrs}` in plain text (`m` as written), or `m` for a name the agent view keeps as written. */
+function directiveText(m: string, { pre, name, content, rawAttrs }: { pre: string; name: string; content: string; rawAttrs: string }, today: string | undefined, openTask: boolean): string {
+  const v = parseAttrs(rawAttrs)?.values ?? {};
+  const status = own(STATUS_WORDS, v.color ?? '');
+  switch (name) {
+    case 'badge': return `${pre}[${content}]`;
+    case 'priority': return `${pre}[${content}]`;
+    case 'kbd': return `${pre}${content}`;
+    case 'mention': return `${pre}${content}`;
+    case 'status': return `${pre}[status: ${content}${status ? ` (${status})` : ''}]`;
+    case 'progress': return `${pre}${v.label ?? `${Math.round(Number(v.value ?? content) || 0)}%`}`;
+    case 'due': {
+      const late = openTask && dueState(content.trim(), today) === 'overdue';
+      return `${pre}(due ${content}${late ? ', OVERDUE' : ''})`;
+    }
+    case 'metric': return `${pre}${v.label ? `${v.label}: ` : ''}${content}${v.delta ? ` (${v.delta})` : ''}`;
+    default: return m;
+  }
 }
 
 // ---------------------------------------------------------------------------
