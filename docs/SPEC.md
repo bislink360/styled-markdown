@@ -665,6 +665,29 @@ Front matter variables (§4.7) degrade to their source: tools before 1.6, GitHub
 
 Localized labels (§2.2) degrade to English: tools before 1.6 don't know `lang`, so they render every label in English, report `lang` as `frontmatter/unknown-key` (a hint) and keep it as metadata. GitHub and other Markdown renderers add no labels of their own. A document's text is never changed by `lang`, so it reads the same everywhere apart from those labels.
 
+### 10.1 Migrating to spec v2
+
+Spec v2 (`smd: 2`, Styled Markdown 2.0) reads a few things differently; the accepted changes are in the spec v2 RFC (`docs/SPEC-V2-PROPOSALS.smd` on the 2.0 branch). A document opts in by saying `smd: 2`. `smd migrate --to 2` plans what a document needs so that it means the same under v2 as it does today. It is a command of its own, because it changes text that `smd fmt`, which only changes layout, never touches. 1.10 only reports the plan (`--dry-run`); 2.0 applies it.
+
+The steps run in this order. "v1" steps leave the document rendering as before with v1 tools; "v2" steps keep what the document means when it is read with the v2 rules, and its v1 rendering may change slightly. Text in code, math and raw HTML is never rewritten.
+
+| Step | RFC | Keeps | What it does |
+|---|---|---|---|
+| Closing fences | proposal 3 | v1 | A closing fence is written with its container's colon count (`::::` closing `:::tab` becomes `:::`), as `smd fmt` writes it and the `container/colons` fix does |
+| Duplicate attributes | proposal 4 | v1 | A key, `#id` or class given twice is kept once, with the value v1 uses (the last), where it first appears (`attrs/duplicate`). Only a repeated class renders differently: v1 writes it twice |
+| Title text that is not shown | proposal 4 | v1 | The title text of a container that also has `title=` is removed (`container/title-conflict`); text beside an HTML comment is a note |
+| `$$` delimiters | proposal 2 | v1 | A `$$` line that also has math on it is split, so each delimiter is on a line of its own (`$$ x` becomes `$$` and `x`), with the block's indentation, `>` markers or list indentation. The math is the same |
+| Braces after headings | proposal 5 | v1 | An empty `{}` or a bare `{word}` after a heading is removed (`heading/attrs-text`); `{agent}` is a note |
+| Unknown directives | proposal 7b | v2 | A literal `:name[…]` whose name isn't an inline directive as written (`:abbr[HTML]`, `:Badge[x]`) gets its colon escaped (`\:abbr[HTML]`), so v2 doesn't read it as a directive. CommonMark shows `\:` as `:` |
+| Include sections | proposal 9 | v1 | A `section=` that finds its heading only by a part of the heading's text is rewritten to the heading's id (`include/section-match`). Needs the included file |
+| Enumerated values | proposal 11 | v2 | Container, directive and front matter values are written in the vocabulary's case: `status=Accepted` → `accepted`, `method=get` → `GET`, `theme: Dark` → `dark`. Directive content such as `:priority[High]` is shown as written, and is left alone |
+| Typography | proposal 8 | v2 | With `--keep-typography`, `typography: true` is added to the front matter of a document whose text the typographer changes (curly quotes, dashes, ellipses, `(c)` and other symbols), to keep them under v2; otherwise a note counts those places |
+| Bare domain links | proposal 8 | v2 | A note for each bare domain linked today (`example.com`), which v2 doesn't link; with `--link-domains`, it is written as `<https://example.com>` |
+| Front matter values | proposal 10 | v2 | A note for each value the page header or a `{{key}}` shows other than as written (`version: 2.10` shows `2.1` in v1 and `2.10` in v2); with `--quote-variables`, it is quoted, so every version shows `2.10` |
+| Spec version | versioning rules | v1 | `smd: 1`, a missing key, a value that counts as 1 (`true`, `"1"`) or a missing front matter becomes `smd: 2`. Tools before 2.0 warn about `smd: 2` and read the document with the v1 rules |
+
+A document that already says `smd: 2` (or a newer version) needs nothing. Suppression comments don't stop a step: they silence reports, while the steps are about meaning. The plan of a migrated document has nothing more to change, apart from notes.
+
 ## 11. Deprecated
 
 These still work in spec v1 and in every 1.x release, with a hint (or a note in the message) from 1.10. Styled Markdown 2.0 removes them.

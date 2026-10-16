@@ -1012,6 +1012,8 @@ smd report <files|dirs> --since <date|git-ref> [-o report.smd] [--title "…"] [
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd validate <files|dirs> --format github [--summary <file>] [...]   GitHub annotations (section 15); --summary appends a job summary
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
+smd migrate <files|dirs> --to 2 --dry-run [--json] [--keep-typography] [--link-domains] [--quote-variables]
+                 what migrating to spec v2 would change (below); exit 0 nothing to do, 1 changes, 2 usage error
 smd render <file> [-o out.html]                     standalone page, with a print stylesheet
 smd pdf <file> [-o out.pdf] [--format A4|Letter] [--landscape]   PDF; needs Playwright or Puppeteer (section 16)
 smd docx <file> [-o out.docx] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only]   Word; needs Pandoc (section 16)
@@ -1030,6 +1032,29 @@ smd --version
 ```
 
 `validate` and `fmt` take any number of files and directories, so Git hooks pass them just the staged files (setups for pre-commit, lint-staged and plain Git hooks are in [INSTALL.md](INSTALL.md#pre-commit-hooks)). After `--`, every argument is a file, even one whose name starts with `-`.
+
+### Migrating to spec v2: `smd migrate`
+
+`smd migrate <files|dirs> --to 2 --dry-run` reports what each document needs so that it means the same under spec v2 (`smd: 2`, Styled Markdown 2.0) as it does today: closing fences with their container's colon count, duplicate attributes collapsed, hidden container title text removed, `$$` delimiters on their own lines, `{}` and bare `{word}` after headings removed, literal unknown `:name[…]` escaped, include sections by the heading's id, enumerated values in the vocabulary's case, and `smd: 2`. The steps, and which RFC proposal each follows, are in [SPEC.md §10.1](SPEC.md#101-migrating-to-spec-v2). Unlike `smd fmt`, it changes text, so it is a command of its own.
+
+```text
+docs/plan.smd: 2 changes and 1 note to migrate from smd: 1 to spec v2
+
+  Closing fences (proposal 3; v1 rendering kept):
+    Spec v2 pairs a closing fence with the innermost open container that has as many colons (proposal 3). …
+    line 15
+      - ::::
+      + :::
+
+  Typography (proposal 8; v2 meaning kept):
+    line 23, note: … The typographer changes 4 places today (4 quotes), on line(s) 23. Run with --keep-typography …
+```
+
+- 1.10 only reports, so `--dry-run` is required; Styled Markdown 2.0 applies the migration. Nothing is written.
+- `--json` prints the plan: per file, each step's `kind`, `proposal`, `keeps` (`v1`: v1 rendering unchanged; `v2`: the v2 meaning kept), 0-based `line` and `endLine`, `before`, `after`, `reason` and `note`, and the migrated text as `result`.
+- `--keep-typography` adds `typography: true` where the typographer changes text, to keep curly quotes and dashes under v2, which turns them off; `--link-domains` writes bare domains linked today as `<https://…>`; `--quote-variables` quotes front matter values shown other than as written (`version: 2.10`). Without them, each is a note.
+- Exit code 0 when nothing needs migrating, 1 when something does (a CI step can watch for documents that still need it), 2 on a usage error (no `--dry-run`, `--to` other than 2, an unknown option or no files).
+- In VS Code, **Styled Markdown: Preview Migration to Spec v2** shows the report for the current file in an output panel.
 
 ### Document catalog: `smd index`
 

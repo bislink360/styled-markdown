@@ -6,6 +6,7 @@ import {
   agentView, applyFixes, extractTasks, getDocumentInfo, markdownToSmd, outline, renderSmd, smdToMarkdown, validateSmd,
   type Diagnostic, type ValidateOptions,
 } from '../src/core';
+import { migrationPlan } from '../src/core/migrate';
 import { exampleDocuments, fuzzCase, prng } from './fuzz/generate';
 
 /**
@@ -122,10 +123,22 @@ function check(text: string): string | undefined {
     }
     timed('smdToMarkdown', () => smdToMarkdown(text, { readFile: options.readFile }));
     timed('markdownToSmd', () => markdownToSmd(text, 'fuzz'));
-    return undefined;
+    return checkMigration(text, lines.length);
   } catch (e) {
     return `threw: ${(e as Error).stack?.split('\n').slice(0, 3).join(' | ') ?? e}`;
   }
+}
+
+/** `smd migrate --to 2`: steps inside the document, and a plan of the result with nothing left to change. */
+function checkMigration(text: string, lineCount: number): string | undefined {
+  // Forced, so documents that already say smd: 2 are migrated too, and the steps' own settling is what is checked.
+  const migrate = { readFile: options.readFile, force: true };
+  const plan = timed('migrationPlan', () => migrationPlan(text, migrate));
+  for (const s of plan.steps) {
+    if (s.line < 0 || s.endLine < s.line || s.endLine > lineCount) return `migration step ${s.kind} on lines ${s.line}-${s.endLine}, outside the document`;
+  }
+  const left = timed('migrationPlan (result)', () => migrationPlan(plan.result, migrate)).steps.filter((s) => !s.note);
+  return left.length ? `migration does not settle: ${left.map((s) => `${s.kind} on line ${s.line}`).join(', ')}` : undefined;
 }
 
 /** Remove lines while the input still fails, so a failure is small enough to read. */

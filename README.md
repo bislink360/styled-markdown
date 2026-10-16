@@ -155,6 +155,7 @@ History and research. People see it; agents skip it.
 | `smd diff <paths> --since <git-ref>` / `smd diff <old> <new>` | Only the sections that changed, in the agent view: catch up on a doc without rereading it |
 | `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->`; `--format github` for pull request annotations ([GitHub Action](#github-action)) |
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
+| `smd migrate <paths> --to 2 --dry-run [--json]` | Report what migrating to spec v2 (`smd: 2`) would change so each doc keeps its meaning; exit 0 when nothing needs it, 1 when something does, 2 on a usage error. 1.10 only reports; 2.0 applies it ([steps](docs/SPEC.md#101-migrating-to-spec-v2)) |
 | `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
 | `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect; `render` pages have a print stylesheet (Print → Save as PDF) |
 | `smd export --to confluence\|notion <file> [-o out]` | A page for your wiki: Confluence storage format (callouts, code, expands, tasks and statuses as built-in macros) or Notion API blocks cut into request bodies. It only writes the file: no network, no credentials ([mapping](docs/FEATURES.md#confluence-and-notion-smd-export)) |
