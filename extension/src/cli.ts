@@ -10,6 +10,8 @@ import {
   type BudgetResult, type Diagnostic, type DiffResult, type ExportOptions, type ReportDocument, type Selector, type Tokenizer,
 } from './core';
 import { smdToPandocHtml } from './core/pandoc';
+import { migrationPlan } from './core/migrate';
+import { migrationReport, migrationSummary, planCounts } from './migrateReport';
 import { languageTag, SUPPORTED_LANGUAGES } from './core/i18n';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
@@ -134,6 +136,18 @@ Checking and converting:
       --stdout  print the formatted file instead of writing it (one file)
       validate and fmt take any number of files: use them as a pre-commit hook (see docs/INSTALL.md).
       After --, every argument is a file, even one that starts with "-".
+  smd migrate <files|dirs...> --to 2 --dry-run [--json] [--keep-typography] [--link-domains] [--quote-variables]
+      Report what migrating to spec v2 (smd: 2) would change, so each document keeps its meaning: closing
+      fences, duplicate attributes, title text, $$ delimiters, heading braces, unknown :name[…] escaped,
+      include sections, value case, and smd: 2. Unlike fmt, it changes meaning, so it is its own command.
+      1.10 only reports (--dry-run is required); Styled Markdown 2.0 applies the migration.
+      Exit code 0 when nothing needs migrating, 1 when something does (for CI), 2 on a usage error.
+      --json             the plan: per file, each step's kind, lines (0-based), before, after and reason,
+                         and the migrated text
+      --keep-typography  add "typography: true" where the typographer changes text, to keep curly quotes
+                         and dashes (v2 turns it off); without it, a note counts the places
+      --link-domains     write bare domains linked today (example.com) as <https://example.com>
+      --quote-variables  quote front matter values shown differently from how they are written (2.10)
   smd render <file.smd> [-o out.html] [--lang <tag>]
       Standalone HTML page (prints well: it has a print stylesheet)
       --lang   language of the labels it adds ("Note", "Figure 2", "overdue"…) when the document has no
@@ -277,6 +291,8 @@ function main(argv: string[]): number | Promise<number> {
       return validate(positional.length ? positional : ['.'], args, today, staleAfterDays);
     case 'fmt':
       return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
+    case 'migrate':
+      return migrate(positional.length ? positional : ['.'], args);
     case 'build':
       return build(positional, args);
     case 'render': {
@@ -472,6 +488,39 @@ function fmt(targets: string[], check: boolean, stdout: boolean): number {
   console.log(`
 ${files.length} file(s) checked: ${changed.length} ${check ? 'need formatting' : 'formatted'}.`);
   return check && changed.length ? 1 : 0;
+}
+
+const MIGRATE_USAGE = 'Usage: smd migrate <files|dirs...> --to 2 --dry-run [--json] [--keep-typography] [--link-domains] [--quote-variables]';
+const MIGRATE_FLAGS = new Set(['--dry-run', '--json', '--keep-typography', '--link-domains', '--quote-variables']);
+
+/** `smd migrate --to 2 --dry-run`: the plan that migrates each file to spec v2. Exit 1 when one needs changes. */
+function migrate(targets: string[], args: Args): number {
+  const to = args.values.get('--to')?.[0];
+  if (to !== '2') {
+    const problem = to === undefined ? 'migrate needs --to 2.' : `Cannot migrate to "${to}": the only target is spec v2 (--to 2).`;
+    return fail(`${problem}\n${MIGRATE_USAGE}`);
+  }
+  const unknown = [...args.flags].find((f) => !MIGRATE_FLAGS.has(f));
+  if (unknown) return fail(`Unknown option "${unknown}" for migrate.\n${MIGRATE_USAGE}`);
+  if (!args.flags.has('--dry-run')) return fail('1.10 can only report: run with --dry-run. Styled Markdown 2.0 applies the migration.');
+  const files = targets.flatMap((t) => collect(t));
+  if (!files.length) return fail('No .smd files found.');
+  const options = {
+    keepTypography: args.flags.has('--keep-typography'), linkDomains: args.flags.has('--link-domains'), quoteVariables: args.flags.has('--quote-variables'),
+  };
+  const plans = files.map((file) => ({ file, plan: migrationPlan(read(file), { ...options, readFile: readerFor(file) }) }));
+  const counts = plans.map(({ plan }) => planCounts(plan));
+  if (args.flags.has('--json')) {
+    const json = {
+      files: plans.map(({ file, plan }) => ({ file, from: plan.from, steps: plan.steps, result: plan.result })),
+      changes: counts.reduce((n, c) => n + c.changes, 0),
+      notes: counts.reduce((n, c) => n + c.notes, 0),
+    };
+    process.stdout.write(JSON.stringify(json, null, 2) + '\n');
+  } else {
+    process.stdout.write(plans.map(({ file, plan }) => migrationReport(file, plan)).join('\n') + migrationSummary(plans.map((p) => p.plan)));
+  }
+  return counts.some((c) => c.changes > 0) ? 1 : 0;
 }
 
 const TASK_FORMATS = ['--json', '--csv', '--gantt'];

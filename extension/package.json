@@ -198,6 +198,12 @@
         "category": "Styled Markdown"
       },
       {
+        "command": "smd.previewMigration",
+        "title": "Preview Migration to Spec v2",
+        "category": "Styled Markdown",
+        "enablement": "editorLangId == smd"
+      },
+      {
         "command": "smd.showAgentView",
         "title": "Show Agent View (what AI agents read)",
         "category": "Styled Markdown",

@@ -12,6 +12,8 @@ import { PreviewManager, renderOptions } from './preview';
 import { registerStatusWorkflow } from './statusWorkflow';
 import { registerTasksView } from './tasksView';
 import { registerDocxExport } from './docxExport';
+import { migrationPlan } from './core/migrate';
+import { migrationReport, migrationSummary } from './migrateReport';
 
 /** The API VS Code's built-in Markdown preview uses (see markdownPreview.ts). */
 export interface SmdExtensionApi {
@@ -34,6 +36,9 @@ export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
     vscode.window.showInformationMessage('Open a .smd file first.');
     return undefined;
   };
+
+  let migration: vscode.OutputChannel | undefined;
+  context.subscriptions.push({ dispose: () => migration?.dispose() });
 
   context.subscriptions.push(
     previews,
@@ -107,6 +112,17 @@ export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
       } catch { /* does not exist — good */ }
       await vscode.workspace.fs.writeFile(target, Buffer.from(markdownToSmd(text, path.basename(source.fsPath, '.md')), 'utf8'));
       await vscode.window.showTextDocument(target);
+    }),
+
+    // The dry run of `smd migrate --to 2` for the current file: a report, nothing is written.
+    vscode.commands.registerCommand('smd.previewMigration', () => {
+      const doc = activeSmd();
+      if (!doc) return;
+      const plan = migrationPlan(doc.getText(), { readFile: readerFor(doc) });
+      migration ??= vscode.window.createOutputChannel('Styled Markdown: Migration to Spec v2');
+      migration.clear();
+      migration.append(migrationReport(vscode.workspace.asRelativePath(doc.uri), plan) + migrationSummary([plan]));
+      migration.show(true);
     }),
 
     vscode.commands.registerCommand('smd.validateWorkspace', async () => {
