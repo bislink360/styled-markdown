@@ -1,7 +1,7 @@
 import {
   ALIGN_VALUES, FONT_VALUES, NAMED_COLORS, SIZE_VALUES, STYLE_KEYS, TEXT_STYLE_VALUES, WEIGHT_VALUES,
 } from './spec';
-import { suggest } from './util';
+import { own, suggest } from './util';
 
 /**
  * Attribute lists look like Pandoc / remark-directive attributes:
@@ -173,17 +173,17 @@ export function attrsToStyle(attrs: Attrs, block = false): { style: string; prob
         break;
       }
       case 'size': {
-        const s = SIZE_VALUES[value];
+        const s = own(SIZE_VALUES, value);
         if (s) css.push(`font-size:${s}`); else bad(key, value, `Use one of: ${Object.keys(SIZE_VALUES).join(', ')}.`);
         break;
       }
       case 'weight': {
-        const w = WEIGHT_VALUES[value];
+        const w = own(WEIGHT_VALUES, value);
         if (w) css.push(`font-weight:${w}`); else bad(key, value, `Use one of: ${Object.keys(WEIGHT_VALUES).join(', ')}.`);
         break;
       }
       case 'font': {
-        const f = FONT_VALUES[value];
+        const f = own(FONT_VALUES, value);
         if (f) css.push(`font-family:${f}`); else bad(key, value, `Use one of: ${Object.keys(FONT_VALUES).join(', ')}.`);
         break;
       }
@@ -194,7 +194,7 @@ export function attrsToStyle(attrs: Attrs, block = false): { style: string; prob
       case 'style': {
         const parts = value.split(/[\s,]+/).filter(Boolean);
         for (const p of parts) {
-          const s = TEXT_STYLE_VALUES[p];
+          const s = own(TEXT_STYLE_VALUES, p);
           if (s) css.push(s); else bad(key, p, `Use one of: ${Object.keys(TEXT_STYLE_VALUES).join(', ')}.`);
         }
         break;
@@ -207,7 +207,7 @@ export function attrsToStyle(attrs: Attrs, block = false): { style: string; prob
 }
 
 export function isStyleKey(key: string): boolean {
-  return key in STYLE_KEYS;
+  return Object.hasOwn(STYLE_KEYS, key);
 }
 
 export function colorHint(value?: string): string {

@@ -200,7 +200,7 @@ function frontMatterChanges(before: Record<string, unknown>, after: Record<strin
   const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
   return keys
     .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
-    .map((key) => ({ key, ...(key in before ? { before: before[key] } : {}), ...(key in after ? { after: after[key] } : {}) }));
+    .map((key) => ({ key, ...(Object.hasOwn(before, key) ? { before: before[key] } : {}), ...(Object.hasOwn(after, key) ? { after: after[key] } : {}) }));
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import { AUDIENCE_VALUES, FRONTMATTER_KEYS, NAMED_COLORS, SMD_VERSION, STATUS_VALUES } from './spec';
+import { own } from './util';
 
 /**
  * JSON Schema (draft-07) for .smd front matter. The validator and editor completion read it, and
@@ -65,7 +66,7 @@ export const FRONTMATTER_SCHEMA = {
 
 /** The values a key accepts, for completion: enums, booleans and the schema version. */
 export function frontMatterValues(key: string): string[] {
-  const prop = PROPERTIES[key];
+  const prop = own(PROPERTIES, key);
   if (!prop) return [];
   if (prop.enum) return prop.enum.map(String);
   if (prop.type === 'boolean') return ['true', 'false'];
@@ -74,4 +75,4 @@ export function frontMatterValues(key: string): string[] {
 }
 
 /** A front matter key's schema entry, if it is a standard key. */
-export const frontMatterProperty = (key: string): FrontMatterProperty | undefined => PROPERTIES[key];
+export const frontMatterProperty = (key: string): FrontMatterProperty | undefined => own(PROPERTIES, key);

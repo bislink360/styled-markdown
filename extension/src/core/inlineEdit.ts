@@ -7,6 +7,7 @@ import { inlineDirective, styledSpan, type DirectiveMeta, type SpanMeta } from '
 import type { SmdContext } from './markdownItSetup';
 import { createMarkdownIt } from './render';
 import { INLINE_DIRECTIVES } from './spec';
+import { own } from './util';
 
 /**
  * The inline directives (`:badge[x]{color=green}`, `:due[2026-10-30]`…) and styled spans (`[text]{color=red}`) of a
@@ -266,7 +267,7 @@ export interface InlineChange {
 const splice = (text: string, span: Span, insert: string) => text.slice(0, span.start) + insert + text.slice(span.end);
 
 /** The canonical order of an item's keys (formatAttrs'): its directive's attributes, then the style keys. */
-export const inlineOrder = (name: string): readonly string[] => (name === SPAN ? [] : INLINE_DIRECTIVES[name]?.attrs ?? []);
+export const inlineOrder = (name: string): readonly string[] => (name === SPAN ? [] : own(INLINE_DIRECTIVES, name)?.attrs ?? []);
 
 /** The inside of an attribute list with the change's attributes set or removed; null when one can't be written. */
 function editAttrs(inner: string, name: string, attrs: Readonly<Record<string, string | null>>): string | null {

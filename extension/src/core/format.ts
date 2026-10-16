@@ -3,6 +3,7 @@ import { CONTAINER_CLOSE, CONTAINER_OPEN } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { HEADING_ATTRS } from './sections';
 import { CONTAINERS, INLINE_DIRECTIVES, STYLE_KEYS } from './spec';
+import { own } from './util';
 
 /**
  * Canonical formatting for .smd documents. It only changes layout, never meaning:
@@ -196,7 +197,7 @@ function formatContainerRest(name: string, rest: string): string {
   if (rest.startsWith('{')) {
     const end = findAttrsEnd(rest, 0);
     if (end === -1) return rest.trimEnd();
-    const formatted = formatAttrs(rest.slice(1, end), CONTAINERS[name.toLowerCase()]?.attrs ?? []);
+    const formatted = formatAttrs(rest.slice(1, end), own(CONTAINERS, name.toLowerCase())?.attrs ?? []);
     if (formatted === null) return rest.trimEnd();
     attrs = `{${formatted}}`;
     rest = rest.slice(end + 1);
@@ -297,7 +298,7 @@ function formatInline(line: string): string {
     if (!directive && !before.endsWith(']')) continue;
     const end = findAttrsEnd(masked, p);
     if (end === -1) continue;
-    const formatted = formatAttrs(line.slice(p + 1, end), directive ? INLINE_DIRECTIVES[directive[1]]?.attrs ?? [] : []);
+    const formatted = formatAttrs(line.slice(p + 1, end), directive ? own(INLINE_DIRECTIVES, directive[1])?.attrs ?? [] : []);
     if (formatted !== null) edits.push([p, end + 1, `{${formatted}}`]);
     p = end;
   }

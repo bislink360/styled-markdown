@@ -19,7 +19,7 @@ import { checkTablePipes } from './tableCheck';
 import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
-import { suggest } from './util';
+import { own, suggest } from './util';
 import { checkCloser, checkContainerHints, checkHeadingHints, checkInlineAttrLists, checkSmdVersion } from './v2Hints';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
@@ -388,7 +388,7 @@ const COLOR_KEYS = new Set(['color', 'bg', 'border']);
 /** Fix a misspelled style value in the attribute list in `text[start, end)`. `style` takes several words and is left alone. */
 function styleFix(line: number, text: string, start: number, end: number, problem: AttrProblem): Fix | undefined {
   const { key = '', value = '' } = problem;
-  const choices = STYLE_CHOICES[key] ?? [];
+  const choices = own(STYLE_CHOICES, key) ?? [];
   const replacement = COLOR_KEYS.has(key) ? namedColor(value) : uniqueSuggestion(value, choices);
   return attrValueFix(line, text, start, end, key, value, replacement);
 }
@@ -426,7 +426,8 @@ function checkContainer(
   info: NonNullable<ReturnType<typeof parseContainerInfo>>,
   line: number, nameStart: number, nameEnd: number, parent: string | undefined, push: Push, raw: string,
 ): void {
-  const spec = CONTAINERS[info.name];
+  // Own names only: `:::constructor` is an unknown container.
+  const spec = own(CONTAINERS, info.name);
   if (!spec) {
     const hint = suggest(info.name, Object.keys(CONTAINERS));
     push(line, nameStart, nameEnd, 'warning', 'container/unknown',
@@ -531,7 +532,7 @@ interface DirectiveUse { name: string; col: number; end: number; content?: strin
 
 function checkDirective(at: InlineAt, d: DirectiveUse, variables: Variables): void {
   const { line, push } = at;
-  const spec = INLINE_DIRECTIVES[d.name];
+  const spec = own(INLINE_DIRECTIVES, d.name);
   if (!spec) { unknownDirective(at, d); return; }
   if (spec.content && !d.content) push(line, d.col, d.end, 'error', 'directive/content', `":${d.name}" needs content in brackets, e.g. ${spec.example}.`);
   const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1)) : null;
@@ -572,7 +573,7 @@ function checkDirectiveAttrs(at: InlineAt, d: DirectiveUse, spec: InlineDirectiv
 function checkDirectiveAttr(
   { line, text, push }: InlineAt, { name, col, end }: DirectiveUse, spec: InlineDirectiveSpec, { key, value, keys }: { key: string; value: string; keys: string[] },
 ): void {
-  const allowed = spec.values?.[key];
+  const allowed = own(spec.values ?? {}, key);
   // Enumerated values are matched in any case, as container values are (`trend=Up` is `up`).
   if (allowed && !allowed.some((a) => a.toLowerCase() === value.toLowerCase())) {
     push(line, col, end, 'error', 'attrs/value', `Invalid ${key} "${value}" for ":${name}". Use one of: ${allowed.join(', ')}.`,

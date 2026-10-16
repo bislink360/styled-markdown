@@ -2,6 +2,7 @@ import { findAttrsEnd, itemValue, lexAttrItems } from './attrs';
 import { CONTAINER_OPEN } from './containers';
 import { attrRank, quote } from './format';
 import { CONTAINERS } from './spec';
+import { own } from './util';
 
 /**
  * Attribute edits that keep everything else as written. An attribute list is lexed as parseAttrs lexes it, with
@@ -211,7 +212,7 @@ export function containerHeader(line: string): ContainerHeader | null {
 }
 
 /** The keys a container's form offers, in canonical order. */
-const containerOrder = (name: string): readonly string[] => CONTAINERS[name.toLowerCase()]?.attrs ?? [];
+const containerOrder = (name: string): readonly string[] => own(CONTAINERS, name.toLowerCase())?.attrs ?? [];
 
 /** Apply an edit to the inside of a header's attribute list (or a new `{…}` after the name); null when it fails. */
 function editHeaderAttrs(line: string, h: ContainerHeader, edit: (inner: string) => string | null): string | null {

@@ -90,7 +90,7 @@ const SETTINGS: readonly string[] = ['off', 'error', 'warning', 'info', 'hint'];
 export function isKnownRule(pattern: string): boolean {
   if (pattern === '*') return true;
   if (pattern.endsWith('/*')) return Object.keys(RULE_CODES).some((c) => c.startsWith(pattern.slice(0, -1)));
-  return pattern in RULE_CODES;
+  return Object.hasOwn(RULE_CODES, pattern);
 }
 
 function matches(pattern: string, code: string): boolean {
@@ -98,10 +98,10 @@ function matches(pattern: string, code: string): boolean {
 }
 
 function settingFor(code: string, rules: RuleSettings): RuleSetting | undefined {
-  if (code in rules) return rules[code];
+  if (Object.hasOwn(rules, code)) return rules[code];
   const category = `${code.split('/')[0]}/*`;
-  if (category in rules) return rules[category];
-  return rules['*'];
+  if (Object.hasOwn(rules, category)) return rules[category];
+  return Object.hasOwn(rules, '*') ? rules['*'] : undefined;
 }
 
 /** Apply rule settings: drop diagnostics whose rule is `off` and change the severity of the rest. */

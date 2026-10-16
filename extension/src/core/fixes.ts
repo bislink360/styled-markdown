@@ -1,4 +1,4 @@
-import { suggest } from './util';
+import { own, suggest } from './util';
 import type { Fix } from './validate';
 
 /**
@@ -32,7 +32,7 @@ export function normalizeDate(value: string): string | undefined {
 const BOOLEANS: Record<string, string> = { true: 'true', yes: 'true', on: 'true', false: 'false', no: 'false', off: 'false' };
 
 /** `"true"`, `yes`, `off`… as a YAML boolean. */
-export const booleanValue = (value: string): string | undefined => BOOLEANS[value.trim().toLowerCase()];
+export const booleanValue = (value: string): string | undefined => own(BOOLEANS, value.trim().toLowerCase());
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
