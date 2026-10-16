@@ -1,10 +1,22 @@
 ---
 smd: 1
 title: Quotes and backslashes in attribute values
-summary: Pins how backslashes in quoted attribute values read, so later releases are compared against them. They stay as written.
+summary: Pins how quoted attribute values read, so later releases are compared against them. Since 1.10 a quoted value may hold its own quote, escaped with a backslash; every other backslash stays as written.
 status: draft
 updated: 2026-10-15
 ---
+
+## Escaped quotes
+
+:::note{title="It's \"done\""}
+A title with both kinds of quote, written as `smd fmt` writes it.
+:::
+
+Activation :metric[42%]{label="The \"active\" users' share" trend=up} this week.
+
+:::decision{title='Keep "v1" reading' status=accepted}
+A value with only double quotes is single-quoted, without escapes.
+:::
 
 ## Backslashes that are not escapes
 

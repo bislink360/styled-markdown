@@ -1,4 +1,4 @@
-import { findAttrsEnd } from './attrs';
+import { findAttrsEnd, itemValue, lexAttrItems, parseAttrs, type Attrs } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { HEADING_ATTRS } from './sections';
@@ -217,35 +217,29 @@ function formatHeading(raw: string): string {
 // Attribute lists
 // ---------------------------------------------------------------------------
 
-const ATTR_TOKEN = /\s*(?:([.#])([A-Za-z0-9_-]+)|([A-Za-z_][\w-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'}]+)))?)\s*/y;
 const STYLE_ORDER = Object.keys(STYLE_KEYS);
 
 /**
  * Canonical form of the inside of `{…}`: `#id .class key=value flag`. Keys follow `order`,
  * then the style keys, then the order they were written in. Returns null when the list is
- * malformed, so the caller keeps it as written.
+ * malformed, or when a value can't be written back so that it reads the same, so the caller
+ * keeps it as written.
  */
 export function formatAttrs(src: string, order: readonly string[]): string | null {
+  const items = lexAttrItems(src);
+  if (!items) return null;
   let id: string | undefined;
   const classes: string[] = [];
   const entries = new Map<string, string | undefined>();
-  let pos = 0;
-  while (pos < src.length) {
-    ATTR_TOKEN.lastIndex = pos;
-    const m = ATTR_TOKEN.exec(src);
-    if (!m || m[0].length === 0) {
-      if (src.slice(pos).trim() === '') break;
-      return null;
-    }
+  for (const { match: m } of items) {
     if (m[1] === '#') id = m[2];
     else if (m[1] === '.') { if (!classes.includes(m[2])) classes.push(m[2]); }
-    else entries.set(m[3], m[4] ?? m[5] ?? m[6]);
-    pos = ATTR_TOKEN.lastIndex;
+    else entries.set(m[3], itemValue(m).value);
   }
   const keys = [...entries.keys()];
   const rank = (k: string) => attrRank(k, order, keys);
   keys.sort((a, b) => rank(a) - rank(b));
-  return [
+  const formatted = [
     ...(id ? [`#${id}`] : []),
     ...classes.map((c) => `.${c}`),
     ...keys.map((k) => {
@@ -253,6 +247,14 @@ export function formatAttrs(src: string, order: readonly string[]): string | nul
       return v === undefined ? k : `${k}=${quote(k, v, order)}`;
     }),
   ].join(' ');
+  return sameValues(parseAttrs(src), parseAttrs(formatted)) ? formatted : null;
+}
+
+/** Whether two attribute lists hold the same values: formatting never changes what a list says. */
+function sameValues(a: Attrs | null, b: Attrs | null): boolean {
+  if (!a || !b) return false;
+  const keys = Object.keys(a.values);
+  return keys.length === Object.keys(b.values).length && keys.every((k) => Object.hasOwn(b.values, k) && a.values[k] === b.values[k]);
 }
 
 /**
@@ -271,11 +273,15 @@ const TEXT_KEYS = ['title', 'label', 'file', 'section'];
 /** Prose and URL keys of `:::quote`, quoted where the block accepts them (elsewhere they are unknown and left as written). */
 const OWN_TEXT_KEYS = ['author', 'source', 'cite'];
 
-/** Keywords, numbers, dates, sizes and @owners stay bare (`status=accepted width=50%`); the rest is quoted. */
+/**
+ * Keywords, numbers, dates, sizes and @owners stay bare (`status=accepted width=50%`); the rest is quoted: in double
+ * quotes, in single quotes when the value has a `"`, and in double quotes with `\"` when it has both kinds.
+ */
 export function quote(key: string, value: string, order: readonly string[]): string {
   const text = TEXT_KEYS.includes(key) || (OWN_TEXT_KEYS.includes(key) && order.includes(key));
   if (!text && /^[\w@][\w.%@-]*$/.test(value)) return value;
-  return value.includes('"') ? `'${value}'` : `"${value}"`;
+  if (!value.includes('"')) return `"${value}"`;
+  return value.includes("'") ? `"${value.replaceAll('"', String.raw`\"`)}"` : `'${value}'`;
 }
 
 /** Normalize `[text]{…}` and `:name[…]{…}` attribute lists on one line, outside code and math. */

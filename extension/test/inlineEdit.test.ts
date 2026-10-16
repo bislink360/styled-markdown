@@ -165,7 +165,10 @@ test('editInline keeps quotes and order, adds keys where smd fmt puts them, and 
   assert.equal(edit('[a]{color=red} [b]{bg=blue}', { attrs: { bg: 'teal' } }, 1), '[a]{color=red} [b]{bg=teal}');
   assert.equal(edit(':badge[A]', { content: 'two\nlines' }), null);
   assert.equal(edit(':progress{value=4}', { content: 'x' }), null, 'no brackets to put content in');
-  assert.equal(edit(':badge[A]', { attrs: { color: 'a"b\'c' } }), null);
+  // Both kinds of quote are written with \" (1.10), and the edited item reads back with the value.
+  assert.equal(edit(':metric[1]{label=x}', { attrs: { label: 'say "hi" it\'s' } }), String.raw`:metric[1]{label="say \"hi\" it's"}`);
+  assert.deepEqual(scanInline([String.raw`:metric[1]{label="say \"hi\" it's"}`])[0].values, { label: 'say "hi" it\'s' });
+  assert.equal(edit(':badge[A]', { attrs: { color: String.raw`a\"b'c` } }), null, 'a backslash before a quote would read as an escape');
 });
 
 /** A random change an item's form could ask for. */
