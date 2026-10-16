@@ -1,4 +1,5 @@
 import type MarkdownIt from 'markdown-it';
+import { alertOf, githubAlerts } from './alerts';
 import { escapeHtml } from './attrs';
 import {
   fenceRule, footnoteBackref, footnoteClose, footnoteOpen, footnoteRef, footnotesClose, footnotesOpen, renderContainer, renderHeader,
@@ -133,9 +134,21 @@ function addContainers(md: MarkdownIt, ctx: SmdContext): void {
   md.core.ruler.push('smd_include_links', includedLinks);
   // Figures are numbered once included blocks are in place, so their figures count too.
   md.core.ruler.after('smd_include', 'smd_figures', numberFigures);
+  // GitHub alerts render as callouts; marked once included blocks are in place, before inline parsing.
+  md.core.ruler.after('smd_figures', 'smd_alerts', githubAlerts);
+  addAlertRules(md, ctx);
   // After inline parsing and the heading passes, so entry headings keep the ids and outline entries they have anywhere.
   md.core.ruler.push('smd_changelog', changelogEntries);
   addChangelogRules(md.renderer.rules);
+}
+
+/** A blockquote that is a GitHub alert renders as its callout; any other renders as before (the host's rule, if any). */
+function addAlertRules(md: MarkdownIt, ctx: SmdContext): void {
+  for (const type of ['blockquote_open', 'blockquote_close']) {
+    const previous: RenderRule = md.renderer.rules[type] ?? ((tokens, idx, opts, _env, self) => self.renderToken(tokens, idx, opts));
+    md.renderer.rules[type] = (tokens, idx, opts, env, self) =>
+      (alertOf(tokens[idx]) ? renderContainer(tokens, idx, env, ctx, md) : previous(tokens, idx, opts, env, self));
+  }
 }
 
 function addMath(md: MarkdownIt): void {

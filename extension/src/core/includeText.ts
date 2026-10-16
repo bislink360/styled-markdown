@@ -5,7 +5,7 @@ import {
   type IncludeBlock, type IncludeScope, type IncludeSource, type LoadedInclude,
 } from './include';
 import { findLinks } from './links';
-import { inlineMathLines, literalLines, parseSmd, type InlineMathLines } from './parse';
+import { alertLines, inlineMathLines, literalLines, parseSmd, type AlertLines, type InlineMathLines } from './parse';
 
 /** `:::include` for the line-based views (agent view, plain Markdown, validation), which read text rather than tokens. */
 
@@ -40,6 +40,12 @@ export function includedText(include: LoadedInclude): { text: string; offset: nu
 export function includedLiteralLines(include: LoadedInclude): Set<number> {
   const { text, offset } = includedText(include);
   return literalLines(text, offset);
+}
+
+/** The GitHub alerts of the included lines where they are included, by line of the included file. */
+export function includedAlerts(include: LoadedInclude): AlertLines[] {
+  const { text, offset } = includedText(include);
+  return alertLines(text).map((a) => ({ ...a, start: a.start + offset, end: a.end + offset, marker: a.marker + offset }));
 }
 
 /**

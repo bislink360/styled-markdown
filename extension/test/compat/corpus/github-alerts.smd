@@ -1,0 +1,86 @@
+---
+smd: 1
+title: GitHub alerts
+summary: Pins how GitHub alerts and blockquotes that look like them read, so later releases are compared against it.
+updated: 2026-10-15
+---
+
+## Each kind
+
+> [!NOTE]
+> Useful information that users should know, even when skimming content.
+
+> [!TIP]
+> Helpful advice for doing things better or more easily.
+
+> [!IMPORTANT]
+> Key information users need to know to achieve their goal.
+
+> [!WARNING]
+> Urgent info that needs immediate user attention to avoid problems.
+
+> [!CAUTION]
+> Advises about risks or negative outcomes of certain actions.
+
+## Any case
+
+> [!note]
+> A lowercase marker.
+
+> [!Warning]
+> A mixed-case marker.
+
+## Longer bodies
+
+> [!TIP]
+>
+> A blank quote line after the marker, then **two** paragraphs with :badge[Beta] and `code`.
+>
+> - a list item
+> - [ ] an open task
+>
+> ```sh
+> smd validate docs
+> ```
+
+> [!WARNING]
+> The first line of the body,
+lazily continued on a line without the marker.
+
+## Inside a container
+
+:::card Release
+> [!CAUTION]
+> An alert inside a card.
+:::
+
+## Blockquotes that are not alerts
+
+> [!NOTE] Text on the same line as the marker.
+
+> [!UNKNOWN]
+> An unknown kind.
+
+> [! NOTE]
+> A space inside the brackets.
+
+> The marker is not on the first line.
+> [!NOTE]
+> More text.
+
+> [!NOTE]
+
+- > [!NOTE]
+  > Inside a list item.
+
+> > [!NOTE]
+> > Inside another blockquote.
+
+> **Note:** a bold label.
+
+[!NOTE] outside a blockquote.
+
+```md
+> [!NOTE]
+> Inside fenced code.
+```

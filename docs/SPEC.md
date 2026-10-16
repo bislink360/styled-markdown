@@ -104,6 +104,7 @@ Any Markdown content, including other containers.
 - Fenced code blocks and `$$` display math (§4.4) inside a container are opaque; a `:::` inside a code block or a math block never closes the container (nor opens one).
 - An unclosed container extends to the end of its parent (and is a validation error).
 - Titles support inline Markdown.
+- **Unknown containers degrade with their title.** A name the vocabulary (§3.1) doesn't define renders as a box with its content, `<div class="smd-box smd-box-name">`, and keeps its title (text after the name, or `title="…"`, which wins): a `<div class="smd-box-title">` first in the box, set as a card title; a `Title:` line in the agent view (§8a), as for a card; a `**Title**` paragraph in plain Markdown (§8). Style attributes and `{#id}` apply as on any container, and the validator warns `container/unknown`. Known containers that take no title (`box`, `tabs`, `columns`, `column`, `steps`, `timeline`, `include`, `quote`) still drop text after their name. Tools before 1.10 drop an unknown container's title too, so new containers that older readers should understand put what matters in the body.
 
 ### 3.1 Container vocabulary
 
@@ -132,7 +133,7 @@ Any Markdown content, including other containers.
 
 All containers additionally accept the style attributes in §5. Attributes in **bold** are required.
 `tab` must be a direct child of `tabs`; `column` of `columns`.
-Unknown container names render as a plain `box` and produce a warning.
+Unknown container names render as a plain `box` that keeps its title (§3), and produce a warning.
 A `risk` without `impact` has impact `medium`. Risk registers (`smd risks`, `:::risk-matrix`) score a risk as impact × likelihood, each ranked `low` 1, `medium` 2, `high` 3, `critical` 4; a missing or unknown likelihood also counts as `medium`, and a missing `status` means `open`.
 
 ### 3.2 Audience semantics
@@ -247,6 +248,32 @@ The quoted text, any Markdown.
 - **Validation (warnings):** `quote/empty` for a quote without text, `quote/author` for one without `author`, `quote/cite` for a `cite` that is left out.
 
 **Older renderers** (1.5 and earlier) treat `:::quote` as an unknown container: the text renders inside a plain box (`<div class="smd-box smd-box-quote">`) without the attribution, and the validator reports `container/unknown` (a warning). See §10.
+
+### 3.8 GitHub alerts
+
+```text
+> [!WARNING]
+> Rotate the keys before you deploy.
+```
+
+A blockquote written as a [GitHub alert](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts) renders as the matching callout, so a document reads the same in Styled Markdown and on GitHub:
+
+| Alert | Callout |
+|---|---|
+| `> [!NOTE]` | `note` |
+| `> [!TIP]` | `tip` |
+| `> [!IMPORTANT]` | `info` (as `smd from-md` converts it) |
+| `> [!WARNING]` | `warning` |
+| `> [!CAUTION]` | `danger` |
+
+- **Syntax, as on GitHub:** the marker is the blockquote's whole first line (blanks after it are allowed), in any case (`[!note]`, `[!Warning]`). The rest of the blockquote is the body, which must not be empty. There is no title: the callout shows its type, as `:::warning` without a title does.
+- **Not alerts** (they stay blockquotes): text after the marker on its line (`> [!NOTE] Text`), an unknown kind (`> [!UNKNOWN]`), any other spelling (`> [! NOTE]`), a marker that isn't on the quote's first line, a quote with only the marker, and a quote nested in a list item or in another quote, which GitHub doesn't render as an alert either. A quote inside a `:::` container is an alert, since GitHub doesn't see the container.
+- **Rendering:** exactly the callout's HTML and accessible structure, as if the body were written in `:::warning` … `:::`. Exports (Confluence, Notion, Word, PDF) show it as that callout too.
+- **Agent view:** the callout's tags, `<warning>` … `</warning>`, around the body without its `>` markers (§8a).
+- **Plain Markdown (`smd to-md`):** kept as written, the same GitHub alert (§8). `smd from-md` turns an alert into the matching `:::` callout.
+- **The markdown-it plugin** renders alerts with its `containers` option (on by default), so `.md` previews with Styled Markdown syntax show them too.
+
+Tools before 1.10 render an alert as a blockquote whose first line is the `[!WARNING]` marker. Alerts add no diagnostics.
 
 ---
 
@@ -559,6 +586,8 @@ Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.s
 | `:::changelog Title` | a `**Title**` paragraph, then the release headings and lists as written |
 | `:::quote{author source cite}` | a blockquote of the body ending with a `— Author, *Source*` line (`*[Source](cite)*` with a valid `cite`) |
 | `box`, `columns`, `steps` | content only |
+| Unknown container `:::name Title` | a `**Title**` paragraph, then the content (§3) |
+| GitHub alert `> [!WARNING]` | unchanged, the same alert (§3.8) |
 | `[text]{…}` | `text` (bold/italic/strike preserved from `weight`/`style`) |
 | `:badge[x]` | `` `x` `` |
 | `:status[x]{color=green}` | `🟢 x` |
@@ -580,10 +609,12 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 | `{agent=skip}` sections, `:::human` | Omitted |
 | `:::agent` | `<agent-instructions title="…">…</agent-instructions>` (always included, even when other sections are filtered out) |
 | Callouts | `<warning title="…">…</warning>` etc. |
+| GitHub alerts (§3.8) | The callout's tags without a title, `<warning>` … `</warning>` (`[!IMPORTANT]` is `<info>`), around the body without its `>` markers |
 | `decision` / `risk` | `<decision status= date= owner=> title …</decision>` / `<risk impact= likelihood= …>` |
 | `api` | `API POST /v1/x — title (auth: …)` |
 | `risk-matrix` | `[risk matrix: title — impact × likelihood …; each is a <risk> block]` pointer (the risks themselves are already `<risk>` tags) |
 | Tabs / cards | `Tab "name":` / `Title:` label lines; other layout containers vanish |
+| Unknown containers | `Title:` label line, as for a card, then the content (§3) |
 | `figure` / `:ref[id]` | `<figure id="id"> Figure 1: Caption` … `</figure>` / `Figure 1 (id)` |
 | `glossary` | `<glossary title="…">`, the `- **Term**: definition` entries as written, `</glossary>`; uses of the terms in the text are not expanded (the glossary is read once) |
 | `changelog` | `<changelog title="…">` … `</changelog>`; each release heading as `## 1.2.0 (2026-03-01)  [L<n>]` (version without its link, then the date), followed by its notes |
@@ -607,7 +638,7 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 
 ## 10. Versioning
 
-Additive features (new containers, directives, front matter keys) keep `smd: 1`; older renderers degrade gracefully (unknown containers render as a box, unknown keys are kept). Only breaking changes increment `smd`.
+Additive features (new containers, directives, front matter keys) keep `smd: 1`; older renderers degrade gracefully (unknown containers render as a box, with their title since 1.10 (§3), unknown keys are kept). Only breaking changes increment `smd`.
 
 For example, tools before 1.6 don't know `:::include`: they render its body in a plain box (`smd-box smd-box-include`), warn `container/unknown`, and show the body in the agent view and `smd to-md`. That is why an include's body should be fallback text such as a link to the file.
 

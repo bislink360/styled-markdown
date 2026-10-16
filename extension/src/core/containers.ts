@@ -1,4 +1,5 @@
 import { Attrs, emptyAttrs, findAttrsEnd, parseAttrs } from './attrs';
+import { CONTAINERS } from './spec';
 
 /** A parsed container opening line: `:::name{attrs} Title text`. */
 export interface ContainerInfo {
@@ -9,7 +10,16 @@ export interface ContainerInfo {
   attrsError?: string;
 }
 
-export const CONTAINER_OPEN = /^(\s{0,3})(:{3,})\s*([a-zA-Z][\w-]*)(.*)$/;
+/**
+ * Whether the vocabulary defines a container name (spec §3.1). Any other name is an unknown container: it renders as
+ * a box that keeps its title, and the validator warns (spec §3).
+ */
+export const isKnownContainer = (name: string): boolean => Object.hasOwn(CONTAINERS, name);
+
+/** An unknown container's title, which it keeps when it degrades (spec §3); empty for known containers. */
+export const unknownContainerTitle = (name: string, title: string): string => (isKnownContainer(name) ? '' : title);
+
+export const CONTAINER_OPEN =/^(\s{0,3})(:{3,})\s*([a-zA-Z][\w-]*)(.*)$/;
 export const CONTAINER_CLOSE = /^(\s{0,3})(:{3,})\s*$/;
 
 /**

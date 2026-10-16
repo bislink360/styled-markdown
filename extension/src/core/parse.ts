@@ -1,5 +1,7 @@
 import type MarkdownIt from 'markdown-it';
 import type { Token } from 'markdown-it';
+import { alertOf } from './alerts';
+import { isKnownContainer } from './containers';
 import { FigureCounter, figureTargets, type Figure } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
@@ -83,6 +85,19 @@ interface Block {
   notes: Array<{ label: string; ids: string[] }>;
   /** Footnote references (`[^label]`, defined or not) in order, with the index in `notes` of the definition they are in, or -1. */
   noteRefs: Array<{ label: string; inside: number }>;
+  /** GitHub alerts in the block (inside containers too), body-relative. */
+  alerts: AlertLines[];
+}
+
+/** A GitHub alert (`> [!NOTE]`, see alerts.ts) by its lines: zero-based, the end exclusive. */
+export interface AlertLines {
+  /** The blockquote's first line and the line after its last (blank lines after it may count). */
+  start: number;
+  end: number;
+  /** The marker's line. */
+  marker: number;
+  /** The callout it renders as. */
+  callout: string;
 }
 
 interface State {
@@ -118,6 +133,8 @@ const parser = () => (md ??= recordingInlineMath(recordingDefinitions(inPlaceFoo
 let titleMd: MarkdownIt | undefined;
 const titleParser = () => (titleMd ??= createMarkdownIt({ allowHtml: false }));
 const TITLED = new Set<string>([...CALLOUT_TYPES, 'details', 'card', 'tab', 'agent', 'human', 'decision', 'risk', 'api', 'figure', 'glossary']);
+/** Whether a container renders its title: the ones above, and unknown containers (spec §3). */
+const rendersTitle = (name: string): boolean => TITLED.has(name) || !isKnownContainer(name);
 
 /** A `$inline math$` the inline parser accepted: its columns in the text being parsed, and that text's length. */
 interface InlineMath { start: number; end: number; length: number }
@@ -169,6 +186,18 @@ const results: Array<{ text: string; result: ParseResult }> = [];
 const states: State[] = [];
 /** The opening lines of the fenced code blocks of each result (see fenceLines): zero-based, in the whole document. */
 const fenceStarts = new WeakMap<ParseResult, number[]>();
+/** The GitHub alerts of each result (see alertLines), in the whole document. */
+const alertsOf = new WeakMap<ParseResult, AlertLines[]>();
+
+const shiftAlert = (a: AlertLines, delta: number): AlertLines => ({ ...a, start: a.start + delta, end: a.end + delta, marker: a.marker + delta });
+
+/**
+ * The GitHub alerts of a document (`> [!NOTE]` blockquotes that render as callouts, see alerts.ts) in document
+ * order, with zero-based lines in the whole document, as markdown-it reads them.
+ */
+export function alertLines(text: string): readonly AlertLines[] {
+  return alertsOf.get(parseSmd(text)) ?? [];
+}
 
 /** Forget every cached parse. For tests: the next parse of each document is a full one. */
 export function resetParseCache(): void {
@@ -218,6 +247,7 @@ export function parseSmd(text: string): ParseResult {
   const inlineMath = new Map(state.blocks.flatMap((b) => b.inlineMath).map(([line, spans]) => [line + fm.bodyStartLine, spans]));
   const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code, math, inlineMath };
   fenceStarts.set(result, state.blocks.flatMap((b) => b.fences).map((line) => line + fm.bodyStartLine));
+  alertsOf.set(result, state.blocks.flatMap((b) => b.alerts).map((a) => shiftAlert(a, fm.bodyStartLine)));
   results.unshift({ text, result });
   results.length = Math.min(results.length, 3);
   return result;
@@ -439,6 +469,7 @@ function shift(block: Block, delta: number): Block {
     inlineMath: block.inlineMath.map(([line, spans]) => [line + delta, spans]),
     fences: block.fences.map((line) => line + delta),
     definitions: block.definitions.map((d) => ({ ...d, line: d.line + delta })),
+    alerts: block.alerts.map((a) => shiftAlert(a, delta)),
   };
 }
 
@@ -484,7 +515,7 @@ function parseRange(
     const block: Block = {
       start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), code: linesOf(g.tokens, from, CODE_TOKENS),
       math: linesOf(g.tokens, from, MATH_TOKENS), inlineMath: multiLineMath(g.tokens, lines, from),
-      fences: linesOf(g.tokens, from, ['fence']).map(([first]) => first), definitions: [], notes: [], noteRefs: [],
+      fences: linesOf(g.tokens, from, ['fence']).map(([first]) => first), definitions: [], notes: [], noteRefs: [], alerts: alertsIn(g.tokens, from),
     };
     while (h < env.headings.length && env.headings[h].line < g.end) {
       if (env.headings[h].line >= g.start) { block.headings.push(env.headings[h]); block.bases.push(env.bases![h]); }
@@ -576,6 +607,14 @@ function figuresIn(tokens: Token[], from: number): FigureSource[] {
     });
 }
 
+/** The GitHub alerts among a block's tokens, body-relative. */
+function alertsIn(tokens: Token[], from: number): AlertLines[] {
+  return tokens.flatMap((t) => {
+    const alert = t.type === 'blockquote_open' && t.map ? alertOf(t) : undefined;
+    return alert ? [{ start: from + t.map![0], end: from + t.map![1], marker: from + alert.markerLine, callout: alert.name }] : [];
+  });
+}
+
 /** Indented and fenced code blocks. */
 const CODE_TOKENS = ['code_block', 'fence'];
 /** `$$` display math blocks. */
@@ -639,7 +678,7 @@ function collectIds(tokens: Token[], out: Set<string> | string[], skipHeadings =
     const meta = t.meta as { name?: string; title?: string; attrs?: { id?: string } } | null;
     if (t.type === 'container_smd_open') {
       if (meta?.attrs?.id) add(meta.attrs.id);
-      if (meta?.title && TITLED.has(meta.name ?? '')) collectIds(titleParser().parseInline(meta.title, newEnv(0, [])), out);
+      if (meta?.title && rendersTitle(meta.name ?? '')) collectIds(titleParser().parseInline(meta.title, newEnv(0, [])), out);
     }
     if (t.type === 'html_block' || t.type === 'html_inline') {
       for (const m of t.content.matchAll(/\s(?:id|name)="([^"]*)"/g)) add(unescapeHtml(m[1]));

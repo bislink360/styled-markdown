@@ -3,7 +3,7 @@ import { changelogEntries, versionLabel, type ChangelogEntry } from './changelog
 import {
   omissionOrder, omissionPointer, omittableSections, withOmitted, type BudgetResult, type BudgetSection, type Tokenizer,
 } from './budget';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, isKnownContainer, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import { findFootnotes, type FootnoteDefinition } from './footnotes';
@@ -12,9 +12,9 @@ import {
   includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
 import {
-  expandedFigures, figuresOf, includedInlineMath, includedLines, includedLiteralLines, includeKey, includeSource, type ExpandedFigures,
+  expandedFigures, figuresOf, includedAlerts, includedInlineMath, includedLines, includedLiteralLines, includeKey, includeSource, type ExpandedFigures,
 } from './includeText';
-import { aroundInlineMath, fenceLines, inlineMathLines, lazyLineSet, literalLines, parseSmd, type InlineMathLines } from './parse';
+import { alertLines, aroundInlineMath, fenceLines, inlineMathLines, lazyLineSet, literalLines, parseSmd, type AlertLines, type InlineMathLines } from './parse';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { quoteCite } from './quote';
@@ -121,9 +121,13 @@ function quoteHead({ values }: HeadSource): ContainerHead {
   return { line: `<quote${attrList(plainValues, ['author', 'source', 'cite'])}>`, close: '</quote>' };
 }
 
+/** `Title:`, or nothing without a title. */
+const titleLine = ({ title }: HeadSource): ContainerHead => (title ? { line: `${title}:` } : {});
+
 /**
  * The agent view of each container's opening line. `:::human` (unless included) and `:::details` in brief
- * views are dropped before this. tabs, columns, column, box, steps, timeline and unknown containers: content only.
+ * views are dropped before this. tabs, columns, column, box, steps and timeline: content only. Unknown containers:
+ * their title as a `Title:` line, as a card's (see containerHead), then the content.
  */
 const CONTAINER_HEADS = new Map<string, (c: HeadSource) => ContainerHead>([
   ['agent', tagged('agent-instructions')],
@@ -135,7 +139,7 @@ const CONTAINER_HEADS = new Map<string, (c: HeadSource) => ContainerHead>([
   ['details', tagged('details')],
   ['human', tagged('human')],
   ['tab', ({ title }) => ({ line: `Tab "${title || 'Tab'}":` })],
-  ['card', ({ title }) => (title ? { line: `${title}:` } : {})],
+  ['card', titleLine],
   ['figure', figureHead],
   // Listed once, as written; uses of the terms in the text are not expanded.
   ['glossary', tagged('glossary')],
@@ -143,6 +147,13 @@ const CONTAINER_HEADS = new Map<string, (c: HeadSource) => ContainerHead>([
   ['changelog', tagged('changelog')],
   ['quote', quoteHead],
 ]);
+
+/** The agent view of a container's opening line: its own (CONTAINER_HEADS), a known one's content only, an unknown one's title. */
+function containerHead(name: string, source: HeadSource): ContainerHead {
+  const head = CONTAINER_HEADS.get(name);
+  if (head) return head(source);
+  return isKnownContainer(name) ? {} : titleLine(source);
+}
 
 /** What the view reads included files with: nothing when includes are only pointers. */
 const viewReader = (options: AgentViewOptions) => (options.includes === false ? undefined : options.readFile);
@@ -350,6 +361,8 @@ interface TransformOptions extends AgentViewOptions {
   literalLines?: ReadonlySet<number>;
   /** The inline math of the lines of `lines` whose inline text runs over several lines (see inlineMathLines); found in `lines` when left out. */
   inlineMath?: InlineMathLines;
+  /** The GitHub alerts of `lines` (see alertLines); found in `lines` when left out. */
+  alerts?: readonly AlertLines[];
   /** Receives every emitted line with the source line it came from. */
   collect?: Array<[at: number, line: string]>;
   /** Inside an included document: where its own includes resolve. */
@@ -359,7 +372,7 @@ interface TransformOptions extends AgentViewOptions {
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
-  const { figures, ownFigures, literal, inlineMath } = documentContext(lines, options);
+  const { figures, ownFigures, literal, inlineMath, alerts } = documentContext(lines, options);
   const variables = options.variables ?? documentVariables(lines);
   const text = (s: string, openTask = false, math?: ReadonlyArray<[number, number]>) => inlineText(s, options.today, openTask, figures.byId, variables, math);
   const changelogs = options.changelogs ?? changelogEntries(lines);
@@ -381,9 +394,12 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     if (doneTasks) emit(`- (${doneTasks} completed task${doneTasks > 1 ? 's' : ''} omitted)`, at);
     doneTasks = 0;
   };
+  const alertView = alertTags(alerts, lines, emit, flushDone);
 
   for (let i = from; i < lines.length; i++) {
-    const raw = lines[i];
+    // Inside a GitHub alert, the line without its quote marker; nothing for the alert's own marker line.
+    const raw = alertView.line(i, lines[i]);
+    if (raw === undefined) continue;
 
     // ---- fenced code ----
     if (fence) {
@@ -450,7 +466,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
         frame.drop = true; // the body is fallback text for renderers that can't include
         continue;
       }
-      const head = CONTAINER_HEADS.get(info.name)?.({ title, values: info.attrs.values, id: info.attrs.id, figure: ownFigures.get(i) }) ?? {};
+      const head = containerHead(info.name, { title, values: info.attrs.values, id: info.attrs.id, figure: ownFigures.get(i) });
       if (head.line !== undefined) emit(head.line, i);
       frame.close = head.close;
       continue;
@@ -482,32 +498,75 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
       continue;
     }
 
-    // Math that runs on from one line to the next is known for the line as written (not with a comment cut out).
-    const converted = text(line, task ? task[2] === ' ' : false, line === raw ? inlineMath.get(i) : undefined);
+    // Math that runs on from one line to the next is known for the line as written (not with a comment or an alert's
+    // quote marker cut out).
+    const converted = text(line, task ? task[2] === ' ' : false, line === lines[i] ? inlineMath.get(i) : undefined);
     emit(converted.trimEnd(), i);
   }
+  alertView.end();
   flushDone(lines.length - 1);
   return out.join('\n').replace(/\n{3,}/g, '\n\n');
 }
 
-interface DocumentContext { figures: ExpandedFigures; ownFigures: ReadonlyMap<number, Figure>; literal: ReadonlySet<number>; inlineMath: InlineMathLines }
+interface DocumentContext {
+  figures: ExpandedFigures; ownFigures: ReadonlyMap<number, Figure>; literal: ReadonlySet<number>; inlineMath: InlineMathLines; alerts: readonly AlertLines[];
+}
 
 /**
- * The figures (numbered with the rest of the expanded document), this document's own figures by line, and the lines
- * of code and display math, from `options` when the caller has them, else from `lines`.
+ * The figures (numbered with the rest of the expanded document), this document's own figures by line, the lines
+ * of code and display math, and its GitHub alerts, from `options` when the caller has them, else from `lines`.
  */
 function documentContext(lines: string[], options: TransformOptions): DocumentContext {
   const text = lines.join('\n');
   const figures = options.figures ?? expandedFigures(text, viewReader(options));
   return {
     figures, ownFigures: figuresOf(figures, options.figureKey ?? ''), literal: options.literalLines ?? literalLines(text), inlineMath: options.inlineMath ?? inlineMathLines(text),
+    alerts: options.alerts ?? alertLines(text),
+  };
+}
+
+/** A blockquote's `>` marker, with the space after it. */
+const QUOTE_MARKER = /^ {0,3}> ?/;
+
+/**
+ * GitHub alerts in the agent view, as callouts (spec §3.8): `<warning>` on the quote's first line, its lines without
+ * the `>` marker (the marker line itself left out), then `</warning>` after its last line that isn't blank.
+ */
+function alertTags(alerts: readonly AlertLines[], lines: string[], emit: (line: string, at: number) => void, flush: (at: number) => void) {
+  const byStart = new Map(alerts.map((a) => [a.start, a]));
+  let open: { alert: AlertLines; last: number } | undefined;
+  const close = () => {
+    if (!open) return;
+    flush(open.last);
+    emit(`</${open.alert.callout}>`, open.last);
+    open = undefined;
+  };
+  return {
+    /** Line `i` as the view reads it, or undefined for an alert's marker line. */
+    line(i: number, raw: string): string | undefined {
+      if (open && i > open.last) close();
+      const alert = byStart.get(i);
+      if (alert) {
+        close();
+        let last = alert.end - 1;
+        while (last > alert.start && !lines[last]?.trim()) last--;
+        open = { alert, last };
+        flush(i);
+        emit(`<${alert.callout}>`, i);
+      }
+      if (!open) return raw;
+      return i === open.alert.marker ? undefined : raw.replace(QUOTE_MARKER, '');
+    },
+    /** Close an alert that runs to the end of the lines. */
+    end: close,
   };
 }
 
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
   const text = lines.join('\n');
-  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text), inlineMath: inlineMathLines(text) };
+  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text), inlineMath: inlineMathLines(text),
+    alerts: alertLines(text) };
   return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
 }
 
@@ -538,7 +597,7 @@ function includeView(info: ContainerInfo, lines: string[], line: number, options
   // Included text uses this document's front matter variables, as the rendered HTML does.
   const inner = {
     ...options, collect: undefined, includeScope: innerScope(scope, inc), variables: options.variables ?? documentVariables(lines), literalLines: includedLiteralLines(inc),
-    inlineMath: includedInlineMath(inc),
+    inlineMath: includedInlineMath(inc), alerts: includedAlerts(inc),
     // Its figures are numbered with the including document's, and `:ref` resolves across both, as in rendered output.
     figureKey: includeKey(options.figureKey ?? '', line),
   };
