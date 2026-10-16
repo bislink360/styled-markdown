@@ -13,7 +13,8 @@ import { figureTargets, findRefs, type Figure, type FigureRef } from './figures'
 import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, versionLabel, type ChangelogEntry, type Version } from './changelog';
 import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
-import { codeLines, inlineMathLines, literalLines, mathOnLine, parseSmd, type InlineMathLines } from './parse';
+import { codeLines, inlineItemLines, inlineMathLines, lazyLineSet, literalLines, mathOnLine, parseSmd, type InlineMathLines } from './parse';
+import { openTaskLines } from './taskLines';
 import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
@@ -98,6 +99,10 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   let mathStart = -1;
   let mathLines: string[] = [];
   let firstH1: { text: string; line: number } | null = null;
+  const isOpenTask = lazyLineSet(() => new Set(openTaskLines(text)));
+  // Directives whose text runs over several lines are checked whole, at the line their attributes end on.
+  const multiLine = multiLineDirectives(text, lines);
+  const multiLineEnds = new Map(multiLine.map((d) => [d.line, [d.col, d.end] as [number, number]]));
 
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
     const raw = lines[i];
@@ -174,14 +179,14 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     if (h1 && !firstH1) firstH1 = { text: h1[1].replace(HEADING_ATTRS, ''), line: i };
     if (/^\s{0,3}#{1,6}\s/.test(raw)) checkHeadingAttrs(raw, i, pushText);
 
-    // Open tasks that are past their due date
-    const openTask = /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(raw);
+    // Open tasks that are past their due date: lines rendering shows with a checkbox (see scanTasks)
+    const openTask = /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(raw) && isOpenTask(i);
     const due = openTask ? /:due\[(\d{4}-\d{2}-\d{2})\]/.exec(raw) : null;
     if (due && dueState(due[1], options.today) === 'overdue') {
       pushText(i, due.index, due.index + due[0].length, 'info', 'task/overdue', `Open task is overdue (due ${due[1]}).`);
     }
 
-    checkInline(raw, i, pushText, fm.data);
+    checkInline(raw, i, pushText, fm.data, multiLineEnds.get(i));
   }
 
   if (fence) {
@@ -199,6 +204,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       'The front matter title is already rendered as the document heading; this "# heading" duplicates it.');
   }
 
+  for (const d of multiLine) checkDirective({ line: d.line, text: withoutCode(lines[d.line]), push: pushText }, d, fm.data);
   checkLinks(text, pushText, options);
   checkIncludes(text, (line, column, endColumn, code, message, severity = 'warning', fix) => push(line, column, endColumn, severity, code, message, fix), options);
   checkFigures(text, lines, fm.bodyStartLine, pushText, () => includedFigureIds(text, options.readFile));
@@ -471,14 +477,20 @@ function checkContainer(
   }
 }
 
-function checkInline(raw: string, line: number, push: Push, variables: Variables): void {
-  // Blank out inline code so its contents are never treated as syntax.
-  const text = raw.replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
+/** A line with inline code blanked out, so its contents are never treated as syntax. */
+const withoutCode = (raw: string): string => raw.replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
+
+/**
+ * The inline checks of one line. `ending` is the part of a directive that runs on from the lines above and ends here
+ * (see multiLineDirectives): it is checked whole, so its `]{…}` is not a styled span.
+ */
+function checkInline(raw: string, line: number, push: Push, variables: Variables, ending?: [number, number]): void {
+  const text = withoutCode(raw);
 
   const at: InlineAt = { line, text, push };
 
   // :directive[content]{attrs}
-  const directiveSpans: Array<[number, number]> = [];
+  const directiveSpans: Array<[number, number]> = ending ? [[ending[0] - 1, ending[1]]] : [];
   for (const m of text.matchAll(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g)) {
     if (!m[3] && !m[4]) continue;
     const col = m.index! + m[1].length;
@@ -488,6 +500,25 @@ function checkInline(raw: string, line: number, push: Push, variables: Variables
   }
   checkStyledSpans(at, directiveSpans);
   checkInlineAttrLists(raw, text, line, push);
+}
+
+/**
+ * The inline directives whose text runs over several lines (`:badge[foo` on one line, `bar]{color=green}` on the
+ * next), as rendering reads them (see inlineItemLines). Each is placed on its last line, from the start of its part
+ * there to its end, where its attribute list is.
+ */
+function multiLineDirectives(text: string, lines: string[]): Array<DirectiveUse & { line: number }> {
+  if (!lines.some((l) => l.includes(':') && l.includes('['))) return [];
+  const found: Array<DirectiveUse & { line: number }> = [];
+  for (const parts of inlineItemLines(text).values()) {
+    for (const { item, index } of parts) {
+      const m = index === 0 ? /^:([a-z][a-z0-9-]*)(\[[^\]]*\])?(\{[^{}\n]*\})?$/.exec(item.text) : null;
+      const [line, start, end] = item.parts.at(-1)!;
+      // A line break in the content reads as a space, as it renders.
+      if (m) found.push({ line, name: m[1], col: start, end, content: m[2]?.replaceAll('\n', ' '), attrList: m[3] });
+    }
+  }
+  return found;
 }
 
 /** Where an inline check reports: the line, its text with inline code blanked out, and the push. */

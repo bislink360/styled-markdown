@@ -27,5 +27,13 @@ const PRIORITY_RANK: Record<string, number> = { p0: 0, critical: 0, p1: 1, high:
 
 /** Sort rank of a task priority: P0/critical first, no priority last. */
 export function priorityRank(priority?: string): number {
-  return PRIORITY_RANK[(priority ?? '').toLowerCase()] ?? 5;
+  return own(PRIORITY_RANK, (priority ?? '').toLowerCase()) ?? 5;
+}
+
+/**
+ * A table's own entry for a key, or undefined. Keys come from documents and settings, so a name such as `constructor`
+ * or `__proto__` must not find what every object inherits.
+ */
+export function own<T>(table: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
 }
