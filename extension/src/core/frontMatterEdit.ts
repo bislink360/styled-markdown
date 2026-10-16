@@ -231,10 +231,12 @@ function readEntry(lines: readonly string[], line: number, m: RegExpExecArray, c
 // Writing values
 // ---------------------------------------------------------------------------
 
-/** The types of value a known key takes, from the schema (strings, unless it says numbers or booleans). */
+/** The types of value a known key takes, from the schema (strings, unless it says numbers or booleans), `anyOf` included. */
 function valueTypes(key: string): Set<string> {
-  const type = frontMatterProperty(key)?.type;
+  const prop = frontMatterProperty(key);
+  const type = prop?.type ?? prop?.anyOf?.flatMap((a) => a.type ?? []);
   const types = new Set(Array.isArray(type) ? type : [type ?? 'string']);
+  if (!types.size) types.add('string');
   if (types.has('integer')) types.add('number');
   return types;
 }

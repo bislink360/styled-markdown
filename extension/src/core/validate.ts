@@ -18,6 +18,7 @@ import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
 import { suggest } from './util';
+import { checkCloser, checkContainerHints, checkHeadingHints, checkInlineAttrLists, checkSmdVersion } from './v2Hints';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
 } from './fixes';
@@ -144,8 +145,11 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     const close = CONTAINER_CLOSE.exec(raw);
     if (close) {
       // A bare ::: always closes the innermost open container.
-      if (!stack.pop()) {
+      const closed = stack.pop();
+      if (!closed) {
         wholeLine(i, 'warning', 'container/stray-close', `Closing "${close[2]}" has no matching opening container.`);
+      } else {
+        checkCloser(i, close[1].length, close[2].length, closed, push);
       }
       continue;
     }
@@ -159,6 +163,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
         const nameStart = raw.indexOf(open[3], col + len);
         const nameEnd = nameStart + info.name.length;
         checkContainer(info, i, nameStart, nameEnd, parent?.name, push, raw);
+        checkContainerHints(info, i, raw, nameEnd, push);
         stack.push({ name: info.name, len, line: i });
       }
       continue;
@@ -195,7 +200,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   }
 
   checkLinks(text, pushText, options);
-  checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
+  checkIncludes(text, (line, column, endColumn, code, message, severity = 'warning', fix) => push(line, column, endColumn, severity, code, message, fix), options);
   checkFigures(text, lines, fm.bodyStartLine, pushText, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, pushText);
   // Release headings and glossary terms are read with their `{{name}}` values in, as they render.
@@ -279,8 +284,8 @@ function checkFrontMatter(
   if (data.smd === undefined) {
     push(0, 0, 3, 'info', 'frontmatter/version', `Add "smd: ${SMD_VERSION}" to the front matter so tools know which Styled Markdown version this file targets.`,
       { line: 1, column: 0, endColumn: 0, replacement: `smd: ${SMD_VERSION}\n`, title: `Add "smd: ${SMD_VERSION}"` });
-  } else if (Number(data.smd) !== SMD_VERSION) {
-    markKey('smd', 'warning', 'frontmatter/version', `Unsupported Styled Markdown version "${data.smd}". This tool supports version ${SMD_VERSION}.`);
+  } else {
+    checkSmdVersion(data.smd, keyLine('smd'), lines, push);
   }
 
   // Custom keys the body shows with `{{key}}` are meant: no unknown-key hint for them.
@@ -395,13 +400,17 @@ function dueDate(content: string): string | undefined {
 /**
  * Enumerated container attributes whose invalid values are reported under their own rule. `:::figure{kind}`
  * is a warning: before 1.6 such a document only had a `container/unknown` warning and passed validation.
+ * The `figure/kind` code is deprecated: 2.0 reports these as `attrs/value`, which `note` tells users who filter on it.
  */
-const ENUM_VALUE_RULES = new Map<string, { severity: Severity; code: string }>([
-  ['figure.kind', { severity: 'warning', code: 'figure/kind' }],
+const ENUM_VALUE_RULES = new Map<string, { severity: Severity; code: string; note?: string }>([
+  ['figure.kind', {
+    severity: 'warning', code: 'figure/kind',
+    note: ' The "figure/kind" code is deprecated: Styled Markdown 2.0 reports this as "attrs/value", so rule settings and suppressions should name both.',
+  }],
 ]);
 
 /** The rule for an invalid value of an enumerated container attribute: `attrs/value` (error) unless listed above. */
-function enumValueRule(container: string, key: string): { severity: Severity; code: string } {
+function enumValueRule(container: string, key: string): { severity: Severity; code: string; note?: string } {
   return ENUM_VALUE_RULES.get(`${container}.${key}`) ?? { severity: 'error', code: 'attrs/value' };
 }
 
@@ -438,7 +447,7 @@ function checkContainer(
     if (v !== undefined && !allowed.some((a) => a.toLowerCase() === v.toLowerCase())) {
       const hint = suggest(v, allowed);
       const rule = enumValueRule(info.name, key);
-      push(line, nameStart, nameEnd, rule.severity, rule.code, `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
+      push(line, nameStart, nameEnd, rule.severity, rule.code, `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.${rule.note ?? ''}`,
         attrValueFix(line, raw, nameEnd, raw.length, key, v, uniqueSuggestion(v, allowed)));
     }
   }
@@ -478,6 +487,7 @@ function checkInline(raw: string, line: number, push: Push, variables: Variables
     checkDirective(at, { name: m[2], col, end, content: m[3], attrList: m[4] }, variables);
   }
   checkStyledSpans(at, directiveSpans);
+  checkInlineAttrLists(raw, text, line, push);
 }
 
 /** Where an inline check reports: the line, its text with inline code blanked out, and the push. */
@@ -969,6 +979,7 @@ function checkHeadingAttrs(raw: string, line: number, push: Push): void {
   const end = col + m[1].length + 2;
   const attrs = parseAttrs(m[1]);
   if (!attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed heading attribute list. Expected {#id .class agent=skip}.'); return; }
+  checkHeadingHints(line, raw, m.index, col, end - 1, push);
   const keys = Object.keys(attrs.values);
   for (const [key, value] of Object.entries(attrs.values)) {
     if (key !== 'agent') {

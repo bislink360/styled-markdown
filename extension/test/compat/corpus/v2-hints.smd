@@ -1,0 +1,55 @@
+---
+smd: 1
+title: What spec v2 reads differently
+summary: Pins how v1 reads what Styled Markdown 2.0 rejects or reinterprets (mismatched closers, duplicate attributes, conflicting titles, braces after a heading, include sections found by a part of their text, and the priority of an agent block), so later releases are compared against them.
+status: draft
+updated: 2026-10-15
+---
+
+## Mismatched closers
+
+Each closing fence closes the innermost open container, whatever its colon count:
+
+::::tabs
+:::tab First
+The first tab, closed with four colons.
+::::
+:::tab Second
+The second tab.
+:::
+:::
+
+## Duplicate attributes
+
+- Styled spans and directives with a key, an id or a class given twice, where the last one wins:
+
+    [Blue text]{color=red color=blue}, :badge[Ready]{color=red color=green}, [an anchor]{#first #second} and [a note]{.note .note}.
+
+## Conflicting titles
+
+:::note{title="Attribute title"} Text title
+The title attribute is shown; the text after the attributes is not.
+:::
+
+## Object {}
+
+## Returns {ok}
+
+## Included by a part of a heading
+
+:::include{file="include-terms.smd" section="refund"}
+See [Refunds](include-terms.smd#refunds) in the shared terms.
+:::
+
+## Agent priority
+
+:::agent{priority=high}
+Read the cases above before changing how attribute lists are parsed.
+:::
+
+## A stray closer
+
+The closing fence below has nothing to close. It keeps `smd fmt` from rewriting the mismatched closers above, so this document stays formatted as written.
+
+<!-- smd-disable-next-line container/stray-close -->
+:::

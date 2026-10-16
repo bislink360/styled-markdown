@@ -717,7 +717,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
 | `:ref[fig-chekout]` | `figure/unknown-ref` | → closest figure id |
 | two `:::figure{#fig-a}` | `figure/duplicate-id` | — |
-| `:::figure{kind=tabel}` | `figure/kind` | → `table` |
+| `:::figure{kind=tabel}` | `figure/kind` (deprecated: `attrs/value` in 2.0) | → `table` |
 | `[^retires]` with only `[^retries]: …` defined | `footnote/undefined` | → `[^retries]` |
 | `[^old]: …` that nothing references, `[^1]: …` twice | `footnote/unused` (info), `footnote/duplicate` | — |
 | `- API: …` in a `:::glossary` | `glossary/entry` | — (write `- **API**: …`) |
@@ -730,11 +730,23 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `## 1.1.0` above `## 1.2.0`, or `## 1.2.0` twice | `changelog/order`, `changelog/duplicate` | — |
 | `:::quote` with no text, no `author`, or `cite="javascript:…"` | `quote/empty`, `quote/author`, `quote/cite` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
+| `smd: true`, `smd: 1.0`, `smd: [1]` | `frontmatter/version` (info) | → `smd: 1` |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
 | `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |
 | `toc: yes`, `updated: 2026/9/5` | `frontmatter/type`, `frontmatter/date` | → `true`, `2026-09-05` |
 | `updated` more than 180 days ago | `frontmatter/stale` | — |
 | overdue open task | `task/overdue` | — |
+
+**Ahead of 2.0.** These hints (and one info) point at what Styled Markdown 2.0 rejects or reads differently. They never fail a check, `--strict` included, and each fix keeps how the document renders today:
+
+| Examples | Rule | Quick fix |
+|---|---|---|
+| `::::` closing `:::tab` | `container/colons` | → `:::` (the opener's count, as `smd fmt` writes it) |
+| `[x]{color=red color=blue}`, `{#a #b}`, `{.x .x}` | `attrs/duplicate` | → `{color=blue}` (each once, with the value that is used) |
+| `:::note{title="A"} B` | `container/title-conflict` | removes `B`, which is not shown |
+| `## Object {}`, `## Returns {ok}` | `heading/attrs-text` | removes the braces |
+| `section="deploy"` finding `## Rapid deployment` | `include/section-match` (info) | → `section="rapid-deployment"` |
+| `:::agent{priority=high}` | `deprecated/agent-priority` | removes `priority` |
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
 
@@ -746,7 +758,7 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 
 | Rule | Fixed when |
 |---|---|
-| `frontmatter/version` | `smd:` is missing (adds `smd: 1`) |
+| `frontmatter/version` | `smd:` is missing (adds `smd: 1`), or its value reads as 1 without being a whole number, e.g. `true` or `1.0` (→ `smd: 1`) |
 | `frontmatter/unknown-key` | a standard key is close, e.g. `titel` → `title` |
 | `frontmatter/status`, `frontmatter/audience`, `frontmatter/value` | exactly one allowed value is close, e.g. `aproved` → `approved`, `Dark` → `dark` |
 | `frontmatter/accent` | the color is a misspelled named color, e.g. `bleu` → `blue` |
@@ -760,6 +772,7 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 | `link/github-anchor` | always: the heading's own id |
 | `footnote/undefined` | exactly one defined footnote label is close, e.g. `[^retires]` → `[^retries]` |
 | `variable/undefined` | a front matter key is close, e.g. `{{verison}}` → `{{version}}` |
+| `container/colons`, `attrs/duplicate`, `container/title-conflict`, `heading/attrs-text`, `include/section-match`, `deprecated/agent-priority` | always (except `{agent}` after a heading, and title text beside an HTML comment): the change keeps how the document renders, and makes it read the same in spec v2 |
 
 Everything else needs a decision only the author can make (which file was meant, where a block should end inside a list, what a missing attribute should be), so it has no fix. Fixes never touch values with several equally close matches, dates like `09/05/2026` whose day/month order is unclear, or `style=…`, which takes several words.
 

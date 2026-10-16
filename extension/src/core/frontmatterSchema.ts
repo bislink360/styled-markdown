@@ -25,7 +25,11 @@ const listOf = (description: string, examples: unknown[]): FrontMatterProperty =
 });
 
 const PROPERTIES: Record<string, FrontMatterProperty> = {
-  smd: { description: FRONTMATTER_KEYS.smd, type: 'integer', enum: [SMD_VERSION] },
+  // A whole number; a string of digits is tolerated, as the validator tolerates it (anything else is reported).
+  smd: {
+    description: FRONTMATTER_KEYS.smd,
+    anyOf: [{ type: 'integer', enum: [SMD_VERSION] }, { type: 'string', pattern: `^0*${SMD_VERSION}$` }],
+  },
   title: { description: FRONTMATTER_KEYS.title, type: 'string' },
   summary: { description: FRONTMATTER_KEYS.summary, type: 'string' },
   status: { description: FRONTMATTER_KEYS.status, type: 'string', enum: STATUS_VALUES },
