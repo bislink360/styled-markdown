@@ -1,4 +1,4 @@
-import { findAttrsEnd } from './attrs';
+import { findAttrsEnd, itemValue, lexAttrItems } from './attrs';
 import { CONTAINER_OPEN } from './containers';
 import { attrRank, quote } from './format';
 import { CONTAINERS } from './spec';
@@ -35,8 +35,6 @@ export interface AttrItem extends Span {
 /** A value for setAttr: text, or `true` for a bare flag (`collapsible`). */
 export type AttrValue = string | true;
 
-/** The same items as parseAttrs (attrs.ts) reads: keep the two in step. */
-const ATTR_ITEM = /\s*(?:([.#])([A-Za-z0-9_-]+)|([A-Za-z_][\w-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'}]+)))?)\s*/y;
 const BARE_VALUE = /^[^\s"'}]+$/;
 const ID_NAME = /^[A-Za-z0-9_-]+$/;
 const TITLE = 'title';
@@ -49,37 +47,21 @@ function lexItem(m: RegExpExecArray, pos: number): AttrItem {
   const start = pos + text.length - text.trimStart().length;
   const end = pos + text.trimEnd().length;
   if (m[1]) return { kind: m[1] === '.' ? 'class' : ID, name: m[2], start, end, quote: '' };
-  const [value, style] = valueOf(m);
-  const item: AttrItem = { kind: KEY, name: m[3], start, end, quote: style };
+  const { value, quote } = itemValue(m);
+  const item: AttrItem = { kind: KEY, name: m[3], start, end, quote };
   if (value === undefined) return item;
-  const length = value.length + 2 * style.length;
+  // The value as written (escapes and all), with its quotes.
+  const length = (m[4] ?? m[5] ?? m[6]).length + 2 * quote.length;
   return { ...item, value, valueSpan: { start: end - length, end } };
-}
-
-function valueOf(m: RegExpExecArray): [string | undefined, QuoteStyle] {
-  if (m[4] !== undefined) return [m[4], '"'];
-  if (m[5] !== undefined) return [m[5], "'"];
-  return [m[6], ''];
 }
 
 /**
  * The items of the inside of `{…}` (without the braces), with their spans; null when parseAttrs would reject the
- * text. Later items win in parseAttrs, so the last of a repeated key is the one that counts.
+ * text. They are the items parseAttrs reads (lexAttrItems), so values come unescaped. Later items win in
+ * parseAttrs, so the last of a repeated key is the one that counts.
  */
 export function lexAttrs(src: string): AttrItem[] | null {
-  const items: AttrItem[] = [];
-  let pos = 0;
-  while (pos < src.length) {
-    ATTR_ITEM.lastIndex = pos;
-    const m = ATTR_ITEM.exec(src);
-    if (!m || m[0].length === 0) {
-      if (src.slice(pos).trim() === '') break;
-      return null;
-    }
-    items.push(lexItem(m, pos));
-    pos = ATTR_ITEM.lastIndex;
-  }
-  return items;
+  return lexAttrItems(src)?.map(({ match, pos }) => lexItem(match, pos)) ?? null;
 }
 
 const splice = (text: string, span: Span, insert: string) => text.slice(0, span.start) + insert + text.slice(span.end);
@@ -99,16 +81,24 @@ function inSameQuotes(value: string, style: QuoteStyle): string | undefined {
   return value.includes(style) ? undefined : `${style}${value}${style}`;
 }
 
-/** A value no attribute list can hold: a line break, or both kinds of quote. */
-const unwritable = (value: AttrValue) => value !== true && (/[\r\n]/.test(value) || (value.includes('"') && value.includes("'")));
+/** A value no attribute list can hold on its line: a line break. (Both kinds of quote are written with `\"`.) */
+const unwritable = (value: AttrValue) => value !== true && /[\r\n]/.test(value);
 
 /**
  * Set `key` in the inside of an attribute list. An existing key (the last, if repeated) changes in place: a value
  * quoted as formatAttrs would quote it is quoted that way again, any other keeps its quotes when they can hold the
  * new value. A new key goes at its canonical place among the others for a block whose own keys are `order`
- * (CONTAINERS[name].attrs). Null when `src` is malformed or no attribute list can hold the value.
+ * (CONTAINERS[name].attrs). Null when `src` is malformed or no attribute list can hold the value (a line break, or
+ * backslashes before quotes that would read as escapes).
  */
 export function setAttr(src: string, key: string, value: AttrValue, order: readonly string[] = []): string | null {
+  const out = writeAttr(src, key, value, order);
+  if (out === null || value === true) return out;
+  const items = lexAttrs(out);
+  return items?.[lastIndexOf(items, KEY, key)]?.value === value ? out : null;
+}
+
+function writeAttr(src: string, key: string, value: AttrValue, order: readonly string[]): string | null {
   const items = lexAttrs(src);
   if (!items || unwritable(value) || !/^[A-Za-z_][\w-]*$/.test(key)) return null;
   const index = lastIndexOf(items, KEY, key);

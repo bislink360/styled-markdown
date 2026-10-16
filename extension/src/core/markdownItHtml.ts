@@ -436,9 +436,9 @@ export function withoutDueNotes(html: string): string {
 
 const TREND_ARROWS = new Map([['up', '▲'], ['down', '▼'], ['flat', '■']]);
 
-/** The trend as written, or from the sign of `delta`. */
+/** The trend as written (in lower case: `Up` is `up`), or from the sign of `delta`. */
 function metricTrend(values: Record<string, string>): string {
-  if (values.trend !== undefined) return values.trend;
+  if (values.trend !== undefined) return values.trend.toLowerCase();
   if (!values.delta) return '';
   return values.delta.trim().startsWith('-') ? 'down' : 'up';
 }
@@ -450,7 +450,7 @@ function metricTone(trend: string, good: string): string {
 
 function metric({ md, content, values, m }: Directive): string {
   const trend = metricTrend(values);
-  const tone = metricTone(trend, values.good ?? 'up');
+  const tone = metricTone(trend, (values.good ?? 'up').toLowerCase());
   const arrow = TREND_ARROWS.get(trend) ?? '';
   // Good or bad shows as colour; screen readers get it as text, and the arrow as the trend's name.
   const spoken = [TREND_ARROWS.has(trend) ? term(m, 'trend', trend) : '', tone === 'flat' ? '' : term(m, 'tone', tone)].filter(Boolean).join(', ');

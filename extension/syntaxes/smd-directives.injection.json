@@ -75,7 +75,7 @@
           }
         },
         {
-          "match": "([A-Za-z_][\\w-]*)\\s*(=)\\s*(\"[^\"]*\"|'[^']*'|[^\\s\"'}]+)",
+          "match": "([A-Za-z_][\\w-]*)\\s*(=)\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|\"[^\"]*\"|'(?:[^'\\\\]|\\\\.)*'|'[^']*'|[^\\s\"'}]+)",
           "captures": {
             "1": { "name": "entity.other.attribute-name.smd" },
             "2": { "name": "punctuation.separator.key-value.smd" },
