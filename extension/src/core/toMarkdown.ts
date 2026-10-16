@@ -135,9 +135,11 @@ function headingAnchors(text: string, markdown: string, options: ToMarkdownOptio
   if (includeScopes.has(options)) return markdown;
   const pairs = headingIdPairs(text, markdown, options.readFile);
   convertedIds.set(options, pairs);
-  const differ = (pairs ?? []).filter((p) => p.github !== p.smd);
-  if (!differ.length) return markdown;
+  // markdown-it also ends lines at a lone `\r`, so its line numbers only match these lines when there is none.
+  if (/\r(?!\n)/.test(markdown)) return markdown;
   const lines = markdown.split('\n');
+  const differ = (pairs ?? []).filter((p) => p.github !== p.smd && p.line < lines.length);
+  if (!differ.length) return markdown;
   // From the last heading up, so the lines of those above stay where they are.
   for (let k = differ.length - 1; k >= 0; k--) lines.splice(differ[k].line, 0, ...anchorLines(lines, differ[k]));
   return lines.join('\n');

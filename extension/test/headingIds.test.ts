@@ -189,6 +189,15 @@ test('to-md: anchors stay inside blockquotes, apart from paragraphs and before s
   assert.equal(smdToMarkdown('A & B\n=====\n'), '<a id="a-b"></a>\n\nA & B\n=====\n');
 });
 
+test('to-md: lone carriage returns get no anchors rather than misplaced ones (fuzz seed 20260928, case 499)', () => {
+  // markdown-it ends a line at a lone `\r`, so its heading lines don't index the output's `\n` lines.
+  const text = '- a\r- b\r- c\n### Sub {#custom .cls agent=skip}';
+  assert.doesNotThrow(() => smdToMarkdown(text));
+  assert.doesNotMatch(smdToMarkdown(text), /<a id=/);
+  // CRLF output still gets them.
+  assert.match(smdToMarkdown('## foo_bar\r\n\r\nText.\r\n'), /<a id="foobar"><\/a>/);
+});
+
 test('to-md: GitHub numbers repeats over the converted headings, included ones too', () => {
   // GitHub gives the third heading `a-1-1`; Styled Markdown gives it `a-1`.
   assert.equal(smdToMarkdown('## A\n\n## A\n\n## A-1\n'), '## A\n\n## A\n\n<a id="a-1"></a>\n## A-1\n');
