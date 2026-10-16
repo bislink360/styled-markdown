@@ -1,0 +1,43 @@
+---
+smd: 1
+title: Heading ids
+summary: Pins how 1.9 gives headings their ids (punctuation, underscores, dashes, other scripts, emoji, repeats and {#id}), where many differ from GitHub's, so later releases are compared against them.
+status: draft
+updated: 2026-10-15
+---
+
+## Overview
+
+Links by heading id: [the request options](#requestoptions), [the token limit](#maxtokens), [errors](#errors-retries), [the release](#200-2026-10-15), [the German notes](#hinweise-für-straße), [launch](#-launch), [the second example](#example-1) and [the setup](#install).
+
+## request_options
+
+Underscores are dropped: the id is `requestoptions`, where GitHub's is `request_options`.
+
+## max_tokens
+
+## Errors & retries
+
+The ampersand goes and the two spaces around it become one hyphen.
+
+## 2.0.0 — 2026-10-15
+
+A changelog-style heading: the dots and the dash go.
+
+## Hinweise für Straße
+
+Letters of every script stay.
+
+## 🚀 Launch
+
+The emoji goes after the text is trimmed, so the id starts with a hyphen.
+
+## Example
+
+## Example
+
+A repeat is numbered.
+
+## Setup {#install}
+
+An explicit id is used as written.
