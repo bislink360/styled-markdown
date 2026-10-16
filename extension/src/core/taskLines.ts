@@ -60,6 +60,13 @@ function needsParse(line: string, previous: string | undefined, number: string |
   return (number !== undefined && Number.parseInt(number, 10) !== 1) || !ENDS_TEXT.test(previous);
 }
 
+/** The open code fence after a line, and whether the line is part of a fence (its opener, body or closer). */
+function fenceStep(line: string, fence: string | null): { fence: string | null; inFence: boolean } {
+  const f = FENCE.exec(line);
+  if (fence) return { fence: f && f[1][0] === fence[0] && f[1].length >= fence.length ? null : fence, inFence: true };
+  return f ? { fence: f[1], inFence: true } : { fence: null, inFence: false };
+}
+
 /**
  * The headings and tasks (`- [ ] …`, `1. [x] …`) of a document in order, from the first body line on (after the
  * front matter when `from` is left out). A task is a line that rendering shows with a checkbox: code holds none, and
@@ -75,12 +82,9 @@ export function scanTasks(text: string, from = parseFrontMatter(text).bodyStartL
   const inRaw = rawBlocks();
   for (let i = from; i < lines.length; i++) {
     const line = lines[i];
-    const f = FENCE.exec(line);
-    if (fence) {
-      if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
-      continue;
-    }
-    if (f) { fence = f[1]; continue; }
+    const step = fenceStep(line, fence);
+    fence = step.fence;
+    if (step.inFence) continue;
     const raw = inRaw(line);
     const h = HEADING.exec(line);
     if (h) { found.push({ kind: 'heading', line: i, text: h[1] }); continue; }
