@@ -10,9 +10,10 @@ import {
   checkMermaid, formatSmd, FRONTMATTER_SCHEMA, frontMatterValues, parseFrontMatter, parseSmd, renderSmd, validateSmd, type Diagnostic,
 } from './core';
 import {
-  anchorLine, anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext,
+  anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext,
 } from './core/links';
 import { encodeAnchor, headingAt, linksToAnchor, renameHeading } from './core/anchors';
+import { anchorNames, anchorOrAliasLine, headingAlias } from './core/headingAliases';
 import { blockquoteToCallout, containerAt, isCallout, wrapLines, type LineEdit } from './core/refactors';
 import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from './core/footnotes';
 import { frontMatterProperty } from './core/frontmatterSchema';
@@ -267,6 +268,9 @@ function anchorItems(text: string, range: vscode.Range, prefix: string): vscode.
     item.range = range;
     item.detail = t.text !== undefined ? `${'#'.repeat(t.level ?? 1)} ${t.text}` : t.line !== undefined ? `id on line ${t.line + 1}` : 'id';
     item.sortText = `3${String(i).padStart(5, '0')}`;
+    // Typing a heading's GitHub id (`#foo_bar`) finds it too, and inserts its own id (`#foobar`).
+    const alias = t.text === undefined || t.line === undefined ? undefined : headingAlias(text, t.line);
+    if (alias) item.filterText = `${prefix}${t.id} ${prefix}${alias}`;
     return item;
   });
 }
@@ -721,7 +725,7 @@ class DefinitionProvider implements vscode.DefinitionProvider {
     const parts = splitTarget(hit.link.target);
     if (!parts) return undefined;
     if (!parts.path) {
-      const line = parts.anchor ? anchorLine(text, parts.anchor) : undefined;
+      const line = parts.anchor ? anchorOrAliasLine(text, parts.anchor) : undefined;
       return line === undefined ? undefined : at(document.uri, line);
     }
     if (document.uri.scheme !== 'file') return undefined;
@@ -734,7 +738,7 @@ class DefinitionProvider implements vscode.DefinitionProvider {
     if (other === undefined) {
       try { other = fs.readFileSync(target.fsPath, 'utf8'); } catch { return undefined; }
     }
-    return at(target, anchorLine(other, parts.anchor) ?? 0);
+    return at(target, anchorOrAliasLine(other, parts.anchor) ?? 0);
   }
 }
 
@@ -788,16 +792,18 @@ class ReferenceProvider implements vscode.ReferenceProvider {
     if (!anchor) return [];
     const docs = await workspaceDocuments(document);
     const locations: vscode.Location[] = [];
+    const target = docs.find((d) => d.uri.toString() === anchor.uri.toString());
     if (context.includeDeclaration) {
-      const target = docs.find((d) => d.uri.toString() === anchor.uri.toString());
-      const line = target ? anchorLine(target.text, anchor.id) : undefined;
+      const line = target ? anchorOrAliasLine(target.text, anchor.id) : undefined;
       if (target && line !== undefined) {
         const h = headingAt(target.text, line);
         locations.push(new vscode.Location(anchor.uri, new vscode.Range(line, h?.start ?? 0, line, h?.end ?? 0)));
       }
     }
+    // Links to a heading by its GitHub id (`#foo_bar` for `#foobar`) are references too.
+    const names = target ? anchorNames(target.text, anchor.id) : [anchor.id];
     for (const doc of docs) {
-      for (const l of linksToAnchor(doc.text, anchor.id, (p) => pointsAt(doc.uri, p, anchor.uri))) {
+      for (const l of names.flatMap((name) => linksToAnchor(doc.text, name, (p) => pointsAt(doc.uri, p, anchor.uri)))) {
         locations.push(new vscode.Location(doc.uri, new vscode.Range(l.line, l.column, l.line, l.endColumn)));
       }
     }

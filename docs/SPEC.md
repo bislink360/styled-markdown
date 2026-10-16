@@ -290,8 +290,48 @@ A task item may carry an owner (`@name` or `:mention[…]`), `:priority[…]` an
 
 A heading may end with an attribute list: `## Title {#custom-id .class agent=skip}`.
 
-- `#id` sets the anchor id.
+- `#id` sets the anchor id (§4.2.3).
 - `agent=skip` marks the section (up to the next heading of the same or higher level) as **human-only**. Agent views omit it, and the preview shows a "humans only" tag.
+
+### 4.2.3 Heading ids
+
+Every heading has an id, which links (`[x](#id)`, `other.smd#id`), the table of contents, `smd outline` and `--section` use. The algorithm below has been the same since 1.0 and does not change in 1.x, since links depend on it.
+
+**The heading's text.** The id is made from the heading's inline content *as written*: plain text, the text inside emphasis, links, `==highlights==` and `[styled spans]{…}`, the content of code spans, footnote references as written (`[^1]`) and front matter variables as written (`{{version}}`, whatever its value; §4.7). Raw HTML tags, images, inline directives (`:badge[…]` and the rest), inline math and the trailing attribute list are left out. Heading text elsewhere (the table of contents, outlines) shows the variables' values.
+
+**The slug** of that text:
+
+1. Lower-case it (Unicode lower case, independent of the locale).
+2. Trim whitespace at both ends.
+3. Remove every run of `<` followed by one or more characters other than `>` and then `>`, wherever it comes from (`` `Map<K, V>` type `` → `map-type`).
+4. Remove every character that is not a Unicode letter (`\p{L}`), number (`\p{N}`), whitespace or `-`. Punctuation, `_`, symbols, emoji and combining marks (`\p{M}`) go: `foo_bar` → `foobar`, `Café` written with a combining accent → `cafe`.
+5. Replace each run of whitespace with one `-`.
+6. Replace each run of `-` with one `-`. Leading and trailing hyphens stay: `🚀 Launch` → `-launch`.
+7. If nothing is left, the slug is `section`.
+
+| Heading | Id | GitHub's id |
+|---|---|---|
+| `## Getting Started` | `getting-started` | `getting-started` |
+| `## max_tokens` | `maxtokens` | `max_tokens` |
+| `## Errors & retries` | `errors-retries` | `errors--retries` |
+| `## 1.2.0 — 2026-03-01` | `120-2026-03-01` | `120--2026-03-01` |
+| `## Hinweise für Straße` | `hinweise-für-straße` | `hinweise-für-straße` |
+| `## 🚀 Launch` | `-launch` | `-launch` |
+| `## !!!` | `section` | (empty) |
+
+**Repeats.** In document order, the first heading with a slug gets it as its id, and the *n*-th later one gets `slug-n` (`a`, `a-1`, `a-2`). Numbered ids are not checked against other headings, so `## A`, `## A`, `## A-1` give `a`, `a-1`, `a-1`.
+
+**Explicit ids.** A heading ending in an attribute list with `#id` (§4.2.2) has that id exactly as written: not slugged, not numbered and not checked for repeats. It does not count as a use of its text's slug, so the next heading with the same text still gets the plain slug. An attribute list that does not parse is part of the heading's text.
+
+**Included headings** keep the ids they have in their own file, numbered where the including document already uses them (§3.4).
+
+**GitHub ids as aliases.** GitHub makes ids differently: it lower-cases the text, removes everything but letters, marks, digits, `_`, `-` and spaces, turns each space into a `-` and collapses nothing; repeats get `-1`, `-2`… skipping ids already given. A heading's *GitHub id* is the id GitHub gives it in the document's `smd to-md` output, where badges and variables are plain text (`## Install :badge[beta]` is `install-beta` there). Where it differs from the heading's id:
+
+- `smd to-md` writes `<a id="heading-id"></a>` on the line before the heading, so links by either id work on GitHub (§8).
+- The validator accepts a link by GitHub id (`[x](#max_tokens)`, `other.smd#max_tokens`) as naming the heading, with an `info` diagnostic and a fix to the heading's id, because the rendered HTML has only the heading's own id (`link/github-anchor`, §7). An id that something in the document has itself (a heading, a `{#id}`, an HTML `id`) is never an alias.
+- Editors resolve such links the same way for go to definition, hover, find references and renaming a heading, and offer the heading's id when its GitHub id is typed.
+
+The rendered HTML is unchanged: it has the heading's own id only.
 
 ### 4.3 Highlight
 
@@ -448,6 +488,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `math/syntax` · `math/unclosed` | error | KaTeX parse error / unclosed `$$` |
 | `fence/unclosed` | error | Unclosed code fence (fix: add it at the end of the document, for an unindented fence) |
 | `link/missing-anchor` | warning | `[x](#id)` or `[x](other.smd#id)` with no heading or element with that id (fix: closest id) |
+| `link/github-anchor` | info | `[x](#max_tokens)`: the anchor is the GitHub id of a heading whose own id differs (`#maxtokens`, §4.2.3). It works on GitHub but not in the rendered HTML (fix: the heading's id) |
 | `link/missing-file` | warning | Relative link, image, reference definition, HTML `href`/`src` or `related:` entry does not exist |
 | `link/undefined-reference` | warning | `[text][label]` or `[label][]` with no `[label]: …` definition |
 | `figure/unknown-ref` | warning | `:ref[id]` names no `figure` in the document (fix: closest figure id) |
@@ -495,6 +536,7 @@ Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.s
 | `:::risk-matrix` | **Risk matrix** label and a table: impact rows × likelihood columns, risk titles in the cells |
 | `:::figure{#id} Caption` | `<a id="id"></a>`, the content, then a `**Figure 1:** Caption` paragraph |
 | `:ref[id]` | `[Figure 1](#id)` (an unknown id stays as written) |
+| `## Heading {#id}` | `## Heading`; when the heading's GitHub id differs from its id (`{#id}`, `## max_tokens`, `## 1.2.0 — 2026-03-01`), `<a id="id"></a>` on the line before it (inside the same blockquote; after a blank line when the line above is not blank; followed by a blank line for a setext heading), so links by either id work (§4.2.3). `smd from-md` drops such a line again when the heading below has that id |
 | `{{name}}` | The front matter value, written as it is (an undefined name, code and URLs stay as written) |
 | `:::include` | The included text, converted the same way, after an `<!-- included from … -->` comment (GitHub can't include); when the file can't be read, the fallback body, or a link to the file when the body is empty |
 | `:::glossary Title` | a `**Title**` paragraph, then the `- **Term**: definition` list unchanged; uses of terms stay as written |

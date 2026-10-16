@@ -3,12 +3,13 @@ import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import {
-  containerEnd, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
+  containerEnd, findIncludes, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
+import { githubIds, markdownHeadings, type MarkdownHeading } from './githubSlug';
 import { expandedFigures, figuresOf, includedLines, includeKey, includeSource, type ExpandedFigures } from './includeText';
-import { aroundInlineMath, inlineMathLines, literalLines } from './parse';
+import { aroundInlineMath, inlineMathLines, literalLines, parseSmd } from './parse';
 import { quoteCite } from './quote';
-import { HEADING_ATTRS } from './render';
+import { HEADING_ATTRS, renderSmd } from './render';
 import { riskMatrixMarkdown } from './risks';
 import { documentVariables, substituteLine, type Variables } from './variables';
 
@@ -117,7 +118,73 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
     }
     emit(lineMarkdown(line, literal.has(i), { variables, figures: figures.byId }, inlineMath.get(i)));
   }
-  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+  return headingAnchors(text, out.join('\n').replace(/\n{3,}/g, '\n\n'), options);
+}
+
+/** A heading of the converted text with the id Styled Markdown gives it and the one GitHub gives it. */
+interface HeadingIds extends MarkdownHeading { smd: string; github: string }
+
+/** The heading ids of the last conversion with these options, for githubHeadingIds. */
+const convertedIds = new WeakMap<ToMarkdownOptions, HeadingIds[] | undefined>();
+
+/**
+ * `<a id="smd-id"></a>` before each heading whose GitHub id differs from its own, so that links written with
+ * either id work on GitHub. Added once, to the whole document, after its includes are converted into it.
+ */
+function headingAnchors(text: string, markdown: string, options: ToMarkdownOptions): string {
+  if (includeScopes.has(options)) return markdown;
+  const pairs = headingIdPairs(text, markdown, options.readFile);
+  convertedIds.set(options, pairs);
+  const differ = (pairs ?? []).filter((p) => p.github !== p.smd);
+  if (!differ.length) return markdown;
+  const lines = markdown.split('\n');
+  // From the last heading up, so the lines of those above stay where they are.
+  for (let k = differ.length - 1; k >= 0; k--) lines.splice(differ[k].line, 0, ...anchorLines(lines, differ[k]));
+  return lines.join('\n');
+}
+
+/**
+ * The document's headings paired with the headings of its plain Markdown, which come in the same order.
+ * Undefined when they don't pair up (the converted text has more or fewer headings).
+ */
+function headingIdPairs(text: string, markdown: string, readFile: ToMarkdownOptions['readFile']): HeadingIds[] | undefined {
+  const own = readFile && findIncludes(text.split(/\r?\n/)).length ? renderSmd(text, { readFile }).headings : parseSmd(text).headings;
+  const plain = markdownHeadings(withoutFrontMatter(markdown));
+  if (plain.length !== own.length) return undefined;
+  const github = githubIds(plain.map((h) => h.text));
+  return plain.map((h, i) => ({ ...h, smd: own[i].slug, github: github[i] }));
+}
+
+/** Front matter as blank lines: GitHub shows it as a table, so its lines are never headings. */
+function withoutFrontMatter(markdown: string): string {
+  const lines = markdown.split('\n');
+  if (lines[0]?.trimEnd() !== '---') return markdown;
+  const end = lines.findIndex((l, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(l));
+  return end < 0 ? markdown : [...lines.slice(0, end + 1).map(() => ''), ...lines.slice(end + 1)].join('\n');
+}
+
+/**
+ * The lines that go before a heading for its Styled Markdown id: the anchor, inside the same blockquotes as the
+ * heading. A blank line keeps it out of a paragraph or table just above, and out of a setext heading's text.
+ */
+function anchorLines(lines: string[], heading: HeadingIds): string[] {
+  const line = lines[heading.line];
+  const prefix = line.slice(0, line.length - line.replace(/^[>\s]+/, '').length);
+  const blank = prefix.trimEnd();
+  const above = heading.line > 0 ? lines[heading.line - 1].replace(/^[>\s]+/, '') : '';
+  const anchor = `${prefix}<a id="${heading.smd.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"></a>`;
+  return [...(above ? [blank] : []), anchor, ...(heading.atx ? [] : [blank])];
+}
+
+/**
+ * The id GitHub gives each of the document's own headings (as `parseSmd` lists them) in its `to-md` output.
+ * When that output's headings don't pair up with the document's, each heading's text stands in for its output.
+ */
+export function githubHeadingIds(text: string): string[] {
+  const options: ToMarkdownOptions = {};
+  smdToMarkdown(text, options);
+  const pairs = convertedIds.get(options);
+  return pairs ? pairs.map((p) => p.github) : githubIds(parseSmd(text).headings.map((h) => h.text));
 }
 
 /** The include scope of the converted text, for included documents (the root document has none). */

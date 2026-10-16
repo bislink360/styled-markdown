@@ -2,7 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkMermaid, formatSmd, parseSmd, validateSmd, type Diagnostic, type ValidateOptions } from './core';
-import { anchorLine, isDocumentPath, linkAt, splitTarget } from './core/links';
+import { anchorOrAliasLine } from './core/headingAliases';
+import { isDocumentPath, linkAt, splitTarget } from './core/links';
 import type { MermaidParse } from './core/mermaid';
 import { documentSymbols, fuzzyMatch, type SmdSymbol } from './core/symbols';
 import { loadRuleConfig } from './config';
@@ -290,7 +291,7 @@ export class SmdLanguageServer {
     const parts = splitTarget(hit.link.target);
     if (!parts) return null;
     if (!parts.path) {
-      const target = parts.anchor ? anchorLine(document.text, parts.anchor) : undefined;
+      const target = parts.anchor ? anchorOrAliasLine(document.text, parts.anchor) : undefined;
       return target === undefined ? null : location(document.uri, target);
     }
     return this.fileDefinition(document, parts.path, parts.anchor);
@@ -305,7 +306,7 @@ export class SmdLanguageServer {
     const uri = this.uriOf(target);
     if (!anchor || !isDocumentPath(linkPath)) return location(uri, 0);
     const text = this.readText(target);
-    return location(uri, (text === undefined ? undefined : anchorLine(text, anchor)) ?? 0);
+    return location(uri, (text === undefined ? undefined : anchorOrAliasLine(text, anchor)) ?? 0);
   }
 
   private formatting(params: { textDocument: { uri: string } }) {
