@@ -577,8 +577,11 @@ function locate(w: Work, link: FuzzyLink, from: { line: number; column: number }
   return undefined;
 }
 
-function fuzzyLinkStep(w: Work): void {
-  const edits = new Map<number, Array<{ column: number; label: string }>>();
+type DomainEdits = Map<number, Array<{ column: number; label: string }>>;
+
+/** The source place of each fuzzy link, by line; a link this tool can't place becomes a note. */
+function placeFuzzyLinks(w: Work): DomainEdits {
+  const edits: DomainEdits = new Map();
   let from = { line: 0, column: 0 };
   for (const link of fuzzyLinks(textOf(w))) {
     const at = locate(w, link, from);
@@ -589,15 +592,22 @@ function fuzzyLinkStep(w: Work): void {
     from = { line: at.line, column: at.column + link.label.length };
     edits.set(at.line, [...(edits.get(at.line) ?? []), { column: at.column, label: link.label }]);
   }
-  for (const [line, links] of edits) {
+  return edits;
+}
+
+const several = (n: number, one: string, many: string) => (n > 1 ? many : one);
+
+function fuzzyLinkStep(w: Work): void {
+  for (const [line, links] of placeFuzzyLinks(w)) {
     const labels = links.map((l) => `"${l.label}"`).join(', ');
+    const are = several(links.length, 'is', 'are');
     if (!w.options.linkDomains) {
-      note(w, line, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${links.length > 1 ? 'are' : 'is'} linked today. Run with --link-domains to write ${links.length > 1 ? 'them' : 'it'} as <https://…>.`);
+      note(w, line, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} linked today. Run with --link-domains to write ${several(links.length, 'it', 'them')} as <https://…>.`);
       continue;
     }
     let next = w.lines[line];
     for (const l of [...links].reverse()) next = `${next.slice(0, l.column)}<https://${l.label}>${next.slice(l.column + l.label.length)}`;
-    change(w, line, 1, [next], FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${links.length > 1 ? 'are' : 'is'} written as an autolink, which stays a link.`);
+    change(w, line, 1, [next], FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} written as an autolink, which stays a link.`);
   }
 }
 
