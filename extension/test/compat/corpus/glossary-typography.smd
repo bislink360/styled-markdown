@@ -1,0 +1,20 @@
+---
+smd: 1
+title: Glossary terms with quotes and dashes
+summary: Pins how glossary terms with apostrophes, double quotes and dashes are found, so later releases are compared against it. The typographer curls the quotes and joins the dashes in rendered text, and the terms are still marked there.
+status: draft
+updated: 2026-10-15
+---
+
+## Overview
+
+Every change follows the builder's rule, and each "Two pizza" team owns its service end--to--end.
+A hand-off between teams needs a written note --- the on-call log.
+
+## Glossary
+
+:::glossary Terms
+- **Builder's rule**: Whoever builds a service runs it.
+- **"Two pizza" team**: A team small enough to be fed by two pizzas.
+- **end--to--end**: From the first request to the last byte stored.
+:::

@@ -1,0 +1,21 @@
+---
+smd: 1
+title: Quotes and backslashes in attribute values
+summary: Pins how backslashes in quoted attribute values read, so later releases are compared against them. They stay as written.
+status: draft
+updated: 2026-10-15
+---
+
+## Backslashes that are not escapes
+
+:::note{title="C:\Users\docs\plan.smd"}
+A Windows path keeps its backslashes.
+:::
+
+:::note{title="\\server\share"}
+Two backslashes stay two backslashes.
+:::
+
+:::note{title="C:\docs\"}
+A value that ends with a backslash, valid before 1.10, reads as it did.
+:::

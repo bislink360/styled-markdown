@@ -1,0 +1,21 @@
+---
+smd: 1
+title: Vocabulary values in any case
+summary: Pins how enumerated values read, so later releases are compared against it.
+status: approved
+audience: both
+theme: light
+updated: 2026-10-15
+---
+
+## Values
+
+:::decision{status=accepted date=2026-10-15}
+Container values are matched in any case.
+:::
+
+Conversion is :metric[3.1%]{label="Conversion" delta="+0.4%" trend=up good=up} this week.
+
+:::api{method=GET path="/v1/items"}
+Lists items.
+:::
