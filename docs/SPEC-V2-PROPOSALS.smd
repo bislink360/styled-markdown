@@ -1,8 +1,8 @@
 ---
 smd: 1
 title: "RFC: Styled Markdown spec v2"
-summary: The breaking changes proposed for Styled Markdown 2.0, gathered from v1.0–v1.9, with evidence, breakage, migration and a recommendation for each. Feedback is needed on every proposal marked proposed before any of them is built.
-status: review
+summary: The breaking changes accepted for Styled Markdown 2.0, gathered from v1.0–v1.9, with evidence, breakage, migration and the accepted decision for each. The non-breaking parts and deprecation hints ship first in 1.10.
+status: approved
 owners: ["@roshanmadhushanka"]
 tags: [rfc, spec, v2]
 updated: 2026-10-15
@@ -11,7 +11,7 @@ toc: true
 
 ## How to read this
 
-This RFC lists every change considered for spec v2. Each one is a `:::decision` with status **proposed**; the maintainer accepts or rejects it in review. Nothing here is built yet. 2.0 ships only the accepted ones.
+This RFC lists every change considered for spec v2. Each one is a `:::decision`; all of them were accepted in review on 2026-10-15, as recommended. 1.10 ships the non-breaking parts and the deprecation hints; 2.0 ships the rest.
 
 Every proposal belongs to one of three groups:
 
@@ -23,7 +23,7 @@ Every proposal belongs to one of three groups:
 
 Today `smd:` is read only by the validator. Rendering, the agent view, `to-md`, `tasks` and `query` ignore it, and `Number()` coercion lets `smd: true`, `"1"` or `1.0` pass silently, while the JSON Schema allows only the integer `1`. v2 needs the key to mean something.
 
-:::decision{status=proposed} The `smd:` key selects the spec version
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} The `smd:` key selects the spec version
 1. The value is a positive integer; a digit string is tolerated. Booleans, lists and decimals give a `frontmatter/version` warning. Versions are majors only: features are found by graceful degradation, never by `smd: 1.6`.
 2. `smd: 1` selects v1 rules, and **a missing `smd` key means v1 throughout 2.x.** That covers every existing document and every `.md` file. The info fix for a missing key suggests `smd migrate`. The default is revisited in 3.0.
 3. `smd: 2` selects v2 rules (the :badge[smd: 2]{color=indigo} proposals below). 2.x tools keep a complete v1 mode for at least one major cycle.
@@ -59,7 +59,7 @@ Today `smd:` is read only by the validator. Rendering, the agent view, `to-md`, 
 - **Today:** front matter that is never closed is not front matter. But if a later `---` thematic break exists, it is taken as the closer: the YAML fails to parse, the renderer still emits front matter with empty data, and **everything above that `---` disappears** from the render and the agent view. Only `smd validate` reports it (`frontmatter/invalid`). `...` is also accepted as a closer, which SPEC §2.1 doesn't say.
 - **Example:** `---`, `smd: 1`, `title: F`, then `# Intro`, a paragraph, a list, a `---` rule and `## After rule`. The rendered document shows only "After rule". Forgetting the closing `---` is the most likely front matter typo.
 
-:::decision{status=proposed} Broken front matter renders visibly
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Broken front matter renders visibly
 Front matter whose YAML is not a mapping renders as a visible error block holding the raw YAML, and the body after the closer renders as usual. `...` is written into the spec as a closer.
 
 Alternative: treat such front matter as not front matter, and render from the first line.
@@ -75,7 +75,7 @@ Alternative: treat such front matter as not front matter, and render from the fi
 - **Today:** any line *starting* with `$$` opens display math, which can interrupt a paragraph, and it closes on any later line *ending* with `$$`. The container scan skips code fences but not `$$`, while the validator does treat `$$` as opaque, so the two disagree.
 - **Examples:** `Pricing:` followed by `$$5 per seat…` swallows the next `## Plans` heading until a line ending in `costs $$`. A `:::` line inside `$$` inside a `:::note` closes the note in the renderer, and the validator reports nothing.
 
-:::decision{status=proposed} `$$` opens and closes only on its own line
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} `$$` opens and closes only on its own line
 Display math opens on a line that is only `$$` (or a one-line `$$…$$`), and closes on a line that is only `$$`. Math blocks are opaque to the container scan, as code fences are.
 :::
 
@@ -90,7 +90,7 @@ Display math opens on a line that is only `$$` (or a one-line `$$…$$`), and cl
 - **Today:** SPEC §3 says "a closing fence always closes the innermost open container. Colon count is cosmetic." One missing `:::` therefore makes the rest of the document part of a tab, and `container/unclosed` fires at the far end. `smd fmt` already rewrites closers to match their openers.
 - **The problem:** there is no error recovery, and SPEC principle 3 claims alignment with remark-directive and MyST, whose closers are length-based.
 
-:::decision{status=proposed} Colon counts pair openers and closers
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Colon counts pair openers and closers
 A closer with N colons closes the innermost open container that was opened with exactly N colons. Containers opened inside it close with it and are reported. If no open container has N colons, the closer closes the innermost one, as in v1, with a new `container/colons` warning.
 
 Alternative: the MyST rule (a closer at least as long as its opener). It interoperates better but does not fix recovery.
@@ -105,7 +105,7 @@ Alternative: the MyST rule (a closer at least as long as its opener). It interop
 
 - **Today:** the last duplicate key and the last `#id` win silently. Duplicate classes are emitted twice. `title=` in a container's attributes beats the title text after them, which is dropped silently: `:::note{title="Attr title"} Text title` renders "Attr title". The Block Editor then edits the attribute while the visible text says something else.
 
-:::decision{status=proposed} Report what v1 resolves silently
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Report what v1 resolves silently
 New errors `attrs/duplicate` and `container/title-conflict`. Rendering keeps v1's resolution (the last duplicate wins, and the attribute beats the text), so no document changes meaning.
 :::
 
@@ -118,7 +118,7 @@ New errors `attrs/duplicate` and `container/title-conflict`. Rendering keeps v1'
 
 - **Today:** any trailing `{…}` that parses is taken as heading attributes. `## Returns {ok}` renders "Returns" with an `attrs/unknown` warning, and `## Object {}` renders "Object" with no diagnostic. GitHub shows the braces, which contradicts SPEC principle 1 (".md files keep identical meaning").
 
-:::decision{status=proposed} Heading attributes need recognisable items
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Heading attributes need recognisable items
 A trailing list is attributes only if it is non-empty and every item is `#id`, `.class` or `key=value`. Otherwise it is part of the heading text.
 :::
 
@@ -131,7 +131,7 @@ A trailing list is attributes only if it is non-empty and every item is `#id`, `
 
 - **Today:** quoted values have no escapes. `[q]{title="say \"hi\""}` is an `attrs/syntax` error and renders as literal text. `smd fmt` single-quotes any value containing `"`, so a value with both kinds of quote cannot be written at all. The Block Editor refuses such content.
 
-:::decision{status=proposed} `\"`, `\'` and `\\` inside quoted values
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} `\"`, `\'` and `\\` inside quoted values
 Inside a quoted value, `\"`, `\'` and `\\` are escapes. Any other backslash stays literal, so Windows paths are unchanged.
 :::
 
@@ -144,7 +144,7 @@ Inside a quoted value, `\"`, `\'` and `\\` are escapes. Any other backslash stay
 
 - **Today:** an unknown container renders as a plain box and **drops its title** in the render, the agent view and `to-md`. An unknown `:name[…]` stays literal text, and the spec says nothing about either. So each new directive changes the meaning of existing text (`:ref` did in 1.6), and older tools show raw syntax.
 
-:::decision{status=proposed} Graceful degradation is specified
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Graceful degradation is specified
 (a) Unknown containers render their title: a box title, a `Title:` line in the agent view, and `**Title**` in `to-md`.
 
 (b) Any `:name[content]{attrs}` that meets the directive prefix rule is a directive. An unknown one renders its content in a `smd-directive smd-directive-<name>` span.
@@ -165,7 +165,7 @@ Inside a quoted value, `\"`, `\'` and `\\` are escapes. Any other backslash stay
   - A glossary term with an apostrophe is never marked in rendered text, because its `'` became `’`.
   - Variable values are curled only when their paragraph's source has a quote character.
 
-:::decision{status=proposed} Typography is opt-in
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Typography is opt-in
 No typographic replacements by default, with an opt-in front matter key such as `typography: true`. Links follow GFM autolink literals only. The agent view and `to-md` are unaffected, since they already keep the source text.
 
 Alternative: make today's behaviour normative and align every integration with it.
@@ -180,7 +180,7 @@ Alternative: make today's behaviour normative and align every integration with i
 
 - **Today:** an include prefers an exact id, then takes the first heading whose text *contains* the query (SPEC §3.4). `section="deploy"` includes `## Rapid deployment`, and renaming the target heading silently includes some other section.
 
-:::decision{status=proposed} Includes match an exact id or heading
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Includes match an exact id or heading
 `section=` matches an exact heading id, or the exact heading text ignoring case. `smd agent --section` keeps its fuzzy matching, which is for people typing.
 :::
 
@@ -192,7 +192,7 @@ Alternative: make today's behaviour normative and align every integration with i
 
 - **Today:** `version: 2.10` is a YAML number, so the header shows `v2.1` and `{{version}}` renders `2.1`. SPEC §4.7 tells authors to quote it.
 
-:::decision{status=proposed} Displayed values keep their source spelling
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Displayed values keep their source spelling
 Scalars shown in the page header and through `{{key}}` keep the spelling they have in the YAML source.
 :::
 
@@ -202,7 +202,7 @@ Scalars shown in the page header and through `{{key}}` keep the spelling they ha
 
 - **Today:** container names are case-insensitive (`:::Warning` works), but directive names are not (`:Badge[x]` stays text). Container values ignore case, directive values don't (`trend=Up` is an error), and front matter is mixed (`status` ignores case, `audience: Both` warns).
 
-:::decision{status=proposed} One case rule for the vocabulary
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} One case rule for the vocabulary
 All values are case-insensitive, which is not breaking and can ship in 1.x. Directive names become case-insensitive with `smd: 2`. `smd fmt` writes lower case.
 :::
 
@@ -212,7 +212,7 @@ All values are case-insensitive, which is not breaking and can ship in 1.x. Dire
 
 - **Today:** `priority` is accepted on `:::agent` but no tool reads it, and it has no allowed values.
 
-:::decision{status=proposed} Deprecate `:::agent{priority}`
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Deprecate `:::agent{priority}`
 Deprecate it in 1.10 with a hint, and remove it in 2.0, unless a meaning is agreed first (for example, which agent blocks survive `--max-tokens`).
 :::
 
@@ -222,7 +222,7 @@ Deprecate it in 1.10 with a hint, and remove it in 2.0, unless a meaning is agre
 
 - **Today:** the spec doesn't define heading ids. `slugify` drops `_` and most punctuation, so `## foo_bar` gets `#foobar` where GitHub uses `#foo_bar`. `[x](#max_tokens)` is then reported as a missing anchor, and `to-md` writes links that break on GitHub. Three corpus headings get different ids than on GitHub. The compatibility rules forbid changing the algorithm.
 
-:::decision{status=proposed} Specify today's ids and accept GitHub's
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Specify today's ids and accept GitHub's
 Option A: write the current algorithm into the spec. `to-md` adds `<a id>` where GitHub's id differs, and the validator accepts GitHub ids as aliases. This is not breaking and ships in 1.x.
 
 Option B, deferred: switch to GitHub's algorithm, with `smd migrate` pinning `{#old-id}` on every heading whose id changes.
@@ -282,22 +282,22 @@ Documents without `smd: 2` keep v1 meaning throughout 2.x. What can still break 
 Each is listed in the 2.0 changelog under Breaking changes, with its migration.
 :::
 
-## Open questions
+## Resolved questions
 
-:::question Which proposals are accepted?
-The maintainer decides each `:::decision` above, in the review of this RFC, before work on 2.0 starts. Unaccepted proposals stay out of 2.0.
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Every recommendation is accepted
+All proposals were accepted as recommended in review on 2026-10-15. Where a proposal names an alternative or a second option, the recommended one was accepted: the visible error block (1), colon-count pairing (3), opt-in typography (8), and option A for heading ids, with option B deferred (13).
 :::
 
-:::question Typography: off by default, or normative?
-Proposal 8 is the most visible change. Decide between opt-in typography and making today's behaviour the standard everywhere.
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} Typography is opt-in in v2
+Proposal 8's recommendation stands. Documents with `smd: 2` get no typographic replacements unless they set `typography: true`, and links follow GFM autolink literals.
 :::
 
-:::question Is `smd migrate` a new command or a mode of `smd fmt`?
-Decide before 1.10. `smd fmt --to 2` would reuse fmt's machinery; a separate command is clearer about changing meaning.
+:::decision{status=accepted date=2026-10-15 owner=@roshanmadhushanka} `smd migrate` is its own command
+`smd migrate --to 2` is a separate command, because it changes meaning and `smd fmt` never does. It reuses fmt's machinery internally. 1.10 ships it with `--dry-run` only.
 :::
 
 :::agent Implementation constraints
-- Build nothing from this RFC until its proposal is marked accepted.
+- Build only what is marked accepted, in the release the rollout gives it (1.10 or 2.0).
 - Documents without `smd: 2` must keep v1 rendering, agent view and `to-md` output byte for byte, except for proposals marked "all documents".
 - Add corpus documents for each changed case before changing behaviour.
 - Every v2 rule must be implemented the same way in the renderer, validator, formatter, agent view, `to-md`, the Block Editor's segmenter and the Tree-sitter grammar.
