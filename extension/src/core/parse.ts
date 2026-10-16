@@ -1,11 +1,11 @@
 import type MarkdownIt from 'markdown-it';
-import type { Token } from 'markdown-it';
+import type { StateInline, Token } from 'markdown-it';
 import { alertOf } from './alerts';
 import { isKnownContainer } from './containers';
 import { FigureCounter, figureTargets, type Figure } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
-import { acceptAnyFootnote, mathInline, type ContainerMeta } from './markdownItRules';
+import { acceptAnyFootnote, mathInline, type ContainerMeta, type TaskBoxMeta } from './markdownItRules';
 import { createMarkdownIt, type Env, type Heading, type ResolvedOptions } from './render';
 import { CALLOUT_TYPES } from './spec';
 import type { Variables } from './variables';
@@ -87,7 +87,31 @@ interface Block {
   noteRefs: Array<{ label: string; inside: number }>;
   /** GitHub alerts in the block (inside containers too), body-relative. */
   alerts: AlertLines[];
+  /** The lines where task list items have their checkbox (see renderedTaskLines), body-relative. */
+  tasks: number[];
+  /** The lines of table rows, header and body (see tableRowLines), body-relative. */
+  rows: number[];
+  /** Inline items that run over several lines (see InlineItem), body-relative lines. */
+  items: InlineItem[];
 }
+
+/**
+ * An inline directive, styled span or `==mark==` whose text runs over several lines, as CommonMark link text may
+ * (`:badge[foo` on one line, `bar]{color=green}` on the next). The line-based views convert it as a whole, as
+ * rendering reads it, and put each line's part back on its line (see inlineItemLines and convertedParts).
+ */
+export interface InlineItem {
+  /** Its source as the inline parser reads it: the parts on its lines, joined with `\n`. */
+  text: string;
+  /** Each part in order: its zero-based line and [start, end) columns there. */
+  parts: ReadonlyArray<readonly [line: number, start: number, end: number]>;
+}
+
+/** The part of a multi-line inline item on one line: [start, end) columns, the item, and which of its parts this is. */
+export interface InlinePart { start: number; end: number; item: InlineItem; index: number }
+
+/** A document's multi-line inline items by zero-based line (see inlineItemLines). */
+export type InlineItemLines = ReadonlyMap<number, ReadonlyArray<InlinePart>>;
 
 /** A GitHub alert (`> [!NOTE]`, see alerts.ts) by its lines: zero-based, the end exclusive. */
 export interface AlertLines {
@@ -128,7 +152,7 @@ function documentVariablesOf(lines: string[], fm: { data: Record<string, unknown
 
 const OPTIONS: ResolvedOptions = { allowHtml: true, agentBlocks: 'collapsed', readFile: undefined, today: '' };
 let md: MarkdownIt | undefined;
-const parser = () => (md ??= recordingInlineMath(recordingDefinitions(inPlaceFootnotes(createMarkdownIt(OPTIONS)))));
+const parser = () => (md ??= recordingInlineItems(recordingInlineMath(recordingDefinitions(inPlaceFootnotes(createMarkdownIt(OPTIONS))))));
 /** Container titles render as inline Markdown with raw HTML off (see renderContainer). */
 let titleMd: MarkdownIt | undefined;
 const titleParser = () => (titleMd ??= createMarkdownIt({ allowHtml: false }));
@@ -139,7 +163,38 @@ const rendersTitle = (name: string): boolean => TITLED.has(name) || !isKnownCont
 /** A `$inline math$` the inline parser accepted: its columns in the text being parsed, and that text's length. */
 interface InlineMath { start: number; end: number; length: number }
 
-type ParseEnv = Env & { definitions: Definition[]; inlineMath?: InlineMath[] };
+/**
+ * The inline items (directives, styled spans, `==marks==`) the inline parser accepted over a line break, by the text being
+ * parsed: [start, end) columns in it.
+ */
+type ItemsByText = Map<string, Array<[number, number]>>;
+
+type ParseEnv = Env & { definitions: Definition[]; inlineMath?: InlineMath[]; inlineItems?: ItemsByText };
+
+/** The inline rules whose items the line-based views convert (see InlineItem). */
+const ITEM_RULES = new Set(['smd_directive', 'smd_span', 'smd_mark']);
+
+/**
+ * Wrap the rules of inline directives, styled spans and marks so each item they accept over a line break is recorded
+ * with its columns in the text being parsed, for an env that asks (see parseRange).
+ */
+function recordingInlineItems(instance: MarkdownIt): MarkdownIt {
+  const rules = (instance.inline.ruler as unknown as { __rules__: Array<{ name: string; fn: (state: StateInline, silent: boolean) => boolean }> }).__rules__;
+  for (const { name, fn } of rules.filter((r) => ITEM_RULES.has(r.name))) {
+    instance.inline.ruler.at(name, (state, silent) => {
+      const start = state.pos;
+      const accepted = fn(state, silent);
+      const found = (state.env as ParseEnv).inlineItems;
+      if (accepted && !silent && found && state.src.slice(start, state.pos).includes('\n')) {
+        const items = found.get(state.src) ?? [];
+        if (!items.some(([s, e]) => s === start && e === state.pos)) items.push([start, state.pos]);
+        found.set(state.src, items);
+      }
+      return accepted;
+    });
+  }
+  return instance;
+}
 
 /** Wrap the inline math rule so every `$…$` it accepts is recorded with its columns, for an env that asks (see inlineMathSpans). */
 function recordingInlineMath(instance: MarkdownIt): MarkdownIt {
@@ -199,6 +254,59 @@ export function alertLines(text: string): readonly AlertLines[] {
   return alertsOf.get(parseSmd(text)) ?? [];
 }
 
+/** The task lines of each result (see renderedTaskLines), in the whole document. */
+const tasksOf = new WeakMap<ParseResult, ReadonlySet<number>>();
+/** The multi-line inline items of each result (see inlineItemLines), in the whole document. */
+const itemsOf = new WeakMap<ParseResult, InlineItem[]>();
+
+const shiftItem = (item: InlineItem, delta: number): InlineItem =>
+  (delta ? { ...item, parts: item.parts.map(([line, start, end]) => [line + delta, start, end] as const) } : item);
+
+/**
+ * The zero-based lines where rendering shows a task list item's checkbox (`- [ ] …`, `1. [x] …`), as markdown-it
+ * reads them: a task-shaped line in code, in raw HTML or display math, or one that continues a paragraph is not one.
+ */
+export function renderedTaskLines(text: string): ReadonlySet<number> {
+  return tasksOf.get(parseSmd(text)) ?? new Set();
+}
+
+/** The table row lines of each result (see tableRowLines), in the whole document. */
+const rowsOf = new WeakMap<ParseResult, ReadonlySet<number>>();
+
+/** The zero-based lines of a document's table rows, the header row and body rows (not the delimiter row), as markdown-it reads them. */
+export function tableRowLines(text: string): ReadonlySet<number> {
+  return rowsOf.get(parseSmd(text)) ?? new Set();
+}
+
+/**
+ * The parts of a document's inline items that run over several lines (see InlineItem) by zero-based line, plus
+ * `offset`, as rendering reads them. Other inline items are on one line and read from it.
+ */
+export function inlineItemLines(text: string, offset = 0): InlineItemLines {
+  const found = new Map<number, InlinePart[]>();
+  for (const item of itemsOf.get(parseSmd(text)) ?? []) {
+    const moved = shiftItem(item, offset);
+    moved.parts.forEach(([line, start, end], index) => found.set(line, [...(found.get(line) ?? []), { start, end, item: moved, index }]));
+  }
+  return found;
+}
+
+/**
+ * The parts of multi-line inline items on a line (see inlineItemLines), each with the text `convert` gives its whole
+ * item, cut at the item's line breaks: [start, end) columns and that text, for aroundInlineMath. When the converted
+ * text has fewer line breaks than the item, the last parts are empty; when it has more, the last part keeps the rest.
+ */
+export function convertedParts(parts: ReadonlyArray<InlinePart> | undefined, convert: (text: string) => string): Array<[number, number, string]> {
+  return (parts ?? []).map((p) => [p.start, p.end, cutLines(convert(p.item.text), p.item.parts.length)[p.index]]);
+}
+
+function cutLines(text: string, count: number): string[] {
+  const cut = text.split('\n');
+  if (cut.length > count) return [...cut.slice(0, count - 1), cut.slice(count - 1).join(' ')];
+  while (cut.length < count) cut.push('');
+  return cut;
+}
+
 /** Forget every cached parse. For tests: the next parse of each document is a full one. */
 export function resetParseCache(): void {
   results.length = 0;
@@ -248,6 +356,9 @@ export function parseSmd(text: string): ParseResult {
   const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code, math, inlineMath };
   fenceStarts.set(result, state.blocks.flatMap((b) => b.fences).map((line) => line + fm.bodyStartLine));
   alertsOf.set(result, state.blocks.flatMap((b) => b.alerts).map((a) => shiftAlert(a, fm.bodyStartLine)));
+  tasksOf.set(result, new Set(state.blocks.flatMap((b) => b.tasks).map((line) => line + fm.bodyStartLine)));
+  rowsOf.set(result, new Set(state.blocks.flatMap((b) => b.rows).map((line) => line + fm.bodyStartLine)));
+  itemsOf.set(result, state.blocks.flatMap((b) => b.items).map((item) => shiftItem(item, fm.bodyStartLine)));
   results.unshift({ text, result });
   results.length = Math.min(results.length, 3);
   return result;
@@ -339,9 +450,17 @@ const FIRST_MARK = 0xe000;
  * not text, so nothing in it is inline syntax or a `{{name}}`. Each span is one character while the line is
  * converted, so syntax around math (`==a $x$ b==`) still converts. A line without math goes to `convert` as it is.
  * `known` gives the spans when the line's text is read with the lines around it (see mathOnLine); else they are read from the line.
+ * `replaced` are parts of the line already converted, [start, end) columns and their text (see convertedParts): they are
+ * set aside the same way and put back as that text.
  */
-export function aroundInlineMath(line: string, convert: (text: string) => string, known?: ReadonlyArray<[number, number]>): string {
-  const spans = line.search(MARKS) < 0 ? known ?? inlineMathSpans(line) : [];
+export function aroundInlineMath(
+  line: string, convert: (text: string) => string, known?: ReadonlyArray<[number, number]>, replaced: ReadonlyArray<[number, number, string]> = [],
+): string {
+  if (line.search(MARKS) >= 0) return convert(line);
+  // Math inside a converted part was read with the whole item.
+  const apart = ([start, end]: readonly [number, number]) => replaced.every(([s, e]) => end <= s || start >= e);
+  const math = (known ?? inlineMathSpans(line)).filter(apart).map(([start, end]): [number, number, string] => [start, end, line.slice(start, end)]);
+  const spans = [...math, ...replaced].sort((a, b) => a[0] - b[0]);
   if (!spans.length) return convert(line);
   let masked = '';
   let last = 0;
@@ -349,11 +468,8 @@ export function aroundInlineMath(line: string, convert: (text: string) => string
     masked += line.slice(last, start) + String.fromCodePoint(FIRST_MARK + i);
     last = end;
   });
-  const math = (mark: string) => {
-    const span = spans[(mark.codePointAt(0) ?? 0) - FIRST_MARK];
-    return span ? line.slice(span[0], span[1]) : mark;
-  };
-  return convert(masked + line.slice(last)).replaceAll(MARKS, math);
+  const restore = (mark: string) => spans[(mark.codePointAt(0) ?? 0) - FIRST_MARK]?.[2] ?? mark;
+  return convert(masked + line.slice(last)).replaceAll(MARKS, restore);
 }
 
 function linesIn(ranges: Array<[number, number]>, offset: number): Set<number> {
@@ -470,6 +586,9 @@ function shift(block: Block, delta: number): Block {
     fences: block.fences.map((line) => line + delta),
     definitions: block.definitions.map((d) => ({ ...d, line: d.line + delta })),
     alerts: block.alerts.map((a) => shiftAlert(a, delta)),
+    tasks: block.tasks.map((line) => line + delta),
+    rows: block.rows.map((line) => line + delta),
+    items: block.items.map((item) => shiftItem(item, delta)),
   };
 }
 
@@ -482,6 +601,8 @@ function parseRange(
 ): { blocks: Block[]; trailing: Definition[]; mathHorizon: number } {
   const env = newEnv(from, scope.labels, scope.vars);
   acceptAnyFootnote(env); // which labels are defined is known once every block is (footnoteIds)
+  const items: ItemsByText = new Map();
+  env.inlineItems = items;
   const tokens = parser().parse(lines.slice(from, to).join('\n'), env);
   const definitions = [...carried, ...env.definitions.map((d) => ({ ...d, line: d.line + from }))];
 
@@ -516,6 +637,7 @@ function parseRange(
       start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), code: linesOf(g.tokens, from, CODE_TOKENS),
       math: linesOf(g.tokens, from, MATH_TOKENS), inlineMath: multiLineMath(g.tokens, lines, from),
       fences: linesOf(g.tokens, from, ['fence']).map(([first]) => first), definitions: [], notes: [], noteRefs: [], alerts: alertsIn(g.tokens, from),
+      tasks: taskLinesIn(g.tokens, from), rows: linesOf(g.tokens, from, ['tr_open']).map(([first]) => first), items: multiLineItems(g.tokens, lines, from, items),
     };
     while (h < env.headings.length && env.headings[h].line < g.end) {
       if (env.headings[h].line >= g.start) { block.headings.push(env.headings[h]); block.bases.push(env.bases![h]); }
@@ -643,24 +765,61 @@ function multiLineMath(tokens: Token[], lines: string[], from: number): LineSpan
  * ends it runs over. Nothing when a line of the text is not such a cut of its source line.
  */
 function inlineTextMath(content: string, lines: string[], first: number): LineSpans[] {
+  const text = inlineTextLines(content, lines, first);
+  if (!text) return [];
+  const spans = text.parts.map((): Array<[number, number]> => []);
+  for (const [start, end] of inlineMathSpans(content)) {
+    for (const [line, lo, hi] of spanOnLines(text, start, end)) if (lo < hi) spans[line - first].push([lo, hi]);
+  }
+  return spans.map((s, k): LineSpans => [first + k, s]);
+}
+
+/** Inline text read from source lines (see inlineTextMath): its lines, where each starts in it and in its source line. */
+interface InlineTextLines { first: number; parts: string[]; starts: number[]; columns: number[] }
+
+/** The lines of inline text whose lines are the source lines from `first` on (see inlineTextMath), or undefined. */
+function inlineTextLines(content: string, lines: string[], first: number): InlineTextLines | undefined {
   const parts = content.split('\n');
   const columns = parts.map((part, k) => cutAt(lines[first + k] ?? '', part));
-  if (columns.includes(-1)) return [];
+  if (columns.includes(-1)) return undefined;
   const starts: number[] = [];
   let at = 0;
   for (const part of parts) {
     starts.push(at);
     at += part.length + 1;
   }
-  const spans = parts.map((): Array<[number, number]> => []);
-  for (const [start, end] of inlineMathSpans(content)) {
-    parts.forEach((part, k) => {
-      const lo = Math.max(start, starts[k]);
-      const hi = Math.min(end, starts[k] + part.length);
-      if (lo < hi) spans[k].push([columns[k] + lo - starts[k], columns[k] + hi - starts[k]]);
-    });
-  }
-  return spans.map((s, k): LineSpans => [first + k, s]);
+  return { first, parts, starts, columns };
+}
+
+/** A [start, end) span of inline text on each source line it runs over: the line and [start, end) columns there. */
+function spanOnLines(text: InlineTextLines, start: number, end: number): Array<[number, number, number]> {
+  const out: Array<[number, number, number]> = [];
+  text.parts.forEach((part, k) => {
+    const lo = Math.max(start, text.starts[k]);
+    const hi = Math.min(end, text.starts[k] + part.length);
+    // A line the span reaches (an empty part where it starts or ends at a line break too).
+    if (start <= text.starts[k] + part.length && end > text.starts[k]) out.push([text.first + k, text.columns[k] + lo - text.starts[k], text.columns[k] + hi - text.starts[k]]);
+  });
+  return out;
+}
+
+/**
+ * The inline items of a block's inline tokens (nested ones too) that run over several lines, as the inline parser
+ * accepted them (`found`, by the text parsed), with body-relative lines. An item inside another is converted with it.
+ */
+function multiLineItems(tokens: Token[], lines: string[], from: number, found: ItemsByText): InlineItem[] {
+  if (!found.size) return [];
+  return tokens.filter((t) => t.type === 'inline' && t.map && found.has(t.content)).flatMap((t) => {
+    const text = inlineTextLines(t.content, lines, from + t.map![0]);
+    const spans = found.get(t.content)!;
+    const outer = spans.filter(([s, e]) => !spans.some(([s2, e2]) => s2 <= s && e <= e2 && e2 - s2 > e - s));
+    return text ? outer.map(([s, e]) => ({ text: t.content.slice(s, e), parts: spanOnLines(text, s, e) })) : [];
+  });
+}
+
+/** The lines of a block's task list items (see renderedTaskLines): the first line of each task's text, body-relative. */
+function taskLinesIn(tokens: Token[], from: number): number[] {
+  return tokens.flatMap((t) => (t.type === 'inline' && t.map && (t.children?.[0]?.meta as TaskBoxMeta | null)?.taskBox ? [from + t.map[0]] : []));
 }
 
 /** The column where `part` starts as the end of `source` (or of `source` without trailing spaces), or -1. */

@@ -319,7 +319,7 @@ function main(argv: string[]): number | Promise<number> {
       if (fs.existsSync(file)) return fail(`${file} already exists.`);
       fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
       const name = value('--template') ?? 'prd';
-      const tpl = TEMPLATES[name];
+      const tpl = Object.hasOwn(TEMPLATES, name) ? TEMPLATES[name] : undefined;
       if (!tpl) return fail(`Unknown template "${name}". Available: ${Object.keys(TEMPLATES).join(', ')}`);
       fs.writeFileSync(file, fillTemplate(tpl.text, value('--title') ?? path.basename(file, '.smd'), today));
       console.log(`Created ${file} from the "${name}" template. Fill in the placeholders, then run: smd validate ${file}`);

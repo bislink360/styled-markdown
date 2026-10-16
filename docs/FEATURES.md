@@ -212,6 +212,7 @@ Version {{version}} ships on {{release.date}}. :badge[v{{version}}]{color=indigo
 - **SMD Tasks view** (VS Code Explorer): open tasks from every `.smd` file in the workspace, grouped by owner, due date or document; see [section 13](#13-vs-code-editing-assistance).
 - **Problems panel:** open tasks past their due date show a `task/overdue` notice.
 - **`smd tasks docs/`** lists open tasks across every document, overdue first, then by priority. `--mine @api-team` filters by owner, `--json` gives machine-readable output, `--csv` and `--gantt` export (below).
+- **Tasks are what the preview shows with a checkbox.** A task-shaped line in code, in raw HTML or display math, or one that continues a paragraph (`- [ ] x` indented four spaces under a line of text) is text in the preview and on GitHub, so `smd tasks`, `smd meta`, outlines, the Tasks view and `task/overdue` leave it out too.
 
 ```text
 docs/checkout.smd:61  [ ] [P1] Server-side validation returns all field errors @api-team (due 2026-09-25, OVERDUE)  — Requirements
@@ -736,6 +737,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `toc: yes`, `updated: 2026/9/5` | `frontmatter/type`, `frontmatter/date` | → `true`, `2026-09-05` |
 | `updated` more than 180 days ago | `frontmatter/stale` | — |
 | overdue open task | `task/overdue` | — |
+| a pipe inside a code span in a table cell (`grep a`, pipe, `wc -l`) | `table/pipe-in-code` (info): the pipe still splits the cell, as on GitHub | puts a backslash before the pipe |
 
 **Ahead of 2.0.** These hints (and one info) point at what Styled Markdown 2.0 rejects or reads differently. They never fail a check, `--strict` included, and each fix keeps how the document renders today:
 

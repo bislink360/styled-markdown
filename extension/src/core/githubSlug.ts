@@ -45,19 +45,33 @@ export interface MarkdownHeading {
   atx: boolean;
 }
 
-let plain: MarkdownIt | undefined;
+let blocks: MarkdownIt | undefined;
+
+/**
+ * Plain Markdown parsed into blocks only: the core `inline` rule is off, so paragraphs, lists and tables are not
+ * inline-parsed. Headings are, one by one, with the same env, so reference links in them still resolve.
+ */
+function blockParser(): MarkdownIt {
+  blocks ??= new MarkdownIt({ html: true }).disable('inline');
+  return blocks;
+}
 
 /** The headings of a plain (GitHub-flavored) Markdown text, in order. */
 export function markdownHeadings(markdown: string): MarkdownHeading[] {
-  plain ??= new MarkdownIt({ html: true });
-  const tokens = plain.parse(markdown, {});
+  const md = blockParser();
+  const env = {};
+  const tokens = md.parse(markdown, env);
   const headings: MarkdownHeading[] = [];
   tokens.forEach((t, i) => {
-    if (t.type === 'heading_open') headings.push({ line: t.map?.[0] ?? 0, text: textContent(tokens[i + 1]), atx: t.markup.startsWith('#') });
+    if (t.type === 'heading_open') headings.push({ line: t.map?.[0] ?? 0, text: headingText(md, tokens[i + 1], env), atx: t.markup.startsWith('#') });
   });
   return headings;
 }
 
-function textContent(inline: Token | undefined): string {
-  return (inline?.children ?? []).map((c) => (c.type === 'text' || c.type === 'code_inline' ? c.content : '')).join('');
+function headingText(md: MarkdownIt, inline: Token | undefined, env: object): string {
+  if (!inline) return '';
+  const children: Token[] = [];
+  md.inline.parse(inline.content, md, env, children);
+  // `text_special` (an escaped character) is text: the core `text_join` rule, which runs after `inline`, makes it so.
+  return children.map((c) => (c.type === 'text' || c.type === 'text_special' || c.type === 'code_inline' ? c.content : '')).join('');
 }

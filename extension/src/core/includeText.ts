@@ -5,7 +5,9 @@ import {
   type IncludeBlock, type IncludeScope, type IncludeSource, type LoadedInclude,
 } from './include';
 import { findLinks } from './links';
-import { alertLines, inlineMathLines, literalLines, parseSmd, type AlertLines, type InlineMathLines } from './parse';
+import {
+  alertLines, inlineItemLines, inlineMathLines, literalLines, parseSmd, renderedTaskLines, type AlertLines, type InlineItemLines, type InlineMathLines,
+} from './parse';
 
 /** `:::include` for the line-based views (agent view, plain Markdown, validation), which read text rather than tokens. */
 
@@ -55,6 +57,21 @@ export function includedAlerts(include: LoadedInclude): AlertLines[] {
 export function includedInlineMath(include: LoadedInclude): InlineMathLines {
   const text = ['', ...includedLines(include).slice(include.start, include.end + 1)].join('\n');
   return inlineMathLines(text, include.start - 1);
+}
+
+/**
+ * The inline items of the included lines that run over several lines (see inlineItemLines), by line of the included
+ * file, with columns in the lines as `includedLines` gives them (links rebased).
+ */
+export function includedInlineItems(include: LoadedInclude): InlineItemLines {
+  const text = ['', ...includedLines(include).slice(include.start, include.end + 1)].join('\n');
+  return inlineItemLines(text, include.start - 1);
+}
+
+/** The lines of the included file where rendering shows a task's checkbox (see renderedTaskLines) where it is included. */
+export function includedTaskLines(include: LoadedInclude): Set<number> {
+  const { text, offset } = includedText(include);
+  return new Set([...renderedTaskLines(text)].map((line) => line + offset));
 }
 
 /** Links, images, reference definitions and HTML href/src; `:::include` paths stay, as nested includes resolve them. */

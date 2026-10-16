@@ -20,6 +20,7 @@ import { frontMatterProperty } from './core/frontmatterSchema';
 import { termHover } from './core/glossary';
 import { documentPreview, documentSymbols, embedPreview, fuzzyMatch, sectionExcerpt, type SmdSymbol } from './core/symbols';
 import { codeLines, lazyLineSet } from './core/parse';
+import { own } from './core/util';
 import { variableCompletion, variableHover, type VariableCompletion } from './core/variables';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
@@ -388,9 +389,10 @@ class CompletionProvider implements vscode.CompletionItemProvider {
       if (valueMatch) {
         const owner = /^\s*:{3,}\s*([\w-]+)\{/.exec(prefix)?.[1];
         const directiveName = /:([a-z][\w-]*)(?:\[[^\]]*\])?\{[^}]*$/.exec(prefix)?.[1];
-        const specValues = (owner && CONTAINERS[owner]?.values?.[valueMatch[1]])
-          ?? (directiveName && INLINE_DIRECTIVES[directiveName]?.values?.[valueMatch[1]]);
-        return (specValues || ATTR_VALUES[valueMatch[1]] || []).map((v) => {
+        // Own names and keys only: `:::constructor{constructor=` offers nothing.
+        const specValues = (owner && own(own(CONTAINERS, owner)?.values ?? {}, valueMatch[1]))
+          ?? (directiveName && own(own(INLINE_DIRECTIVES, directiveName)?.values ?? {}, valueMatch[1]));
+        return (specValues || own(ATTR_VALUES, valueMatch[1]) || []).map((v) => {
           const item = new vscode.CompletionItem(v, vscode.CompletionItemKind.EnumMember);
           if (NAMED_COLORS.includes(v as never)) item.kind = vscode.CompletionItemKind.Color;
           return item;
@@ -399,8 +401,10 @@ class CompletionProvider implements vscode.CompletionItemProvider {
       const container = /^\s*:{3,}\s*([\w-]+)\{/.exec(prefix);
       const directive = /:([a-z][\w-]*)(?:\[[^\]]*\])?\{[^}]*$/.exec(prefix);
       let keys: string[] = Object.keys(STYLE_KEYS);
-      if (container && CONTAINERS[container[1]]) keys = [...(CONTAINERS[container[1]].attrs ?? []), ...keys];
-      else if (directive && INLINE_DIRECTIVES[directive[1]]) keys = INLINE_DIRECTIVES[directive[1]].attrs;
+      const containerSpec = container ? own(CONTAINERS, container[1]) : undefined;
+      const directiveSpec = directive ? own(INLINE_DIRECTIVES, directive[1]) : undefined;
+      if (containerSpec) keys = [...(containerSpec.attrs ?? []), ...keys];
+      else if (directiveSpec) keys = directiveSpec.attrs;
       return keys.map((k) => {
         const item = new vscode.CompletionItem(k, vscode.CompletionItemKind.Property);
         item.insertText = new vscode.SnippetString(`${k}=$0`);
@@ -469,7 +473,7 @@ class HoverProvider implements vscode.HoverProvider {
     if (container) {
       const start = container[1].length;
       const end = start + container[2].length;
-      const spec = CONTAINERS[container[2]];
+      const spec = own(CONTAINERS, container[2]);
       if (spec && position.character >= start && position.character <= end) {
         const attrs = spec.attrs?.length ? `\n\nAttributes: \`${spec.attrs.join('`, `')}\` + style attributes` : '';
         return new vscode.Hover(new vscode.MarkdownString(`**:::${container[2]}** — ${spec.description}${attrs}`),
@@ -479,7 +483,7 @@ class HoverProvider implements vscode.HoverProvider {
     const range = document.getWordRangeAtPosition(position, /:[a-z][\w-]*/);
     if (range) {
       const name = document.getText(range).slice(1);
-      const spec = INLINE_DIRECTIVES[name];
+      const spec = own(INLINE_DIRECTIVES, name);
       if (spec) return new vscode.Hover(new vscode.MarkdownString(`**:${name}** — ${spec.description}\n\n\`${spec.example}\``), range);
     }
     return footnoteHover(document, position) ?? glossaryHover(document, position) ?? linkHover(document, position) ?? embedHover(document, position);
@@ -644,7 +648,8 @@ class ColorProvider implements vscode.DocumentColorProvider {
       const text = document.lineAt(i).text;
       for (const m of text.matchAll(re)) {
         const value = m[1];
-        const color = value.startsWith('#') ? hexToColor(value) : LIGHT_HEX[value] ? hexToColor(LIGHT_HEX[value]) : undefined;
+        const named = own(LIGHT_HEX, value);
+        const color = value.startsWith('#') ? hexToColor(value) : named && hexToColor(named);
         if (!color) continue;
         const start = m.index! + m[0].lastIndexOf(value);
         out.push(new vscode.ColorInformation(new vscode.Range(i, start, i, start + value.length), color));

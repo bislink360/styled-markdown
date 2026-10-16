@@ -18,6 +18,7 @@ import {
   type TableAlign, type TableCellRef, type TableEdit, type TableRefusal, type TableSource,
 } from './core/tableEdit';
 import type { BlockTemplate } from './core/templates';
+import { own as ownEntry } from './core/util';
 import { substituteLine, type Variables } from './core/variables';
 
 // ---------------------------------------------------------------------------
@@ -730,7 +731,7 @@ function newer(a: Entry | undefined, b: Entry | undefined): Entry | undefined {
 
 /** A label for an attribute key. */
 function fieldLabel(key: string): string {
-  return LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
+  return ownEntry(LABELS, key) ?? key.charAt(0).toUpperCase() + key.slice(1);
 }
 
 function attrField(key: string, spec: ContainerSpec, values: ReadonlyMap<string, string>): FormField {
@@ -754,7 +755,7 @@ function colorField(key: string, value: string): FormField {
  * which only the source can fix.
  */
 export function containerForm(line: string, name: string | undefined): ContainerForm | undefined {
-  const spec = name ? CONTAINERS[name.toLowerCase()] : undefined;
+  const spec = name ? ownEntry(CONTAINERS, name.toLowerCase()) : undefined;
   const header = containerHeader(line);
   // An attribute list that is never closed: only the source can fix it.
   if (!spec || !header || !name || (!header.attrs && line[header.name.end] === '{')) return undefined;
@@ -797,7 +798,7 @@ function choicesWith(choices: readonly string[], value: string, unset: boolean):
 
 function contentField(item: InlineItem): FormField {
   const value = item.content ?? '';
-  const label = CONTENT_LABELS[item.name] ?? 'Text';
+  const label = ownEntry(CONTENT_LABELS, item.name) ?? 'Text';
   if (item.name === 'priority') return { name: CONTENT_FIELD, kind: 'select', label, value, options: choicesWith(PRIORITY_VALUES, value, false) };
   // A native date input, unless the date is written some other way (a `{{variable}}`) the input can't show.
   if (item.name === 'due' && (value === '' || ISO_DATE.test(value))) return { name: CONTENT_FIELD, kind: 'date', label, value };
@@ -806,7 +807,7 @@ function contentField(item: InlineItem): FormField {
 
 function inlineAttrField(key: string, spec: InlineDirectiveSpec, values: Readonly<Record<string, string>>): FormField {
   const value = values[key] ?? '';
-  const label = INLINE_ATTR_LABELS[key] ?? fieldLabel(key);
+  const label = ownEntry(INLINE_ATTR_LABELS, key) ?? fieldLabel(key);
   const choices = spec.values?.[key];
   if (choices) return { name: key, kind: 'select', label, value, options: choicesWith(choices, value, true) };
   if (key === 'color') return { ...colorField(key, value), label };
@@ -821,7 +822,7 @@ function inlineAttrField(key: string, spec: InlineDirectiveSpec, values: Readonl
 export function inlineFields(item: InlineItem): FormField[] | undefined {
   if (!item.at) return undefined;
   if (item.kind === SPAN) return COLOR_KEYS.map((key) => ({ ...colorField(key, item.values[key] ?? ''), label: INLINE_ATTR_LABELS[key] }));
-  const spec = INLINE_DIRECTIVES[item.name];
+  const spec = ownEntry(INLINE_DIRECTIVES, item.name);
   if (!spec) return undefined;
   const content = item.at.content ? [contentField(item)] : [];
   return [...content, ...spec.attrs.map((key) => inlineAttrField(key, spec, item.values))];
@@ -874,7 +875,7 @@ function inlineView(index: number, rendered: RenderedInline, item: InlineItem | 
   const view: InlineView = {
     index,
     name: rendered.name,
-    label: INLINE_LABELS[rendered.name] ?? fieldLabel(rendered.name),
+    label: ownEntry(INLINE_LABELS, rendered.name) ?? fieldLabel(rendered.name),
     text: text.length > MAX_INLINE_TEXT ? `${text.slice(0, MAX_INLINE_TEXT - 1)}…` : text,
   };
   const fields = agree && item ? inlineFields(item) : undefined;
@@ -1105,7 +1106,7 @@ export class BlockEditorSession {
     const fields = frontMatterFields(own);
     const view: FrontMatterView = { key: s.key, start: s.start, end: s.end, source: own.join('\n') };
     if (isFrontMatterRefusal(fields)) view.formRefused = fields.refused;
-    else view.fields = fields.map((f): FormField => ({ ...f, label: FRONT_MATTER_LABELS[f.name] ?? fieldLabel(f.name) }));
+    else view.fields = fields.map((f): FormField => ({ ...f, label: ownEntry(FRONT_MATTER_LABELS, f.name) ?? fieldLabel(f.name) }));
     const problems = problemsOf(owners.get(s.key));
     if (problems) view.problems = problems;
     return view;
@@ -1336,7 +1337,7 @@ export class BlockEditorSession {
     const items = this.scan(lines);
     const item = this.inlineItem(m, found, items);
     if (!item) return this.fallback(m, 'This item can\'t be edited here: edit the block\'s source instead.');
-    if (!offered(m, inlineFields(item) ?? [])) return this.notice(m.editId, `The form of this ${(INLINE_LABELS[item.name] ?? item.name).toLowerCase()} has no such field.`);
+    if (!offered(m, inlineFields(item) ?? [])) return this.notice(m.editId, `The form of this ${(ownEntry(INLINE_LABELS, item.name) ?? item.name).toLowerCase()} has no such field.`);
     const change: InlineChange = { ...(m.content === undefined ? {} : { content: m.content }), ...(m.attrs ? { attrs: m.attrs } : {}) };
     const at = item.at!.line;
     const next = editInline(lines[at], item, change) ?? lines[at];

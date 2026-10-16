@@ -295,6 +295,8 @@ A bracketed span immediately followed by an attribute list. Only style attribute
 
 The `:` must be at the start of a line or preceded by whitespace or opening punctuation, so `10:30` and `note:[x]` are never directives.
 
+The content, like CommonMark link text and a styled span's text (§4.1), may run over a line break: `:badge[on track` on one line and `for the beta]{color=green}` on the next is one badge. Tools read it as one item, as rendering does.
+
 | Directive | Content | Attributes | Example |
 |-----------|---------|------------|---------|
 | `badge` | required | `color` | `:badge[Shipped]{color=green}` |
@@ -377,6 +379,8 @@ The rendered HTML is unchanged: it has the heading's own id only.
 ### 4.5 Task lists
 
 GFM task lists (`- [ ]`, `- [x]`). Renderers connected to an editor MAY make them toggleable.
+
+A task is a list item whose text starts with `[ ]`, `[x]` or `[X]` and a space, as GFM reads it. A task-shaped line that is not such an item is text: in code, raw HTML or display math, or where it continues a paragraph (indented four columns or more after a line of text, or past the content column of the item above by four, or an ordered item other than `1.` right after text, which can't interrupt a paragraph). Tools that list or count tasks (`smd tasks`, `smd meta`, outlines, `task/overdue`) read the same tasks that rendering shows.
 
 ### 4.6 Footnotes
 
@@ -555,6 +559,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `variable/not-text` | warning | `{{name}}` names a front matter mapping or empty value, which has no text; it is shown as written |
 | `deprecated/agent-priority` | hint | `priority` on an `agent` block, which no tool reads; 2.0 removes it (fix: remove it) |
 | `task/overdue` | info | Open task past its `:due[…]` date |
+| `table/pipe-in-code` | info | A pipe inside a code span in a table row. GFM splits a row into cells at every pipe without a backslash before it, code spans included, so the code span never forms, as on GitHub (fix: put a backslash before the pipe; the cell shows the pipe without it) |
 | `rules/unknown` | warning | A suppression comment names an unknown rule code (fix: closest code) |
 
 The hints `container/colons`, `container/title-conflict`, `attrs/duplicate`, `heading/attrs-text` and `deprecated/agent-priority`, the info `include/section-match` and the info form of `frontmatter/version` (1.10) warn early about what Styled Markdown 2.0 rejects or reads differently. They never make a document that passed fail, `--strict` included, and each fix keeps how the document renders today.

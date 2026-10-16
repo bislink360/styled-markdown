@@ -1,6 +1,6 @@
 import { findAttrsEnd, lexAttrItems } from './attrs';
-import type { ContainerInfo } from './containers';
-import { CONTAINERS, SMD_VERSION } from './spec';
+import { isKnownContainer, type ContainerInfo } from './containers';
+import { SMD_VERSION } from './spec';
 import type { Fix, Severity } from './validate';
 
 /**
@@ -108,7 +108,7 @@ export function checkContainerHints(info: ContainerInfo, line: number, raw: stri
   const close = raw[nameEnd] === '{' ? findAttrsEnd(raw, nameEnd) : -1;
   if (close < 0 || info.attrsError) return;
   checkDuplicateAttrs(line, raw, nameEnd, close, push);
-  if (!CONTAINERS[info.name]) return;
+  if (!isKnownContainer(info.name)) return;
   if (info.attrs.values.title !== undefined) titleConflict(line, raw, close, info.attrs.values.title, push);
   if (info.name === 'agent' && info.attrs.values.priority !== undefined) agentPriority(line, raw, nameEnd, close, push);
 }

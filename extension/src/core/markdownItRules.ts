@@ -223,7 +223,8 @@ export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdCon
   const prev = start > 0 ? state.src[start - 1] : ' ';
   if (!/[\s([{>*_~"'-]/.test(prev)) return false;
   const m = /^:([a-z][a-z0-9-]*)(?=[[{])/.exec(state.src.slice(start, state.posMax));
-  if (!m || !(m[1] in INLINE_DIRECTIVES)) return false;
+  // Own names only: `:constructor[x]` is not a directive.
+  if (!m || !Object.hasOwn(INLINE_DIRECTIVES, m[1])) return false;
   const name = m[1];
   let pos = start + m[0].length;
 

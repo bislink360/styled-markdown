@@ -200,6 +200,16 @@
           ],
           "description": "Every task/… rule. Exact codes win."
         },
+        "table/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every table/… rule. Exact codes win."
+        },
         "rules/*": {
           "enum": [
             "off",
@@ -889,6 +899,16 @@
             "hint"
           ],
           "description": "Open task past its :due[…] date"
+        },
+        "table/pipe-in-code": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A | inside a code span in a table row still splits the cell, as on GitHub; write \\|"
         },
         "rules/unknown": {
           "enum": [

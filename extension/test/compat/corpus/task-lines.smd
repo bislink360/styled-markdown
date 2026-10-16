@@ -1,0 +1,64 @@
+---
+smd: 1
+title: Task lines
+summary: Pins which lines are tasks, as rendering reads them, so later releases are compared against it. A task-shaped line that continues a paragraph is text, in the renderer and on GitHub.
+status: draft
+updated: 2026-10-15
+---
+
+## Plain tasks
+
+- [ ] Write the migration guide :due[2026-11-02] @dana
+- [x] Freeze the vocabulary
+- Review the tables
+- [ ] Check the corpus :priority[high]
+
+1. [ ] Draft the release notes
+2. [x] Tag the release candidate
+
+## Nested tasks
+
+- [ ] Ship the tools
+    - [ ] Fix the task scan
+    - [x] Pin the corpus
+- Plain item
+  - [ ] Nested two columns in
+
+## Tasks in containers
+
+:::warning Before the release
+- [ ] Rebuild the bundles
+- [x] Run the benchmarks
+:::
+
+::::tabs
+:::tab Open
+- [ ] Inside a tab
+:::
+:::tab Done
+- [x] Done inside a tab
+:::
+::::
+
+## Task lines that are text
+
+The next line starts like a task, but it is indented four columns after a paragraph, so it continues the paragraph:
+    - [ ] continues the paragraph above
+
+An ordered item other than 1 can't interrupt a paragraph either:
+2. [ ] continues this paragraph too
+
+- An item whose text runs on
+      - [ ] past its content column, so it is text
+
+A task-shaped line in code is code:
+
+```text
+- [ ] in a fence
+```
+
+    - [ ] in an indented code block
+
+## After the text
+
+- [ ] Still a task after them
