@@ -7,9 +7,17 @@
   "properties": {
     "smd": {
       "description": "Styled Markdown spec version (currently 1)",
-      "type": "integer",
-      "enum": [
-        1
+      "anyOf": [
+        {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^0*1$"
+        }
       ]
     },
     "title": {
