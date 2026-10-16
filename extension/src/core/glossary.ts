@@ -1,4 +1,4 @@
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
 import { findFootnotes } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
 import { slugify } from './sections';
@@ -159,12 +159,12 @@ const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
 
 /** Every `:::glossary` block of a document and the entries of its lists, from `from` (the first body line) on. */
 export function findGlossary(lines: string[], from = 0): Glossary {
-  const scanner = new GlossaryScanner();
+  const scanner = new GlossaryScanner(displayMath(lines));
   for (let i = from; i < lines.length; i++) scanner.line(lines[i], i);
   return scanner.finish(lines.length - 1);
 }
 
-/** Follows code fences and container nesting line by line, and scans the lines directly inside glossaries. */
+/** Follows code fences, display math and container nesting line by line, and scans the lines directly inside glossaries. */
 class GlossaryScanner {
   readonly glossary: Glossary = { entries: [], problems: [], blocks: [] };
   /** Names of the open containers, innermost last. */
@@ -173,8 +173,11 @@ class GlossaryScanner {
   /** The outermost open glossary. */
   private scan: BlockScan | null = null;
 
+  constructor(private readonly isMath: (line: number) => boolean) {}
+
   line(line: string, i: number): void {
-    if (this.inFence(line) || this.container(line, i)) return;
+    // A `:::` line in display math is math: it neither opens nor closes a container.
+    if (this.inFence(line) || (!this.isMath(i) && this.container(line, i))) return;
     if (this.scan && this.stack.at(-1) === 'glossary') scanLine(this.scan, line, i, this.glossary);
   }
 
