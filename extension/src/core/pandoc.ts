@@ -322,6 +322,7 @@ const CLASS_RULES = new Map<string, Rule>([
   ['smd-risk', wrapIn(BLOCKQUOTE)],
   ['smd-callout-title', boldParagraph],
   ['smd-card-title', boldParagraph],
+  ['smd-box-title', boldParagraph],
   ['smd-human-title', boldParagraph],
   ['smd-agent-title', boldParagraph],
   ['smd-decision-title', boldParagraph],

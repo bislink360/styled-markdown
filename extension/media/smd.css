@@ -250,6 +250,8 @@ details.smd-callout > summary::-webkit-details-marker { display: none; }
 .smd-card-title { font-weight: 650; font-size: 1.05em; margin-bottom: 6px; color: var(--smd-card-accent); }
 .smd-card-body > :last-child, .smd-box > :last-child, .smd-column > :last-child { margin-bottom: 0; }
 .smd-box { margin: 0 0 1.2em; padding: 14px 18px; border-radius: 10px; }
+/* An unknown container keeps its title (spec §3): set as a card title, in the box's own text colour. */
+.smd-box-title { font-weight: 650; font-size: 1.05em; margin-bottom: 6px; }
 
 /* ---------- Includes (:::include) ---------- */
 /* Included text reads as part of the document; on hover, a faint rule in the margin shows how far it goes. */
@@ -559,7 +561,7 @@ pre.smd-has-hl code { position: relative; }
 
   /* Page breaks: keep headings with what follows, and blocks in one piece where they fit. */
   .smd-doc h1, .smd-doc h2, .smd-doc h3, .smd-doc h4, .smd-doc h5, .smd-doc h6,
-  .smd-callout-title, .smd-card-title, .smd-tab-label, .smd-code-title { break-after: avoid; page-break-after: avoid; }
+  .smd-callout-title, .smd-card-title, .smd-box-title, .smd-tab-label, .smd-code-title { break-after: avoid; page-break-after: avoid; }
   .smd-callout, .smd-card, .smd-box, .smd-include-missing, .smd-details, .smd-human, .smd-decision, .smd-risk, .smd-api, .smd-metric,
   .smd-diagram, .smd-code, .smd-math-block, .smd-doc-header, .smd-doc tr, .smd-doc img, .smd-doc blockquote,
   .smd-steps > ol > li, .smd-timeline li, .smd-figure, .smd-changelog-entry, .smd-quote { break-inside: avoid; page-break-inside: avoid; }

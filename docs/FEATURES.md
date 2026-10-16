@@ -109,6 +109,25 @@ Collapsed section for long content.
 | `question` | purple | open decision | `<question>` | `> [!IMPORTANT]` |
 | `details` | — | long optional content | `<details>` (omitted with `--brief`) | `<details><summary>` |
 
+### GitHub alerts
+
+GitHub's alert syntax works too: a blockquote whose first line is only `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` (in any case) renders as the matching callout, so a README-style document looks the same in the preview and on GitHub.
+
+```markdown
+> [!WARNING]
+> Rotate the keys before you deploy.
+```
+
+| Alert | Renders as | Agent view |
+|---|---|---|
+| `[!NOTE]` | `note` | `<note>` |
+| `[!TIP]` | `tip` | `<tip>` |
+| `[!IMPORTANT]` | `info` (as `smd from-md` converts it) | `<info>` |
+| `[!WARNING]` | `warning` | `<warning>` |
+| `[!CAUTION]` | `danger` | `<danger>` |
+
+The callout shows its type as its title (alerts have none of their own). `smd to-md` keeps the alert as written, and the exports show it as the callout. Anything else stays a blockquote, as on GitHub: text after the marker on its line, an unknown kind, a quote with only the marker, or a quote inside a list item or another quote. Use `:::warning Title` when you want a title or `{collapsible}`. Since 1.10; earlier versions show the quote with its `[!WARNING]` line.
+
 ## 3. Text styling and colors
 
 ```markdown
@@ -507,6 +526,8 @@ Any styled block.
 ```
 
 A bare `:::` closes the innermost block, so nesting works at any depth. Outer colons (`::::`) are optional but readable. Columns stack on narrow screens. **Agent view:** layout wrappers disappear and tab labels become `Tab "npm":`.
+
+**Unknown containers** (a misspelt name, or a container from a newer version) render as a box with their content and keep their title: `:::frobnicate Release notes` shows **Release notes** as a card-style title in the box, a `Release notes:` line in the agent view and a `**Release notes**` paragraph in `smd to-md`, and the validator warns `container/unknown` with the closest known name. Before 1.10 the title was dropped. A `:::box` takes no title, as before.
 
 ## 9. Diagrams and math
 

@@ -1,5 +1,5 @@
 import { parseAttrs } from './attrs';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, unknownContainerTitle, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import {
@@ -285,6 +285,9 @@ interface ContainerMarkdown { before?: string[]; prefix: string; inside?: string
 
 const withTitle = (label: string, title: string) => `**${label}${title ? `: ${title}` : ''}**`;
 
+/** The content as it is, after a `**Title**` paragraph when there is a title. */
+const titledContent = (title: string): ContainerMarkdown => ({ before: title ? [`**${title}**`, ''] : [], prefix: '' });
+
 /** A GitHub alert (`> [!NOTE]`) with a bold first line. */
 const alert = (kind: string, first: string): ContainerMarkdown => ({ before: [`> [!${kind}]`], prefix: '> ', inside: first ? [first, ''] : [] });
 
@@ -335,17 +338,20 @@ const CONTAINER_MARKDOWN = new Map<string, (c: ContainerSource) => ContainerMark
   ['tab', ({ title }) => ({ before: [`**${title || 'Tab'}**`, ''], prefix: '', close: '' })],
   ['figure', figureMarkdown],
   // The `- **Term**: definition` list reads well as it is.
-  ['glossary', ({ title }) => ({ before: title ? [`**${title}**`, ''] : [], prefix: '' })],
+  ['glossary', ({ title }) => titledContent(title)],
   // Its `## 1.2.0 — 2026-03-01` headings and lists are plain Markdown already.
-  ['changelog', ({ title }) => ({ before: title ? [`**${title}**`, ''] : [], prefix: '' })],
+  ['changelog', ({ title }) => titledContent(title)],
   ['quote', quoteMarkdown],
 ]);
 
-/** Callouts become alerts; box, tabs, columns, column, steps and unknown containers keep the content only. */
+/**
+ * Callouts become alerts; box, tabs, columns, column, steps and timeline keep the content only, and unknown
+ * containers keep their title as a `**Title**` paragraph before it (spec §3).
+ */
 function containerMarkdown(c: ContainerSource): ContainerMarkdown {
   const kind = ALERTS[c.name];
   if (kind) return alert(kind, c.title ? `**${c.title}**` : '');
-  return CONTAINER_MARKDOWN.get(c.name)?.(c) ?? { prefix: '' };
+  return CONTAINER_MARKDOWN.get(c.name)?.(c) ?? titledContent(unknownContainerTitle(c.name, c.title));
 }
 
 const ALERTS: Record<string, string> = {

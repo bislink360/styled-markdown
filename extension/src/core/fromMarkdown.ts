@@ -1,15 +1,16 @@
+import { alertCallout } from './alerts';
 import { parseSmd } from './parse';
 import { SMD_VERSION } from './spec';
 
 /** Upgrade plain Markdown: add front matter and turn GitHub alerts into callouts. */
 export function markdownToSmd(md: string, fallbackTitle: string): string {
-  const alertMap: Record<string, string> = { NOTE: 'note', TIP: 'tip', IMPORTANT: 'info', WARNING: 'warning', CAUTION: 'danger' };
   const lines = md.split(/\r?\n/);
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const alert = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/.exec(lines[i]);
-    if (!alert) { out.push(lines[i]); continue; }
-    out.push(`:::${alertMap[alert[1]]}`);
+    // The marker in any case, as GitHub reads it; the same callouts as rendering gives alerts.
+    const callout = lines[i].startsWith('>') ? alertCallout(lines[i].slice(1).trim()) : undefined;
+    if (!callout) { out.push(lines[i]); continue; }
+    out.push(`:::${callout}`);
     while (i + 1 < lines.length && /^>/.test(lines[i + 1])) out.push(lines[++i].replace(/^>\s?/, ''));
     out.push(':::');
   }

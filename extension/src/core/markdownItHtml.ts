@@ -3,6 +3,7 @@ import type { Options, Renderer, Token } from 'markdown-it';
 import katex from 'katex';
 import { attrsToStyle, escapeHtml, htmlAttrs, resolveColor, type Attrs } from './attrs';
 import { FigureCounter, type FigureNumber } from './figures';
+import { unknownContainerTitle } from './containers';
 import { asStringList } from './frontmatter';
 import { langFromPath, parseFenceInfo, sliceLines, type FenceInfo } from './fence';
 import { EN, label, term, type MessageKey, type Messages } from './i18n';
@@ -138,10 +139,15 @@ const divOpen = (cls: string): ContainerOpen => (c) => {
   return `<div${htmlAttrs(c.attrs, [cls], c.style)}${c.dataLine}>\n`;
 };
 
-/** `box` and unknown names render as a styled block; the validator flags unknown names. */
+/**
+ * `box` and unknown names render as a styled block; the validator flags unknown names. An unknown container keeps
+ * its title, styled as a card's (spec §3); `box` takes none.
+ */
 function boxOpen(c: ContainerView): string {
   c.meta.close = '</div>';
-  return `<div${htmlAttrs(c.attrs, ['smd-box', `smd-box-${c.name}`], c.style)}${c.dataLine}>\n`;
+  const title = unknownContainerTitle(c.name, c.meta.title);
+  const head = title ? `<div class="smd-box-title">${c.inline(title)}</div>` : '';
+  return `<div${htmlAttrs(c.attrs, ['smd-box', `smd-box-${c.name}`], c.style)}${c.dataLine}>${head}\n`;
 }
 
 function detailsOpen(c: ContainerView): string {
