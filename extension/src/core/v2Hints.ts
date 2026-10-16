@@ -1,4 +1,4 @@
-import { findAttrsEnd } from './attrs';
+import { findAttrsEnd, lexAttrItems } from './attrs';
 import type { ContainerInfo } from './containers';
 import { CONTAINERS, SMD_VERSION } from './spec';
 import type { Fix, Severity } from './validate';
@@ -18,9 +18,6 @@ const HINT: Severity = 'hint';
 // Attribute list items
 // ---------------------------------------------------------------------------
 
-/** One item of an attribute list, as parseAttrs reads them: `.class`, `#id`, a bare `flag` or `key=value`. */
-const ATTR_ITEM = /\s*(?:([.#])([A-Za-z0-9_-]+)|([A-Za-z_][\w-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'}]+)))?)\s*/y;
-
 interface AttrItem {
   /** What a repeat of it is: `#` for every id, `.name` for a class, the key for the others. */
   slot: string;
@@ -33,18 +30,9 @@ interface AttrItem {
   end: number;
 }
 
-/** The items of the inside of `{…}`, or null when it is not a well-formed attribute list. */
+/** The items of the inside of `{…}` as parseAttrs reads them, or null when it is not a well-formed attribute list. */
 function attrItems(src: string): AttrItem[] | null {
-  const items: AttrItem[] = [];
-  let pos = 0;
-  while (pos < src.length) {
-    ATTR_ITEM.lastIndex = pos;
-    const m = ATTR_ITEM.exec(src);
-    if (!m || m[0].length === 0) return src.slice(pos).trim() === '' ? items : null;
-    items.push(itemOf(m, pos));
-    pos = ATTR_ITEM.lastIndex;
-  }
-  return items;
+  return lexAttrItems(src)?.map(({ match, pos }) => itemOf(match, pos)) ?? null;
 }
 
 function itemOf(m: RegExpExecArray, start: number): AttrItem {

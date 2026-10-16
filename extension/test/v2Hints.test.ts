@@ -63,6 +63,10 @@ test('attrs/duplicate: distinct items, code and malformed lists are not reported
   assert.deepEqual(only('attrs/duplicate', doc('[a]{color=red bg=red .x .y #id} :badge[b]{color=red}\n\n## H {#id .x}')), []);
   assert.deepEqual(only('attrs/duplicate', doc('`[a]{color=red color=blue}`\n\n```\n[a]{color=red color=blue}\n```')), []);
   assert.deepEqual(only('attrs/duplicate', doc('[a]{color=red color=}')), []);
+  // Items are read with the shared lexer, so an escaped quote stays inside its value.
+  const escaped = doc(':::note{title="Say \\"hi\\" twice" title="Final"}\nx\n:::');
+  assert.deepEqual(found(only('attrs/duplicate', escaped)), ['4:attrs/duplicate:hint']);
+  assert.equal(fixed('attrs/duplicate', escaped), doc(':::note{title="Final"}\nx\n:::'));
   // Several duplicates in one list are one hint.
   const both = only('attrs/duplicate', doc('[a]{color=red .x color=blue .x}'));
   assert.equal(both.length, 1);
