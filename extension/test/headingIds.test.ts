@@ -1,5 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import MarkdownIt from 'markdown-it';
 import { markdownToSmd, renderSmd, slugify, smdToMarkdown, validateSmd } from '../src/core';
 import { renameHeading } from '../src/core/anchors';
 import { githubIds, githubSlug, markdownHeadings } from '../src/core/githubSlug';
@@ -98,6 +102,24 @@ test('githubIds: repeats get -1, -2…, skipping ids already given', () => {
   assert.deepEqual(githubIds(['A', 'A-1', 'A']), ['a', 'a-1', 'a-2']);
   assert.deepEqual(githubIds(['foo_bar', 'foobar', 'Foo Bar']), ['foo_bar', 'foobar', 'foo-bar']);
   assert.deepEqual(githubIds(['!!!', '???']), ['', '-1']);
+});
+
+test('markdownHeadings: reading only the headings inline gives what a full parse gives, for every tracked document', () => {
+  // The reference: a full parse (every block inline-parsed), as markdownHeadings did before it read blocks only.
+  const full = new MarkdownIt({ html: true });
+  const reference = (md: string) => {
+    const tokens = full.parse(md, {});
+    return tokens.flatMap((t, i) => (t.type === 'heading_open'
+      ? [{ line: t.map?.[0] ?? 0, text: (tokens[i + 1].children ?? []).map((c) => (c.type === 'text' || c.type === 'code_inline' ? c.content : '')).join(''), atx: t.markup.startsWith('#') }]
+      : []));
+  };
+  const root = join(__dirname, '..', '..');
+  const files = execFileSync('git', ['ls-files', '*.smd', '*.md'], { cwd: root, encoding: 'utf8' }).split('\n').filter((f) => f && !f.includes('node_modules'));
+  assert.ok(files.length > 30);
+  const refs = '## See [the guide][g] and [x]\n\n[g]: https://example.com\n[x]: /x\n';
+  for (const md of [refs, ...files.flatMap((f) => { const text = readFileSync(join(root, f), 'utf8'); return [text, smdToMarkdown(text)]; })]) {
+    assert.deepEqual(markdownHeadings(md), reference(md));
+  }
 });
 
 test('markdownHeadings: the text GitHub sees, ATX and setext', () => {
