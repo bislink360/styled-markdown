@@ -26,36 +26,95 @@ export function emptyAttrs(): Attrs {
 }
 
 /**
+ * One item of an attribute list: `.class`, `#id`, a bare `flag` or `key=value`, the value double-quoted (group 4),
+ * single-quoted (group 5) or bare (group 6). In a quoted value a backslash and the character after it go together,
+ * so `\"` (or `\'`) does not end it; the alternatives inside the quotes never overlap, so matching stays linear.
+ */
+const ATTR_ITEM = /\s*(?:([.#])([A-Za-z0-9_-]+)|([A-Za-z_][\w-]*)(?:\s*=\s*(?:"((?:[^"\\]|\\[\s\S])*)"|'((?:[^'\\]|\\[\s\S])*)'|([^\s"'}]+)))?)\s*/y;
+/** The same items as read before 1.10, without escapes: a quoted value runs to the next quote of its kind. */
+const ATTR_ITEM_V1 = /\s*(?:([.#])([A-Za-z0-9_-]+)|([A-Za-z_][\w-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'}]+)))?)\s*/y;
+
+/** One lexed item: the match of ATTR_ITEM (or ATTR_ITEM_V1) and where it starts. */
+export interface AttrMatch {
+  match: RegExpExecArray;
+  pos: number;
+}
+
+/**
+ * The items of the inside of `{…}`, or null when it is not a well-formed attribute list. Quoted values may hold
+ * `\"` and `\'` (unquoteValue); a list that only reads without them (`title="C:\dir\"`, valid before 1.10) is read
+ * as before, so no list that was valid changes.
+ */
+export function lexAttrItems(src: string): AttrMatch[] | null {
+  return lexWith(ATTR_ITEM, src) ?? (src.includes('\\') ? lexWith(ATTR_ITEM_V1, src) : null);
+}
+
+function lexWith(re: RegExp, src: string): AttrMatch[] | null {
+  const items: AttrMatch[] = [];
+  let pos = 0;
+  while (pos < src.length) {
+    re.lastIndex = pos;
+    const match = re.exec(src);
+    if (!match || match[0].length === 0) {
+      if (src.slice(pos).trim() === '') break;
+      return null;
+    }
+    items.push({ match, pos });
+    pos = re.lastIndex;
+  }
+  return items;
+}
+
+/**
+ * A quoted value as written (without its quotes) → its value: `\"` in double quotes and `\'` in single quotes are
+ * the quote. Every other backslash stays, `\\` included (two backslashes, until `smd: 2`), so Windows paths keep theirs.
+ */
+export function unquoteValue(raw: string, quote: '"' | "'"): string {
+  return raw.includes('\\') ? raw.replaceAll(/\\([\s\S])/g, (pair, ch: string) => (ch === quote ? ch : pair)) : raw;
+}
+
+/** The value of a `key=value` item and the quotes it was written in; undefined for a flag. */
+export function itemValue(m: RegExpExecArray): { value?: string; quote: '"' | "'" | '' } {
+  if (m[4] !== undefined) return { value: unquoteValue(m[4], '"'), quote: '"' };
+  if (m[5] !== undefined) return { value: unquoteValue(m[5], "'"), quote: "'" };
+  return { value: m[6], quote: '' };
+}
+
+/**
  * Parse the inside of `{...}` (without the braces). Returns null when the
  * text is not a well-formed attribute list.
  */
 export function parseAttrs(src: string): Attrs | null {
+  const items = lexAttrItems(src);
+  if (!items) return null;
   const attrs = emptyAttrs();
-  const re = /\s*(?:([.#])([A-Za-z0-9_-]+)|([A-Za-z_][\w-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'}]+)))?)\s*/y;
-  let pos = 0;
-  while (pos < src.length) {
-    re.lastIndex = pos;
-    const m = re.exec(src);
-    if (!m || m[0].length === 0) {
-      if (src.slice(pos).trim() === '') break;
-      return null;
-    }
+  for (const { match: m } of items) {
     if (m[1] === '.') attrs.classes.push(m[2]);
     else if (m[1] === '#') attrs.id = m[2];
-    else attrs.values[m[3]] = m[4] ?? m[5] ?? m[6] ?? 'true';
-    pos = re.lastIndex;
+    else attrs.values[m[3]] = itemValue(m).value ?? 'true';
   }
   return attrs;
 }
 
-/** Find the `}` closing an attribute list that starts at `start` (which must be `{`). */
+/**
+ * Find the `}` closing an attribute list that starts at `start` (which must be `{`). Inside quotes a backslash
+ * takes the next character with it, as in parseAttrs; when that finds no end, the list is read without escapes.
+ */
 export function findAttrsEnd(src: string, start: number): number {
+  const end = scanAttrsEnd(src, start, true);
+  return end === -1 ? scanAttrsEnd(src, start, false) : end;
+}
+
+function scanAttrsEnd(src: string, start: number, escapes: boolean): number {
   if (src[start] !== '{') return -1;
   let quote: string | null = null;
-  for (let i = start + 1; i < src.length; i++) {
+  let i = start + 1;
+  while (i < src.length) {
     const ch = src[i];
     if (quote) {
-      if (ch === quote) quote = null;
+      // An escape pair: the character after the backslash is skipped with it.
+      if (escapes && ch === '\\') i++;
+      else if (ch === quote) quote = null;
     } else if (ch === '"' || ch === "'") {
       quote = ch;
     } else if (ch === '}') {
@@ -63,6 +122,7 @@ export function findAttrsEnd(src: string, start: number): number {
     } else if (ch === '\n' || ch === '{') {
       return -1;
     }
+    i++;
   }
   return -1;
 }

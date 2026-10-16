@@ -44,7 +44,7 @@ test('fix: frontmatter/status, frontmatter/audience and frontmatter/value (close
   assertFixes('frontmatter/status', '---\nsmd: 1\nstatus: aproved\n---\n', '---\nsmd: 1\nstatus: approved\n---\n');
   assertFixes('frontmatter/status', '---\nsmd: 1\nstatus: "reveiw" # soon\n---\n', '---\nsmd: 1\nstatus: "review" # soon\n---\n');
   assertFixes('frontmatter/audience', '---\nsmd: 1\naudience: agent\n---\n', '---\nsmd: 1\naudience: agents\n---\n');
-  assertFixes('frontmatter/value', '---\nsmd: 1\ntheme: Dark\n---\n', '---\nsmd: 1\ntheme: dark\n---\n');
+  assertFixes('frontmatter/value', '---\nsmd: 1\ntheme: drak\n---\n', '---\nsmd: 1\ntheme: dark\n---\n');
   assertNoFix('frontmatter/status', '---\nsmd: 1\nstatus: shipped\n---\n');
 });
 
@@ -84,7 +84,7 @@ test('fix: attrs/value (enum, color, style, date and priority typos)', () => {
   assertFixes('attrs/value', ':::card{accent=gren}\nx\n:::\n', ':::card{accent=green}\nx\n:::\n');
   assertFixes('attrs/value', ':::note{color=bleu weight=bld}\nx\n:::\n', ':::note{color=blue weight=bold}\nx\n:::\n');
   assertFixes('attrs/value', 'A [b]{color=blu size=lrg}', 'A [b]{color=blue size=lg}');
-  assertFixes('attrs/value', ':metric[4]{label=x trend=Up} :badge[y]{color=gren}', ':metric[4]{label=x trend=up} :badge[y]{color=green}');
+  assertFixes('attrs/value', ':metric[4]{label=x trend=upp} :badge[y]{color=gren}', ':metric[4]{label=x trend=up} :badge[y]{color=green}');
   assertFixes('attrs/value', ':priority[hgh] and :due[2026/10/5]', ':priority[high] and :due[2026-10-05]');
   assertFixes('attrs/value', '## Two {agent=skp}', '## Two {agent=skip}');
   assertNoFix('attrs/value', ':priority[P5]');

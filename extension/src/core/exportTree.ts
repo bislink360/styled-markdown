@@ -653,7 +653,7 @@ const TREND_ARROWS = new Map([['up', '▲'], ['down', '▼'], ['flat', '■']]);
 /** `:metric[42%]{label="Activation" delta="+3%" trend=up}` → **42%** Activation ▲ +3% */
 function metric(d: DirectiveMeta, b: TreeBuilder, marks: Marks): Inline[] {
   const { values } = d;
-  const trend = values.trend ?? (values.delta?.trim().startsWith('-') ? 'down' : 'up');
+  const trend = values.trend?.toLowerCase() ?? (values.delta?.trim().startsWith('-') ? 'down' : 'up');
   const delta = values.delta ? [TREND_ARROWS.get(trend), values.delta] : [];
   const rest = [values.label, ...delta].filter(Boolean).join(' ');
   return [text(b.plain(d.content), { ...marks, bold: true }), ...(rest ? [text(` ${rest}`, marks)] : [])];

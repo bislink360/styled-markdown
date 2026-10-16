@@ -1,0 +1,21 @@
+---
+smd: 1
+title: Vocabulary values in any case
+summary: Pins that enumerated values are matched in any case, so later releases are compared against it. `smd fmt` keeps them as written.
+status: Approved
+audience: Both
+theme: Light
+updated: 2026-10-15
+---
+
+## Values
+
+:::decision{status=Accepted date=2026-10-15}
+Container values were always matched in any case; directive and front matter values are too, since 1.10.
+:::
+
+Conversion is :metric[3.1%]{label="Conversion" delta="+0.4%" trend=Up good=Up} this week.
+
+:::api{method=get path="/v1/items"}
+Lists items.
+:::

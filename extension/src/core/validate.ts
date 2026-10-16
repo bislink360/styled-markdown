@@ -300,9 +300,9 @@ function checkFrontMatter(
     if (key === 'accent') {
       if (!resolveColor(String(value))) markKey(key, 'error', 'frontmatter/accent', `Invalid accent color "${value}".`, fixColorValue);
     } else if (prop.enum) {
-      // Status is matched case-insensitively, as it always has been.
-      const v = key === 'status' ? String(value).toLowerCase() : String(value);
-      if (!prop.enum.map(String).includes(v)) {
+      // Enumerated values are matched case-insensitively (status always was; the others since 1.10).
+      const v = String(value).toLowerCase();
+      if (!prop.enum.map((e) => String(e).toLowerCase()).includes(v)) {
         const code = key === 'status' ? 'frontmatter/status' : key === 'audience' ? 'frontmatter/audience' : 'frontmatter/value';
         markKey(key, 'warning', code, `Unknown ${key} "${value}". Use one of: ${prop.enum.join(', ')}.`, fixEnumValue(prop.enum.map(String)));
       }
@@ -540,7 +540,8 @@ function checkDirectiveAttr(
   { line, text, push }: InlineAt, { name, col, end }: DirectiveUse, spec: InlineDirectiveSpec, { key, value, keys }: { key: string; value: string; keys: string[] },
 ): void {
   const allowed = spec.values?.[key];
-  if (allowed && !allowed.includes(value)) {
+  // Enumerated values are matched in any case, as container values are (`trend=Up` is `up`).
+  if (allowed && !allowed.some((a) => a.toLowerCase() === value.toLowerCase())) {
     push(line, col, end, 'error', 'attrs/value', `Invalid ${key} "${value}" for ":${name}". Use one of: ${allowed.join(', ')}.`,
       attrValueFix(line, text, col, end, key, value, uniqueSuggestion(value, allowed)));
   } else if (!spec.attrs.includes(key)) {

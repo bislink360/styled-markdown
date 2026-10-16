@@ -93,7 +93,9 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       continue;
     }
 
-    const close = CONTAINER_CLOSE.exec(line);
+    // A container line in display math is math, as in rendering: it neither closes nor opens a container.
+    const notLiteral = !literal.has(i);
+    const close = notLiteral && CONTAINER_CLOSE.exec(line);
     if (close && stack.length) {
       stack.at(-1)!.end?.forEach((l) => emit(l));
       const frame = stack.pop()!;
@@ -101,7 +103,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       if (frame.prefix) emit(''); // end the blockquote so the next one doesn't merge into it
       continue;
     }
-    const open = CONTAINER_OPEN.exec(line);
+    const open = notLiteral && CONTAINER_OPEN.exec(line);
     const info = open ? parseContainerInfo(open[3] + open[4]) : null;
     if (open && info) {
       if (info.name === 'include') {

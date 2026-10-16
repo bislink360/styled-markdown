@@ -29,7 +29,7 @@ const lineText = (state: StateBlock, l: number) => state.src.slice(state.bMarks[
 /**
  * Block rule for `:::name …` containers. Unlike markdown-it-container, it
  * tracks nesting: a bare `:::` closes the innermost open container, and
- * fenced code inside a container is skipped. Colon counts are cosmetic.
+ * fenced code and `$$` display math inside a container are skipped. Colon counts are cosmetic.
  */
 export function containerBlock(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
   if (state.sCount[startLine] - state.blkIndent >= 4) return false;
@@ -64,11 +64,18 @@ interface ContainerScan {
   depth: number;
   /** The open code fence (``` or ~~~ run), if any. */
   fence: string | null;
+  /** The last line of the `$$` display math being skipped, or -1. */
+  mathEnd: number;
+  /** Where the scan stops: display math must close before it. */
+  endLine: number;
+  /** Whether display math is parsed on this instance (the `math` option). */
+  math: boolean;
 }
 
 /** The line of the bare `:::` that closes the container opened on startLine, or -1 when it runs to the end. */
 function findContainerClose(state: StateBlock, startLine: number, endLine: number): number {
-  const scan: ContainerScan = { depth: 0, fence: null };
+  const math = state.md.block.ruler.getRules('').includes(mathBlock);
+  const scan: ContainerScan = { depth: 0, fence: null, mathEnd: -1, endLine, math };
   for (let l = startLine + 1; l < endLine; l++) {
     const text = lineText(state, l);
     if (text.length && state.sCount[l] < state.blkIndent) break; // outdented: parent list/quote ended
@@ -77,19 +84,20 @@ function findContainerClose(state: StateBlock, startLine: number, endLine: numbe
   return -1;
 }
 
-/** Follow fences and nesting over one line; true when it is the bare `:::` that closes the scanned container. */
+/** Follow fences, display math and nesting over one line; true when it is the bare `:::` that closes the scanned container. */
 function closesContainer(state: StateBlock, l: number, text: string, scan: ContainerScan): boolean {
   if (scan.fence) {
     if (closesFence(text, scan.fence)) scan.fence = null;
     return false;
   }
-  const indented = state.sCount[l] - state.blkIndent >= 4;
+  // Indented code, and the lines of display math, are opaque.
+  if (state.sCount[l] - state.blkIndent >= 4 || l <= scan.mathEnd) return false;
   const fence = /^(`{3,}|~{3,})/.exec(text);
-  if (fence && !indented) {
+  if (fence) {
     scan.fence = fence[1];
     return false;
   }
-  if (indented) return false;
+  if (opensDisplayMath(state, l, text, scan)) return false;
   if (/^:{3,}\s*[a-zA-Z]/.test(text)) {
     scan.depth++;
     return false;
@@ -98,6 +106,13 @@ function closesContainer(state: StateBlock, l: number, text: string, scan: Conta
   if (scan.depth === 0) return true;
   scan.depth--;
   return false;
+}
+
+/** Whether line l opens display math, read exactly as mathBlock reads it; the scan then skips to its last line. */
+function opensDisplayMath(state: StateBlock, l: number, text: string, scan: ContainerScan): boolean {
+  if (!scan.math || !text.startsWith('$$')) return false;
+  scan.mathEnd = mathBlockEnd(state, l, scan.endLine);
+  return scan.mathEnd >= 0;
 }
 
 /** A fence closes on a line of at least its own run of the same character and nothing else. */
@@ -363,36 +378,34 @@ export function mathInline(state: StateInline, silent: boolean): boolean {
 /** `$$ … $$` display math blocks. */
 export function mathBlock(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
   if (state.sCount[startLine] - state.blkIndent >= 4) return false;
-  const first = lineText(state, startLine);
-  if (!first.startsWith('$$')) return false;
-  let content: string;
-  let last = startLine;
-  const rest = first.slice(2);
-  if (rest.trimEnd().endsWith('$$') && rest.trim().length > 2) {
-    content = rest.trimEnd().slice(0, -2);
-  } else {
-    const lines = [rest];
-    let found = false;
-    for (let l = startLine + 1; l < endLine; l++) {
-      const t = lineText(state, l);
-      if (t.trimEnd().endsWith('$$')) {
-        lines.push(t.trimEnd().slice(0, -2));
-        last = l;
-        found = true;
-        break;
-      }
-      lines.push(t);
-    }
-    if (!found) return false;
-    content = lines.join('\n');
-  }
+  const last = mathBlockEnd(state, startLine, endLine);
+  if (last < 0) return false;
   if (silent) return true;
+  const lines = [lineText(state, startLine).slice(2)];
+  for (let l = startLine + 1; l <= last; l++) lines.push(lineText(state, l));
+  lines[lines.length - 1] = lines[lines.length - 1].trimEnd().slice(0, -2);
+  const content = lines.join('\n');
   const token = state.push('smd_math_block', 'math', 0);
   token.block = true;
   token.content = content.trim();
   token.map = [startLine, last + 1];
   state.line = last + 1;
   return true;
+}
+
+/**
+ * The last line of the `$$` display math opening on startLine (startLine itself for `$$…$$` on one line), or -1
+ * when none opens there: the line doesn't start with `$$`, or no later line before endLine ends with `$$`.
+ */
+function mathBlockEnd(state: StateBlock, startLine: number, endLine: number): number {
+  const first = lineText(state, startLine);
+  if (!first.startsWith('$$')) return -1;
+  const rest = first.slice(2);
+  if (rest.trimEnd().endsWith('$$') && rest.trim().length > 2) return startLine;
+  for (let l = startLine + 1; l < endLine; l++) {
+    if (lineText(state, l).trimEnd().endsWith('$$')) return l;
+  }
+  return -1;
 }
 
 // ---------------------------------------------------------------------------
