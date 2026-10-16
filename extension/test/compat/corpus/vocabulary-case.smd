@@ -1,17 +1,17 @@
 ---
 smd: 1
 title: Vocabulary values in any case
-summary: Pins how enumerated values read, so later releases are compared against it.
-status: approved
-audience: both
-theme: light
+summary: Pins that enumerated values are matched in any case, so later releases are compared against it. The front matter keeps them as written; `smd fmt` writes attribute values in the case the vocabulary lists them.
+status: Approved
+audience: Both
+theme: Light
 updated: 2026-10-15
 ---
 
 ## Values
 
 :::decision{status=accepted date=2026-10-15}
-Container values are matched in any case.
+Container values were always matched in any case; directive and front matter values are too, since 1.10.
 :::
 
 Conversion is :metric[3.1%]{label="Conversion" delta="+0.4%" trend=up good=up} this week.
