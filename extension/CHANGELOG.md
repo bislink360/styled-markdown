@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.10.0 — 2026-10-16
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 1.9.0 — 2026-10-15
 
 The Block Editor (Preview) grows up: edit inline items such as badges, statuses and due dates in a small form, edit tables cell by cell in a grid, fill in the front matter in a form, see problems and apply quick fixes on every block, move blocks by drag and drop, and paste or drop images. As before, every edit changes only the text it is about. Outlines and the agent view's token budget now read code and math as they render, and `{{` completion works after a `$$` line in indented code. Rendered output, the CLI and the npm package are unchanged.
