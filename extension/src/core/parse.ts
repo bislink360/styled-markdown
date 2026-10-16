@@ -89,6 +89,8 @@ interface Block {
   alerts: AlertLines[];
   /** The lines where task list items have their checkbox (see renderedTaskLines), body-relative. */
   tasks: number[];
+  /** The lines of table rows, header and body (see tableRowLines), body-relative. */
+  rows: number[];
   /** Inline items that run over several lines (see InlineItem), body-relative lines. */
   items: InlineItem[];
 }
@@ -268,6 +270,14 @@ export function renderedTaskLines(text: string): ReadonlySet<number> {
   return tasksOf.get(parseSmd(text)) ?? new Set();
 }
 
+/** The table row lines of each result (see tableRowLines), in the whole document. */
+const rowsOf = new WeakMap<ParseResult, ReadonlySet<number>>();
+
+/** The zero-based lines of a document's table rows, the header row and body rows (not the delimiter row), as markdown-it reads them. */
+export function tableRowLines(text: string): ReadonlySet<number> {
+  return rowsOf.get(parseSmd(text)) ?? new Set();
+}
+
 /**
  * The parts of a document's inline items that run over several lines (see InlineItem) by zero-based line, plus
  * `offset`, as rendering reads them. Other inline items are on one line and read from it.
@@ -347,6 +357,7 @@ export function parseSmd(text: string): ParseResult {
   fenceStarts.set(result, state.blocks.flatMap((b) => b.fences).map((line) => line + fm.bodyStartLine));
   alertsOf.set(result, state.blocks.flatMap((b) => b.alerts).map((a) => shiftAlert(a, fm.bodyStartLine)));
   tasksOf.set(result, new Set(state.blocks.flatMap((b) => b.tasks).map((line) => line + fm.bodyStartLine)));
+  rowsOf.set(result, new Set(state.blocks.flatMap((b) => b.rows).map((line) => line + fm.bodyStartLine)));
   itemsOf.set(result, state.blocks.flatMap((b) => b.items).map((item) => shiftItem(item, fm.bodyStartLine)));
   results.unshift({ text, result });
   results.length = Math.min(results.length, 3);
@@ -576,6 +587,7 @@ function shift(block: Block, delta: number): Block {
     definitions: block.definitions.map((d) => ({ ...d, line: d.line + delta })),
     alerts: block.alerts.map((a) => shiftAlert(a, delta)),
     tasks: block.tasks.map((line) => line + delta),
+    rows: block.rows.map((line) => line + delta),
     items: block.items.map((item) => shiftItem(item, delta)),
   };
 }
@@ -625,7 +637,7 @@ function parseRange(
       start: g.start, end: g.end, headings: [], bases: [], ids: [], figures: figuresIn(g.tokens, from), code: linesOf(g.tokens, from, CODE_TOKENS),
       math: linesOf(g.tokens, from, MATH_TOKENS), inlineMath: multiLineMath(g.tokens, lines, from),
       fences: linesOf(g.tokens, from, ['fence']).map(([first]) => first), definitions: [], notes: [], noteRefs: [], alerts: alertsIn(g.tokens, from),
-      tasks: taskLinesIn(g.tokens, from), items: multiLineItems(g.tokens, lines, from, items),
+      tasks: taskLinesIn(g.tokens, from), rows: linesOf(g.tokens, from, ['tr_open']).map(([first]) => first), items: multiLineItems(g.tokens, lines, from, items),
     };
     while (h < env.headings.length && env.headings[h].line < g.end) {
       if (env.headings[h].line >= g.start) { block.headings.push(env.headings[h]); block.bases.push(env.bases![h]); }

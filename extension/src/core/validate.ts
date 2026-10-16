@@ -15,6 +15,7 @@ import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
 import { codeLines, inlineItemLines, inlineMathLines, lazyLineSet, literalLines, mathOnLine, parseSmd, type InlineMathLines } from './parse';
 import { openTaskLines } from './taskLines';
+import { checkTablePipes } from './tableCheck';
 import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
@@ -205,6 +206,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   }
 
   for (const d of multiLine) checkDirective({ line: d.line, text: withoutCode(lines[d.line]), push: pushText }, d, fm.data);
+  checkTablePipes(text, lines, push);
   checkLinks(text, pushText, options);
   checkIncludes(text, (line, column, endColumn, code, message, severity = 'warning', fix) => push(line, column, endColumn, severity, code, message, fix), options);
   checkFigures(text, lines, fm.bodyStartLine, pushText, () => includedFigureIds(text, options.readFile));

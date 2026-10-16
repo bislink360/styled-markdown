@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { agentView, extractTasks, getDocumentInfo, outline, renderSmd, smdToMarkdown, validateSmd } from '../src/core';
+import { agentView, applyFixes, extractTasks, getDocumentInfo, outline, renderSmd, smdToMarkdown, validateSmd } from '../src/core';
 import { openTaskLines } from '../src/core/taskLines';
 
 /**
@@ -136,4 +136,37 @@ test('inline items across line breaks: the corpus document', () => {
   assert.doesNotMatch(md, /``|\]\{/);
   assert.match(md, /The build is `green on\nevery branch` today\./);
   assert.deepEqual(validateSmd(doc), []);
+});
+
+// ---------------------------------------------------------------------------
+// A `|` in a code span in a table cell
+// ---------------------------------------------------------------------------
+
+test('table/pipe-in-code: an info hint with a fix that escapes the pipe', () => {
+  const doc = '| Command | Meaning |\n| --- | --- |\n| `grep a | wc -l` | Count |\n';
+  const diags = validateSmd(doc);
+  assert.deepEqual(diags.map((d) => [d.line, d.column, d.endColumn, d.severity, d.code]), [[2, 2, 18, 'info', 'table/pipe-in-code']]);
+  assert.equal(diags[0].message, 'A `|` inside a code span still splits a table cell; write `\\|`');
+  const fixed = applyFixes(doc, diags).text;
+  assert.equal(fixed.split('\n')[2], '| `grep a \\| wc -l` | Count |');
+  assert.deepEqual(validateSmd(fixed), []);
+  assert.match(renderSmd(fixed).html, /<td><code>grep a \| wc -l<\/code><\/td>\n<td>Count<\/td>/);
+});
+
+test('table/pipe-in-code: only code spans in table rows, with a bare pipe', () => {
+  const none = (doc: string) => assert.deepEqual(validateSmd(doc).filter((d) => d.code === 'table/pipe-in-code'), [], doc);
+  none('| A | B |\n| --- | --- |\n| `a \\| b` | `x` |\n');
+  none('Outside a table, `a | b` is a code span.\n');
+  none('```text\n| `a | b` | c |\n| --- | --- |\n```\n');
+  // Escaped backticks open no code span.
+  none('| A | B |\n| --- | --- |\n| \\`a | b\\` | c |\n');
+  // The header row counts (its pipe makes three cells, as the delimiter row does), and a double-backtick span too;
+  // each span is reported once.
+  const doc = '| `a|b` | B |\n| --- | --- | --- |\n| ``c | d`` `e|f` | x |\n';
+  assert.deepEqual(validateSmd(doc).map((d) => `${d.line}:${d.column}`), ['0:2', '2:2', '2:12']);
+  assert.equal(applyFixes(doc, validateSmd(doc)).text, '| `a\\|b` | B |\n| --- | --- | --- |\n| ``c \\| d`` `e\\|f` | x |\n');
+});
+
+test('table/pipe-in-code: the corpus document', () => {
+  assert.deepEqual(codes(corpus('table-pipes.smd')), ['20:table/pipe-in-code']);
 });

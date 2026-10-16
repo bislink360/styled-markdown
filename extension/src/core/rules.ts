@@ -71,6 +71,7 @@ export const RULE_CODES: Record<string, string> = {
   'variable/not-text': '`{{name}}` names a front matter mapping or empty value, which has no text',
   'deprecated/agent-priority': '`priority` on `:::agent` is deprecated; no tool reads it, and Styled Markdown 2.0 removes it',
   'task/overdue': 'Open task past its `:due[…]` date',
+  'table/pipe-in-code': 'A `|` inside a code span in a table row still splits the cell, as on GitHub; write `\\|`',
   'rules/unknown': 'Suppression comment or rule setting names an unknown rule code',
 };
 
