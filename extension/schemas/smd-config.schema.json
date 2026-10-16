@@ -50,6 +50,16 @@
           ],
           "description": "Every attrs/… rule. Exact codes win."
         },
+        "heading/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every heading/… rule. Exact codes win."
+        },
         "directive/*": {
           "enum": [
             "off",
@@ -170,6 +180,16 @@
           ],
           "description": "Every variable/… rule. Exact codes win."
         },
+        "deprecated/*": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "Every deprecated/… rule. Exact codes win."
+        },
         "task/*": {
           "enum": [
             "off",
@@ -208,7 +228,7 @@
             "info",
             "hint"
           ],
-          "description": "smd version missing or unsupported"
+          "description": "smd version missing, not a whole number, or unsupported"
         },
         "frontmatter/unknown-key": {
           "enum": [
@@ -350,6 +370,26 @@
           ],
           "description": "Container used outside its required parent (tab outside tabs…)"
         },
+        "container/colons": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A closing fence has another colon count than the container it closes, which spec v2 pairs by count"
+        },
+        "container/title-conflict": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A container has both title= and title text after its attributes; the text is not shown"
+        },
         "container/agent-in-skip": {
           "enum": [
             "off",
@@ -399,6 +439,26 @@
             "hint"
           ],
           "description": "Required attribute missing"
+        },
+        "attrs/duplicate": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A key, #id or class is given twice in one attribute list; the last one is used"
+        },
+        "heading/attrs-text": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "A heading ends in {} or in a list with a bare word ({ok}), which spec v2 reads as heading text"
         },
         "directive/unknown": {
           "enum": [
@@ -570,6 +630,16 @@
           ],
           "description": "Includes nest more than 8 deep"
         },
+        "include/section-match": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "The :::include section finds a heading only by a part of its text; spec v2 matches an exact id or the whole text"
+        },
         "include/too-large": {
           "enum": [
             "off",
@@ -648,7 +718,7 @@
             "info",
             "hint"
           ],
-          "description": "Invalid kind on a :::figure (it counts as figure)"
+          "description": "Invalid kind on a :::figure (it counts as figure). Deprecated: Styled Markdown 2.0 reports it as attrs/value"
         },
         "footnote/undefined": {
           "enum": [
@@ -799,6 +869,16 @@
             "hint"
           ],
           "description": "{{name}} names a front matter mapping or empty value, which has no text"
+        },
+        "deprecated/agent-priority": {
+          "enum": [
+            "off",
+            "error",
+            "warning",
+            "info",
+            "hint"
+          ],
+          "description": "priority on :::agent is deprecated; no tool reads it, and Styled Markdown 2.0 removes it"
         },
         "task/overdue": {
           "enum": [

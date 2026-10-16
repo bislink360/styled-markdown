@@ -35,6 +35,12 @@ export function matchesHeading(h: Heading, query: string): boolean {
   return sameId(h, q) || h.text.toLowerCase().includes(q);
 }
 
+/** Does a heading match a query exactly, as spec v2's `:::include{section}` matches: its id, or its whole text in any case? */
+export function matchesExactly(h: Heading, query: string): boolean {
+  const q = normalizeQuery(query);
+  return sameId(h, q) || h.text.trim().toLowerCase() === q;
+}
+
 /** The one section a query names: the first whose id it is, else the first it matches at all. */
 export function findSection(sections: Section[], query: string): Section | undefined {
   const q = normalizeQuery(query);
