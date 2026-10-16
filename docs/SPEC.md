@@ -387,7 +387,7 @@ renders *What's new in 2.10* and *Version 2.10 ships on 2026-10-20. Questions: @
 - Prefer quotes that need no escape: `'say "hi"'`. `smd fmt` writes double quotes, single quotes for a value with a `"`, and double quotes with `\"` only for a value with both kinds of quote.
 - `.class` adds a utility class (rendered as `smd-u-<class>`); `#id` sets the element id.
 - A bare `flag` means `flag=true`.
-- **Enumerated values** (the fixed choices of a container or directive attribute, such as `:::decision{status}`, `:::api{method}` and `:metric{trend good}`) are matched in any case: `status=Accepted` is `status=accepted`, and `trend=Up` is `trend=up`. Renderers use the value as the vocabulary lists it, and `smd fmt` writes it so (`method=GET`, `status=accepted`). The same holds for the enumerated front matter keys `status`, `audience` and `theme` (§2.1), which `smd fmt` leaves as written. Directive names, style attribute values (§5.1) and named colors (§5.2) are matched as written.
+- **Enumerated values** (the fixed choices of a container or directive attribute, such as `:::decision{status}`, `:::api{method}` and `:metric{trend good}`) are matched in any case: `status=Accepted` is `status=accepted`, and `trend=Up` is `trend=up`. Renderers use the value as the vocabulary lists it (`status=Accepted` renders as `accepted`, `method=get` as `GET`). The same holds for the enumerated front matter keys `status`, `audience` and `theme` (§2.1). `smd fmt` leaves the case of all of them as written, so a formatted document stays formatted; writing them in the vocabulary's case is left to `smd migrate --to 2`. Directive names, style attribute values (§5.1) and named colors (§5.2) are matched as written.
 
 ### 5.1 Style attributes
 

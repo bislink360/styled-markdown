@@ -6,7 +6,7 @@ import { formatSmd, renderSmd, renderStandaloneHtml, validateSmd } from '../src/
 
 /**
  * Enumerated values in any case (1.10, spec v2 RFC proposal 11): directive and front matter values match in any case,
- * render as their lower-case value, and `smd fmt` writes attribute values as the vocabulary lists them.
+ * and render as their lower-case value. `smd fmt` leaves them as written (the canonical case waits for `smd migrate`).
  */
 
 const corpus = (name: string) => readFileSync(join(__dirname, 'compat', 'corpus', name), 'utf8');
@@ -29,11 +29,13 @@ test('case: rendering reads them as their lower-case value', () => {
   assert.match(renderStandaloneHtml('---\ntheme: Dark\n---\nx\n', '', ''), /data-smd-theme-pref="dark"/);
 });
 
-test('case: fmt writes enumerated attribute values as the vocabulary lists them, and nothing else', () => {
-  assert.equal(formatSmd(':::decision{status=Accepted} T\nx\n:::\n'), ':::decision{status=accepted} T\nx\n:::\n');
-  assert.equal(formatSmd(':::api{method=get path="/v1"}\nx\n:::\n'), ':::api{method=GET path="/v1"}\nx\n:::\n');
-  assert.equal(formatSmd(':metric[1]{label="x" trend="Up"}\n'), ':metric[1]{label="x" trend=up}\n');
-  // Values outside the vocabulary, keys without one and the front matter stay as written.
-  assert.equal(formatSmd(':metric[1]{label="Up" trend=Sideways}\n'), ':metric[1]{label="Up" trend=Sideways}\n');
-  assert.equal(formatSmd('---\nstatus: Draft\n---\n\n[x]{color=red}\n'), '---\nstatus: Draft\n---\n\n[x]{color=red}\n');
+test('case: fmt leaves the case of enumerated values as written (a document fmt-clean before stays clean)', () => {
+  for (const doc of [
+    ':::decision{status=Accepted} T\nx\n:::\n',
+    ':::api{method=get path="/v1"}\nx\n:::\n',
+    ':metric[1]{label="x" trend=Up good=DOWN}\n',
+    '---\nstatus: Draft\naudience: Both\n---\n\nx\n',
+  ]) assert.equal(formatSmd(doc), doc);
+  // Only quoting changes, as before: a bare word needs no quotes.
+  assert.equal(formatSmd(':metric[1]{label="x" trend="Up"}\n'), ':metric[1]{label="x" trend=Up}\n');
 });

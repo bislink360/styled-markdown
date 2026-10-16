@@ -196,8 +196,7 @@ function formatContainerRest(name: string, rest: string): string {
   if (rest.startsWith('{')) {
     const end = findAttrsEnd(rest, 0);
     if (end === -1) return rest.trimEnd();
-    const spec = CONTAINERS[name.toLowerCase()];
-    const formatted = formatAttrs(rest.slice(1, end), spec?.attrs ?? [], spec?.values);
+    const formatted = formatAttrs(rest.slice(1, end), CONTAINERS[name.toLowerCase()]?.attrs ?? []);
     if (formatted === null) return rest.trimEnd();
     attrs = `{${formatted}}`;
     rest = rest.slice(end + 1);
@@ -222,12 +221,11 @@ const STYLE_ORDER = Object.keys(STYLE_KEYS);
 
 /**
  * Canonical form of the inside of `{…}`: `#id .class key=value flag`. Keys follow `order`,
- * then the style keys, then the order they were written in. A value of an enumerated key
- * (`choices`, the block's own) is written as the block lists it (`status=Accepted` →
- * `status=accepted`). Returns null when the list is malformed, or when a value can't be
- * written back so that it reads the same, so the caller keeps it as written.
+ * then the style keys, then the order they were written in. Returns null when the list is
+ * malformed, or when a value can't be written back so that it reads the same, so the caller
+ * keeps it as written.
  */
-export function formatAttrs(src: string, order: readonly string[], choices: Choices = {}): string | null {
+export function formatAttrs(src: string, order: readonly string[]): string | null {
   const items = lexAttrItems(src);
   if (!items) return null;
   let id: string | undefined;
@@ -236,7 +234,7 @@ export function formatAttrs(src: string, order: readonly string[], choices: Choi
   for (const { match: m } of items) {
     if (m[1] === '#') id = m[2];
     else if (m[1] === '.') { if (!classes.includes(m[2])) classes.push(m[2]); }
-    else entries.set(m[3], canonicalValue(itemValue(m).value, choicesOf(choices, m[3])));
+    else entries.set(m[3], itemValue(m).value);
   }
   const keys = [...entries.keys()];
   const rank = (k: string) => attrRank(k, order, keys);
@@ -249,30 +247,14 @@ export function formatAttrs(src: string, order: readonly string[], choices: Choi
       return v === undefined ? k : `${k}=${quote(k, v, order)}`;
     }),
   ].join(' ');
-  return sameValues(parseAttrs(src), parseAttrs(formatted), choices) ? formatted : null;
+  return sameValues(parseAttrs(src), parseAttrs(formatted)) ? formatted : null;
 }
 
-/** The allowed values of a block's enumerated keys (ContainerSpec.values, InlineDirectiveSpec.values). */
-type Choices = Readonly<Record<string, readonly string[]>>;
-
-const choicesOf = (choices: Choices, key: string) => (Object.hasOwn(choices, key) ? choices[key] : undefined);
-
-/** An enumerated value as its block lists it, matched in any case (`Up` → `up`, `get` → `GET`); any other as it is. */
-function canonicalValue(value: string | undefined, allowed: readonly string[] | undefined): string | undefined {
-  if (value === undefined || !allowed) return value;
-  const lower = value.toLowerCase();
-  return allowed.find((a) => a.toLowerCase() === lower) ?? value;
-}
-
-/**
- * Whether two attribute lists hold the same values, enumerated ones in any case: formatting never changes what a
- * list says.
- */
-function sameValues(a: Attrs | null, b: Attrs | null, choices: Choices): boolean {
+/** Whether two attribute lists hold the same values: formatting never changes what a list says. */
+function sameValues(a: Attrs | null, b: Attrs | null): boolean {
   if (!a || !b) return false;
   const keys = Object.keys(a.values);
-  return keys.length === Object.keys(b.values).length &&
-    keys.every((k) => Object.hasOwn(b.values, k) && canonicalValue(a.values[k], choicesOf(choices, k)) === b.values[k]);
+  return keys.length === Object.keys(b.values).length && keys.every((k) => Object.hasOwn(b.values, k) && a.values[k] === b.values[k]);
 }
 
 /**
@@ -315,8 +297,7 @@ function formatInline(line: string): string {
     if (!directive && !before.endsWith(']')) continue;
     const end = findAttrsEnd(masked, p);
     if (end === -1) continue;
-    const spec = directive ? INLINE_DIRECTIVES[directive[1]] : undefined;
-    const formatted = formatAttrs(line.slice(p + 1, end), spec?.attrs ?? [], spec?.values);
+    const formatted = formatAttrs(line.slice(p + 1, end), directive ? INLINE_DIRECTIVES[directive[1]]?.attrs ?? [] : []);
     if (formatted !== null) edits.push([p, end + 1, `{${formatted}}`]);
     p = end;
   }
