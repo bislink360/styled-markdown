@@ -42,6 +42,7 @@ export const RULE_CODES: Record<string, string> = {
   'include/cycle': 'Includes lead back to a document already being included',
   'include/depth': 'Includes nest more than 8 deep',
   'include/too-large': 'Includes read more than a document may (200 includes, 2,000,000 characters)',
+  'link/github-anchor': 'Link to a heading by the id GitHub gives it (`#foo_bar`), which differs from its own id (`#foobar`)',
   'link/missing-anchor': 'Link to an `#anchor` that does not exist',
   'link/missing-file': 'Link to a relative file that does not exist',
   'link/undefined-reference': 'Reference link with no `[label]: …` definition',

@@ -7,6 +7,7 @@ import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
 import { checkIncludes, documentIds, includedFigureIds, includedTermIds } from './includeCheck';
+import { aliasedHeading } from './headingAliases';
 import { parseFenceInfo, sliceLines } from './fence';
 import { figureTargets, findRefs, type Figure, type FigureRef } from './figures';
 import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, versionLabel, type ChangelogEntry, type Version } from './changelog';
@@ -571,9 +572,11 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
   const { links, references, definitions } = findLinks(text);
   let ownIds: Set<string> | undefined;
   const otherIds = new Map<string, Set<string> | undefined>();
+  const otherTexts = new Map<string, string>();
   const idsIn = (path: string): Set<string> | undefined => {
     if (!otherIds.has(path)) {
       const other = options.readFile?.(path);
+      if (other !== undefined) otherTexts.set(path, other);
       otherIds.set(path, other === undefined ? undefined : anchorIds(other));
     }
     return otherIds.get(path);
@@ -589,7 +592,7 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
       if (!parts.anchor) continue;
       ownIds ??= documentIds(text, options.readFile);
       if (!ownIds.has(parts.anchor)) {
-        missingAnchor(parts.anchor, ownIds, 'in this document', link.target, line, column, end, push);
+        unresolvedAnchor({ anchor: parts.anchor, ids: ownIds, text, where: 'in this document', target: link.target, line, column, end }, push);
       }
       continue;
     }
@@ -602,7 +605,7 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
     if (parts.anchor && isDocumentPath(parts.path)) {
       const ids = idsIn(parts.path);
       if (ids && !ids.has(parts.anchor)) {
-        missingAnchor(parts.anchor, ids, `in "${parts.path}"`, link.target, line, column, end, push);
+        unresolvedAnchor({ anchor: parts.anchor, ids, text: otherTexts.get(parts.path) ?? '', where: `in "${parts.path}"`, target: link.target, line, column, end }, push);
       }
     }
   }
@@ -650,6 +653,38 @@ function undefinedFootnote(ref: FootnoteReference, labels: string[], push: Push)
   push(ref.line, ref.column, ref.endColumn, labels.length ? 'warning' : 'info', 'footnote/undefined',
     `No definition for the footnote "[^${ref.raw}]"${hint ? ` — did you mean "[^${hint}]"?` : '.'} Add a line like "[^${ref.raw}]: …"; until then it shows as plain text.`,
     hint ? { line: ref.line, column, endColumn: column + ref.raw.length, replacement: hint, title: `Change to "[^${hint}]"` } : undefined);
+}
+
+/** A link's `#anchor` that no id of its document matches. */
+interface UnresolvedAnchor {
+  anchor: string;
+  /** The ids of the linked document. */
+  ids: Set<string>;
+  /** The linked document. */
+  text: string;
+  /** "in this document" or `in "file.smd"`. */
+  where: string;
+  target: string;
+  line: number;
+  column: number;
+  end: number;
+}
+
+/**
+ * An anchor that is the GitHub id of a heading (`#foo_bar` for `## foo_bar`, whose id is `#foobar`) works on GitHub
+ * but not in the rendered HTML: `info`, with a fix to the heading's own id. Any other is `link/missing-anchor`.
+ */
+function unresolvedAnchor(link: UnresolvedAnchor, push: Push): void {
+  const { anchor, target, line, column, end } = link;
+  const heading = aliasedHeading(link.text, anchor);
+  if (!heading) {
+    missingAnchor(anchor, link.ids, link.where, target, line, column, end, push);
+    return;
+  }
+  const fixed = target.slice(0, target.indexOf('#') + 1) + heading.slug;
+  push(line, column, end, 'info', 'link/github-anchor',
+    `"#${anchor}" is the id GitHub gives the heading "${heading.text}" ${link.where}; its Styled Markdown id is "#${heading.slug}". The link works on GitHub, but not in the preview or rendered HTML.`,
+    { line, column, endColumn: end, replacement: fixed, title: `Change to "${fixed}"` });
 }
 
 function missingAnchor(

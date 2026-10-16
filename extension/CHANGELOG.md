@@ -6,6 +6,11 @@
 
 ### Added
 
+- The spec defines heading ids (SPEC.md §4.2.3): how they are made from the heading text, how repeats are numbered and how `{#id}` overrides them. The algorithm is the one every release has used, and it doesn't change.
+- GitHub's heading ids work as aliases. GitHub keeps `_` and doesn't collapse hyphens, so `## max_tokens` is `#maxtokens` in Styled Markdown and `#max_tokens` on GitHub. A link by the GitHub id (`[x](#max_tokens)`, `other.smd#max_tokens`) is no longer a `link/missing-anchor` warning: it is the new `link/github-anchor` info, with a quick fix to the heading's own id, since the preview and rendered HTML have only that id.
+- Go to definition, hover, find references and rename heading (VS Code and `smd lsp`) follow links by a heading's GitHub id, and link completion finds a heading when its GitHub id is typed, inserting its own id.
+- `smd to-md` writes `<a id="heading-id"></a>` before each heading whose GitHub id differs from its own id (`{#id}` headings, `## max_tokens`, `## 1.2.0 — 2026-03-01`), so links by either id work on GitHub. Output changes only for such headings; other documents convert as before. `smd from-md` drops these lines again when the heading below has that id.
+
 ### Changed
 
 ### Deprecated
