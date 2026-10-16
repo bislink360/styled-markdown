@@ -62,6 +62,8 @@ A YAML mapping between `---` lines at the very start of the file. It is parsed w
 | `related` | list | Paths or URLs of related documents |
 | `lang` | string | Language of the labels the renderer adds (callout titles, "Figure 2", "overdue"…), a BCP 47 tag such as `de` or `pt-BR`; see §2.2. Default English |
 
+The values of the enum keys (`status`, `audience`, `theme`) are matched in any case: `audience: Both` is `both` (§5).
+
 Unknown keys are allowed and preserved (reported as *hints* so typos are caught, except keys the body shows with `{{key}}`).
 
 Any key, standard or custom, can be shown in the text with `{{key}}` (§4.7).
@@ -99,7 +101,7 @@ Any Markdown content, including other containers.
 - An opening fence is **three or more colons**, then a name (`[a-zA-Z][\w-]*`), then an optional attribute list `{…}` directly after the name, then an optional title.
 - A closing fence is a line with **three or more colons and nothing else**.
 - **Nesting**: a closing fence always closes the *innermost* open container. Colon count is cosmetic — authors may use more colons on outer containers (`::::tabs`) for readability, but it's not required.
-- Fenced code blocks inside a container are opaque; a `:::` inside a code block never closes the container.
+- Fenced code blocks and `$$` display math (§4.4) inside a container are opaque; a `:::` inside a code block or a math block never closes the container (nor opens one).
 - An unclosed container extends to the end of its parent (and is a validation error).
 - Titles support inline Markdown.
 
@@ -196,7 +198,7 @@ Every API call counts against the SLO; the error budget is what is left.
 - **Entries:** the bullet list directly inside a `glossary` holds its entries. Each item starts with a bold term and a colon, `**Term**: definition` (or `**Term:** definition`); the rest of the item is the definition, and may have inline Markdown, more paragraphs and nested lists. A list renders as a glossary only when every item is an entry; otherwise it stays a plain list and defines nothing (`glossary/entry`). Other content in the block, such as an introduction, renders as usual. A document may have several glossaries; they share one set of terms.
 - **Rendering:** `<div class="smd-glossary">`, the title if any (`<div class="smd-glossary-title">`), then `<dl class="smd-glossary-list">` with `<dt id="term-{slug}"><dfn>Term</dfn></dt><dd>definition</dd>` for each entry. When a term is defined twice, the first definition wins and only its `<dt>` has the id (`glossary/duplicate`). Term ids are never renumbered: when a heading or another element of the document already has the id (`## Term limits` is `#term-limits`, as is the term *Limits*), it stays on both, and `glossary/duplicate-id` warns, so links that work today keep working and the author decides which element keeps it.
 - **Uses:** elsewhere in the document, the first use of each term in each section (the text between two headings of any level) links to its definition, with the definition's plain text as a tooltip: `<a class="smd-term" href="#term-api"><abbr title="Application Programming Interface">API</abbr></a>` for an abbreviation, `<a class="smd-term" href="#term-error-budget" title="How much …">error budget</a>` for any other term. Later uses in the same section stay plain text.
-- **Matching:** a use is a whole word: no letter, digit or `_` on either side, no `.` `/` `@` `#` `-` just before it and no `.` `/` `@` `-` followed by a letter or digit just after it, so `API.md`, `/api`, `#API` and `API-first` are not uses. An *abbreviation* (a term with capital letters and no lower-case ones: `API`, `SLO`, `P99`) matches only as written. Any other term matches as written or with the case of its first letter changed (`Error budget`, `error budget`), not otherwise (`ERROR BUDGET`). Longer terms win (`API gateway` over `API`). Other word forms (plurals) are not uses.
+- **Matching:** a use is a whole word: no letter, digit or `_` on either side, no `.` `/` `@` `#` `-` just before it and no `.` `/` `@` `-` followed by a letter or digit just after it, so `API.md`, `/api`, `#API` and `API-first` are not uses. An *abbreviation* (a term with capital letters and no lower-case ones: `API`, `SLO`, `P99`) matches only as written. Any other term matches as written or with the case of its first letter changed (`Error budget`, `error budget`), not otherwise (`ERROR BUDGET`). Longer terms win (`API gateway` over `API`). Straight and typographic quotes and dashes are the same character for matching (`'` `‘` `’`, `"` `“` `”`, `--` `–`, `---` `—`), so a term with an apostrophe (`Builder's rule`) is found in rendered text, where the typographer curled it. Other word forms (plurals) are not uses.
 - **Never changed:** headings (so heading ids and the table of contents stay the same), container titles, glossaries themselves, code spans and blocks, math, links and their text (raw `<a>` links too), autolinks and URLs, raw HTML blocks and tags, image alt text, attribute lists and inline directives. Footnote references and footnote definitions (§4.6) are never marked either.
 - **Includes (§3.4):** included text is part of the rendered document. A glossary in an included file defines terms for the whole document (so a shared glossary can be included), and the document's terms are marked in included text, under the same first-use-per-section rule. `smd validate` counts uses in included text when it can read the include, so a term used only there is not `glossary/unused`; editor hovers know the document's own glossaries.
 - **Accessibility:** a definition is never available only on hover. Each marked use is a link to its `<dt>`, which keyboard and screen-reader users can follow (rendered pages move focus to it), and the expansion of an abbreviation is its `<abbr title>`.
@@ -300,7 +302,8 @@ A heading may end with an attribute list: `## Title {#custom-id .class agent=ski
 ### 4.4 Math
 
 - Inline: `$E = mc^2$` — no whitespace just inside the `$`, and the closing `$` must not be followed by a digit (so `$5 and $10` is plain text).
-- Display: a `$$ … $$` block, or a fenced block with language `math`.
+- Display: a `$$ … $$` block, or a fenced block with language `math`. A line starting with `$$` (indented less than four spaces) opens display math that ends on the same line when it also ends with `$$` (`$$ E = mc^2 $$`), else on the next line ending with `$$`; when no later line ends with `$$`, the line opens nothing and is text. Display math may interrupt a paragraph.
+- Display math is opaque, as code is: nothing inside it is SMD syntax, and a `:::` line inside it neither closes nor opens a container (§3).
 - Syntax: LaTeX as supported by KaTeX.
 
 ### 4.5 Task lists
@@ -380,8 +383,11 @@ renders *What's new in 2.10* and *Version 2.10 ships on 2026-10-20. Questions: @
 ```
 
 - Values may be bare, `"double-quoted"` or `'single-quoted'`.
+- **Escapes in quoted values:** inside double quotes `\"` is a `"`, and inside single quotes `\'` is a `'`, so a value can hold its own kind of quote: `title="say \"hi\""`, `title='it\'s'`. A backslash and the character after it always go together, so `\"` never ends a double-quoted value. Every other backslash is literal: `\'` inside double quotes, `\"` inside single quotes, and Windows paths (`file="C:\docs\plan.smd"`) keep theirs. `\\` is two backslashes in spec v1. A list that reads only without escapes, such as `title="C:\docs\"` (a value ending in a backslash, valid before 1.10), reads as it did: its quoted values run to the next quote of their kind.
+- Prefer quotes that need no escape: `'say "hi"'`. `smd fmt` writes double quotes, single quotes for a value with a `"`, and double quotes with `\"` only for a value with both kinds of quote.
 - `.class` adds a utility class (rendered as `smd-u-<class>`); `#id` sets the element id.
 - A bare `flag` means `flag=true`.
+- **Enumerated values** (the fixed choices of a container or directive attribute, such as `:::decision{status}`, `:::api{method}` and `:metric{trend good}`) are matched in any case: `status=Accepted` is `status=accepted`, and `trend=Up` is `trend=up`. Renderers use the value as the vocabulary lists it, and `smd fmt` writes it so (`method=GET`, `status=accepted`). The same holds for the enumerated front matter keys `status`, `audience` and `theme` (§2.1), which `smd fmt` leaves as written. Directive names, style attribute values (§5.1) and named colors (§5.2) are matched as written.
 
 ### 5.1 Style attributes
 
