@@ -31,17 +31,18 @@ const CALLOUT_ICONS: Record<string, string> = {
 
 /**
  * The header card for front matter: status, version, title, summary, owners and tags. Empty without any of them.
- * `m` gives the labels in the document's language (English by default).
+ * `m` gives the labels in the document's language (English by default). `shown` is the front matter as the document
+ * shows it (shownValues: spelled as written in spec v2); `data` decides what is shown, and `shown` how it is spelled.
  */
-export function renderHeader(inline: (text: string) => string, data: Record<string, unknown>, m: Messages = EN): string {
+export function renderHeader(inline: (text: string) => string, data: Record<string, unknown>, m: Messages = EN, shown: Record<string, unknown> = data): string {
   const title = typeof data.title === 'string' ? data.title : '';
   const summary = typeof data.summary === 'string' ? data.summary : '';
   const status = typeof data.status === 'string' ? data.status.toLowerCase() : '';
-  const owners = asStringList(data.owners);
-  const tags = asStringList(data.tags);
+  const owners = asStringList(Array.isArray(data.owners) ? shown.owners : data.owners);
+  const tags = asStringList(Array.isArray(data.tags) ? shown.tags : data.tags);
   if (!title && !summary && !status && !owners.length && !tags.length) return '';
 
-  const top = headerFacts(data, status, m);
+  const top = headerFacts(data, shown, status, m);
   const meta = [metaRow(m['header.owners'], owners, 'smd-mention'), metaRow(m['header.tags'], tags, 'smd-tag')].filter(Boolean);
   return `<header class="smd-doc-header" data-line="0">
 ${top.length ? `<div class="smd-doc-top">${top.join('<span class="smd-dot">·</span>')}</div>` : ''}
@@ -51,14 +52,14 @@ ${meta.length ? `<div class="smd-doc-meta">${meta.map((m) => `<div>${m}</div>`).
 </header>`;
 }
 
-function headerFacts(data: Record<string, unknown>, status: string, m: Messages): string[] {
+function headerFacts(data: Record<string, unknown>, shown: Record<string, unknown>, status: string, m: Messages): string[] {
   const top: string[] = [];
   if (status) {
     const known = STATUS_VALUES.includes(status) ? status : 'unknown';
     top.push(`<span class="smd-doc-status smd-doc-status-${known}">${escapeHtml(term(m, 'docStatus', status))}</span>`);
   }
-  if (data.version !== undefined) top.push(`<span>${label(m, 'header.version', { version: escapeHtml(String(data.version)) })}</span>`);
-  if (data.updated !== undefined) top.push(`<span>${label(m, 'header.updated', { date: escapeHtml(String(data.updated)) })}</span>`);
+  if (data.version !== undefined) top.push(`<span>${label(m, 'header.version', { version: escapeHtml(String(shown.version)) })}</span>`);
+  if (data.updated !== undefined) top.push(`<span>${label(m, 'header.updated', { date: escapeHtml(String(shown.updated)) })}</span>`);
   if (typeof data.audience === 'string') {
     top.push(`<span>${label(m, 'header.audience', { audience: escapeHtml(term(m, 'audience', data.audience)) })}</span>`);
   }

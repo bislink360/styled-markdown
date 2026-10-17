@@ -2,7 +2,8 @@ import type { Token } from 'markdown-it';
 import { parseAttrs } from './attrs';
 import { CONTAINER_OPEN, isKnownContainer, parseContainerInfo } from './containers';
 import { attrValueFix, frontMatterValueFix } from './fixes';
-import { parseFrontMatter, type FrontMatter } from './frontmatter';
+import { AGENT_HEADER_HIDDEN } from './agentView';
+import { parseFrontMatter, sourceSpelledData, type FrontMatter } from './frontmatter';
 import { FRONTMATTER_SCHEMA } from './frontmatterSchema';
 import { EN } from './i18n';
 import { codeLines, inlineMathLines, literalLines, mathOnLine, type InlineMathLines } from './parse';
@@ -10,7 +11,7 @@ import { createMarkdownIt, type Env } from './render';
 import { CONTAINERS, INLINE_DIRECTIVES } from './spec';
 import { readSpec } from './specVersion';
 import { applyFixes, validateSmd, type Diagnostic, type Fix } from './validate';
-import { findVariables, variableText } from './variables';
+import { findVariables, lookupVariable, variableText } from './variables';
 
 /**
  * The plan of `smd migrate --to 2`: what a document needs so that it means the same under spec v2 (`smd: 2`) as it
@@ -617,9 +618,6 @@ function fuzzyLinkStep(w: Work): void {
 // Variables (proposal 10)
 // ---------------------------------------------------------------------------
 
-/** Front matter keys the page header shows as text: `v{version}` and `Updated {updated}`. */
-const HEADER_KEYS = ['version', 'updated'];
-
 /** A plain scalar as written after `key:`, up to a comment; undefined for quoted, block or empty values. */
 function writtenScalar(rest: string): string | undefined {
   const comment = rest.search(/\s#/);
@@ -627,12 +625,45 @@ function writtenScalar(rest: string): string | undefined {
   return text && !/^["'[{|>&*!]/.test(text) ? text : undefined;
 }
 
+/**
+ * A value as JSON with its numbers and booleans as text, so that a value YAML reads and the same value as written
+ * (sourceSpelledData) compare equal when they are shown the same: `2` and `"2"` do, `2.1` and `"2.10"` don't.
+ */
+const shownText = (value: unknown) => JSON.stringify(value, (_key, v: unknown) => (typeof v === 'number' || typeof v === 'boolean' ? String(v) : v));
+
+/** Whether `name` (a front matter key, or a `{{name}}` path) shows differently in spec v1 and spec v2. */
+function respelled(data: Record<string, unknown>, spelled: Record<string, unknown>, name: string): boolean {
+  if (Object.hasOwn(data, name)) return shownText(data[name]) !== shownText(spelled[name]);
+  const [before, after] = [lookupVariable(data, name), lookupVariable(spelled, name)];
+  return before.kind === 'text' && after.kind === 'text' && before.text !== after.text;
+}
+
+/**
+ * Front matter values shown other than as written (proposal 10): in the page header (`version`, `updated`, owners and
+ * tags), in the agent view's header (every key but the ones it leaves out) and through `{{name}}`. A top-level key
+ * with a plain number or boolean on its own line is a note, or quoted with `quoteVariables`; anything else that shows
+ * differently (a list, a nested key) is a note to quote it by hand.
+ */
 function variableStep(w: Work): void {
   const text = textOf(w);
   const fm = parseFrontMatter(text);
-  if (!fm.present || fm.error) return;
+  const spelled = sourceSpelledData(text);
+  if (!fm.present || fm.error || !spelled) return;
   const code = codeLines(text);
-  const shown = new Set([...HEADER_KEYS, ...findVariables(w.lines, fm.bodyStartLine, (l) => code.has(l)).map((v) => v.name)]);
+  const uses = findVariables(w.lines, fm.bodyStartLine, (l) => code.has(l)).map((v) => v.name);
+  const shown = new Set([...Object.keys(fm.data).filter((key) => !AGENT_HEADER_HIDDEN.has(key)), ...uses]);
+  const done = spellingLines(w, fm, shown);
+  for (const name of shown) {
+    const line = keyLine(w.lines, fm, name.split('.')[0]);
+    if (line < 0 || done.has(line) || !respelled(fm.data, spelled, name)) continue;
+    done.add(line);
+    note(w, line, VARIABLE_SPELLING, `${KINDS[VARIABLE_SPELLING].reason} "${name}" shows a number or boolean in a list or a nested key, which is shown differently in spec v2: quote it by hand to keep how it is shown.`);
+  }
+}
+
+/** The top-level keys in `shown` with a plain number or boolean that shows differently: a note, or quoted. Returns their lines. */
+function spellingLines(w: Work, fm: FrontMatter, shown: ReadonlySet<string>): Set<number> {
+  const lines = new Set<number>();
   for (let i = 1; i < fm.bodyStartLine - 1; i++) {
     const m = /^([A-Za-z_][\w.-]*)[ \t]*:/.exec(w.lines[i]);
     const value = m && Object.hasOwn(fm.data, m[1]) ? fm.data[m[1]] : undefined;
@@ -640,6 +671,7 @@ function variableStep(w: Work): void {
     const written = writtenScalar(w.lines[i].slice(m[0].length));
     const display = variableText(value);
     if (written === undefined || written === display) continue;
+    lines.add(i);
     const today = `"${m[1]}: ${written}" is shown as "${display}" today and as "${written}" in spec v2.`;
     if (!w.options.quoteVariables) {
       note(w, i, VARIABLE_SPELLING, `${KINDS[VARIABLE_SPELLING].reason} ${today} Run with --quote-variables to quote it, so every version shows "${written}".`);
@@ -649,6 +681,7 @@ function variableStep(w: Work): void {
     const next = `${w.lines[i].slice(0, column)}"${written}"${w.lines[i].slice(column + written.length)}`;
     change(w, i, 1, [next], VARIABLE_SPELLING, `${KINDS[VARIABLE_SPELLING].reason} ${today} Quoted, it is shown as "${written}" by every version.`);
   }
+  return lines;
 }
 
 // ---------------------------------------------------------------------------

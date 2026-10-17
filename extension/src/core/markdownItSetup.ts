@@ -16,6 +16,8 @@ import {
 import { glossaryTerms } from './markdownItGlossary';
 import { documentLanguage, languageTag, messagesFor, type Messages } from './i18n';
 import type { MarkdownItSmdOptions } from './markdownIt';
+import { specOf } from './specVersion';
+import { shownValues } from './variables';
 
 /** Registers the .smd rules on a markdown-it instance, for renderSmd and for markdown-it hosts. */
 
@@ -126,9 +128,12 @@ function addFrontMatter(md: MarkdownIt, ctx: SmdContext): void {
     const data = state.tokens.find((t) => t.type === 'smd_front_matter')?.meta as Record<string, unknown> | undefined;
     if (data?.lang !== undefined && state.env && typeof state.env === 'object') (state.env as LanguageEnv).smdLang = data.lang;
   });
-  // Front matter values are shown as written: `{{name}}` in the title is not replaced.
+  // Front matter values are shown as written: `{{name}}` in the title is not replaced. In spec v2 the token holds the
+  // front matter's source (see frontMatterBlock), so numbers keep their spelling.
   md.renderer.rules.smd_front_matter = (tokens, idx, _opts, env) => {
-    const header = renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), tokens[idx].meta as Record<string, unknown>, ctx.messages(env));
+    const data = tokens[idx].meta as Record<string, unknown>;
+    const shown = shownValues(data, tokens[idx].content, specOf(env)) as Record<string, unknown>;
+    const header = renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), data, ctx.messages(env), shown);
     return `${header}\n`;
   };
 }
