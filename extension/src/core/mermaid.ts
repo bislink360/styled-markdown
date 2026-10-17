@@ -84,8 +84,8 @@ function toDiagnostic(error: unknown, block: MermaidBlock, lines: string[]): Dia
   let column = pos.column !== undefined && pos.column < text.length ? pos.column : indent;
   let endColumn = pos.endColumn !== undefined && pos.endColumn > column && pos.endColumn <= text.length ? pos.endColumn : text.length;
   if (endColumn <= column) { column = indent; endColumn = Math.max(text.length, indent + 1); }
-  // A warning, not an error: documents with broken diagrams passed `smd validate` before 1.2.0.
-  return { line, column, endColumn, severity: 'warning', code: 'mermaid/syntax', message: `Mermaid syntax error: ${pos.message}` };
+  // An error since 2.0, in every document (a warning from 1.2.0, when documents with broken diagrams had passed).
+  return { line, column, endColumn, severity: 'error', code: 'mermaid/syntax', message: `Mermaid syntax error: ${pos.message}` };
 }
 
 function errorPosition(error: unknown): ErrorPosition | undefined {

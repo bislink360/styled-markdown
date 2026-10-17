@@ -57,6 +57,7 @@ lang: de                  # language of the rendered labels (optional, default E
 - **Schema:** keys and values are completed and checked from one JSON Schema, published as [`smd-frontmatter.schema.json`](../extension/schemas/smd-frontmatter.schema.json) and as `styled-markdown/frontmatter.schema.json` on npm for YAML tooling and pipelines. Typing `updated: ` suggests today's date.
 - **Status workflow:** in VS Code the status bar shows `status` and changes it, bumping `updated`; see [section 13](#13-vs-code-editing-assistance).
 - **Variables:** any key can be shown in the text with `{{key}}`, e.g. `Version {{version}}`; see [Front matter variables](#front-matter-variables).
+- **Broken front matter stays visible (2.0):** front matter that doesn't parse, often because the closing `---` was forgotten and a later `---` rule closed it, shows as written in a red "Front matter could not be read" block in the preview, the Block Editor and the exports, and as a `[front matter could not be read]` line with the lines in the agent view, instead of hiding everything above that `---`. `smd validate` reports it as `frontmatter/invalid`. `...` also closes front matter.
 - **Staleness:** a live document whose `updated` date is more than 180 days old gets a `frontmatter/stale` hint. Bump `updated` after a review, or set `status: archived`. The threshold is set with `smd.validation.staleAfterDays` or `smd validate --stale-after <days>`, where `0` turns it off.
 - **Language:** `lang` sets the language of the labels the renderer adds; see [Localized labels](#localized-labels).
 
@@ -571,7 +572,7 @@ stateDiagram-v2
 
 - **`:::figure`** puts a caption under an image, diagram, table or code block, numbered in document order: *Figure 1: Order states*. `kind=table` counts *Table 1, 2…* separately (its caption sits above the table) and `kind=listing` *Listing 1, 2…* for code.
 - **`:ref[id]`** shows the figure's number as a link (*Figure 1*), before or after the figure and in titles. Numbers are computed, so they stay right when figures move.
-- The validator warns about a `:ref` to an id no figure has (`figure/unknown-ref`, with a fix for a near miss) about two figures with one id (`figure/duplicate-id`) and about an unknown `kind` (`figure/kind`, with a fix).
+- The validator warns about a `:ref` to an id no figure has (`figure/unknown-ref`, with a fix for a near miss) about two figures with one id (`figure/duplicate-id`) and reports an unknown `kind` as an error (`attrs/value`, with a fix; the warning `figure/kind` before 2.0).
 - **Agent view:** `<figure id="fig-states"> Figure 1: Order states` … `</figure>`, and references read `Figure 1 (fig-states)`, so an agent can find the figure by id. **GitHub** (`smd export --to md`): an `<a id>` anchor, the content and a `**Figure 1:** Order states` line; references become `[Figure 1](#fig-states)` links.
 - Older `.smd` tools (1.5 and earlier) show a figure's content in a plain box without the caption, with a `container/unknown` warning, and `:ref[…]` as written.
 
@@ -708,7 +709,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `:::agent` under a `## … {agent=skip}` heading | `container/agent-in-skip` | — (move the block out, or drop `agent=skip`) |
 | unclosed ```` ``` ```` | `fence/unclosed` | adds the closing fence at the end |
 | ```` ```mermaid flowchat ```` | `mermaid/type` | → `flowchart` |
-| `A->>B hi` in a sequence diagram | `mermaid/syntax` | — (reported on the line, with what was expected) |
+| `A->>B hi` in a sequence diagram | `mermaid/syntax` (an error since 2.0) | — (reported on the line, with what was expected) |
 | `$$\frac{1}{$$` | `math/syntax` | — |
 | `file="nope.ts"` | `fence/embed-missing` | — |
 | `:::include{file="nope.smd"}`, `section="Nope"`, `a.smd` including `b.smd` including `a.smd` | `include/missing-file`, `include/missing-section`, `include/cycle` | — |
@@ -718,7 +719,10 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
 | `:ref[fig-chekout]` | `figure/unknown-ref` | → closest figure id |
 | two `:::figure{#fig-a}` | `figure/duplicate-id` | — |
-| `:::figure{kind=tabel}` | `figure/kind` (deprecated: `attrs/value` in 2.0) | → `table` |
+| `:::figure{kind=tabel}` | `attrs/value` (`figure/kind`, a warning, before 2.0) | → `table` |
+| `[x]{color=red color=blue}`, `{#a #b}`, `{.x .x}` | `attrs/duplicate` (a hint in 1.10) | → `{color=blue}` (each once, with the value that is used) |
+| `:::note{title="A"} B` | `container/title-conflict` (a hint in 1.10) | removes `B`, which is not shown |
+| `:::agent{priority=high}` | `attrs/unknown` (removed in 2.0; `deprecated/agent-priority` in 1.10) | removes `priority` |
 | `[^retires]` with only `[^retries]: …` defined | `footnote/undefined` | → `[^retries]` |
 | `[^old]: …` that nothing references, `[^1]: …` twice | `footnote/unused` (info), `footnote/duplicate` | — |
 | `- API: …` in a `:::glossary` | `glossary/entry` | — (write `- **API**: …`) |
@@ -741,16 +745,15 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | overdue open task | `task/overdue` | — |
 | a pipe inside a code span in a table cell (`grep a`, pipe, `wc -l`) | `table/pipe-in-code` (info): the pipe still splits the cell, as on GitHub | puts a backslash before the pipe |
 
-**Ahead of 2.0.** These hints (and one info) point at what Styled Markdown 2.0 rejects or reads differently. They never fail a check, `--strict` included, and each fix keeps how the document renders today:
+**Spec v2.** These hints (and one info) point at what spec v2 (`smd: 2`) reads differently. They never fail a check, `--strict` included, and each fix keeps how the document renders today:
 
 | Examples | Rule | Quick fix |
 |---|---|---|
 | `::::` closing `:::tab` | `container/colons` | → `:::` (the opener's count, as `smd fmt` writes it) |
-| `[x]{color=red color=blue}`, `{#a #b}`, `{.x .x}` | `attrs/duplicate` | → `{color=blue}` (each once, with the value that is used) |
-| `:::note{title="A"} B` | `container/title-conflict` | removes `B`, which is not shown |
 | `## Object {}`, `## Returns {ok}` | `heading/attrs-text` | removes the braces |
 | `section="deploy"` finding `## Rapid deployment` | `include/section-match` (info) | → `section="rapid-deployment"` |
-| `:::agent{priority=high}` | `deprecated/agent-priority` | removes `priority` |
+
+**Errors since 2.0, in every document.** Duplicate attributes, container title conflicts, an invalid figure `kind` and Mermaid syntax errors are errors, so `smd validate` fails on them. Rendering doesn't change: the last duplicate is used and `title=` wins. `smd validate --fix` and `smd migrate --to 2` fix the duplicates, the title conflicts and `priority` on `:::agent` (now an unknown attribute); a Mermaid error is fixed by hand. A rule setting or suppression comment that names a removed code (`figure/kind`, `deprecated/agent-priority`) gets a `rules/unknown` warning that names the code to use instead.
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
 
@@ -770,13 +773,13 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 | `frontmatter/date` | the date is year-first with other separators or no zero padding, e.g. `2026/9/5` → `2026-09-05` |
 | `container/unknown`, `directive/unknown`, `mermaid/type`, `rules/unknown` | a known name is close |
 | `container/unclosed`, `fence/unclosed` | the block starts without indentation: the closing line goes at the end of the document, where the block already ends when rendered |
-| `attrs/unknown` | exactly one accepted attribute name is close and not already set, e.g. `colr` → `color` |
+| `attrs/unknown` | exactly one accepted attribute name is close and not already set, e.g. `colr` → `color`; always for `priority` on `:::agent`, which is removed |
 | `attrs/value` | exactly one allowed value is close (block and directive values, named colors, `size`, `weight`, `font`, `align`, `:priority[…]`, heading `agent=skip`), or a `date`/`:due[…]` is year-first, e.g. `2026/10/5` → `2026-10-05` |
 | `link/missing-anchor` | a heading id is close |
 | `link/github-anchor` | always: the heading's own id |
 | `footnote/undefined` | exactly one defined footnote label is close, e.g. `[^retires]` → `[^retries]` |
 | `variable/undefined` | a front matter key is close, e.g. `{{verison}}` → `{{version}}` |
-| `container/colons`, `attrs/duplicate`, `container/title-conflict`, `heading/attrs-text`, `include/section-match`, `deprecated/agent-priority` | always (except `{agent}` after a heading, and title text beside an HTML comment): the change keeps how the document renders, and makes it read the same in spec v2 |
+| `container/colons`, `attrs/duplicate`, `container/title-conflict`, `heading/attrs-text`, `include/section-match` | always (except `{agent}` after a heading, and title text beside an HTML comment): the change keeps how the document renders, and makes it read the same in spec v2 |
 
 Everything else needs a decision only the author can make (which file was meant, where a block should end inside a list, what a missing attribute should be), so it has no fix. Fixes never touch values with several equally close matches, dates like `09/05/2026` whose day/month order is unclear, or `style=…`, which takes several words.
 

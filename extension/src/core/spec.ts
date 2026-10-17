@@ -66,7 +66,7 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
   agent: {
     description: 'Content addressed to AI agents (instructions, constraints, context). Collapsed for humans in the preview.',
     title: true,
-    attrs: ['title', 'priority'],
+    attrs: ['title'],
   },
   human: { description: 'Content addressed only to human readers. Agents may skip it.', title: true, attrs: ['title'] },
   include: {

@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { formatSmd, renderSmd, validateSmd } from '../src/core';
-import { KIND_ORDER, migrationPlan, type MigrationKind, type MigrationOptions, type MigrationPlan } from '../src/core/migrate';
+import { KIND_ORDER, migrationKind, migrationPlan, type MigrationKind, type MigrationOptions, type MigrationPlan } from '../src/core/migrate';
 import { migrationReport, migrationSummary } from '../src/migrateReport';
 
 /**
@@ -93,6 +93,13 @@ test('migrate: attribute lists in code are left alone', () => {
 test('migrate: container title text that title="…" hides is removed', () => {
   const p = checkCase(doc(':::note{title="Shown"} Hidden\nx\n:::\n\n:::note{title="Only"}\ny\n:::\n\n:::warning Plain title\nz\n:::'));
   assert.deepEqual(edits(p, 'title-text'), ['5::::note{title="Shown"} Hidden→:::note{title="Shown"}']);
+});
+
+test('migrate: priority on :::agent, removed in 2.0, is removed; other unknown attributes are left alone', () => {
+  const p = checkCase(doc(':::agent{priority=high} Read this\nx\n:::\n\n:::agent{title="T" priority=1}\ny\n:::\n\n:::note{colr=red}\nz\n:::'));
+  assert.deepEqual(edits(p, 'agent-priority'), ['5::::agent{priority=high} Read this→:::agent Read this', '9::::agent{title="T" priority=1}→:::agent{title="T"}']);
+  assert.match(p.result, /:::note\{colr=red\}/);
+  assert.equal(migrationKind('agent-priority').proposal, '12');
 });
 
 test('migrate: title text next to a comment is a note, not a change', () => {
@@ -328,8 +335,8 @@ test('migrate: corpus/migrate.smd has a case for every step', () => {
   assert.deepEqual(validateSmd(text, { readFile: corpusRead, today: TODAY }).filter((d) => d.severity === 'error' || d.severity === 'warning'), []);
   const p = plan(text, { readFile: corpusRead });
   assert.deepEqual(p.steps.map((s) => `${s.kind}:${s.line + 1}${s.note ? ' note' : ''}`), [
-    'closer:15', 'closer:19', 'duplicate-attrs:25', 'title-text:29', 'math-delimiters:35', 'heading-braces:38', 'unknown-directive:42',
-    'include-section:51', 'value-case:5', 'value-case:57', 'value-case:61', 'typography:65 note', 'fuzzy-link:65 note', 'variable-spelling:6 note', 'version:2',
+    'closer:15', 'closer:19', 'duplicate-attrs:26', 'title-text:31', 'agent-priority:38', 'math-delimiters:44', 'heading-braces:47', 'unknown-directive:51',
+    'include-section:60', 'value-case:5', 'value-case:66', 'value-case:70', 'typography:74 note', 'fuzzy-link:74 note', 'variable-spelling:6 note', 'version:2',
   ]);
   assert.deepEqual(new Set(p.steps.map((s) => s.kind)), new Set(KIND_ORDER), 'every kind of step');
   // Only the steps that keep the v2 meaning change the v1 rendering, and these don't show.
@@ -366,9 +373,12 @@ test('migrate: every .smd file in the repository gets a plan that settles and ke
       try { return fs.readFileSync(path.resolve(path.dirname(file), rel), 'utf8'); } catch { return undefined; }
     };
     const p = plan(text, { readFile: reader });
-    // A document that already says smd: 2 is not migrated; a forced plan of it fixes what spec v2 reports, such as the
-    // closing fences corpus/v2-fences.smd pins on purpose.
-    if (p.from < 2) assert.deepEqual(changes(plan(p.result, { readFile: reader, force: true })), [], file);
+    const again = changes(plan(p.result, { readFile: reader, force: true }));
+    // corpus/v2-validation.smd says smd: 2 and pins, silenced, the errors of every document that the plan removes;
+    // corpus/v2-fences.smd says smd: 2 and pins a closing fence that matches no container, which the plan fixes.
+    if (path.basename(file) === 'v2-validation.smd') assert.deepEqual(again.map((s) => s.kind), ['duplicate-attrs', 'title-text', 'agent-priority'], file);
+    else if (path.basename(file) === 'v2-fences.smd') assert.deepEqual(again.map((s) => s.kind), ['closer'], file);
+    else assert.deepEqual(again, [], file);
     if (!changes(p).some((s) => s.keeps === 'v2')) assert.equal(v1(p.result, { readFile: reader }), v1(text, { readFile: reader }), file);
   }
 });

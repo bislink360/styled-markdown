@@ -1,7 +1,9 @@
 import katex from 'katex';
 import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules';
 import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem, type Attrs } from './attrs';
-import { closeContainers, closesDisplayMath, CONTAINER_CLOSE, CONTAINER_OPEN, displayMathOpener, parseContainerInfo } from './containers';
+import {
+  closeContainers, closesDisplayMath, CONTAINER_CLOSE, CONTAINER_OPEN, displayMathOpener, parseContainerInfo, type ContainerInfo,
+} from './containers';
 import { specVersion, type SpecVersion } from './specVersion';
 import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
@@ -21,7 +23,9 @@ import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
 import { own, suggest } from './util';
-import { checkCloser, checkContainerHints, checkHeadingHints, checkInlineAttrLists, checkSmdVersion, type OpenContainer } from './v2Hints';
+import {
+  checkCloser, checkContainerHints, checkHeadingHints, checkInlineAttrLists, checkSmdVersion, removedAgentPriority, type OpenContainer,
+} from './v2Hints';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
 } from './fixes';
@@ -449,20 +453,19 @@ function dueDate(content: string): string | undefined {
 }
 
 /**
- * Enumerated container attributes whose invalid values are reported under their own rule. `:::figure{kind}`
- * is a warning: before 1.6 such a document only had a `container/unknown` warning and passed validation.
- * The `figure/kind` code is deprecated: 2.0 reports these as `attrs/value`, which `note` tells users who filter on it.
+ * Attributes a container doesn't take: `attrs/unknown`, with a fix when one accepted name is close. `priority` on
+ * `:::agent`, removed in 2.0, is reported on the attribute itself with a fix that removes it.
  */
-const ENUM_VALUE_RULES = new Map<string, { severity: Severity; code: string; note?: string }>([
-  ['figure.kind', {
-    severity: 'warning', code: 'figure/kind',
-    note: ' The "figure/kind" code is deprecated: Styled Markdown 2.0 reports this as "attrs/value", so rule settings and suppressions should name both.',
-  }],
-]);
-
-/** The rule for an invalid value of an enumerated container attribute: `attrs/value` (error) unless listed above. */
-function enumValueRule(container: string, key: string): { severity: Severity; code: string; note?: string } {
-  return ENUM_VALUE_RULES.get(`${container}.${key}`) ?? { severity: 'error', code: 'attrs/value' };
+function checkUnknownAttrs(info: ContainerInfo, allowed: Set<string>, line: number, nameStart: number, nameEnd: number, push: Push, raw: string): void {
+  const keys = Object.keys(info.attrs.values);
+  // A container with title text is never offered `title`: both together are a container/title-conflict error.
+  const names = [...allowed, ...Object.keys(STYLE_KEYS)].filter((k) => k !== 'title' || !info.title);
+  for (const key of keys) {
+    if (allowed.has(key) || isStyleKey(key)) continue;
+    if (info.name === 'agent' && key === 'priority' && removedAgentPriority(line, raw, nameEnd, push)) continue;
+    push(line, nameStart, nameEnd, 'warning', 'attrs/unknown', `Unknown attribute "${key}" on ":::${info.name}".`,
+      attrKeyFix(line, raw, nameEnd, raw.length, key, names, keys));
+  }
 }
 
 function checkContainer(
@@ -483,23 +486,16 @@ function checkContainer(
     push(line, nameStart, nameEnd, 'warning', 'container/parent',
       `":::${info.name}" should be placed directly inside "::::${spec.parent}".`);
   }
-  const allowed = new Set([...(spec.attrs ?? []), 'title']);
-  const keys = Object.keys(info.attrs.values);
-  for (const key of keys) {
-    if (!allowed.has(key) && !isStyleKey(key)) {
-      push(line, nameStart, nameEnd, 'warning', 'attrs/unknown', `Unknown attribute "${key}" on ":::${info.name}".`,
-        attrKeyFix(line, raw, nameEnd, raw.length, key, [...allowed, ...Object.keys(STYLE_KEYS)], keys));
-    }
-  }
+  checkUnknownAttrs(info, new Set([...(spec.attrs ?? []), 'title']), line, nameStart, nameEnd, push, raw);
   for (const p of attrsToStyle(info.attrs, true).problems) {
     push(line, nameStart, nameEnd, p.severity, 'attrs/value', p.message, styleFix(line, raw, nameEnd, raw.length, p));
   }
+  // Every enumerated value, `:::figure{kind}` included (its own `figure/kind` warning until 2.0).
   for (const [key, allowed] of Object.entries(spec.values ?? {})) {
     const v = info.attrs.values[key];
     if (v !== undefined && !allowed.some((a) => a.toLowerCase() === v.toLowerCase())) {
       const hint = suggest(v, allowed);
-      const rule = enumValueRule(info.name, key);
-      push(line, nameStart, nameEnd, rule.severity, rule.code, `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.${rule.note ?? ''}`,
+      push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
         attrValueFix(line, raw, nameEnd, raw.length, key, v, uniqueSuggestion(v, allowed)));
     }
   }

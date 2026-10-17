@@ -4,16 +4,20 @@ import { LATEST_SPEC, readSpec } from './specVersion';
 import type { Fix, Severity } from './validate';
 
 /**
- * Early notice of what spec v2 (Styled Markdown 2.0) rejects or reads differently. Every diagnostic here is a hint
- * (an info where noted), so no document that passes validation today starts failing it, and each fix keeps how the
- * document renders now. The exception is the spec version check (checkSmdVersion), whose findings are warnings
- * since 2.0.
+ * What spec v2 (Styled Markdown 2.0) rejects or reads differently. The 1.10 notices are hints (an info where noted);
+ * since 2.0, duplicate attributes and conflicting container titles are errors in every document (RFC proposal 4),
+ * rendered as v1 resolves them, `priority` on `:::agent` is an unknown attribute (proposal 12), and the spec version
+ * check (checkSmdVersion) reports warnings. Each fix keeps how the document renders now.
  */
 
 type Push = (line: number, column: number, endColumn: number, severity: Severity, code: string, message: string, fix?: Fix) => void;
 
 const V2 = 'spec v2 (smd: 2)';
 const HINT: Severity = 'hint';
+const ERROR: Severity = 'error';
+
+/** The message of `priority` on `:::agent` (an `attrs/unknown` warning since 2.0), which `smd migrate` looks for. */
+export const AGENT_PRIORITY_REMOVED = 'Unknown attribute "priority" on ":::agent". It was removed in Styled Markdown 2.0, since no tool read it. Remove it.';
 
 // ---------------------------------------------------------------------------
 // Attribute list items
@@ -70,8 +74,8 @@ export function checkDuplicateAttrs(line: number, raw: string, open: number, clo
   const labels = [...new Set(repeated.map((it) => it.label))];
   const kept = [...last.values()];
   const written = raw.slice(open, close + 1) === text.slice(open, close + 1);
-  push(line, open, close + 1, HINT, 'attrs/duplicate',
-    `${quoted(labels)} ${labels.length > 1 ? 'are' : 'is'} given more than once in this attribute list, and the last one is used. Styled Markdown 2.0 reports duplicate attributes as errors in every document. Remove the earlier ones.`,
+  push(line, open, close + 1, ERROR, 'attrs/duplicate',
+    `${quoted(labels)} ${labels.length > 1 ? 'are' : 'is'} given more than once in this attribute list. The last one is used, but an attribute may be given only once. Remove the earlier ones.`,
     written ? { line, column: open + 1, endColumn: close, replacement: without(src, kept), title: 'Remove the earlier duplicates' } : undefined);
 }
 
@@ -89,7 +93,7 @@ export function checkInlineAttrLists(raw: string, text: string, line: number, pu
 }
 
 // ---------------------------------------------------------------------------
-// Containers: container/colons, container/title-conflict, deprecated/agent-priority
+// Containers: container/colons, container/title-conflict, priority on :::agent
 // ---------------------------------------------------------------------------
 
 /** The container a closing fence closes: its name, colon count and opening line. */
@@ -111,7 +115,6 @@ export function checkContainerHints(info: ContainerInfo, line: number, raw: stri
   checkDuplicateAttrs(line, raw, nameEnd, close, push);
   if (!isKnownContainer(info.name)) return;
   if (info.attrs.values.title !== undefined) titleConflict(line, raw, close, info.attrs.values.title, push);
-  if (info.name === 'agent' && info.attrs.values.priority !== undefined) agentPriority(line, raw, nameEnd, close, push);
 }
 
 /**
@@ -123,24 +126,30 @@ function titleConflict(line: number, raw: string, close: number, title: string, 
   if (!rest.replaceAll(/<!--.*?-->/g, '').trim()) return;
   const text = rest.trim();
   const column = close + 1 + rest.indexOf(text);
-  push(line, column, column + text.length, HINT, 'container/title-conflict',
-    `This title text is not shown: title="${title}" in the attributes wins. Styled Markdown 2.0 reports a container titled both ways as an error in every document. Remove the text, or move it into title="…".`,
+  push(line, column, column + text.length, ERROR, 'container/title-conflict',
+    `This title text is not shown: title="${title}" in the attributes wins. A container is titled either by title="…" or by text after its attributes, not both. Remove the text, or move it into title="…".`,
     rest.includes('<!--') ? undefined : { line, column: close + 1, endColumn: raw.length, replacement: '', title: 'Remove the title text that is not shown' });
 }
 
-/** `:::agent{priority=…}`: deprecated in 1.10, removed in 2.0. The fix removes it, and the braces when nothing is left. */
-function agentPriority(line: number, raw: string, open: number, close: number, push: Push): void {
-  const src = raw.slice(open + 1, close);
+/**
+ * `:::agent{priority=…}`, deprecated in 1.10 and removed in 2.0 (RFC proposal 12): an unknown attribute, as any other,
+ * on the attribute itself, with a fix that removes it (and the braces when nothing is left). The attribute list starts
+ * at `open`. False when the list can't be read, so the caller reports it as it reports other unknown attributes.
+ */
+export function removedAgentPriority(line: number, raw: string, open: number, push: Push): boolean {
+  const close = raw[open] === '{' ? findAttrsEnd(raw, open) : -1;
+  const src = close < 0 ? '' : raw.slice(open + 1, close);
   const items = attrItems(src);
   const at = items?.find((it) => it.slot === 'priority');
-  if (!items || !at) return;
+  if (close < 0 || !items || !at) return false;
   const column = open + 1 + at.start + (src.slice(at.start).length - src.slice(at.start).trimStart().length);
   const kept = items.filter((it) => it.slot !== 'priority');
   const fix: Fix = kept.length
     ? { line, column: open + 1, endColumn: close, replacement: without(src, kept), title: 'Remove "priority"' }
     : { line, column: open, endColumn: close + 1, replacement: '', title: 'Remove "priority"' };
-  push(line, column, column + 'priority'.length, HINT, 'deprecated/agent-priority',
-    '"priority" on ":::agent" is deprecated: no tool reads it, and Styled Markdown 2.0 removes it. Remove the attribute.', fix);
+  push(line, column, column + 'priority'.length, 'warning', 'attrs/unknown',
+    AGENT_PRIORITY_REMOVED, fix);
+  return true;
 }
 
 // ---------------------------------------------------------------------------

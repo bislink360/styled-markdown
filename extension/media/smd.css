@@ -236,6 +236,17 @@ details.smd-callout[open] > summary::after { transform: rotate(90deg); }
 details.smd-callout > summary::-webkit-details-marker { display: none; }
 .smd-callout-icon { width: 1.2em; text-align: center; }
 
+/* ---------- Front matter that could not be read ---------- */
+.smd-frontmatter-error {
+  margin: 0 0 1.2em; padding: 12px 16px; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--smd-red) 30%, transparent);
+  border-left: 4px solid var(--smd-red);
+  background: color-mix(in srgb, var(--smd-red) 7%, transparent);
+}
+.smd-frontmatter-error-title { font-weight: 650; color: var(--smd-red); }
+.smd-frontmatter-error-yaml { margin: 6px 0 0; padding: 8px 12px; border-radius: 6px; background: var(--smd-code-bg); color: var(--smd-fg); overflow-x: auto; }
+.smd-frontmatter-error-yaml code { font-family: var(--smd-font-mono); font-size: .85em; white-space: pre; }
+
 /* ---------- Details ---------- */
 .smd-details { margin: 0 0 1em; border: 1px solid var(--smd-border); border-radius: 10px; background: var(--smd-surface); }
 .smd-details > summary { cursor: pointer; padding: 10px 16px; font-weight: 600; }
