@@ -10,7 +10,7 @@ updated: 2026-10-17
 
 ## Overview
 
-Styled Markdown {{version}} reads this document with the spec v2 rules. It ships :badge[stable]{color=green} on :due[2026-11-02], owned by :mention[@platform], at :progress[80]. Press :kbd[Ctrl+Shift+P] and look for ==Open Preview==.
+Styled Markdown reads this document with the spec v2 rules. It ships :badge[stable]{color=green} on :due[2026-11-02], owned by :mention[@platform], at :progress[80]. Press :kbd[Ctrl+Shift+P] and look for ==Open Preview==.
 
 :::note Before you start
 Read the [migration notes](#migration) first. Text in **bold**, *italic* and `code` reads as before.
