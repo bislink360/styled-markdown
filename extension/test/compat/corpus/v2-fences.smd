@@ -1,0 +1,45 @@
+---
+smd: 2
+title: Closing fences in spec v2
+summary: "Pins how spec v2 pairs closing fences with containers by colon count (RFC proposal 3): a closing fence closes the innermost container opened with as many colons, and the containers inside it close with it; a fence that matches no container closes the innermost one. Read with `smd: 1`, every closing fence closes the innermost container; the unit tests compare both."
+status: draft
+updated: 2026-10-17
+---
+
+## Matching closers
+
+::::tabs
+:::tab First
+The first tab.
+:::
+:::tab Second
+The second tab.
+:::
+::::
+
+## A missing closer
+
+::::tabs
+:::tab Only
+This tab has no closing fence of its own: the four colons below close the tabs, and the tab with them.
+::::
+
+After the tabs.
+
+## A closer that matches no container
+
+:::warning Careful
+Inside the warning. No container has five colons, so the fence below closes the innermost one.
+:::::
+
+After the warning.
+
+## Two containers closed with an outer one
+
+:::::details More
+::::note Inner
+:::tip Innermost
+The note and the tip close with the details.
+:::::
+
+After the details.
