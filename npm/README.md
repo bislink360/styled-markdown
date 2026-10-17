@@ -58,7 +58,7 @@ The package also installs **`smd-language-server`**, the same as `smd lsp`: poin
 
 ```ts
 import {
-  renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
+  renderSmd, renderPage, specVersion, validateSmd, applyFixes, agentView, outline,
   smdToMarkdown, smdToConfluence, smdToNotion, notionRequests, markdownToSmd, getDocumentInfo, extractTasks,
   querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
   decisionLog, decisionLogMarkdown, statusChanges, statusReportMarkdown, statusReport,
@@ -69,12 +69,15 @@ import {
 ### Render
 
 ```ts
-// HTML fragment + front matter + headings
-const { html, frontMatter, headings } = renderSmd(source, {
+// HTML fragment + front matter + headings + the spec version the document was read with
+const { html, frontMatter, headings, spec } = renderSmd(source, {
   agentBlocks: 'collapsed',                  // how :::agent blocks show to humans: collapsed | expanded | hidden
   readFile: (path) => fs.readFileSync(path, 'utf8'), // enables ```ts file="…" embeds (sandbox it yourself)
   lang: 'de',                                // labels ("Hinweis", "Abbildung 2") for documents without their own `lang:`
+  spec: 2,                                   // spec version for documents without an `smd:` key (default 1); their own `smd:` wins
 });
+
+specVersion(source);                         // 1 or 2: which rules read the document (its `smd:`; see SPEC.md §10)
 
 // Complete standalone page (styles + runtime for tabs, Mermaid, theme switching)
 const page = renderPage(source);
@@ -118,6 +121,7 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 | `readFile` | none | `(path, env) => string \| undefined` for ```` ```ts file="…" ```` embeds; `env` is what you passed to `md.render` (sandbox it yourself) |
 | `today` | current date | `YYYY-MM-DD` for `:due[]` states |
 | `lang` | English | Language of the labels the plugin adds ("Note", "Figure 2", "overdue"…), a BCP 47 tag: `de`, `es`, `fr`, `ja`, `pt`, `zh` (`pt-BR` → `pt`; others are English). A render's `env.lang` overrides it, and with `frontMatter` the document's `lang:` overrides both (since 1.6) |
+| `spec` | `1` | The spec version (`1` or `2`) of documents that don't say, for hosts that remove the front matter (since 2.0). The document's own `smd:` wins: in the source's front matter, else in the front matter you pass as `env.smdVariables`. The plugin puts the version on the render's env as `smdSpec` |
 
 Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Figures are numbered per `md.render` call, and `:ref[id]` resolves against the figures of that call (they are kept on the `env` as `smdFigures`). Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
 
@@ -139,7 +143,7 @@ const file = await unified()
   .use(rehypeStringify, { allowDangerousHtml: true })
   .process(source);
 String(file);           // <article class="smd-doc">…</article>
-file.data.smd;          // { frontMatter, headings }
+file.data.smd;          // { frontMatter, headings, spec }
 ```
 
 | Option | Default | |
@@ -148,7 +152,7 @@ file.data.smd;          // { frontMatter, headings }
 | `header` | `true` | the title/status/owners header from front matter; `false` when the site layout already shows the title |
 | `frontMatter` | see below | `(file) => object`: front matter the host already removed from the source |
 | `readFile` | none | `(relativePath, file) => string \| undefined`, for ```` ```ts file="…" ```` embeds (resolve against `file.path`, sandbox it yourself) |
-| `allowHtml`, `agentBlocks`, `today`, `lang` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML |
+| `allowHtml`, `agentBlocks`, `today`, `lang`, `spec` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML. `spec` is the version of files whose front matter (their own, or the host's) has no `smd:` |
 
 **Front matter.** When the source still starts with `---` (plain unified, with or without remark-frontmatter), the plugin reads it like `renderSmd`. When the host removed it first, the plugin looks for the parsed data in `file.data.astro.frontmatter` (Astro), `file.data.matter` (vfile-matter) or `file.data.frontmatter`, or uses your `frontMatter` option. Front matter nodes (`yaml`, `toml`) and MDX `import`/`export` nodes stay in the tree.
 
@@ -287,8 +291,9 @@ const risks = querySmd(source, 'risk[impact>=high][status!=closed]'); // the `sm
 // [{ type: 'risk', title: 'Apple Pay domain verification delays launch', attrs: { impact: 'high', … }, line: 144, endLine: 146, section: 'Risks', text: '<risk impact="high" …' }]
 
 const entry = indexEntry(source, 'docs/checkout.smd'); // one `smd index` catalog entry
-// { path, title, summary, status, owners, tags, audience, updated, related, tokens: { file, agent }, counts: { openTasks, … }, sections: [{ level, text, id, line, endLine, tokens }] }
-const catalog = smdIndex([{ path: 'docs/checkout.smd', text: source }]); // { format: 'smd-index', version: 1, smd: 1, documents: [entry, …] }, sorted by path
+// { path, smd, title, summary, status, owners, tags, audience, updated, related, tokens: { file, agent }, counts: { openTasks, … }, sections: [{ level, text, id, line, endLine, tokens }] }
+// (`smd` is the document's spec version, 1 or 2)
+const catalog = smdIndex([{ path: 'docs/checkout.smd', text: source }]); // { format: 'smd-index', version: 1, smd: 2, documents: [entry, …] }, sorted by path (`smd`: the newest spec version the tool knows)
 const log = decisionLog([{ path: 'docs/adr-0007.smd', text: source }], { status: ['accepted'] }); // the `smd decisions` log, newest first
 // [{ title, status: 'accepted', date: '2026-09-18', owner: '@platform', path, line, endLine, section, anchor, document, adr: true }]
 const adrIndex = decisionLogMarkdown(log, { link: (p) => p.replace(/^docs\//, '') }); // `smd decisions --md`: an ADR index to save as docs/decisions.smd

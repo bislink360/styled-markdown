@@ -1,4 +1,4 @@
-# Styled Markdown (`.smd`) — Specification v1
+# Styled Markdown (`.smd`) — Specification v2
 
 Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown**. It adds a small, validated vocabulary for styling, layout, diagrams, math and audience-aware content, so a single file works well for developers, product managers and AI agents.
 
@@ -6,7 +6,7 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 - Author: Roshan Alwis
 - Media type (suggested): `text/x-styled-markdown`
 - Encoding: UTF-8
-- Spec version: `1` (declared in front matter as `smd: 1`)
+- Spec version: `2` (declared in front matter as `smd: 2`). A document without `smd: 2` follows spec v1, which Styled Markdown 2.x keeps in full. Where the two differ, a rule says so: see §10
 
 ---
 
@@ -47,7 +47,7 @@ A YAML mapping between `---` lines at the very start of the file. It is parsed w
 
 | Key | Type | Meaning |
 |-----|------|---------|
-| `smd` | integer | Spec version. **Recommended.** Currently `1`. A whole number; a string of digits (`"1"`) is tolerated. Other values that read as 1 (`true`, `[1]`, `1.0`, `"1.0"`) are reported as `frontmatter/version` (info in 1.10, a warning in 2.0). `smd: 2` (spec v2) is not supported until Styled Markdown 2.0: tools before it warn and read the document with the version 1 rules. |
+| `smd` | integer | Spec version: `1` or `2`. **Recommended.** It selects the rules the document is read with (§10): `smd: 2` is spec v2; `smd: 1`, or no `smd` key, is spec v1. A whole number; a string of digits (`"2"`) is tolerated. Other values (`true`, `[2]`, `1.5`, `"v2"`) are read as version 1 and reported as a `frontmatter/version` warning (an info in 1.10); a newer version (`smd: 3`) is read with the newest rules the tool has, with a warning. Tools before 2.0 warn about `smd: 2` and read the document with the version 1 rules. |
 | `title` | string | Document title. Rendered as the page heading — don't repeat it as `# H1`. |
 | `summary` | string | 1–2 sentences. Agents should read this first. Inline Markdown allowed. |
 | `status` | enum | `draft` · `review` · `approved` · `deprecated` · `archived` |
@@ -505,7 +505,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | Code | Severity | Trigger |
 |------|----------|---------|
 | `frontmatter/invalid` | error | YAML does not parse, or is not a mapping, or is unclosed |
-| `frontmatter/version` | info / warning | `smd` missing (info; fix: add it), not a whole number though it reads as 1 (`true`, `[1]`, `1.0`, `"1.0"`; info, a warning in 2.0; fix: `smd: 1`), or unsupported (warning; for `smd: 2`, "spec v2 is not supported until Styled Markdown 2.0"). A string of digits such as `"1"` is accepted |
+| `frontmatter/version` | info / warning | `smd` missing (info; fix: add it), not a whole number (warning since 2.0, an info in 1.10: `true`, `[2]`, `1.5`, `"1.0"`, `0`, read as version 1; fix: `smd: 1`; a whole number written as a decimal, `2.0`, is read as that number, fix: `smd: 2`), or newer than the tool knows (warning; read with the newest rules). `1`, `2` and strings of digits such as `"2"` are accepted |
 | `frontmatter/unknown-key` | hint | Non-standard key (fix when a close match exists) |
 | `frontmatter/status` · `/audience` · `/accent` · `/type` · `/date` | warning / error | Invalid values (fix: the one close allowed value or color, `true`/`false` for `yes`/`no`/`"true"`, `2026-09-05` for `2026/9/5`) |
 | `frontmatter/duplicate-title` | hint | First `# H1` repeats the front matter title |
@@ -643,7 +643,28 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 
 ## 10. Versioning
 
-Additive features (new containers, directives, front matter keys) keep `smd: 1`; older renderers degrade gracefully (unknown containers render as a box, with their title since 1.10 (§3), unknown keys are kept). Only breaking changes increment `smd`.
+The front matter key `smd` is the document's **spec version**: it selects the rules every tool reads the document with (rendering, the agent view, `smd to-md`, tasks, query, the validator, `smd fmt`, the exporters). Versions are majors only; features are found by graceful degradation, never by a version such as `smd: 1.6`.
+
+| `smd` value | Read with | `frontmatter/version` |
+|---|---|---|
+| `2`, `"2"` | spec v2 | — |
+| `1`, `"1"`; no `smd` key; no front matter, or front matter that doesn't parse | spec v1 | an info when the key is missing (fix: add `smd: 1`) |
+| A whole number above 2, e.g. `3` | the newest rules the tool knows (v2 in Styled Markdown 2.x), so the document stays readable | warning |
+| Anything else: a boolean, a list, a decimal, a string that isn't digits, zero (`true`, `[2]`, `1.5`, `"v2"`, `0`) | spec v1 | warning (an info in 1.10); fix: `smd: 1` |
+
+The value as YAML reads it decides, so `smd: 2.0`, the number 2, is spec v2, with a warning that asks for `smd: 2`. A missing key means spec v1 throughout 2.x, which covers every existing document and every `.md` file; 2.x tools keep a complete v1 mode, and the default is revisited in 3.0. Tools before 2.0 warn about `smd: 2` and read the document with the v1 rules.
+
+**Hosts that can't see the front matter.** `renderSmd`, the markdown-it plugin and the remark and rehype plugins take a `spec: 1 | 2` option for documents that don't say. **The document's front matter wins:** when it has an `smd` key, the key decides, even when its value is invalid (then it is v1); the option only decides for a document without one. The markdown-it plugin reads the front matter from the source, or from `env.smdVariables` when the host removed it and passes it along, and puts the version on the render's env as `smdSpec`. An included file (§3.4) is read with the version of the document that includes it.
+
+**Rules that differ by version.** This specification describes spec v2. Where a v2 rule differs from v1, the section that defines it gives the v2 rule, followed by a paragraph that starts **Spec v1 (documents without `smd: 2`):** with the rule those documents keep. Each such rule is listed here:
+
+| Rule | Section | Spec v2 (`smd: 2`) | Spec v1 |
+|---|---|---|---|
+| *None yet: Styled Markdown 2.0 adds the v2 rules of the RFC (`docs/SPEC-V2-PROPOSALS.smd`) one by one* | | | |
+
+Implementations decide the version in one place: in this repository, `specVersion(text)` (or `specVersion(frontMatterData)`) for tools that have the text, and `isV2(env)` for markdown-it rules, which read the `smdSpec` the renderer puts on the env before parsing (`extension/src/core/specVersion.ts`).
+
+Additive features (new containers, directives, front matter keys) keep the spec version; older renderers degrade gracefully (unknown containers render as a box, with their title since 1.10 (§3), unknown keys are kept). Only breaking changes increment `smd`.
 
 For example, tools before 1.6 don't know `:::include`: they render its body in a plain box (`smd-box smd-box-include`), warn `container/unknown`, and show the body in the agent view and `smd to-md`. That is why an include's body should be fallback text such as a link to the file.
 
