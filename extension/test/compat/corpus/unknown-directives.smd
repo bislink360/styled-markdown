@@ -1,0 +1,36 @@
+---
+smd: 1
+title: Unknown inline directives in spec v1
+summary: Pins how spec v1 reads the text that spec v2 reads as inline directives. Only the vocabulary's names, written in lower case, are directives; any other :name[content]{attrs} is text. v2-directives.smd pins the same text read with spec v2.
+status: draft
+updated: 2026-10-17
+---
+
+## Names outside the vocabulary
+
+Read :abbr[HTML] as a word, and :term[**bold** text]{#glossary-term .pill color=blue} with a style.
+
+A name without content, with only attributes: :sep{.wide}.
+
+Content that runs over a line break: :abbr[Hyper
+Text Markup Language].
+
+## Names in any case
+
+Ship :Badge[Shipped]{color=green} and :STATUS[On track]{color=green}, press :Kbd[Ctrl+S], and see :REF[fig-flow].
+
+- [ ] Write the release notes :Due[2026-11-01] :Priority[P1] :Mention[@dana]
+
+:::figure{#fig-flow} The reading flow
+The version comes first.
+:::
+
+## A near miss
+
+:badg[beta]{color=green} is text, with a warning and a fix to `:badge`.
+
+## Not directives
+
+- Escaped: \:abbr[HTML] stays text.
+- After a letter or a digit: 10:30 and note:[x] stay text.
+- In code: `:code[x]`.
