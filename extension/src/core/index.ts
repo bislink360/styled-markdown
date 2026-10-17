@@ -1,5 +1,7 @@
 export * from './spec';
 export { parseFrontMatter } from './frontmatter';
+export { specVersion, LATEST_SPEC } from './specVersion';
+export type { SpecVersion } from './specVersion';
 export { FRONTMATTER_SCHEMA, frontMatterValues } from './frontmatterSchema';
 export { renderSmd, renderStandaloneHtml, slugify } from './render';
 export { SUPPORTED_LANGUAGES, matchLanguage } from './i18n';

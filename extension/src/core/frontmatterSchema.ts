@@ -1,4 +1,5 @@
-import { AUDIENCE_VALUES, FRONTMATTER_KEYS, NAMED_COLORS, SMD_VERSION, STATUS_VALUES } from './spec';
+import { AUDIENCE_VALUES, FRONTMATTER_KEYS, NAMED_COLORS, STATUS_VALUES } from './spec';
+import { SPEC_VERSIONS } from './specVersion';
 import { own } from './util';
 
 /**
@@ -26,10 +27,11 @@ const listOf = (description: string, examples: unknown[]): FrontMatterProperty =
 });
 
 const PROPERTIES: Record<string, FrontMatterProperty> = {
-  // A whole number; a string of digits is tolerated, as the validator tolerates it (anything else is reported).
+  // A version this tool has rules for; a string of digits is tolerated, as the validator tolerates it (anything else is
+  // reported: a newer version and invalid values as warnings).
   smd: {
     description: FRONTMATTER_KEYS.smd,
-    anyOf: [{ type: 'integer', enum: [SMD_VERSION] }, { type: 'string', pattern: `^0*${SMD_VERSION}$` }],
+    anyOf: [{ type: 'integer', enum: [...SPEC_VERSIONS] }, { type: 'string', pattern: `^0*[${SPEC_VERSIONS.join('')}]$` }],
   },
   title: { description: FRONTMATTER_KEYS.title, type: 'string' },
   summary: { description: FRONTMATTER_KEYS.summary, type: 'string' },

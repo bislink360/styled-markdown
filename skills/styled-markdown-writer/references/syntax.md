@@ -42,7 +42,7 @@ lang: de                     # optional: language of rendered labels (de es fr j
 ---
 ```
 
-`lang` changes only the words the renderer adds (callout titles, "Figure 2", "overdue", status names); the document's text, the agent view and `smd to-md` are unchanged. Set it when the document is written in that language.
+`lang` changes only the words the renderer adds (callout titles, "Figure 2", "overdue", status names); the document's text, the agent view and `smd export --to md` are unchanged. Set it when the document is written in that language.
 
 Unknown keys are allowed (reported as hints, except keys the text shows with `{{key}}`, see §8).
 
@@ -263,7 +263,7 @@ See [Pricing](shared/terms.smd#pricing) in the shared terms.
 | Attribute | Meaning |
 |---|---|
 | `file` (needed) | The `.smd` document to include, relative to this one. Its body is used, without its front matter. |
-| `section` | Only one section and its subsections: a heading's text or id, as `smd agent --section` matches it. |
+| `section` | Only one section and its subsections: a heading's id (`pricing`) or its whole text in any case (`Pricing`). With `smd: 2` a part of the text matches nothing (v1 documents also match a part); prefer the id. |
 | `level` | 1–6: the level the included top heading becomes, so it nests under the current heading (here `###` under a `##`). |
 
 - Write shared text (terms, glossary, setup steps) once and include it instead of copying it.
@@ -336,9 +336,9 @@ Version {{version}} ships on {{release.date}}. :badge[v{{version}}]{color=indigo
 - `{{name}}` shows the value of a front matter key; dots reach nested keys and list items (`{{owners.0}}`), and a list shows as `a, b`. Spaces inside the braces are fine.
 - Works in text, headings, lists, tables, link text, image alt text, block titles and directive content. Never in code, math, URLs, raw HTML, attribute lists or the front matter itself.
 - Only defined keys are replaced: anything else stays as written (`variable/undefined`, info, fixes near misses such as `{{verison}}`). A key holding a mapping is `variable/not-text`. `\{{name}}` or a code span keeps literal braces.
-- Quote versions: YAML reads `version: 2.10` as the number 2.1.
+- With `smd: 2`, values show as written: `version: 2.10` shows `2.10`. In `smd: 1` documents YAML reads it as the number 2.1, so quote it there (`version: "2.10"`).
 - Heading ids use the heading as written (`#whats-new-in-version`), so they don't change with the value.
-- Agents and `smd to-md` see the values; tools before 1.6 and GitHub show `{{version}}` as written.
+- Agents and `smd export --to md` see the values; tools before 1.6 and GitHub show `{{version}}` as written.
 
 ## 9. Tasks
 

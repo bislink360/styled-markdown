@@ -77,6 +77,13 @@ export interface MarkdownItSmdOptions {
    * document's own `lang:` overrides both. Unsupported languages, and the default, are English.
    */
   lang?: string;
+  /**
+   * The spec version (1 or 2) of documents that don't say, for hosts that remove the front matter. The document's
+   * own `smd` wins: in the source's `---` front matter, else in `env.smdVariables` (front matter a host removed and
+   * passes along per render). Default 1. The plugin puts the version on the render's env as `smdSpec` before
+   * parsing, where the rules read it.
+   */
+  spec?: 1 | 2;
 }
 
 /** Add Styled Markdown syntax to a markdown-it instance. Using it twice on one instance has no further effect. */

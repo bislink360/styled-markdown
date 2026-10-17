@@ -146,4 +146,4 @@ Every problem has a stable `code` (e.g. `container/unclosed`, `attrs/value`) and
 
 ## Need plain Markdown?
 
-`smd to-md file.smd` produces GitHub-compatible Markdown (callouts → GitHub alerts, badges → code spans, etc.).
+`smd export file.smd --to md` produces GitHub-compatible Markdown (callouts → GitHub alerts, badges → code spans, etc.).

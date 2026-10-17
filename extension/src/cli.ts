@@ -4,19 +4,17 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   agentView, applyFixes, DECISION_STATUS_FILTERS, decisionLog, decisionLogMarkdown, diffSmd, formatRelated, formatSmd, ganttDate,
-  ganttDocument, getDocumentInfo, markdownToSmd, notionRequests, outline, parseSelector, relatedDocs, renderPage, renderRiskPage,
-  RISK_STATUS, riskRegister, riskRegisterSummary, riskRegisterText, SelectorError, SMD_VERSION, smdIndex, smdToConfluence, smdToMarkdown,
-  smdToNotion, statusChanges, statusReportMarkdown, suggest, tasksToCsv, tasksToGantt, type AgentViewOptions, type AgentViewResult,
-  type BudgetResult, type Diagnostic, type DiffResult, type ExportOptions, type ReportDocument, type Selector, type Tokenizer,
+  ganttDocument, getDocumentInfo, markdownToSmd, outline, parseSelector, relatedDocs, renderRiskPage,
+  RISK_STATUS, riskRegister, riskRegisterSummary, riskRegisterText, SelectorError, LATEST_SPEC, smdIndex,
+  statusChanges, statusReportMarkdown, suggest, tasksToCsv, tasksToGantt, type AgentViewOptions, type AgentViewResult,
+  type BudgetResult, type Diagnostic, type DiffResult, type ReportDocument, type Selector, type Tokenizer,
 } from './core';
-import { smdToPandocHtml } from './core/pandoc';
 import { migrationPlan } from './core/migrate';
 import { migrationReport, migrationSummary, planCounts } from './migrateReport';
-import { languageTag, SUPPORTED_LANGUAGES } from './core/i18n';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
-import { exportPdf, loadPdfEngine, PdfError, pdfOptions, pdfPath } from './pdf';
-import { DocxError, docxPath, exportDocx, findPandoc } from './docx';
+import { EXPORT_HELP, runExport } from './exportCommand';
+import { fail, langOption, LANG_USAGE, requireFile, write } from './cliIo';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { runMcpServer } from './mcp';
 import { runLanguageServer } from './lsp';
@@ -38,7 +36,7 @@ import {
 declare const __SMD_PKG_VERSION__: string;
 const pkg = { version: typeof __SMD_PKG_VERSION__ === 'string' ? __SMD_PKG_VERSION__ : '0.0.0-dev' };
 
-const HELP = `smd — Styled Markdown tool (spec v${SMD_VERSION})
+const HELP = `smd — Styled Markdown tool (spec v${LATEST_SPEC})
 
 Reading (token-efficient, for agents):
   smd outline <file.smd> [--related] [--tokenizer <name>]
@@ -148,22 +146,7 @@ Checking and converting:
                          and dashes (v2 turns it off); without it, a note counts the places
       --link-domains     write bare domains linked today (example.com) as <https://example.com>
       --quote-variables  quote front matter values shown differently from how they are written (2.10)
-  smd render <file.smd> [-o out.html] [--lang <tag>]
-      Standalone HTML page (prints well: it has a print stylesheet)
-      --lang   language of the labels it adds ("Note", "Figure 2", "overdue"…) when the document has no
-               "lang:" of its own, e.g. de or pt-BR (${SUPPORTED_LANGUAGES.join(', ')}; others are English)
-  smd pdf <file.smd> [-o out.pdf] [--format A4|Letter] [--landscape] [--lang <tag>]
-      PDF of the rendered page (default: next to the file), with diagrams as vectors. Needs Playwright or
-      Puppeteer in your project or installed globally; smd doesn't bundle a browser. Without one, use
-      smd render -o page.html and the browser's Print → Save as PDF.
-  smd docx <file.smd> [-o out.docx] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only] [--lang <tag>]
-      Word document (default: next to the file), converted by Pandoc 3, which smd doesn't bundle: it is
-      found at --pandoc, the SMD_PANDOC environment variable or on the PATH (https://pandoc.org/installing.html).
-      Headings, tables, figure captions, footnotes and math become Word's own; callouts and decisions are
-      quotes under a bold title, tabs and details are expanded, Mermaid diagrams keep their source.
-      --reference-doc  a .docx whose styles to use (fonts, headings, captions, quotes)
-      --html-only      write the HTML smd hands Pandoc instead (to -o or stdout), to run Pandoc yourself:
-                       pandoc page.html -f html -t docx -o page.docx, in the document's folder (for images)
+${EXPORT_HELP}
   smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD] [--lang <tag>]
       Static docs site: a page per .smd file in the same folders (links between documents rewritten,
       linked images copied), a sidebar, breadcrumbs, previous/next, backlinks, client-side search and
@@ -174,17 +157,6 @@ Checking and converting:
       --clean  first delete the files of the previous build (only those listed in its .smd-site.json)
       --lang   language of the navigation, search and dashboard, and of documents without "lang:"
                (default: the home document's "lang:", else English)
-  smd to-md <file.smd> [-o out.md]         Plain GitHub-flavored Markdown
-  smd export --to confluence|notion <file.smd> [-o <file>] [--lang <tag>]
-      A page for a wiki, written to -o or printed. smd only writes it: no network, no credentials.
-      confluence  Confluence storage format (body.storage in the REST API, or Insert markup), built-in
-                  macros only: callouts → info/note/tip/warning, code → code, :::details, tabs and agent
-                  blocks → expand, tasks → task lists, badges and statuses → status, :due → dates.
-                  Images by URL; relative ones as page attachments of the same name (upload them too).
-                  Raw HTML is reduced to its text.
-      notion      Notion API blocks as a JSON array of request bodies for PATCH /v1/blocks/{id}/children,
-                  to send in order (each at most 100 top-level and 1000 blocks). Text is split at 2000
-                  characters and nesting past two levels flattened; links within the page become text.
   smd from-md <file.md> [-o out.smd]       Upgrade Markdown to .smd
   smd init <file.smd> [--template <name>] [--title "My doc"]
       New document from a template: ${Object.keys(TEMPLATES).join(', ')} (default: prd)
@@ -295,20 +267,13 @@ function main(argv: string[]): number | Promise<number> {
       return migrate(positional.length ? positional : ['.'], args);
     case 'build':
       return build(positional, args);
-    case 'render': {
-      const file = requireFile(positional[0]);
-      const lang = langOption(value('--lang'));
-      if (lang === null) return fail(LANG_USAGE);
-      return write(value('-o'), renderPage(read(file), { readFile: readerFor(file), lang }));
-    }
-    case 'pdf':
-      return pdf(requireFile(positional[0]), args);
-    case 'docx':
-      return docx(requireFile(positional[0]), args);
-    case 'to-md':
-      return write(value('-o'), smdToMarkdown(read(requireFile(positional[0])), { readFile: readerFor(positional[0]) }));
+    // smd export, and the older names of its formats, kept as aliases (exportCommand.ts).
     case 'export':
-      return exportFile(positional[0], args);
+    case 'render':
+    case 'to-md':
+    case 'pdf':
+    case 'docx':
+      return runExport(command, args);
     case 'from-md': {
       const file = requireFile(positional[0]);
       return write(value('-o'), markdownToSmd(read(file), path.basename(file, path.extname(file))));
@@ -342,7 +307,7 @@ function main(argv: string[]): number | Promise<number> {
       return 0;
     case '--version':
     case '-v':
-      console.log(`smd ${pkg.version} (Styled Markdown spec v${SMD_VERSION})`);
+      console.log(`smd ${pkg.version} (Styled Markdown spec v${LATEST_SPEC})`);
       return 0;
     default:
       return fail(`Unknown command "${command}".\n\n${HELP}`);
@@ -711,33 +676,6 @@ function index(targets: string[], out: string | undefined, compact: boolean, tod
   return write(out, json + '\n');
 }
 
-const LANG_USAGE = '--lang needs a language tag such as de or pt-BR.';
-
-/** The `--lang` value: undefined when not given, null when it is not a language tag. */
-function langOption(value: string | undefined): string | undefined | null {
-  if (value === undefined) return undefined;
-  return languageTag(value) ?? null;
-}
-
-const EXPORT_USAGE = 'Usage: smd export --to confluence|notion <file.smd> [-o <file>] [--lang <tag>]';
-
-/** `smd export --to …` formats: each writes the whole document as text. */
-const EXPORTERS = new Map<string, (text: string, options: ExportOptions) => string>([
-  ['confluence', smdToConfluence],
-  ['notion', (text, options) => `${JSON.stringify(notionRequests(smdToNotion(text, options)), null, 2)}\n`],
-]);
-
-/** `smd export --to confluence|notion`: the document in a wiki's own format, to -o or stdout. */
-function exportFile(file: string | undefined, args: Args): number {
-  const to = args.values.get('--to')?.[0];
-  const exporter = to === undefined ? undefined : EXPORTERS.get(to.toLowerCase());
-  if (!exporter) return fail(to === undefined ? EXPORT_USAGE : `Unknown export format "${to}".\n${EXPORT_USAGE}`);
-  const lang = langOption(args.values.get('--lang')?.[0]);
-  if (lang === null) return fail(LANG_USAGE);
-  const source = requireFile(file);
-  return write(args.values.get('-o')?.[0], exporter(read(source), { readFile: readerFor(source), lang }));
-}
-
 /** `smd build <dir>`: the static site; see siteBuild.ts for what it may write and delete. */
 function build(positional: string[], args: Args): number {
   if (positional.length !== 1) return fail('Usage: smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean]');
@@ -996,69 +934,6 @@ function installSkills(dir: string, only?: string): number {
     console.log(`Installed ${skill.name.padEnd(24)} → ${target}  (${skill.summary})`);
   }
   return 0;
-}
-
-/** `smd pdf`: render the page and print it with Playwright or Puppeteer; exit 2 when neither is installed. */
-async function pdf(file: string, args: Args): Promise<number> {
-  try {
-    const options = pdfOptions(args.values.get('--format')?.[0], args.flags.has('--landscape'));
-    const engine = loadPdfEngine();
-    const out = args.values.get('-o')?.[0] ?? pdfPath(file);
-    const lang = langOption(args.values.get('--lang')?.[0]);
-    if (lang === null) return fail(LANG_USAGE);
-    const html = renderPage(read(file), { readFile: readerFor(file), lang });
-    await exportPdf(file, html, out, options, { engine, warn: (message) => console.error(message) });
-    console.error(`Wrote ${out} (printed with ${engine.name})`);
-    return 0;
-  } catch (err) {
-    if (err instanceof PdfError) return fail(err.message);
-    console.error(`Printing failed: ${err instanceof Error ? err.message : String(err)}`);
-    return 1;
-  }
-}
-
-/** `smd docx`: the Pandoc profile of the document, converted by Pandoc; exit 2 when Pandoc is missing. */
-async function docx(file: string, args: Args): Promise<number> {
-  const option = (name: string) => args.values.get(name)?.[0];
-  const lang = langOption(option('--lang'));
-  if (lang === null) return fail(LANG_USAGE);
-  const html = smdToPandocHtml(read(file), { readFile: readerFor(file), lang });
-  if (args.flags.has('--html-only')) return write(option('-o'), html);
-  const out = option('-o') ?? docxPath(file);
-  try {
-    const pandoc = findPandoc({ explicit: option('--pandoc') });
-    const warnings = await exportDocx(pandoc, html, { out, resourcePath: path.dirname(path.resolve(file)), referenceDoc: option('--reference-doc') });
-    if (warnings) console.error(warnings);
-    console.error(`Wrote ${out} (converted with ${pandoc})`);
-    return 0;
-  } catch (err) {
-    if (err instanceof DocxError) return fail(err.message);
-    console.error(`Converting to .docx failed: ${err instanceof Error ? err.message : String(err)}`);
-    return 1;
-  }
-}
-
-function requireFile(file: string | undefined): string {
-  if (!file || !fs.existsSync(file)) {
-    console.error(file ? `Not found: ${file}` : 'Missing file argument.');
-    process.exit(2);
-  }
-  return file;
-}
-
-function write(target: string | undefined, content: string): number {
-  if (target) {
-    fs.writeFileSync(target, content);
-    console.error(`Wrote ${target}`);
-  } else {
-    process.stdout.write(content);
-  }
-  return 0;
-}
-
-function fail(message: string): number {
-  console.error(message);
-  return 2;
 }
 
 void Promise.resolve(main(process.argv.slice(2))).then((code) => { process.exitCode = code; });

@@ -216,5 +216,5 @@ test('CLI: smd render includes the print stylesheet and readiness signal; smd pd
       assert.match(missing.stderr, /smd pdf needs a headless browser from Playwright or Puppeteer/);
       assert.equal(existsSync(join(__dirname, 'never.pdf')), false);
     }
-    assert.match(run(['--help']).stdout, /smd pdf <file\.smd> \[-o out\.pdf\] \[--format A4\|Letter\] \[--landscape\]/);
+    assert.match(run(['--help']).stdout, /\n {6}pdf {9}\[--format A4\|Letter\] \[--landscape\]\n/);
   });

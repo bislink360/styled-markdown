@@ -1,4 +1,5 @@
 import type { Heading } from './render';
+import type { SpecVersion } from './specVersion';
 
 /** Heading ids and sections: a heading up to the next heading of the same or a higher level. */
 
@@ -41,9 +42,14 @@ export function matchesExactly(h: Heading, query: string): boolean {
   return sameId(h, q) || h.text.trim().toLowerCase() === q;
 }
 
-/** The one section a query names: the first whose id it is, else the first it matches at all. */
-export function findSection(sections: Section[], query: string): Section | undefined {
+/**
+ * The one section an `:::include{section}` names (SPEC §3.4): the first whose id it is, else the first it matches. Spec
+ * v1 matches a part of a heading's text too ({@link matchesHeading}); spec v2 only an id or the whole text in any case
+ * ({@link matchesExactly}). The including document's version decides.
+ */
+export function findSection(sections: Section[], query: string, spec: SpecVersion = 1): Section | undefined {
   const q = normalizeQuery(query);
-  const hits = sections.filter((s) => matchesHeading(s.heading, q));
+  const matches = spec === 2 ? matchesExactly : matchesHeading;
+  const hits = sections.filter((s) => matches(s.heading, q));
   return hits.find((s) => sameId(s.heading, q)) ?? hits[0];
 }

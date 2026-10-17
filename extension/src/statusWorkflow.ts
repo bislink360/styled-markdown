@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { STATUS_VALUES } from './core';
 import {
-  documentStatus, isStatus, setStatusEdits, STATUS_ICONS, STATUS_MEANINGS, statusBarText, statusChoices,
+  documentStatus, isStatus, setStatusEdits, STATUS_ICONS, STATUS_MEANINGS, statusBarItem, statusBarState, statusChoices,
   type TextEdit,
 } from './documentStatus';
 
@@ -33,7 +33,8 @@ class StatusBar implements vscode.Disposable {
       this.item.hide();
       return;
     }
-    const { text, tooltip, warning } = statusBarText(documentStatus(doc.getText()));
+    const { status, spec } = statusBarState(doc.getText());
+    const { text, tooltip, warning } = statusBarItem(status, spec);
     this.item.text = text;
     this.item.tooltip = tooltip;
     this.item.backgroundColor = warning ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;

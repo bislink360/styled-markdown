@@ -1,0 +1,50 @@
+---
+smd: 2
+title: Validation errors in spec v2
+summary: Pins how a spec v2 document renders what Styled Markdown 2.0 reports as errors in every document (duplicate attributes, conflicting titles, an invalid figure kind, a Mermaid syntax error) and the removed priority of an agent block, so later releases are compared against it.
+status: draft
+updated: 2026-10-17
+---
+
+## Why the comments
+
+Each case below is an error or a warning since 2.0, in every document. The comments silence them so that this document passes validation; it renders as v1 resolves each case.
+
+## Duplicate attributes
+
+- The last value of a key or an id is used, and a repeated class is added twice:
+
+    <!-- smd-disable-next-line attrs/duplicate -->
+    [Blue text]{color=red color=blue}, :badge[Ready]{color=red color=green}, [an anchor]{#first #second} and [a note]{.note .note}.
+
+## Conflicting titles
+
+<!-- smd-disable-next-line container/title-conflict -->
+:::note{title="Attribute title"} Text title
+The title attribute is shown; the text after the attributes is not.
+:::
+
+## An invalid figure kind
+
+<!-- smd-disable-next-line attrs/value -->
+:::figure{#fig-kind kind=tabel} Counts as a figure
+A figure whose kind is not figure, table or listing is numbered as a figure: :ref[fig-kind].
+:::
+
+## Agent priority
+
+<!-- smd-disable-next-line attrs/unknown -->
+:::agent{priority=high}
+Read the cases above before changing how validation reports them.
+:::
+
+## A diagram that does not parse
+
+<!-- smd-disable mermaid/syntax -->
+
+```mermaid
+flowchart LR
+    A -->
+```
+
+<!-- smd-enable mermaid/syntax -->

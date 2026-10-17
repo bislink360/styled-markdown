@@ -4,7 +4,7 @@ import type { Diagnostic, Severity } from './validate';
 /** Every diagnostic code the validator reports, with what it checks. */
 export const RULE_CODES: Record<string, string> = {
   'frontmatter/invalid': 'YAML front matter does not parse, is not a mapping, or is never closed',
-  'frontmatter/version': '`smd` version missing, not a whole number, or unsupported',
+  'frontmatter/version': '`smd` version missing, not a whole number, or newer than this tool knows',
   'frontmatter/unknown-key': 'Non-standard front matter key',
   'frontmatter/status': 'Invalid `status` value',
   'frontmatter/audience': 'Invalid `audience` value',
@@ -53,7 +53,6 @@ export const RULE_CODES: Record<string, string> = {
   'link/undefined-reference': 'Reference link with no `[label]: …` definition',
   'figure/duplicate-id': 'Two `:::figure` blocks share an `{#id}`; references go to the first',
   'figure/unknown-ref': '`:ref[id]` names no `:::figure` in this document',
-  'figure/kind': 'Invalid `kind` on a `:::figure` (it counts as `figure`). Deprecated: Styled Markdown 2.0 reports it as `attrs/value`',
   'footnote/undefined': 'Footnote reference `[^label]` with no `[^label]: …` definition (info when the document defines no footnotes)',
   'footnote/unused': 'Footnote definition that nothing references (it is not shown)',
   'footnote/duplicate': 'Second definition of a footnote label (the first one is used)',
@@ -69,11 +68,43 @@ export const RULE_CODES: Record<string, string> = {
   'quote/cite': 'A `:::quote` `cite` is not an http(s) or relative URL; it is left out',
   'variable/undefined': '`{{name}}` names no front matter key; it is shown as written',
   'variable/not-text': '`{{name}}` names a front matter mapping or empty value, which has no text',
-  'deprecated/agent-priority': '`priority` on `:::agent` is deprecated; no tool reads it, and Styled Markdown 2.0 removes it',
   'task/overdue': 'Open task past its `:due[…]` date',
   'table/pipe-in-code': 'A `|` inside a code span in a table row still splits the cell, as on GitHub; write `\\|`',
   'rules/unknown': 'Suppression comment or rule setting names an unknown rule code',
 };
+
+/**
+ * Codes Styled Markdown 2.0 removed, with the code that reports their problems now and what changed. A rule setting
+ * or suppression comment that names one is reported as `rules/unknown` with this explanation (a comment gets a fix
+ * to the new code), rather than as a code that never existed.
+ */
+const REMOVED_CODES: Readonly<Record<string, { code: string; why: string }>> = {
+  'figure/kind': { code: 'attrs/value', why: 'was merged into "attrs/value" in Styled Markdown 2.0: an invalid kind on a ":::figure" is an "attrs/value" error' },
+  'deprecated/agent-priority': {
+    code: 'attrs/unknown', why: 'was removed in Styled Markdown 2.0 with "priority" on ":::agent", which is now reported as "attrs/unknown"',
+  },
+};
+
+/**
+ * What became of a removed rule code, or of a category (`deprecated/*`) whose every code was removed: the code to
+ * name instead and why. Undefined for any other pattern.
+ */
+export function removedRule(pattern: string): { code: string; why: string } | undefined {
+  if (Object.hasOwn(REMOVED_CODES, pattern)) return REMOVED_CODES[pattern];
+  if (!pattern.endsWith('/*') || isKnownRule(pattern)) return undefined;
+  const removed = Object.keys(REMOVED_CODES).filter((c) => c.startsWith(pattern.slice(0, -1)));
+  if (!removed.length) return undefined;
+  const codes = [...new Set(removed.map((c) => REMOVED_CODES[c].code))];
+  return { code: codes.join(', '), why: `names only codes removed in Styled Markdown 2.0 (${removed.map((c) => `"${c}"`).join(', ')})` };
+}
+
+/** The `rules/unknown` message for a pattern that names no known code. */
+function unknownRuleMessage(pattern: string, where: string): string {
+  const removed = removedRule(pattern);
+  if (removed) return `Rule "${pattern}"${where} ${removed.why}. Name "${removed.code}" instead.`;
+  const hint = suggest(pattern, Object.keys(RULE_CODES));
+  return `Unknown rule "${pattern}"${where}${hint ? ` — did you mean "${hint}"?` : '.'}`;
+}
 
 /** `off` removes a rule's diagnostics; a severity replaces the rule's own. */
 export type RuleSetting = 'off' | Severity;
@@ -128,8 +159,7 @@ export function readRuleConfig(data: unknown): { rules: RuleSettings; problems: 
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { rules, problems: ['"rules" must be an object of rule code → setting.'] };
   for (const [key, value] of Object.entries(raw)) {
     if (!isKnownRule(key)) {
-      const hint = suggest(key, Object.keys(RULE_CODES));
-      problems.push(`Unknown rule "${key}"${hint ? ` — did you mean "${hint}"?` : '.'}`);
+      problems.push(unknownRuleMessage(key, ''));
       continue;
     }
     if (typeof value !== 'string' || !SETTINGS.includes(value)) {
@@ -179,10 +209,10 @@ export function applySuppressions(text: string, diagnostics: Diagnostic[], repor
       for (const p of patterns) {
         if (isKnownRule(p)) continue;
         const col = raw.indexOf(p, start);
-        const hint = suggest(p, Object.keys(RULE_CODES));
+        const hint = removedRule(p)?.code ?? suggest(p, Object.keys(RULE_CODES));
         problems.push({
           line: i, column: col, endColumn: col + p.length, severity: 'warning', code: 'rules/unknown',
-          message: `Unknown rule "${p}" in suppression comment${hint ? ` — did you mean "${hint}"?` : '.'}`,
+          message: unknownRuleMessage(p, ' in suppression comment'),
           ...(hint ? { fix: { line: i, column: col, endColumn: col + p.length, replacement: hint, title: `Change to "${hint}"` } } : {}),
         });
       }

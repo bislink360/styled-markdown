@@ -1,18 +1,23 @@
 import { findAttrsEnd, lexAttrItems } from './attrs';
 import { isKnownContainer, type ContainerInfo } from './containers';
-import { SMD_VERSION } from './spec';
+import { LATEST_SPEC, readSpec } from './specVersion';
 import type { Fix, Severity } from './validate';
 
 /**
- * Early notice of what spec v2 (Styled Markdown 2.0) rejects or reads differently. Every diagnostic here is a hint
- * (an info where noted), so no document that passes validation today starts failing it, and each fix keeps how the
- * document renders now.
+ * What spec v2 (Styled Markdown 2.0) rejects or reads differently. The 1.10 notices are hints (an info where noted);
+ * since 2.0, duplicate attributes and conflicting container titles are errors in every document (RFC proposal 4),
+ * rendered as v1 resolves them, `priority` on `:::agent` is an unknown attribute (proposal 12), and the spec version
+ * check (checkSmdVersion) reports warnings. Each fix keeps how the document renders now.
  */
 
 type Push = (line: number, column: number, endColumn: number, severity: Severity, code: string, message: string, fix?: Fix) => void;
 
 const V2 = 'spec v2 (smd: 2)';
 const HINT: Severity = 'hint';
+const ERROR: Severity = 'error';
+
+/** The message of `priority` on `:::agent` (an `attrs/unknown` warning since 2.0), which `smd migrate` looks for. */
+export const AGENT_PRIORITY_REMOVED = 'Unknown attribute "priority" on ":::agent". It was removed in Styled Markdown 2.0, since no tool read it. Remove it.';
 
 // ---------------------------------------------------------------------------
 // Attribute list items
@@ -69,8 +74,8 @@ export function checkDuplicateAttrs(line: number, raw: string, open: number, clo
   const labels = [...new Set(repeated.map((it) => it.label))];
   const kept = [...last.values()];
   const written = raw.slice(open, close + 1) === text.slice(open, close + 1);
-  push(line, open, close + 1, HINT, 'attrs/duplicate',
-    `${quoted(labels)} ${labels.length > 1 ? 'are' : 'is'} given more than once in this attribute list, and the last one is used. Styled Markdown 2.0 reports duplicate attributes as errors in every document. Remove the earlier ones.`,
+  push(line, open, close + 1, ERROR, 'attrs/duplicate',
+    `${quoted(labels)} ${labels.length > 1 ? 'are' : 'is'} given more than once in this attribute list. The last one is used, but an attribute may be given only once. Remove the earlier ones.`,
     written ? { line, column: open + 1, endColumn: close, replacement: without(src, kept), title: 'Remove the earlier duplicates' } : undefined);
 }
 
@@ -88,7 +93,7 @@ export function checkInlineAttrLists(raw: string, text: string, line: number, pu
 }
 
 // ---------------------------------------------------------------------------
-// Containers: container/colons, container/title-conflict, deprecated/agent-priority
+// Containers: container/colons, container/title-conflict, priority on :::agent
 // ---------------------------------------------------------------------------
 
 /** The container a closing fence closes: its name, colon count and opening line. */
@@ -110,7 +115,6 @@ export function checkContainerHints(info: ContainerInfo, line: number, raw: stri
   checkDuplicateAttrs(line, raw, nameEnd, close, push);
   if (!isKnownContainer(info.name)) return;
   if (info.attrs.values.title !== undefined) titleConflict(line, raw, close, info.attrs.values.title, push);
-  if (info.name === 'agent' && info.attrs.values.priority !== undefined) agentPriority(line, raw, nameEnd, close, push);
 }
 
 /**
@@ -122,24 +126,30 @@ function titleConflict(line: number, raw: string, close: number, title: string, 
   if (!rest.replaceAll(/<!--.*?-->/g, '').trim()) return;
   const text = rest.trim();
   const column = close + 1 + rest.indexOf(text);
-  push(line, column, column + text.length, HINT, 'container/title-conflict',
-    `This title text is not shown: title="${title}" in the attributes wins. Styled Markdown 2.0 reports a container titled both ways as an error in every document. Remove the text, or move it into title="…".`,
+  push(line, column, column + text.length, ERROR, 'container/title-conflict',
+    `This title text is not shown: title="${title}" in the attributes wins. A container is titled either by title="…" or by text after its attributes, not both. Remove the text, or move it into title="…".`,
     rest.includes('<!--') ? undefined : { line, column: close + 1, endColumn: raw.length, replacement: '', title: 'Remove the title text that is not shown' });
 }
 
-/** `:::agent{priority=…}`: deprecated in 1.10, removed in 2.0. The fix removes it, and the braces when nothing is left. */
-function agentPriority(line: number, raw: string, open: number, close: number, push: Push): void {
-  const src = raw.slice(open + 1, close);
+/**
+ * `:::agent{priority=…}`, deprecated in 1.10 and removed in 2.0 (RFC proposal 12): an unknown attribute, as any other,
+ * on the attribute itself, with a fix that removes it (and the braces when nothing is left). The attribute list starts
+ * at `open`. False when the list can't be read, so the caller reports it as it reports other unknown attributes.
+ */
+export function removedAgentPriority(line: number, raw: string, open: number, push: Push): boolean {
+  const close = raw[open] === '{' ? findAttrsEnd(raw, open) : -1;
+  const src = close < 0 ? '' : raw.slice(open + 1, close);
   const items = attrItems(src);
   const at = items?.find((it) => it.slot === 'priority');
-  if (!items || !at) return;
+  if (close < 0 || !items || !at) return false;
   const column = open + 1 + at.start + (src.slice(at.start).length - src.slice(at.start).trimStart().length);
   const kept = items.filter((it) => it.slot !== 'priority');
   const fix: Fix = kept.length
     ? { line, column: open + 1, endColumn: close, replacement: without(src, kept), title: 'Remove "priority"' }
     : { line, column: open, endColumn: close + 1, replacement: '', title: 'Remove "priority"' };
-  push(line, column, column + 'priority'.length, HINT, 'deprecated/agent-priority',
-    '"priority" on ":::agent" is deprecated: no tool reads it, and Styled Markdown 2.0 removes it. Remove the attribute.', fix);
+  push(line, column, column + 'priority'.length, 'warning', 'attrs/unknown',
+    AGENT_PRIORITY_REMOVED, fix);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,6 +192,7 @@ function headingTextFix(at: { line: number; raw: string; start: number; open: nu
 // ---------------------------------------------------------------------------
 
 const DIGITS = /^\d+$/;
+const VERSION_CODE = 'frontmatter/version';
 
 /** The value of a `smd: value` front matter line as written: up to a `#` comment, quotes kept. */
 function writtenValue(raw: string): { column: number; text: string } | undefined {
@@ -193,37 +204,42 @@ function writtenValue(raw: string): { column: number; text: string } | undefined
   return text ? { column: m[0].length, text } : undefined;
 }
 
-/** What kind of value `smd` has, for messages: a boolean, a list, a decimal or a string that isn't a number. */
+/** What kind of value `smd` has, for messages: a boolean, a list, a decimal, a string that isn't a number…; undefined for a version. */
 function versionKind(value: unknown, written: string | undefined): string | undefined {
   if (typeof value === 'boolean') return 'a boolean';
   if (Array.isArray(value)) return 'a list';
-  if (typeof value === 'number') return written === undefined || DIGITS.test(written) ? undefined : 'a decimal';
-  if (typeof value === 'string') return DIGITS.test(value) ? undefined : 'a string that is not a whole number';
+  if (typeof value === 'number') return numberKind(value, written);
+  if (typeof value === 'string') return DIGITS.test(value) ? numberKind(Number(value), undefined) : 'a string that is not a whole number';
   return 'not a number';
 }
 
+/** A number that isn't a version (zero, negative, not a number), or one written as a decimal (`2.0`, which reads as 2). */
+function numberKind(n: number, written: string | undefined): string | undefined {
+  if (Number.isNaN(n) || n < 1) return 'not a positive number';
+  return Number.isInteger(n) && (written === undefined || DIGITS.test(written)) ? undefined : 'a decimal';
+}
+
 /**
- * The `smd` front matter value on `line` (0 when its line wasn't found). A whole number, or a string of digits, is
- * the spec version. Anything else that `Number()` reads as 1 (`true`, `[1]`, `1.0`, `"1.0"`) is accepted today, so it
- * is an info, with a fix to `smd: 1`; spec v2 reports it as a warning. Other versions keep their warning.
+ * The `smd` front matter value on `line` (0 when its line wasn't found), read as every tool reads it (readSpec in
+ * specVersion.ts). A version this tool knows, as a whole number or a string of digits, passes. Anything else is a
+ * warning (an info before 2.0): a newer version, read with the newest rules this tool has; a value that isn't a
+ * whole number (`true`, `[2]`, `1.5`, `"v2"`, `0`), read as version 1, with a fix to `smd: 1` that keeps how it
+ * reads; and a whole number written as a decimal (`2.0`), read as that number, with a fix to it.
  */
 export function checkSmdVersion(value: unknown, line: number, lines: string[], push: Push): void {
-  const raw = line > 0 ? lines[line] : '';
   const end = lines[line]?.length ?? 3;
-  const version = Number(value);
-  if (version === 2) {
-    push(line, 0, end, 'warning', 'frontmatter/version',
-      `Unsupported Styled Markdown version "${String(value)}": spec v2 is not supported until Styled Markdown 2.0. This tool reads the document with the version ${SMD_VERSION} rules.`);
+  const reading = readSpec(value);
+  if (reading.status === 'newer') {
+    push(line, 0, end, 'warning', VERSION_CODE,
+      `Styled Markdown version ${reading.declared} is newer than this tool knows, so it reads the document with the version ${LATEST_SPEC} rules. Update Styled Markdown, or write "smd: ${LATEST_SPEC}".`);
     return;
   }
-  if (version !== SMD_VERSION) {
-    push(line, 0, end, 'warning', 'frontmatter/version', `Unsupported Styled Markdown version "${String(value)}". This tool supports version ${SMD_VERSION}.`);
-    return;
-  }
-  const written = writtenValue(raw);
+  const written = writtenValue(line > 0 ? lines[line] : '');
   const kind = versionKind(value, written?.text);
   if (!kind) return;
-  push(line, 0, end, 'info', 'frontmatter/version',
-    `"smd: ${written?.text ?? String(value)}" is ${kind}, which counts as version ${SMD_VERSION} today. The spec version is a whole number, and Styled Markdown 2.0 reports other values as a warning. Write "smd: ${SMD_VERSION}".`,
-    written && { line, column: written.column, endColumn: written.column + written.text.length, replacement: String(SMD_VERSION), title: `Change to "smd: ${SMD_VERSION}"` });
+  const version = reading.version;
+  const other = version === 1 ? ', or "smd: 2" for the spec v2 rules (smd migrate --to 2 writes it)' : '';
+  push(line, 0, end, 'warning', VERSION_CODE,
+    `"smd: ${written?.text ?? String(value)}" is ${kind}, but the spec version is a whole number: this tool reads the document with the version ${version} rules. Write "smd: ${version}"${other}.`,
+    written && { line, column: written.column, endColumn: written.column + written.text.length, replacement: String(version), title: `Change to "smd: ${version}"` });
 }

@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { agentView, applyFixes, readRuleConfig, RULE_CODES, validateSmd, type Diagnostic } from '../src/core';
+import { removedRule } from '../src/core/rules';
 import { loadRuleConfig } from '../src/config';
 
 const found = (diagnostics: Diagnostic[]) => diagnostics.map((d) => `${d.line}:${d.code}:${d.severity}`);
@@ -13,7 +14,8 @@ const src = ':::warnign\nA [word]{color=blu}\n:::\n';
 test('every code the validator reports is registered, and the schema lists them all', () => {
   const sources = ['validate.ts', 'rules.ts', 'mermaid.ts', 'includeCheck.ts', 'v2Hints.ts', 'tableCheck.ts'].map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'core', f), 'utf8')).join('\n');
   const emitted = new Set([...sources.matchAll(/'((?:frontmatter|container|attrs|heading|directive|mermaid|math|fence|include|link|figure|footnote|glossary|variable|changelog|quote|deprecated|task|table|rules)\/[a-z-]+)'/g)].map((m) => m[1]));
-  assert.deepEqual([...emitted].sort(), Object.keys(RULE_CODES).sort());
+  // rules.ts names the codes 2.0 removed, to explain them.
+  assert.deepEqual([...emitted].filter((c) => !removedRule(c)).sort(), Object.keys(RULE_CODES).sort());
 
   const schema = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'schemas', 'smd-config.schema.json'), 'utf8'));
   const keys = Object.keys(schema.properties.rules.properties);
@@ -59,6 +61,28 @@ test('unknown codes in suppression comments are reported with a fix', () => {
   const diags = validateSmd(text);
   assert.deepEqual(found(diags), ['0:rules/unknown:warning', '1:container/unknown:warning']);
   assert.equal(applyFixes(text, diags.filter((d) => d.code === 'rules/unknown')).text.split('\n')[0], '<!-- smd-disable-next-line container/unknown -->');
+});
+
+test('codes removed in 2.0 (figure/kind, deprecated/agent-priority) say where their problems went, in settings and comments', () => {
+  assert.equal(RULE_CODES['figure/kind'], undefined);
+  assert.equal(RULE_CODES['deprecated/agent-priority'], undefined);
+  const { rules, problems } = readRuleConfig({ rules: { 'figure/kind': 'off', 'deprecated/agent-priority': 'off', 'deprecated/*': 'off', 'attrs/value': 'warning' } });
+  assert.deepEqual(rules, { 'attrs/value': 'warning' }, 'a removed code sets nothing, so attrs/value is not turned off by accident');
+  assert.deepEqual(problems, [
+    'Rule "figure/kind" was merged into "attrs/value" in Styled Markdown 2.0: an invalid kind on a ":::figure" is an "attrs/value" error. Name "attrs/value" instead.',
+    'Rule "deprecated/agent-priority" was removed in Styled Markdown 2.0 with "priority" on ":::agent", which is now reported as "attrs/unknown". Name "attrs/unknown" instead.',
+    'Rule "deprecated/*" names only codes removed in Styled Markdown 2.0 ("deprecated/agent-priority"). Name "attrs/unknown" instead.',
+  ]);
+
+  const text = '<!-- smd-disable-next-line figure/kind -->\n:::figure{kind=tabel}\nx\n:::\n';
+  const diags = validateSmd(text);
+  assert.deepEqual(found(diags), ['0:rules/unknown:warning', '1:attrs/value:error'], 'the comment silences nothing');
+  assert.equal(diags[0].message, 'Rule "figure/kind" in suppression comment was merged into "attrs/value" in Styled Markdown 2.0: an invalid kind on a ":::figure" is an "attrs/value" error. Name "attrs/value" instead.');
+  const fixed = applyFixes(text, diags.filter((d) => d.code === 'rules/unknown')).text;
+  assert.equal(fixed.split('\n')[0], '<!-- smd-disable-next-line attrs/value -->');
+  assert.deepEqual(validateSmd(fixed), []);
+  assert.deepEqual(found(validateSmd('<!-- smd-disable-next-line deprecated/agent-priority -->\n:::agent{priority=high}\nx\n:::\n')),
+    ['0:rules/unknown:warning', '1:attrs/unknown:warning']);
 });
 
 test('loadRuleConfig uses the nearest config file and stops at the repository root', () => {

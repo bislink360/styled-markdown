@@ -7,7 +7,7 @@ import { CONTAINER_CLOSE, CONTAINER_OPEN, isKnownContainer, parseContainerInfo, 
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import { findFootnotes, type FootnoteDefinition } from './footnotes';
-import { parseFrontMatter, asStringList } from './frontmatter';
+import { parseFrontMatter, asStringList, unreadFrontMatter } from './frontmatter';
 import {
   includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
@@ -25,7 +25,8 @@ import { quoteCite } from './quote';
 import { CALLOUT_TYPES } from './spec';
 import { openTaskLines } from './taskLines';
 import { own } from './util';
-import { documentVariables, substituteVariables, type Variables } from './variables';
+import { specVersion } from './specVersion';
+import { documentVariables, shownValues, substituteVariables, type Variables } from './variables';
 
 /**
  * Agent view: a compact, meaning-preserving rendering of an .smd document for LLMs.
@@ -163,10 +164,15 @@ function containerHead(name: string, source: HeadSource): ContainerHead {
 /** What the view reads included files with: nothing when includes are only pointers. */
 const viewReader = (options: AgentViewOptions) => (options.includes === false ? undefined : options.readFile);
 
-const NOISE_KEYS = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
+/** Front matter keys the agent view's header leaves out of its facts. */
+export const AGENT_HEADER_HIDDEN: ReadonlySet<string> = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
 
 interface ViewScope {
   data: Record<string, unknown>;
+  /** The front matter as the document shows it: spelled as written in spec v2 (shownValues). */
+  shown: Variables;
+  /** The lines of front matter that could not be read, as written (see unreadFrontMatter). */
+  unread?: string[];
   bodyStart: number;
   lines: string[];
   sections: Section[];
@@ -187,7 +193,10 @@ function viewScope(text: string, options: AgentViewOptions): ViewScope {
   const inScope = (line: number) =>
     (!selected || selected.some((s) => line >= s.start && line <= s.end)) &&
     !skipped.some((s) => line >= s.start && line <= s.end && !(selected?.some((sel) => sel.heading === s.heading)));
-  return { data: fm.data, bodyStart: fm.bodyStartLine, lines, sections, selected, skipped, missingSections, inScope };
+  const shown = shownValues(fm.data, text, specVersion(fm.data));
+  return {
+    data: fm.data, shown, unread: unreadFrontMatter(text, fm), bodyStart: fm.bodyStartLine, lines, sections, selected, skipped, missingSections, inScope,
+  };
 }
 
 function selectSections(sections: Section[], queries: string[] | undefined): { selected: Section[] | null; missingSections: string[] } {
@@ -216,7 +225,8 @@ function viewHead(scope: ViewScope, options: AgentViewOptions): ViewHead {
     if (outside.trim()) external = `Document-wide agent instructions:\n${outside.trim()}\n\n`;
     footnotes = outsideFootnotes(scope, options);
   }
-  return { header: header(scope.data, selected ? selected.map((s) => s.heading.text) : null), external, footnotes };
+  const head = [header(scope.data, scope.shown, selected ? selected.map((s) => s.heading.text) : null), unreadBlock(scope.unread)].filter(Boolean).join('\n');
+  return { header: head, external, footnotes };
 }
 
 /**
@@ -337,19 +347,37 @@ function omitToFit(draft: Draft, scope: ViewScope, maxTokens: number): BudgetSec
   return omitted;
 }
 
-function header(data: Record<string, unknown>, sections: string[] | null): string {
+/**
+ * Front matter that could not be read: a `[front matter could not be read]` line and its lines as written, in a
+ * fence longer than any backtick run in them, as the rendered document shows them in an error block.
+ */
+function unreadBlock(unread: string[] | undefined): string {
+  if (!unread) return '';
+  const longest = Math.max(2, ...unread.map((l) => Math.max(0, ...[...l.matchAll(/`+/g)].map((m) => m[0].length))));
+  const fence = '`'.repeat(longest + 1);
+  return ['[front matter could not be read]', `${fence}yaml`, ...unread, fence].join('\n');
+}
+
+/** The view's header. `data` decides which facts are shown, `shown` how they are spelled (as written in spec v2). */
+function header(data: Record<string, unknown>, shown: Variables, sections: string[] | null): string {
   const out: string[] = [];
   if (typeof data.title === 'string') out.push(`# ${data.title}`);
   const facts: string[] = [];
   for (const [key, value] of Object.entries(data)) {
-    if (NOISE_KEYS.has(key) || value === null || value === undefined || value === '') continue;
-    const v = Array.isArray(value) ? asStringList(value).join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    if (AGENT_HEADER_HIDDEN.has(key) || value === null || value === undefined || value === '') continue;
+    const v = factText(Object.hasOwn(shown, key) ? shown[key] : value);
     if (v) facts.push(`${key}: ${v}`);
   }
   if (facts.length) out.push(facts.join(' · '));
   if (typeof data.summary === 'string') out.push(`summary: ${data.summary}`);
   if (sections) out.push(`(excerpt — sections: ${sections.join(', ')})`);
   return out.join('\n');
+}
+
+/** A front matter value as one header fact: a list joined with ", ", a mapping as JSON. */
+function factText(value: unknown): string {
+  if (Array.isArray(value)) return asStringList(value).join(', ');
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
 interface TransformOptions extends AgentViewOptions {

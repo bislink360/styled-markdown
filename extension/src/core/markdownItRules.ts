@@ -3,14 +3,15 @@ import { attrsToStyle, emptyAttrs, escapeHtml, findAttrsEnd, parseAttrs, type At
 import { ContainerInfo, parseContainerInfo } from './containers';
 import { FigureCounter, figureTargets, type FigureNumber } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
-import { parseFrontMatter } from './frontmatter';
+import { parseFrontMatter, unreadFrontMatter } from './frontmatter';
 import { renderInlineDirective, withoutDueNotes } from './markdownItHtml';
 import { HEADING_ATTRS, slugify } from './sections';
 import { INLINE_DIRECTIVES } from './spec';
+import { isSpecVersion, isV2, resolveSpec, specOf, type SpecEnv, type SpecVersion } from './specVersion';
 import type { IncludeResult, IncludeScope } from './include';
 import type { SmdContext } from './markdownItSetup';
 import type { Env, Heading } from './render';
-import { substituteLine, variableAt, lookupVariable, type Variables } from './variables';
+import { shownValues, substituteLine, variableAt, lookupVariable, type Variables } from './variables';
 
 export { HEADING_ATTRS, slugify } from './sections';
 
@@ -260,7 +261,7 @@ function pushDirective(state: StateInline, name: string, content: string, attrs:
   }
   const text = ctx.variables ? substituteLine(content, envVariables(state.env)) : content;
   const token = state.push('html_inline', '', 0);
-  token.content = renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today, ctx.messages(state.env));
+  token.content = renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today, ctx.messages(state.env), specOf(state.env));
   token.meta = { directive: name, content: text, values: attrs.values } satisfies DirectiveMeta;
 }
 
@@ -295,12 +296,40 @@ export function envVariables(env: unknown): Variables | undefined {
 /**
  * Keep the document's front matter on the env for `{{name}}`, unless the env already has it: renderSmd puts
  * it there, and so may a host that removes the front matter before rendering. Inline-only parses (titles)
- * keep the document's.
+ * keep the document's. The values are the ones the document shows (shownValues): spelled as written in spec v2.
  */
 export function collectVariables(state: StateCore): void {
   const env = state.env as VariableEnv | undefined;
   if (state.inlineMode || !env || typeof env !== 'object' || env.smdVariables) return;
-  if (state.src.startsWith('---')) env.smdVariables = parseFrontMatter(state.src).data;
+  if (state.src.startsWith('---')) env.smdVariables = shownValues(parseFrontMatter(state.src).data, state.src, specOf(env));
+}
+
+// ---------------------------------------------------------------------------
+// Spec version  (smd: 2)
+// ---------------------------------------------------------------------------
+
+/** The env of a parse inside a render: the scan of a file to include (see markdownItInclude.ts). */
+interface InnerEnv extends SpecEnv, VariableEnv {
+  smdIncludeScan?: boolean;
+}
+
+/**
+ * For markdown-it hosts: put the spec version on the env before block parsing, so every rule can read it with
+ * `isV2(state.env)` (see specVersion.ts). The document's `smd` wins: in the source's front matter, else in
+ * `env.smdVariables` (front matter the host removed and passed along), else the plugin's `spec` option, else 1. An
+ * inline render inside a rule and the scan of an included file keep the version their env carries, their document's.
+ * Each render works it out again, so an env used twice doesn't keep the last document's. renderSmd sets `smdSpec`
+ * itself and doesn't add this rule.
+ */
+export function hostSpec(option: SpecVersion | undefined): (state: StateCore) => void {
+  return (state) => {
+    const env = state.env as InnerEnv | undefined;
+    if (!env || typeof env !== 'object') return;
+    if ((state.inlineMode || env.smdIncludeScan === true) && isSpecVersion(env.smdSpec)) return;
+    const own = !state.inlineMode && state.src.startsWith('---') ? parseFrontMatter(state.src) : undefined;
+    const data = own?.present && !own.error ? own.data : env.smdVariables;
+    env.smdSpec = resolveSpec(data, option);
+  };
 }
 
 /**
@@ -583,7 +612,11 @@ function footnoteItem(state: StateCore, content: Token[], use: { n: number; coun
 // Front matter
 // ---------------------------------------------------------------------------
 
-/** `---` YAML front matter on the first line, as one `smd_front_matter` token carrying the parsed data. */
+/**
+ * `---` YAML front matter on the first line, as one `smd_front_matter` token carrying the parsed data. Front matter
+ * that could not be read has its lines as written in `content`, which render in an error block. Otherwise, in spec v2
+ * its content is the front matter's source, so the header can show values as written (see addFrontMatter).
+ */
 export function frontMatterBlock(state: StateBlock, startLine: number, _endLine: number, silent: boolean): boolean {
   if (startLine !== 0 || state.blkIndent !== 0 || lineText(state, 0).trimEnd() !== '---') return false;
   const fm = parseFrontMatter(state.src);
@@ -593,6 +626,11 @@ export function frontMatterBlock(state: StateBlock, startLine: number, _endLine:
   token.block = true;
   token.map = [0, fm.bodyStartLine];
   token.meta = fm.data;
+  const unread = unreadFrontMatter(state.src, fm);
+  if (unread) {
+    token.info = 'error';
+    token.content = unread.join('\n');
+  } else if (isV2(state.env)) token.content = state.src.slice(0, state.eMarks[fm.bodyStartLine - 1]);
   state.line = fm.bodyStartLine;
   return true;
 }

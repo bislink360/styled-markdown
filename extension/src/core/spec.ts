@@ -4,6 +4,10 @@
  * has exactly one source of truth.
  */
 
+/**
+ * The spec version new documents are written with: `smd: 1` from `smd from-md` and the fix for a missing `smd`
+ * key. Writers move to 2 once every v2 rule exists. The newest version tools read is LATEST_SPEC (specVersion.ts).
+ */
 export const SMD_VERSION = 1;
 
 /** Named colors. They map to CSS variables that adapt to light/dark themes. */
@@ -62,7 +66,7 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
   agent: {
     description: 'Content addressed to AI agents (instructions, constraints, context). Collapsed for humans in the preview.',
     title: true,
-    attrs: ['title', 'priority'],
+    attrs: ['title'],
   },
   human: { description: 'Content addressed only to human readers. Agents may skip it.', title: true, attrs: ['title'] },
   include: {
@@ -197,7 +201,7 @@ export const VARIABLE_SYNTAX = {
 
 /** Known front-matter keys. Unknown keys are allowed but reported as hints. */
 export const FRONTMATTER_KEYS: Record<string, string> = {
-  smd: 'Styled Markdown spec version (currently 1)',
+  smd: 'Styled Markdown spec version: 1, or 2 for the spec v2 rules (a document without it is version 1)',
   title: 'Document title',
   summary: 'One or two sentence summary — agents read this first',
   status: 'draft | review | approved | deprecated | archived',

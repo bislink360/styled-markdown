@@ -7,11 +7,27 @@
  *
  * The markdown-it rule (markdownItRules.ts) substitutes while rendering; the functions here do the same
  * on plain lines for the agent view, `smd to-md`, the validator and the editors.
+ *
+ * Which text a value shows (SPEC §4.7) depends on the spec version: spec v1 shows the value YAML reads
+ * (`version: 2.10` is the number 2.1, shown `2.1`); spec v2 keeps the spelling of the YAML source (`2.10`). Every
+ * reader gets the values to show from {@link shownValues} (or documentVariables), the one place that decides.
  */
-import { parseFrontMatter } from './frontmatter';
+import { parseFrontMatter, sourceSpelledData } from './frontmatter';
+import { specVersion, type SpecVersion } from './specVersion';
 
 /** A document's front matter, as parsed. */
 export type Variables = Readonly<Record<string, unknown>>;
+
+/**
+ * The front matter values a document shows, through `{{name}}` and in its page header: `data` (the front matter as
+ * parsed) in spec v1; in spec v2, the same values with every plain number and boolean spelled as in the YAML source
+ * (`version: 2.10` shows `2.10`, `ok: True` shows `True`). Quoted, block and date values show the same in both.
+ * `source` is the document's text; front matter a host removed and passed as data has no source, so it shows as parsed.
+ */
+export function shownValues(data: Variables, source: string | undefined, spec: SpecVersion): Variables {
+  if (spec !== 2 || !source?.startsWith('---')) return data;
+  return sourceSpelledData(source) ?? data;
+}
 
 /** A variable name: a front matter key, or a dotted path into nested mappings and lists (`owner.name`, `links.0`). */
 const NAME = String.raw`[A-Za-z_][\w-]*(?:\.[\w-]+)*`;
@@ -243,7 +259,7 @@ export function variableCompletion(
   const fm = parseFrontMatter(text);
   if (line < fm.bodyStartLine || insideBlock(lines, fm.bodyStartLine, line, isCode)) return undefined;
   const close = !/^[\w.-]*[ \t]*\}\}/.test(lineText.slice(column));
-  return { from, close, names: variableNames(fm.data) };
+  return { from, close, names: variableNames(shownValues(fm.data, text, specVersion(fm.data))) };
 }
 
 /**
@@ -258,7 +274,8 @@ export function variableHover(
   if (line < fm.bodyStartLine || !lines[line]?.includes('{{')) return undefined;
   const ref = findVariables(lines.slice(0, line + 1), fm.bodyStartLine, isCode).find((r) => r.line === line && column >= r.column && column <= r.endColumn);
   if (!ref) return undefined;
-  return { markdown: `**{{${ref.name}}}** — ${valueDescription(lookupVariable(fm.data, ref.name))}`, start: ref.column, end: ref.endColumn };
+  const shown = shownValues(fm.data, text, specVersion(fm.data));
+  return { markdown: `**{{${ref.name}}}** — ${valueDescription(lookupVariable(shown, ref.name))}`, start: ref.column, end: ref.endColumn };
 }
 
 function valueDescription(value: VariableValue): string {
@@ -276,9 +293,15 @@ function codeSpan(s: string): string {
   return `${fence}${pad}${s}${pad}${fence}`;
 }
 
-/** The front matter of a document given as lines, reading only the front matter lines. */
+/**
+ * The values `{{name}}` shows in a document given as lines ({@link shownValues}, by the document's own spec version),
+ * reading only the front matter lines.
+ */
 export function documentVariables(lines: readonly string[]): Variables {
   if (lines[0]?.trimEnd() !== '---') return {};
   const end = lines.findIndex((l, i) => i > 0 && ['---', '...'].includes(l.trimEnd()));
-  return end < 0 ? {} : parseFrontMatter(lines.slice(0, end + 1).join('\n')).data;
+  if (end < 0) return {};
+  const source = lines.slice(0, end + 1).join('\n');
+  const data = parseFrontMatter(source).data;
+  return shownValues(data, source, specVersion(data));
 }

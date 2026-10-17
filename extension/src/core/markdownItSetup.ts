@@ -1,20 +1,23 @@
 import type MarkdownIt from 'markdown-it';
+import type { StateCore } from 'markdown-it';
 import { alertOf, githubAlerts } from './alerts';
 import { escapeHtml } from './attrs';
 import {
   fenceRule, footnoteBackref, footnoteClose, footnoteOpen, footnoteRef, footnotesClose, footnotesOpen, renderContainer, renderHeader,
-  renderMath, renderRef, type RenderRule,
+  renderFrontMatterError, renderMath, renderRef, type RenderRule,
 } from './markdownItHtml';
 import { addChangelogRules, changelogEntries } from './markdownItChangelog';
 import { expandIncludes, includedLinks } from './markdownItInclude';
 import {
   annotateContainers, collectVariables, containerBlock, envFigures, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock,
-  headingAttrs, headingIds, inlineDirective, inlineVariable, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
+  headingAttrs, headingIds, hostSpec, inlineDirective, inlineVariable, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
   variablesAsText,
 } from './markdownItRules';
 import { glossaryTerms } from './markdownItGlossary';
 import { documentLanguage, languageTag, messagesFor, type Messages } from './i18n';
 import type { MarkdownItSmdOptions } from './markdownIt';
+import { specOf } from './specVersion';
+import { shownValues } from './variables';
 
 /** Registers the .smd rules on a markdown-it instance, for renderSmd and for markdown-it hosts. */
 
@@ -39,6 +42,11 @@ export interface SmdContext {
   variables?: boolean;
   /** The labels for one render, in the document's language. */
   messages(env: unknown): Messages;
+  /**
+   * For hosts: puts the spec version on the env before block parsing (see hostSpec). renderSmd leaves it out: it
+   * sets `env.smdSpec` itself.
+   */
+  spec?: (state: StateCore) => void;
 }
 
 /** The syntax to add, all resolved. */
@@ -74,6 +82,7 @@ export function hostContext(md: MarkdownIt, options: MarkdownItSmdOptions): SmdC
     ownLines: options.sourceLines ?? false,
     variables: options.variables ?? true,
     messages: (env) => messagesFor(hostLanguage(env, options.lang)),
+    spec: hostSpec(options.spec),
   };
 }
 
@@ -96,6 +105,8 @@ const applied = new WeakSet<MarkdownIt>();
 export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext): void {
   if (applied.has(md)) return;
   applied.add(md);
+  // First of all, so every rule after it can read the spec version from the env.
+  if (ctx.spec) md.core.ruler.after('normalize', 'smd_spec', ctx.spec);
   if (features.frontMatter) addFrontMatter(md, ctx);
   if (features.containers) addContainers(md, ctx);
   if (features.math) addMath(md);
@@ -117,9 +128,13 @@ function addFrontMatter(md: MarkdownIt, ctx: SmdContext): void {
     const data = state.tokens.find((t) => t.type === 'smd_front_matter')?.meta as Record<string, unknown> | undefined;
     if (data?.lang !== undefined && state.env && typeof state.env === 'object') (state.env as LanguageEnv).smdLang = data.lang;
   });
-  // Front matter values are shown as written: `{{name}}` in the title is not replaced.
+  // Front matter values are shown as written: `{{name}}` in the title is not replaced. In spec v2 the token holds the
+  // front matter's source (see frontMatterBlock), so numbers keep their spelling.
   md.renderer.rules.smd_front_matter = (tokens, idx, _opts, env) => {
-    const header = renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), tokens[idx].meta as Record<string, unknown>, ctx.messages(env));
+    if (tokens[idx].info === 'error') return renderFrontMatterError(tokens[idx].content.split('\n'), ctx.messages(env));
+    const data = tokens[idx].meta as Record<string, unknown>;
+    const shown = shownValues(data, tokens[idx].content, specOf(env)) as Record<string, unknown>;
+    const header = renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), data, ctx.messages(env), shown);
     return `${header}\n`;
   };
 }

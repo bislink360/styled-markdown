@@ -12,6 +12,7 @@ import {
 } from './include';
 import { quoteCite } from './quote';
 import { CALLOUT_TYPES, STATUS_VALUES } from './spec';
+import type { SpecVersion } from './specVersion';
 import type { SmdContext } from './markdownItSetup';
 import type { ContainerMeta, FootnoteMeta } from './markdownItRules';
 import type { Env } from './render';
@@ -30,17 +31,18 @@ const CALLOUT_ICONS: Record<string, string> = {
 
 /**
  * The header card for front matter: status, version, title, summary, owners and tags. Empty without any of them.
- * `m` gives the labels in the document's language (English by default).
+ * `m` gives the labels in the document's language (English by default). `shown` is the front matter as the document
+ * shows it (shownValues: spelled as written in spec v2); `data` decides what is shown, and `shown` how it is spelled.
  */
-export function renderHeader(inline: (text: string) => string, data: Record<string, unknown>, m: Messages = EN): string {
+export function renderHeader(inline: (text: string) => string, data: Record<string, unknown>, m: Messages = EN, shown: Record<string, unknown> = data): string {
   const title = typeof data.title === 'string' ? data.title : '';
   const summary = typeof data.summary === 'string' ? data.summary : '';
   const status = typeof data.status === 'string' ? data.status.toLowerCase() : '';
-  const owners = asStringList(data.owners);
-  const tags = asStringList(data.tags);
+  const owners = asStringList(Array.isArray(data.owners) ? shown.owners : data.owners);
+  const tags = asStringList(Array.isArray(data.tags) ? shown.tags : data.tags);
   if (!title && !summary && !status && !owners.length && !tags.length) return '';
 
-  const top = headerFacts(data, status, m);
+  const top = headerFacts(data, shown, status, m);
   const meta = [metaRow(m['header.owners'], owners, 'smd-mention'), metaRow(m['header.tags'], tags, 'smd-tag')].filter(Boolean);
   return `<header class="smd-doc-header" data-line="0">
 ${top.length ? `<div class="smd-doc-top">${top.join('<span class="smd-dot">·</span>')}</div>` : ''}
@@ -50,14 +52,23 @@ ${meta.length ? `<div class="smd-doc-meta">${meta.map((m) => `<div>${m}</div>`).
 </header>`;
 }
 
-function headerFacts(data: Record<string, unknown>, status: string, m: Messages): string[] {
+/**
+ * Front matter that is closed but could not be read (its YAML does not parse, or is not a mapping): its lines as
+ * written, in a visible error block where the header goes, so nothing above the closing line is hidden.
+ */
+export function renderFrontMatterError(lines: readonly string[], m: Messages = EN): string {
+  const title = escapeHtml(m['frontMatter.error']);
+  return `<div class="smd-frontmatter-error" role="note" aria-label="${title}" data-line="0"><div class="smd-frontmatter-error-title">${title}</div><pre class="smd-frontmatter-error-yaml"><code>${escapeHtml(lines.join('\n'))}</code></pre></div>\n`;
+}
+
+function headerFacts(data: Record<string, unknown>, shown: Record<string, unknown>, status: string, m: Messages): string[] {
   const top: string[] = [];
   if (status) {
     const known = STATUS_VALUES.includes(status) ? status : 'unknown';
     top.push(`<span class="smd-doc-status smd-doc-status-${known}">${escapeHtml(term(m, 'docStatus', status))}</span>`);
   }
-  if (data.version !== undefined) top.push(`<span>${label(m, 'header.version', { version: escapeHtml(String(data.version)) })}</span>`);
-  if (data.updated !== undefined) top.push(`<span>${label(m, 'header.updated', { date: escapeHtml(String(data.updated)) })}</span>`);
+  if (data.version !== undefined) top.push(`<span>${label(m, 'header.version', { version: escapeHtml(String(shown.version)) })}</span>`);
+  if (data.updated !== undefined) top.push(`<span>${label(m, 'header.updated', { date: escapeHtml(String(shown.updated)) })}</span>`);
   if (typeof data.audience === 'string') {
     top.push(`<span>${label(m, 'header.audience', { audience: escapeHtml(term(m, 'audience', data.audience)) })}</span>`);
   }
@@ -370,19 +381,24 @@ interface Directive {
   color: string | null;
   today?: string;
   m: Messages;
+  /** The document's spec version, for the inline Markdown in the content. */
+  spec: SpecVersion;
 }
 
 export function renderInlineDirective(
-  md: MarkdownIt, name: string, content: string, values: Record<string, string>, today?: string, m: Messages = EN,
+  md: MarkdownIt, name: string, content: string, values: Record<string, string>, today?: string, m: Messages = EN, spec: SpecVersion = 1,
 ): string {
   const color = values.color ? resolveColor(values.color) : null;
   const render = DIRECTIVES.get(name);
-  return render ? render({ md, content, values, color, today, m }) : escapeHtml(content);
+  return render ? render({ md, content, values, color, today, m, spec }) : escapeHtml(content);
 }
 
-function badge({ md, content, color }: Directive): string {
-  const style = color ? ` style="--smd-badge:${escapeHtml(color)}"` : '';
-  return `<span class="smd-badge"${style}>${md.renderInline(content)}</span>`;
+/** A directive's content as inline Markdown, read with the document's spec version. */
+const inlineContent = ({ md, content, spec }: Directive): string => md.renderInline(content, { smdSpec: spec });
+
+function badge(d: Directive): string {
+  const style = d.color ? ` style="--smd-badge:${escapeHtml(d.color)}"` : '';
+  return `<span class="smd-badge"${style}>${inlineContent(d)}</span>`;
 }
 
 function kbd({ content }: Directive): string {
@@ -454,7 +470,8 @@ function metricTone(trend: string, good: string): string {
   return trend === good ? 'good' : 'bad';
 }
 
-function metric({ md, content, values, m }: Directive): string {
+function metric(d: Directive): string {
+  const { values, m } = d;
   const trend = metricTrend(values);
   const tone = metricTone(trend, (values.good ?? 'up').toLowerCase());
   const arrow = TREND_ARROWS.get(trend) ?? '';
@@ -462,15 +479,16 @@ function metric({ md, content, values, m }: Directive): string {
   const spoken = [TREND_ARROWS.has(trend) ? term(m, 'trend', trend) : '', tone === 'flat' ? '' : term(m, 'tone', tone)].filter(Boolean).join(', ');
   const sr = spoken ? `<span class="smd-sr-only"> (${spoken})</span>` : '';
   const delta = values.delta ? `<span class="smd-metric-delta smd-metric-${tone}"><span aria-hidden="true">${arrow}</span> ${escapeHtml(values.delta)}${sr}</span>` : '';
-  return `<span class="smd-metric"><span class="smd-metric-value">${md.renderInline(content)}</span><span class="smd-metric-label">${escapeHtml(values.label ?? '')}</span>${delta}</span>`;
+  return `<span class="smd-metric"><span class="smd-metric-value">${inlineContent(d)}</span><span class="smd-metric-label">${escapeHtml(values.label ?? '')}</span>${delta}</span>`;
 }
 
-function status({ md, content, values, color, m }: Directive): string {
+function status(d: Directive): string {
+  const { content, values, color, m } = d;
   const dot = color ?? 'var(--smd-gray)';
   // The text says the status; the dot only repeats it in colour. Without text, the colour name stands in.
   const text = content.trim() ? '' : escapeHtml(values.color === undefined ? m['statusDot.label'] : term(m, 'color', values.color));
   const dotA11y = text ? ` role="img" aria-label="${text}"` : ' aria-hidden="true"';
-  return `<span class="smd-status"><span class="smd-status-dot" style="background:${escapeHtml(dot)}"${dotA11y}></span>${md.renderInline(content)}</span>`;
+  return `<span class="smd-status"><span class="smd-status-dot" style="background:${escapeHtml(dot)}"${dotA11y}></span>${inlineContent(d)}</span>`;
 }
 
 const DIRECTIVES = new Map<string, (d: Directive) => string>([

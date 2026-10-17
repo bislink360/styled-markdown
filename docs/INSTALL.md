@@ -27,7 +27,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | MkDocs plugin | Python 3.9+, MkDocs 1.6+ and **Node.js 18 or newer** on `PATH` |
 | Obsidian plugin | Obsidian **1.4 or newer**, desktop or mobile |
 | Building from source | Node.js 18+, npm, Git |
-| Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd docx` and **Export to Word (.docx)** |
+| Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd export --to docx` and **Export to Word (.docx)** |
 
 ## Install the VS Code extension
 
@@ -103,7 +103,7 @@ The CLI is a **single self-contained file** with no dependencies. Pick one metho
 
 ```bash
 npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.10.0/styled-markdown-1.10.0.tgz
-smd --version       # smd 1.10.0 (Styled Markdown spec v1)
+smd --version       # smd 2.0.0 (Styled Markdown spec v2)
 ```
 
 The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v1.10.0/styled-markdown-1.10.0.tgz`); see [npm/README.md](../npm/README.md).
@@ -121,14 +121,14 @@ node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs --version
 cd styled-markdown/extension
 npm install && npm run build
 npm link            # now `smd` works everywhere
-smd --version       # smd 1.10.0 (Styled Markdown spec v1)
+smd --version       # smd 2.0.0 (Styled Markdown spec v2)
 ```
 
 **Without linking:** `node extension/dist/cli.js <command>`.
 
 ### Optional: Pandoc for Word export
 
-`smd docx` and the extension's **Export to Word (.docx)** hand the document to [Pandoc](https://pandoc.org/installing.html), which smd does not bundle (the CLI and the npm package keep zero dependencies). Install Pandoc 3.0 or newer only if you want `.docx` files:
+`smd export --to docx` and the extension's **Export to Word (.docx)** hand the document to [Pandoc](https://pandoc.org/installing.html), which smd does not bundle (the CLI and the npm package keep zero dependencies). Install Pandoc 3.0 or newer only if you want `.docx` files:
 
 ```bash
 winget install JohnMacFarlane.Pandoc   # Windows (or the installer or zip from pandoc.org)
@@ -137,7 +137,7 @@ sudo apt install pandoc                # Debian/Ubuntu (check pandoc --version: 
 pandoc --version
 ```
 
-smd finds Pandoc at `--pandoc <path>`, then the `SMD_PANDOC` environment variable, then on the `PATH`; the extension reads the `smd.export.pandocPath` setting first (a user setting, so a workspace can't point it at another program). Without Pandoc, `smd docx` exits with code 2 and says how to install it, and the extension shows the same with an **Install Pandoc** button. `smd docx <file.smd> --html-only -o page.html` writes the HTML smd would give Pandoc, to convert yourself: `pandoc page.html -f html -t docx -o page.docx`.
+smd finds Pandoc at `--pandoc <path>`, then the `SMD_PANDOC` environment variable, then on the `PATH`; the extension reads the `smd.export.pandocPath` setting first (a user setting, so a workspace can't point it at another program). Without Pandoc, `smd export --to docx` exits with code 2 and says how to install it, and the extension shows the same with an **Install Pandoc** button. `smd export <file.smd> --to docx --html-only -o page.html` writes the HTML smd would give Pandoc, to convert yourself: `pandoc page.html -f html -t docx -o page.docx`.
 
 
 ## Use `smd` in CI
@@ -257,7 +257,7 @@ It checks the files as they are in the working tree and doesn't change them; `--
 
 ## MkDocs plugin
 
-`mkdocs-styled-markdown` makes the `.smd` files in an [MkDocs](https://www.mkdocs.org) site's `docs_dir` pages, rendered by the same engine as `smd render`, inside the site's theme. It is a Python package that ships the engine as a Node.js script, so the machine that builds the site needs Node.js 18+ on `PATH` (no npm install).
+`mkdocs-styled-markdown` makes the `.smd` files in an [MkDocs](https://www.mkdocs.org) site's `docs_dir` pages, rendered by the same engine as `smd export --to html`, inside the site's theme. It is a Python package that ships the engine as a Node.js script, so the machine that builds the site needs Node.js 18+ on `PATH` (no npm install).
 
 Until it is on PyPI, install the wheel from the GitHub release (each release attaches `mkdocs_styled_markdown-X.Y.Z-py3-none-any.whl` and the `.tar.gz` source):
 
