@@ -1,4 +1,4 @@
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFenceInfo } from './fence';
 import { parseFrontMatter } from './frontmatter';
 import { EN, label, type Messages } from './i18n';
@@ -231,9 +231,10 @@ export function* outsideCode(lines: string[], from: number, to: number): Generat
   }
 }
 
-/** Indexes of the lines in [from, to] outside fenced code (fence lines themselves are left out too). */
+/** Indexes of the lines in [from, to] outside fenced code and `$$` display math (fence lines themselves are left out too). */
 function* outsideFences(lines: string[], from: number, to: number): Generator<number> {
-  for (const [i, fence] of outsideCode(lines, from, to)) if (!fence) yield i;
+  const inMath = displayMath(lines);
+  for (const [i, fence] of outsideCode(lines, from, to)) if (!fence && !inMath(i)) yield i;
 }
 
 /** ```ts file="code.ts" in a document included from folder `dir` embeds the file next to that document. */

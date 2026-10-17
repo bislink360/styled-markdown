@@ -1,15 +1,17 @@
 import { parseAttrs } from './attrs';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, unknownContainerTitle, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import {
-  containerEnd, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
+  containerEnd, findIncludes, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
+import { githubIds, markdownHeadings, type MarkdownHeading } from './githubSlug';
 import { expandedFigures, figuresOf, includedLines, includeKey, includeSource, type ExpandedFigures } from './includeText';
-import { aroundInlineMath, inlineMathLines, literalLines } from './parse';
+import { aroundInlineMath, convertedParts, inlineItemLines, inlineMathLines, literalLines, parseSmd, type InlinePart } from './parse';
 import { quoteCite } from './quote';
-import { HEADING_ATTRS } from './render';
+import { HEADING_ATTRS, renderSmd } from './render';
 import { riskMatrixMarkdown } from './risks';
+import { own } from './util';
 import { documentVariables, substituteLine, type Variables } from './variables';
 
 export interface ToMarkdownOptions {
@@ -38,6 +40,8 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
   const literal = literalLines(text);
   // `$inline math$` may run on from one line to the next; it stays as written too.
   const inlineMath = inlineMathLines(text);
+  // So may an inline item's text (`:badge[foo` on one line, `bar]{color=green}` on the next): it converts as a whole.
+  const inlineItems = inlineItemLines(text);
   interface Frame { len: number; prefix: string; close?: string; end?: string[] }
   const stack: Frame[] = [];
   const prefix = () => stack.map((f) => f.prefix).join('');
@@ -92,7 +96,9 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       continue;
     }
 
-    const close = CONTAINER_CLOSE.exec(line);
+    // A container line in display math is math, as in rendering: it neither closes nor opens a container.
+    const notLiteral = !literal.has(i);
+    const close = notLiteral && CONTAINER_CLOSE.exec(line);
     if (close && stack.length) {
       stack.at(-1)!.end?.forEach((l) => emit(l));
       const frame = stack.pop()!;
@@ -100,7 +106,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       if (frame.prefix) emit(''); // end the blockquote so the next one doesn't merge into it
       continue;
     }
-    const open = CONTAINER_OPEN.exec(line);
+    const open = notLiteral && CONTAINER_OPEN.exec(line);
     const info = open ? parseContainerInfo(open[3] + open[4]) : null;
     if (open && info) {
       if (info.name === 'include') {
@@ -115,9 +121,77 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       for (const l of head.inside ?? []) emit(l);
       continue;
     }
-    emit(lineMarkdown(line, literal.has(i), { variables, figures: figures.byId }, inlineMath.get(i)));
+    emit(lineMarkdown(line, literal.has(i), { variables, figures: figures.byId }, inlineMath.get(i), inlineItems.get(i)));
   }
-  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+  return headingAnchors(text, out.join('\n').replace(/\n{3,}/g, '\n\n'), options);
+}
+
+/** A heading of the converted text with the id Styled Markdown gives it and the one GitHub gives it. */
+interface HeadingIds extends MarkdownHeading { smd: string; github: string }
+
+/** The heading ids of the last conversion with these options, for githubHeadingIds. */
+const convertedIds = new WeakMap<ToMarkdownOptions, HeadingIds[] | undefined>();
+
+/**
+ * `<a id="smd-id"></a>` before each heading whose GitHub id differs from its own, so that links written with
+ * either id work on GitHub. Added once, to the whole document, after its includes are converted into it.
+ */
+function headingAnchors(text: string, markdown: string, options: ToMarkdownOptions): string {
+  if (includeScopes.has(options)) return markdown;
+  const pairs = headingIdPairs(text, markdown, options.readFile);
+  convertedIds.set(options, pairs);
+  // markdown-it also ends lines at a lone `\r`, so its line numbers only match these lines when there is none.
+  if (/\r(?!\n)/.test(markdown)) return markdown;
+  const lines = markdown.split('\n');
+  const differ = (pairs ?? []).filter((p) => p.github !== p.smd && p.line < lines.length);
+  if (!differ.length) return markdown;
+  // From the last heading up, so the lines of those above stay where they are.
+  for (let k = differ.length - 1; k >= 0; k--) lines.splice(differ[k].line, 0, ...anchorLines(lines, differ[k]));
+  return lines.join('\n');
+}
+
+/**
+ * The document's headings paired with the headings of its plain Markdown, which come in the same order.
+ * Undefined when they don't pair up (the converted text has more or fewer headings).
+ */
+function headingIdPairs(text: string, markdown: string, readFile: ToMarkdownOptions['readFile']): HeadingIds[] | undefined {
+  const own = readFile && findIncludes(text.split(/\r?\n/)).length ? renderSmd(text, { readFile }).headings : parseSmd(text).headings;
+  const plain = markdownHeadings(withoutFrontMatter(markdown));
+  if (plain.length !== own.length) return undefined;
+  const github = githubIds(plain.map((h) => h.text));
+  return plain.map((h, i) => ({ ...h, smd: own[i].slug, github: github[i] }));
+}
+
+/** Front matter as blank lines: GitHub shows it as a table, so its lines are never headings. */
+function withoutFrontMatter(markdown: string): string {
+  const lines = markdown.split('\n');
+  if (lines[0]?.trimEnd() !== '---') return markdown;
+  const end = lines.findIndex((l, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(l));
+  return end < 0 ? markdown : [...lines.slice(0, end + 1).map(() => ''), ...lines.slice(end + 1)].join('\n');
+}
+
+/**
+ * The lines that go before a heading for its Styled Markdown id: the anchor, inside the same blockquotes as the
+ * heading. A blank line keeps it out of a paragraph or table just above, and out of a setext heading's text.
+ */
+function anchorLines(lines: string[], heading: HeadingIds): string[] {
+  const line = lines[heading.line];
+  const prefix = line.slice(0, line.length - line.replace(/^[>\s]+/, '').length);
+  const blank = prefix.trimEnd();
+  const above = heading.line > 0 ? lines[heading.line - 1].replace(/^[>\s]+/, '') : '';
+  const anchor = `${prefix}<a id="${heading.smd.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}"></a>`;
+  return [...(above ? [blank] : []), anchor, ...(heading.atx ? [] : [blank])];
+}
+
+/**
+ * The id GitHub gives each of the document's own headings (as `parseSmd` lists them) in its `to-md` output.
+ * When that output's headings don't pair up with the document's, each heading's text stands in for its output.
+ */
+export function githubHeadingIds(text: string): string[] {
+  const options: ToMarkdownOptions = {};
+  smdToMarkdown(text, options);
+  const pairs = convertedIds.get(options);
+  return pairs ? pairs.map((p) => p.github) : githubIds(parseSmd(text).headings.map((h) => h.text));
 }
 
 /** The include scope of the converted text, for included documents (the root document has none). */
@@ -137,15 +211,19 @@ const figureNumbering = (options: ToMarkdownOptions, text: string): FigureNumber
 /**
  * A line of text in plain Markdown: a heading without its attributes, `{{name}}` replaced and inline syntax
  * converted. A line of code or display math (`literal`) stays as written, since nothing on it is inline syntax.
- * `math` is the line's inline math when it is read with the lines around it (see mathOnLine).
+ * `math` is the line's inline math when it is read with the lines around it (see mathOnLine), and `parts` its parts of
+ * inline items that run over several lines (see inlineItemLines): each item converts as a whole.
  */
 function lineMarkdown(
   line: string, literal: boolean, document: { variables: Variables; figures: ReadonlyMap<string, FigureNumber> }, math?: ReadonlyArray<[number, number]>,
+  parts?: ReadonlyArray<InlinePart>,
 ): string {
   if (literal) return line;
   const content = /^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line;
   // Math is set aside before `{{name}}` is replaced, as rendering reads it.
-  return aroundInlineMath(content, (text) => convertInline(substituteLine(text, document.variables), document.figures), content === line ? math : undefined);
+  const convert = (text: string) => convertInline(substituteLine(text, document.variables), document.figures);
+  const asWritten = content === line;
+  return aroundInlineMath(content, convert, asWritten ? math : undefined, asWritten ? convertedParts(parts, (whole) => aroundInlineMath(whole, convert)) : []);
 }
 
 interface IncludeAt {
@@ -214,6 +292,9 @@ interface ContainerMarkdown { before?: string[]; prefix: string; inside?: string
 
 const withTitle = (label: string, title: string) => `**${label}${title ? `: ${title}` : ''}**`;
 
+/** The content as it is, after a `**Title**` paragraph when there is a title. */
+const titledContent = (title: string): ContainerMarkdown => ({ before: title ? [`**${title}**`, ''] : [], prefix: '' });
+
 /** A GitHub alert (`> [!NOTE]`) with a bold first line. */
 const alert = (kind: string, first: string): ContainerMarkdown => ({ before: [`> [!${kind}]`], prefix: '> ', inside: first ? [first, ''] : [] });
 
@@ -264,17 +345,20 @@ const CONTAINER_MARKDOWN = new Map<string, (c: ContainerSource) => ContainerMark
   ['tab', ({ title }) => ({ before: [`**${title || 'Tab'}**`, ''], prefix: '', close: '' })],
   ['figure', figureMarkdown],
   // The `- **Term**: definition` list reads well as it is.
-  ['glossary', ({ title }) => ({ before: title ? [`**${title}**`, ''] : [], prefix: '' })],
+  ['glossary', ({ title }) => titledContent(title)],
   // Its `## 1.2.0 — 2026-03-01` headings and lists are plain Markdown already.
-  ['changelog', ({ title }) => ({ before: title ? [`**${title}**`, ''] : [], prefix: '' })],
+  ['changelog', ({ title }) => titledContent(title)],
   ['quote', quoteMarkdown],
 ]);
 
-/** Callouts become alerts; box, tabs, columns, column, steps and unknown containers keep the content only. */
+/**
+ * Callouts become alerts; box, tabs, columns, column, steps and timeline keep the content only, and unknown
+ * containers keep their title as a `**Title**` paragraph before it (spec §3).
+ */
 function containerMarkdown(c: ContainerSource): ContainerMarkdown {
-  const kind = ALERTS[c.name];
+  const kind = own(ALERTS, c.name);
   if (kind) return alert(kind, c.title ? `**${c.title}**` : '');
-  return CONTAINER_MARKDOWN.get(c.name)?.(c) ?? { prefix: '' };
+  return CONTAINER_MARKDOWN.get(c.name)?.(c) ?? titledContent(unknownContainerTitle(c.name, c.title));
 }
 
 const ALERTS: Record<string, string> = {
@@ -306,25 +390,11 @@ function refLinks(s: string, figures: ReadonlyMap<string, FigureNumber> | undefi
 
 function convertText(s: string, figures?: ReadonlyMap<string, FigureNumber>): string {
   return refLinks(s, figures)
-    .replace(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]\n]*)\])?(?:\{([^{}\n]*)\})?/g, (m, pre, name, content = '', rawAttrs = '') => {
-      const v = parseAttrs(rawAttrs)?.values ?? {};
-      switch (name) {
-        case 'badge': return `${pre}\`${content}\``;
-        case 'kbd': return `${pre}${content.split('+').map((k: string) => `<kbd>${k.trim()}</kbd>`).join('+')}`;
-        case 'mention': return `${pre}${content}`;
-        case 'priority': return `${pre}**${content}**`;
-        case 'due': return `${pre}📅 ${content}`;
-        case 'metric': return `${pre}**${content}**${v.label ? ` ${v.label}` : ''}${v.delta ? ` (${v.delta})` : ''}`;
-        case 'status': return `${pre}${STATUS_EMOJI[v.color] ?? '⚪'} ${content}`;
-        case 'progress': {
-          const n = Math.max(0, Math.min(100, Number(v.value ?? content) || 0));
-          const filled = Math.round(n / 10);
-          return `${pre}${'▰'.repeat(filled)}${'▱'.repeat(10 - filled)} ${v.label ?? `${Math.round(n)}%`}`;
-        }
-        default: return m;
-      }
-    })
-    .replace(/(!?)\[([^\]\n]*)\]\{([^{}\n]*)\}/g, (m, bang, content, rawAttrs) => {
+    // A name with neither `[content]` nor `{attributes}` is text, as in rendering. Content may run over a line break
+    // when an item is read whole (see convertedParts).
+    .replace(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g, (m, pre: string, name: string, content?: string, rawAttrs?: string) =>
+      (content === undefined && rawAttrs === undefined ? m : directiveMarkdown(m, pre, name, content ?? '', parseAttrs(rawAttrs ?? '')?.values ?? {})))
+    .replace(/(!?)\[([^\]]*)\]\{([^{}\n]*)\}/g, (m, bang, content, rawAttrs) => {
       if (bang) return m;
       const attrs = parseAttrs(rawAttrs);
       if (!attrs) return m;
@@ -335,5 +405,24 @@ function convertText(s: string, figures?: ReadonlyMap<string, FigureNumber>): st
       if (style.includes('strike')) t = `~~${t}~~`;
       return t;
     })
-    .replace(/==(?=\S)([^=\n]+?)(?<=\S)==/g, '**$1**');
+    .replace(/==(?=\S)([^=]+?)(?<=\S)==/g, '**$1**');
+}
+
+/** One `:name[content]{attrs}` in plain Markdown (`m` as written), or `m` for a name kept as written. */
+function directiveMarkdown(m: string, pre: string, name: string, content: string, v: Record<string, string>): string {
+  switch (name) {
+    case 'badge': return `${pre}\`${content}\``;
+    case 'kbd': return `${pre}${content.split('+').map((k: string) => `<kbd>${k.trim()}</kbd>`).join('+')}`;
+    case 'mention': return `${pre}${content}`;
+    case 'priority': return `${pre}**${content}**`;
+    case 'due': return `${pre}📅 ${content}`;
+    case 'metric': return `${pre}**${content}**${v.label ? ` ${v.label}` : ''}${v.delta ? ` (${v.delta})` : ''}`;
+    case 'status': return `${pre}${own(STATUS_EMOJI, v.color ?? '') ?? '⚪'} ${content}`;
+    case 'progress': {
+      const n = Math.max(0, Math.min(100, Number(v.value ?? content) || 0));
+      const filled = Math.round(n / 10);
+      return `${pre}${'▰'.repeat(filled)}${'▱'.repeat(10 - filled)} ${v.label ?? `${Math.round(n)}%`}`;
+    }
+    default: return m;
+  }
 }

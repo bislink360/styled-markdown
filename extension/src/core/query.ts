@@ -1,11 +1,11 @@
 import { agentViewOfRange, inlineText } from './agentView';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { extractTasks } from './meta';
 import { parseSmd } from './parse';
 import type { Heading } from './render';
 import { CALLOUT_TYPES, CONTAINERS, RISK_LEVELS, STYLE_KEYS } from './spec';
-import { suggest } from './util';
+import { own, suggest } from './util';
 import { documentVariables } from './variables';
 
 /**
@@ -276,10 +276,11 @@ function containerBlocks(lines: string[], from: number, sectionAt: (line: number
   const blocks: Block[] = [];
   const open: Block[] = [];
   let fence: Fence = null;
+  const inMath = displayMath(lines);
   for (let i = from; i < lines.length; i++) {
     const step = fenceStep(lines[i], fence);
     fence = step.fence;
-    if (step.code) continue;
+    if (step.code || inMath(i)) continue;
     if (CONTAINER_CLOSE.test(lines[i])) {
       const done = open.pop();
       if (done) done.endLine = i;
@@ -311,7 +312,7 @@ function openingOf(line: string): ContainerInfo | null {
 
 /** Attributes as written plus the spec's defaults; the title is a field of its own. */
 function containerAttrs(info: ContainerInfo): Record<string, string | string[]> {
-  const attrs: Record<string, string | string[]> = { ...DEFAULTS[info.name], ...info.attrs.values };
+  const attrs: Record<string, string | string[]> = { ...own(DEFAULTS, info.name), ...info.attrs.values };
   delete attrs.title;
   if (info.name === 'api') attrs.method = String(attrs.method).toUpperCase();
   if (info.attrs.id) attrs.id = info.attrs.id;
@@ -363,7 +364,7 @@ function passes(test: AttributeTest, actual: string | string[] | undefined, toda
 /** A value's place in its order, for `<` and friends; undefined when it has none. */
 function rank(key: string, value: string, today: string): number | undefined {
   const v = value.trim().toLowerCase();
-  if (key === 'priority') return PRIORITY_RANK[v];
+  if (key === 'priority') return own(PRIORITY_RANK, v);
   if (key === 'impact' || key === 'likelihood') {
     const level = RISK_LEVELS.indexOf(v);
     return level < 0 ? undefined : level;

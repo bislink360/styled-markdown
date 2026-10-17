@@ -7,16 +7,20 @@ import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
 import { anchorIds, findLinks, isDocumentPath, splitTarget } from './links';
 import { checkIncludes, documentIds, includedFigureIds, includedTermIds } from './includeCheck';
+import { aliasedHeading } from './headingAliases';
 import { parseFenceInfo, sliceLines } from './fence';
 import { figureTargets, findRefs, type Figure, type FigureRef } from './figures';
 import { compareVersions, findChangelogs, isIsoDate, parseVersion, versionKey, versionLabel, type ChangelogEntry, type Version } from './changelog';
 import { findQuotes, quoteCite, type QuoteBlock } from './quote';
 import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } from './glossary';
-import { codeLines, inlineMathLines, literalLines, mathOnLine, parseSmd, type InlineMathLines } from './parse';
+import { codeLines, inlineItemLines, inlineMathLines, lazyLineSet, literalLines, mathOnLine, parseSmd, type InlineMathLines } from './parse';
+import { openTaskLines } from './taskLines';
+import { checkTablePipes } from './tableCheck';
 import { sectionsOf, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
-import { suggest } from './util';
+import { own, suggest } from './util';
+import { checkCloser, checkContainerHints, checkHeadingHints, checkInlineAttrLists, checkSmdVersion } from './v2Hints';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
 } from './fixes';
@@ -96,6 +100,10 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   let mathStart = -1;
   let mathLines: string[] = [];
   let firstH1: { text: string; line: number } | null = null;
+  const isOpenTask = lazyLineSet(() => new Set(openTaskLines(text)));
+  // Directives whose text runs over several lines are checked whole, at the line their attributes end on.
+  const multiLine = multiLineDirectives(text, lines);
+  const multiLineEnds = new Map(multiLine.map((d) => [d.line, [d.col, d.end] as [number, number]]));
 
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
     const raw = lines[i];
@@ -143,8 +151,11 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     const close = CONTAINER_CLOSE.exec(raw);
     if (close) {
       // A bare ::: always closes the innermost open container.
-      if (!stack.pop()) {
+      const closed = stack.pop();
+      if (!closed) {
         wholeLine(i, 'warning', 'container/stray-close', `Closing "${close[2]}" has no matching opening container.`);
+      } else {
+        checkCloser(i, close[1].length, close[2].length, closed, push);
       }
       continue;
     }
@@ -158,6 +169,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
         const nameStart = raw.indexOf(open[3], col + len);
         const nameEnd = nameStart + info.name.length;
         checkContainer(info, i, nameStart, nameEnd, parent?.name, push, raw);
+        checkContainerHints(info, i, raw, nameEnd, push);
         stack.push({ name: info.name, len, line: i });
       }
       continue;
@@ -168,14 +180,14 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     if (h1 && !firstH1) firstH1 = { text: h1[1].replace(HEADING_ATTRS, ''), line: i };
     if (/^\s{0,3}#{1,6}\s/.test(raw)) checkHeadingAttrs(raw, i, pushText);
 
-    // Open tasks that are past their due date
-    const openTask = /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(raw);
+    // Open tasks that are past their due date: lines rendering shows with a checkbox (see scanTasks)
+    const openTask = /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(raw) && isOpenTask(i);
     const due = openTask ? /:due\[(\d{4}-\d{2}-\d{2})\]/.exec(raw) : null;
     if (due && dueState(due[1], options.today) === 'overdue') {
       pushText(i, due.index, due.index + due[0].length, 'info', 'task/overdue', `Open task is overdue (due ${due[1]}).`);
     }
 
-    checkInline(raw, i, pushText, fm.data);
+    checkInline(raw, i, pushText, fm.data, multiLineEnds.get(i));
   }
 
   if (fence) {
@@ -193,8 +205,10 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       'The front matter title is already rendered as the document heading; this "# heading" duplicates it.');
   }
 
+  for (const d of multiLine) checkDirective({ line: d.line, text: withoutCode(lines[d.line]), push: pushText }, d, fm.data);
+  checkTablePipes(text, lines, push);
   checkLinks(text, pushText, options);
-  checkIncludes(text, (line, column, endColumn, code, message) => push(line, column, endColumn, 'warning', code, message), options);
+  checkIncludes(text, (line, column, endColumn, code, message, severity = 'warning', fix) => push(line, column, endColumn, severity, code, message, fix), options);
   checkFigures(text, lines, fm.bodyStartLine, pushText, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, pushText);
   // Release headings and glossary terms are read with their `{{name}}` values in, as they render.
@@ -278,8 +292,8 @@ function checkFrontMatter(
   if (data.smd === undefined) {
     push(0, 0, 3, 'info', 'frontmatter/version', `Add "smd: ${SMD_VERSION}" to the front matter so tools know which Styled Markdown version this file targets.`,
       { line: 1, column: 0, endColumn: 0, replacement: `smd: ${SMD_VERSION}\n`, title: `Add "smd: ${SMD_VERSION}"` });
-  } else if (Number(data.smd) !== SMD_VERSION) {
-    markKey('smd', 'warning', 'frontmatter/version', `Unsupported Styled Markdown version "${data.smd}". This tool supports version ${SMD_VERSION}.`);
+  } else {
+    checkSmdVersion(data.smd, keyLine('smd'), lines, push);
   }
 
   // Custom keys the body shows with `{{key}}` are meant: no unknown-key hint for them.
@@ -294,9 +308,9 @@ function checkFrontMatter(
     if (key === 'accent') {
       if (!resolveColor(String(value))) markKey(key, 'error', 'frontmatter/accent', `Invalid accent color "${value}".`, fixColorValue);
     } else if (prop.enum) {
-      // Status is matched case-insensitively, as it always has been.
-      const v = key === 'status' ? String(value).toLowerCase() : String(value);
-      if (!prop.enum.map(String).includes(v)) {
+      // Enumerated values are matched case-insensitively (status always was; the others since 1.10).
+      const v = String(value).toLowerCase();
+      if (!prop.enum.map((e) => String(e).toLowerCase()).includes(v)) {
         const code = key === 'status' ? 'frontmatter/status' : key === 'audience' ? 'frontmatter/audience' : 'frontmatter/value';
         markKey(key, 'warning', code, `Unknown ${key} "${value}". Use one of: ${prop.enum.join(', ')}.`, fixEnumValue(prop.enum.map(String)));
       }
@@ -374,7 +388,7 @@ const COLOR_KEYS = new Set(['color', 'bg', 'border']);
 /** Fix a misspelled style value in the attribute list in `text[start, end)`. `style` takes several words and is left alone. */
 function styleFix(line: number, text: string, start: number, end: number, problem: AttrProblem): Fix | undefined {
   const { key = '', value = '' } = problem;
-  const choices = STYLE_CHOICES[key] ?? [];
+  const choices = own(STYLE_CHOICES, key) ?? [];
   const replacement = COLOR_KEYS.has(key) ? namedColor(value) : uniqueSuggestion(value, choices);
   return attrValueFix(line, text, start, end, key, value, replacement);
 }
@@ -394,13 +408,17 @@ function dueDate(content: string): string | undefined {
 /**
  * Enumerated container attributes whose invalid values are reported under their own rule. `:::figure{kind}`
  * is a warning: before 1.6 such a document only had a `container/unknown` warning and passed validation.
+ * The `figure/kind` code is deprecated: 2.0 reports these as `attrs/value`, which `note` tells users who filter on it.
  */
-const ENUM_VALUE_RULES = new Map<string, { severity: Severity; code: string }>([
-  ['figure.kind', { severity: 'warning', code: 'figure/kind' }],
+const ENUM_VALUE_RULES = new Map<string, { severity: Severity; code: string; note?: string }>([
+  ['figure.kind', {
+    severity: 'warning', code: 'figure/kind',
+    note: ' The "figure/kind" code is deprecated: Styled Markdown 2.0 reports this as "attrs/value", so rule settings and suppressions should name both.',
+  }],
 ]);
 
 /** The rule for an invalid value of an enumerated container attribute: `attrs/value` (error) unless listed above. */
-function enumValueRule(container: string, key: string): { severity: Severity; code: string } {
+function enumValueRule(container: string, key: string): { severity: Severity; code: string; note?: string } {
   return ENUM_VALUE_RULES.get(`${container}.${key}`) ?? { severity: 'error', code: 'attrs/value' };
 }
 
@@ -408,7 +426,8 @@ function checkContainer(
   info: NonNullable<ReturnType<typeof parseContainerInfo>>,
   line: number, nameStart: number, nameEnd: number, parent: string | undefined, push: Push, raw: string,
 ): void {
-  const spec = CONTAINERS[info.name];
+  // Own names only: `:::constructor` is an unknown container.
+  const spec = own(CONTAINERS, info.name);
   if (!spec) {
     const hint = suggest(info.name, Object.keys(CONTAINERS));
     push(line, nameStart, nameEnd, 'warning', 'container/unknown',
@@ -437,7 +456,7 @@ function checkContainer(
     if (v !== undefined && !allowed.some((a) => a.toLowerCase() === v.toLowerCase())) {
       const hint = suggest(v, allowed);
       const rule = enumValueRule(info.name, key);
-      push(line, nameStart, nameEnd, rule.severity, rule.code, `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
+      push(line, nameStart, nameEnd, rule.severity, rule.code, `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.${rule.note ?? ''}`,
         attrValueFix(line, raw, nameEnd, raw.length, key, v, uniqueSuggestion(v, allowed)));
     }
   }
@@ -461,14 +480,20 @@ function checkContainer(
   }
 }
 
-function checkInline(raw: string, line: number, push: Push, variables: Variables): void {
-  // Blank out inline code so its contents are never treated as syntax.
-  const text = raw.replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
+/** A line with inline code blanked out, so its contents are never treated as syntax. */
+const withoutCode = (raw: string): string => raw.replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
+
+/**
+ * The inline checks of one line. `ending` is the part of a directive that runs on from the lines above and ends here
+ * (see multiLineDirectives): it is checked whole, so its `]{…}` is not a styled span.
+ */
+function checkInline(raw: string, line: number, push: Push, variables: Variables, ending?: [number, number]): void {
+  const text = withoutCode(raw);
 
   const at: InlineAt = { line, text, push };
 
   // :directive[content]{attrs}
-  const directiveSpans: Array<[number, number]> = [];
+  const directiveSpans: Array<[number, number]> = ending ? [[ending[0] - 1, ending[1]]] : [];
   for (const m of text.matchAll(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g)) {
     if (!m[3] && !m[4]) continue;
     const col = m.index! + m[1].length;
@@ -477,6 +502,26 @@ function checkInline(raw: string, line: number, push: Push, variables: Variables
     checkDirective(at, { name: m[2], col, end, content: m[3], attrList: m[4] }, variables);
   }
   checkStyledSpans(at, directiveSpans);
+  checkInlineAttrLists(raw, text, line, push);
+}
+
+/**
+ * The inline directives whose text runs over several lines (`:badge[foo` on one line, `bar]{color=green}` on the
+ * next), as rendering reads them (see inlineItemLines). Each is placed on its last line, from the start of its part
+ * there to its end, where its attribute list is.
+ */
+function multiLineDirectives(text: string, lines: string[]): Array<DirectiveUse & { line: number }> {
+  if (!lines.some((l) => l.includes(':') && l.includes('['))) return [];
+  const found: Array<DirectiveUse & { line: number }> = [];
+  for (const parts of inlineItemLines(text).values()) {
+    for (const { item, index } of parts) {
+      const m = index === 0 ? /^:([a-z][a-z0-9-]*)(\[[^\]]*\])?(\{[^{}\n]*\})?$/.exec(item.text) : null;
+      const [line, start, end] = item.parts.at(-1)!;
+      // A line break in the content reads as a space, as it renders.
+      if (m) found.push({ line, name: m[1], col: start, end, content: m[2]?.replaceAll('\n', ' '), attrList: m[3] });
+    }
+  }
+  return found;
 }
 
 /** Where an inline check reports: the line, its text with inline code blanked out, and the push. */
@@ -487,7 +532,7 @@ interface DirectiveUse { name: string; col: number; end: number; content?: strin
 
 function checkDirective(at: InlineAt, d: DirectiveUse, variables: Variables): void {
   const { line, push } = at;
-  const spec = INLINE_DIRECTIVES[d.name];
+  const spec = own(INLINE_DIRECTIVES, d.name);
   if (!spec) { unknownDirective(at, d); return; }
   if (spec.content && !d.content) push(line, d.col, d.end, 'error', 'directive/content', `":${d.name}" needs content in brackets, e.g. ${spec.example}.`);
   const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1)) : null;
@@ -528,8 +573,9 @@ function checkDirectiveAttrs(at: InlineAt, d: DirectiveUse, spec: InlineDirectiv
 function checkDirectiveAttr(
   { line, text, push }: InlineAt, { name, col, end }: DirectiveUse, spec: InlineDirectiveSpec, { key, value, keys }: { key: string; value: string; keys: string[] },
 ): void {
-  const allowed = spec.values?.[key];
-  if (allowed && !allowed.includes(value)) {
+  const allowed = own(spec.values ?? {}, key);
+  // Enumerated values are matched in any case, as container values are (`trend=Up` is `up`).
+  if (allowed && !allowed.some((a) => a.toLowerCase() === value.toLowerCase())) {
     push(line, col, end, 'error', 'attrs/value', `Invalid ${key} "${value}" for ":${name}". Use one of: ${allowed.join(', ')}.`,
       attrValueFix(line, text, col, end, key, value, uniqueSuggestion(value, allowed)));
   } else if (!spec.attrs.includes(key)) {
@@ -571,9 +617,11 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
   const { links, references, definitions } = findLinks(text);
   let ownIds: Set<string> | undefined;
   const otherIds = new Map<string, Set<string> | undefined>();
+  const otherTexts = new Map<string, string>();
   const idsIn = (path: string): Set<string> | undefined => {
     if (!otherIds.has(path)) {
       const other = options.readFile?.(path);
+      if (other !== undefined) otherTexts.set(path, other);
       otherIds.set(path, other === undefined ? undefined : anchorIds(other));
     }
     return otherIds.get(path);
@@ -589,7 +637,7 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
       if (!parts.anchor) continue;
       ownIds ??= documentIds(text, options.readFile);
       if (!ownIds.has(parts.anchor)) {
-        missingAnchor(parts.anchor, ownIds, 'in this document', link.target, line, column, end, push);
+        unresolvedAnchor({ anchor: parts.anchor, ids: ownIds, text, where: 'in this document', target: link.target, line, column, end }, push);
       }
       continue;
     }
@@ -602,7 +650,7 @@ function checkLinks(text: string, push: Push, options: ValidateOptions): void {
     if (parts.anchor && isDocumentPath(parts.path)) {
       const ids = idsIn(parts.path);
       if (ids && !ids.has(parts.anchor)) {
-        missingAnchor(parts.anchor, ids, `in "${parts.path}"`, link.target, line, column, end, push);
+        unresolvedAnchor({ anchor: parts.anchor, ids, text: otherTexts.get(parts.path) ?? '', where: `in "${parts.path}"`, target: link.target, line, column, end }, push);
       }
     }
   }
@@ -650,6 +698,38 @@ function undefinedFootnote(ref: FootnoteReference, labels: string[], push: Push)
   push(ref.line, ref.column, ref.endColumn, labels.length ? 'warning' : 'info', 'footnote/undefined',
     `No definition for the footnote "[^${ref.raw}]"${hint ? ` — did you mean "[^${hint}]"?` : '.'} Add a line like "[^${ref.raw}]: …"; until then it shows as plain text.`,
     hint ? { line: ref.line, column, endColumn: column + ref.raw.length, replacement: hint, title: `Change to "[^${hint}]"` } : undefined);
+}
+
+/** A link's `#anchor` that no id of its document matches. */
+interface UnresolvedAnchor {
+  anchor: string;
+  /** The ids of the linked document. */
+  ids: Set<string>;
+  /** The linked document. */
+  text: string;
+  /** "in this document" or `in "file.smd"`. */
+  where: string;
+  target: string;
+  line: number;
+  column: number;
+  end: number;
+}
+
+/**
+ * An anchor that is the GitHub id of a heading (`#foo_bar` for `## foo_bar`, whose id is `#foobar`) works on GitHub
+ * but not in the rendered HTML: `info`, with a fix to the heading's own id. Any other is `link/missing-anchor`.
+ */
+function unresolvedAnchor(link: UnresolvedAnchor, push: Push): void {
+  const { anchor, target, line, column, end } = link;
+  const heading = aliasedHeading(link.text, anchor);
+  if (!heading) {
+    missingAnchor(anchor, link.ids, link.where, target, line, column, end, push);
+    return;
+  }
+  const fixed = target.slice(0, target.indexOf('#') + 1) + heading.slug;
+  push(line, column, end, 'info', 'link/github-anchor',
+    `"#${anchor}" is the id GitHub gives the heading "${heading.text}" ${link.where}; its Styled Markdown id is "#${heading.slug}". The link works on GitHub, but not in the preview or rendered HTML.`,
+    { line, column, endColumn: end, replacement: fixed, title: `Change to "${fixed}"` });
 }
 
 function missingAnchor(
@@ -933,6 +1013,7 @@ function checkHeadingAttrs(raw: string, line: number, push: Push): void {
   const end = col + m[1].length + 2;
   const attrs = parseAttrs(m[1]);
   if (!attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed heading attribute list. Expected {#id .class agent=skip}.'); return; }
+  checkHeadingHints(line, raw, m.index, col, end - 1, push);
   const keys = Object.keys(attrs.values);
   for (const [key, value] of Object.entries(attrs.values)) {
     if (key !== 'agent') {

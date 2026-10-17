@@ -95,12 +95,14 @@ test('the scan finds every inline directive and span rendering numbers, in order
   assert.ok(total > 80, `the documents have inline items (${total})`);
 });
 
-test('every item of the examples and the corpus is placed on its line', () => {
+test('every item of the examples and the corpus that is on one line is placed on it', () => {
   for (const doc of documents) {
     const lines = doc.text.split(LINE_BREAK);
     for (const block of renderBlocks(doc.text, { ...doc.options, inlineIndex: true }).blocks) {
       const blockLines = lines.slice(block.start, block.end);
       for (const item of scanInline(blockLines)) {
+        // An item whose text runs over a line break (corpus/inline-line-breaks.smd) has no one line to be placed on.
+        if (item.content?.includes('\n')) { assert.equal(item.at, undefined); continue; }
         assert.ok(item.at, `${doc.name}, line ${block.start + 1}: ${item.name} is placed`);
         const text = blockLines[item.at.line].slice(item.at.start, item.at.end);
         assert.ok(item.kind === SPAN ? text.startsWith('[') : text.startsWith(`:${item.name}`), `${doc.name}: ${text}`);
@@ -165,7 +167,10 @@ test('editInline keeps quotes and order, adds keys where smd fmt puts them, and 
   assert.equal(edit('[a]{color=red} [b]{bg=blue}', { attrs: { bg: 'teal' } }, 1), '[a]{color=red} [b]{bg=teal}');
   assert.equal(edit(':badge[A]', { content: 'two\nlines' }), null);
   assert.equal(edit(':progress{value=4}', { content: 'x' }), null, 'no brackets to put content in');
-  assert.equal(edit(':badge[A]', { attrs: { color: 'a"b\'c' } }), null);
+  // Both kinds of quote are written with \" (1.10), and the edited item reads back with the value.
+  assert.equal(edit(':metric[1]{label=x}', { attrs: { label: 'say "hi" it\'s' } }), String.raw`:metric[1]{label="say \"hi\" it's"}`);
+  assert.deepEqual(scanInline([String.raw`:metric[1]{label="say \"hi\" it's"}`])[0].values, { label: 'say "hi" it\'s' });
+  assert.equal(edit(':badge[A]', { attrs: { color: String.raw`a\"b'c` } }), null, 'a backslash before a quote would read as an escape');
 });
 
 /** A random change an item's form could ask for. */

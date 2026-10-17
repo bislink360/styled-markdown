@@ -3,6 +3,7 @@ import type { Options, Renderer, Token } from 'markdown-it';
 import katex from 'katex';
 import { attrsToStyle, escapeHtml, htmlAttrs, resolveColor, type Attrs } from './attrs';
 import { FigureCounter, type FigureNumber } from './figures';
+import { unknownContainerTitle } from './containers';
 import { asStringList } from './frontmatter';
 import { langFromPath, parseFenceInfo, sliceLines, type FenceInfo } from './fence';
 import { EN, label, term, type MessageKey, type Messages } from './i18n';
@@ -138,10 +139,15 @@ const divOpen = (cls: string): ContainerOpen => (c) => {
   return `<div${htmlAttrs(c.attrs, [cls], c.style)}${c.dataLine}>\n`;
 };
 
-/** `box` and unknown names render as a styled block; the validator flags unknown names. */
+/**
+ * `box` and unknown names render as a styled block; the validator flags unknown names. An unknown container keeps
+ * its title, styled as a card's (spec §3); `box` takes none.
+ */
 function boxOpen(c: ContainerView): string {
   c.meta.close = '</div>';
-  return `<div${htmlAttrs(c.attrs, ['smd-box', `smd-box-${c.name}`], c.style)}${c.dataLine}>\n`;
+  const title = unknownContainerTitle(c.name, c.meta.title);
+  const head = title ? `<div class="smd-box-title">${c.inline(title)}</div>` : '';
+  return `<div${htmlAttrs(c.attrs, ['smd-box', `smd-box-${c.name}`], c.style)}${c.dataLine}>${head}\n`;
 }
 
 function detailsOpen(c: ContainerView): string {
@@ -436,9 +442,9 @@ export function withoutDueNotes(html: string): string {
 
 const TREND_ARROWS = new Map([['up', '▲'], ['down', '▼'], ['flat', '■']]);
 
-/** The trend as written, or from the sign of `delta`. */
+/** The trend as written (in lower case: `Up` is `up`), or from the sign of `delta`. */
 function metricTrend(values: Record<string, string>): string {
-  if (values.trend !== undefined) return values.trend;
+  if (values.trend !== undefined) return values.trend.toLowerCase();
   if (!values.delta) return '';
   return values.delta.trim().startsWith('-') ? 'down' : 'up';
 }
@@ -450,7 +456,7 @@ function metricTone(trend: string, good: string): string {
 
 function metric({ md, content, values, m }: Directive): string {
   const trend = metricTrend(values);
-  const tone = metricTone(trend, values.good ?? 'up');
+  const tone = metricTone(trend, (values.good ?? 'up').toLowerCase());
   const arrow = TREND_ARROWS.get(trend) ?? '';
   // Good or bad shows as colour; screen readers get it as text, and the arrow as the trend's name.
   const spoken = [TREND_ARROWS.has(trend) ? term(m, 'trend', trend) : '', tone === 'flat' ? '' : term(m, 'tone', tone)].filter(Boolean).join(', ');

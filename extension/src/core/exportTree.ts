@@ -1,5 +1,7 @@
 import type { Token } from 'markdown-it';
 import { resolveColor } from './attrs';
+import { alertOf } from './alerts';
+import { isKnownContainer } from './containers';
 import { langFromPath, parseFenceInfo, sliceLines } from './fence';
 import { FigureCounter } from './figures';
 import { label, term, type MessageKey, type Messages } from './i18n';
@@ -235,6 +237,8 @@ class TreeBuilder {
       case 'ordered_list_open':
         return this.list(i, close());
       case 'blockquote_open':
+        // A GitHub alert is its callout.
+        if (alertOf(t)) return this.container(i, close());
         return { blocks: [{ kind: 'quote', blocks: this.blocks(i + 1, close()) }], next: close() + 1 };
       case 'table_open':
         return this.table(i, close());
@@ -338,8 +342,7 @@ class TreeBuilder {
   private container(open: number, close: number): Step {
     const meta = this.tokens[open].meta as ContainerMeta;
     const call: ContainerCall = { b: this, meta, title: meta.title ? this.plain(meta.title) : '', body: () => this.blocks(open + 1, close) };
-    const rule = (CALLOUT_TYPES as readonly string[]).includes(meta.name) ? callout : CONTAINERS.get(meta.name);
-    return { blocks: rule ? rule(call) : call.body(), next: close + 1 };
+    return { blocks: containerRule(meta.name)(call), next: close + 1 };
   }
 
   /** The front matter facts renderSmd shows in its header, but the title (the page's own). */
@@ -494,6 +497,15 @@ const CONTAINERS = new Map<string, (c: ContainerCall) => Block[]>([
   ['glossary', titled],
   ['changelog', titled],
 ]);
+
+/** Content only, for the layout containers (box, tabs, columns, column, steps, timeline). */
+const contentOnly = (c: ContainerCall): Block[] => c.body();
+
+/** How a container exports: callouts and the containers above by their rule, unknown ones with their title (spec §3). */
+function containerRule(name: string): (c: ContainerCall) => Block[] {
+  if ((CALLOUT_TYPES as readonly string[]).includes(name)) return callout;
+  return CONTAINERS.get(name) ?? (isKnownContainer(name) ? contentOnly : titled);
+}
 
 // ---------------------------------------------------------------------------
 // Inline content
@@ -653,7 +665,7 @@ const TREND_ARROWS = new Map([['up', '▲'], ['down', '▼'], ['flat', '■']]);
 /** `:metric[42%]{label="Activation" delta="+3%" trend=up}` → **42%** Activation ▲ +3% */
 function metric(d: DirectiveMeta, b: TreeBuilder, marks: Marks): Inline[] {
   const { values } = d;
-  const trend = values.trend ?? (values.delta?.trim().startsWith('-') ? 'down' : 'up');
+  const trend = values.trend?.toLowerCase() ?? (values.delta?.trim().startsWith('-') ? 'down' : 'up');
   const delta = values.delta ? [TREND_ARROWS.get(trend), values.delta] : [];
   const rest = [values.label, ...delta].filter(Boolean).join(' ');
   return [text(b.plain(d.content), { ...marks, bold: true }), ...(rest ? [text(` ${rest}`, marks)] : [])];

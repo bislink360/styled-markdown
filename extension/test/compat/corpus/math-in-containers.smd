@@ -1,0 +1,54 @@
+---
+smd: 1
+title: Display math in containers
+summary: Pins how `$$` display math reads inside containers, so later releases are compared against it. Math is opaque, as code is, so a line of colons inside it never closes a container.
+status: draft
+updated: 2026-10-15
+---
+
+## Math in a callout
+
+:::note Ratios
+The ratio is defined over the whole interval:
+
+$$
+\frac{a}{b}
+:::
+\frac{c}{d}
+$$
+
+Still inside the note, after the math.
+:::
+
+Outside the note.
+
+## Nested containers
+
+::::tabs
+:::tab Formula
+$$ E = mc^2 $$
+
+$$
+x
+::::
+y
+$$
+:::
+:::tab Notes
+The second tab.
+:::
+::::
+
+## Math next to code
+
+:::warning Mixed
+```text
+:::
+```
+
+$$
+:::
+$$
+
+The warning ends on the line after this one.
+:::

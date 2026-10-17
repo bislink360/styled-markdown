@@ -4,6 +4,7 @@ import { parseSmd } from './parse';
 import { parseSelector, querySmd, type QueryMatch } from './query';
 import type { Heading } from './render';
 import { DECISION_STATUS } from './spec';
+import { own } from './util';
 
 /**
  * Decision log (`smd decisions`): every `:::decision` across documents, newest first, filtered by
@@ -60,7 +61,7 @@ const DECISIONS = parseSelector('decision');
 
 /** Every decision in the documents that passes the filters: newest date first, undated last, then by path and line. */
 export function decisionLog(documents: Array<{ path: string; text: string }>, options: DecisionLogOptions = {}): DecisionEntry[] {
-  const statuses = options.status?.map((s) => STATUS_ALIASES[s.trim().toLowerCase()] ?? s.trim().toLowerCase());
+  const statuses = options.status?.map((s) => own(STATUS_ALIASES, s.trim().toLowerCase()) ?? s.trim().toLowerCase());
   const owner = options.owner === undefined ? undefined : normOwner(options.owner);
   return documents
     .flatMap((d) => documentDecisions(d.path, d.text))
@@ -203,7 +204,7 @@ export function decisionHref(e: DecisionEntry, href: string): string {
 
 /** `:badge[accepted]{color=green}` */
 export function decisionBadge(status: string): string {
-  return `:badge[${escapeInline(status)}]{color=${BADGE_COLORS[status] ?? 'gray'}}`;
+  return `:badge[${escapeInline(status)}]{color=${own(BADGE_COLORS, status) ?? 'gray'}}`;
 }
 
 /** Plain text that stays plain inside a table cell or link text: Markdown, math and directive punctuation escaped. */

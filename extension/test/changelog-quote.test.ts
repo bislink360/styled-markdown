@@ -140,8 +140,9 @@ test('changelog: agent view lists version and date, then the entries', () => {
 });
 
 test('changelog: to-md keeps the headings and lists under a bold title', () => {
-  assert.equal(smdToMarkdown(changelog), '**Release history**\n\nNewest first.\n\n## 1.2.0 — 2026-03-01\n- Added *export*\n\n'
-    + '## [1.1.0] - 2026-01-15\n### Fixed\n- Dates\n\n## Unreleased\n');
+  // Since 1.10, release headings whose GitHub id differs (`120--2026-03-01`) get an anchor with their own id.
+  assert.equal(smdToMarkdown(changelog), '**Release history**\n\nNewest first.\n\n<a id="120-2026-03-01"></a>\n## 1.2.0 — 2026-03-01\n- Added *export*\n\n'
+    + '<a id="110-2026-01-15"></a>\n## [1.1.0] - 2026-01-15\n### Fixed\n- Dates\n\n## Unreleased\n');
 });
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,431 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { formatSmd, renderSmd, validateSmd } from '../src/core';
+import { KIND_ORDER, migrationPlan, type MigrationKind, type MigrationOptions, type MigrationPlan } from '../src/core/migrate';
+import { migrationReport, migrationSummary } from '../src/migrateReport';
+
+/**
+ * `smd migrate --to 2 --dry-run` (1.10, spec v2 RFC "Rollout and migration"): the plan that keeps each document's
+ * meaning under spec v2. Steps marked `keeps: 'v1'` leave the v1 rendering as it is; the others keep the v2 meaning.
+ */
+
+const TODAY = '2026-10-15';
+const doc = (body: string, smd = 'smd: 1') => `---\n${smd}\n---\n\n${body}\n`;
+const plan = (text: string, options: MigrationOptions = {}) => migrationPlan(text, options);
+const changes = (p: MigrationPlan, kind?: MigrationKind) => p.steps.filter((s) => !s.note && (!kind || s.kind === kind));
+const notes = (p: MigrationPlan, kind?: MigrationKind) => p.steps.filter((s) => s.note && (!kind || s.kind === kind));
+/** The steps of a kind as `line:before→after`, lines 1-based. */
+const edits = (p: MigrationPlan, kind: MigrationKind) => changes(p, kind).map((s) => `${s.line + 1}:${s.before}→${s.after}`);
+/**
+ * v1 HTML without what moves with the source lines (`data-line`) or names the include's query (`data-include`), and
+ * with each class once: v1 writes a repeated class twice, which collapsing duplicate attributes leaves out.
+ */
+const v1 = (text: string, options: MigrationOptions = {}) => renderSmd(text, { readFile: options.readFile, today: TODAY }).html
+  .replaceAll(/ data-line="\d+"/g, '').replaceAll(/ data-include="[^"]*"/g, '')
+  .replaceAll(/ class="([^"]*)"/g, (_, names: string) => ` class="${[...new Set(names.split(' '))].join(' ')}"`);
+const crlf = (s: string) => s.replaceAll('\n', '\r\n');
+
+/** The checks every case gets: v1 rendering kept (when asked), the same plan with CRLF, and nothing left to do. */
+function checkCase(text: string, options: MigrationOptions = {}, keepsV1 = true): MigrationPlan {
+  const p = plan(text, options);
+  if (keepsV1) assert.equal(v1(p.result, options), v1(text, options), 'the v1 rendering is kept');
+  const windows = plan(crlf(text), options);
+  assert.equal(windows.result, crlf(p.result), 'CRLF documents migrate the same, and keep CRLF');
+  assert.deepEqual(windows.steps, p.steps);
+  const again = plan(p.result, { ...options, force: true });
+  assert.deepEqual(changes(again), [], 'the plan of the result has nothing left to change');
+  return p;
+}
+
+// ---------------------------------------------------------------------------
+// 1. Closing fences (proposal 3)
+// ---------------------------------------------------------------------------
+
+test('migrate: closing fences get their container\'s colon count', () => {
+  const p = checkCase(doc('::::tabs\n:::tab A\nOne\n::::\n:::tab B\nTwo\n:::\n:::'));
+  assert.deepEqual(edits(p, 'closer'), ['8:::::→:::', '12::::→::::']);
+  assert.match(p.result, /One\n:::\n:::tab B\nTwo\n:::\n::::\n$/);
+  assert.equal(changes(p, 'closer')[0].proposal, '3');
+  assert.equal(changes(p, 'closer')[0].keeps, 'v1');
+});
+
+test('migrate: matching closers, and fences in code or math, are left alone', () => {
+  for (const body of ['::::tabs\n:::tab A\nOne\n:::\n::::', '```\n::::note\nx\n:::\n```', ':::note\n$$\n::::\n$$\n:::']) {
+    assert.deepEqual(changes(checkCase(doc(body)), 'closer'), [], body);
+  }
+});
+
+test('migrate: a closer is rewritten even where its hint is suppressed', () => {
+  const p = checkCase(doc('::::note\nx\n<!-- smd-disable-next-line container/colons -->\n:::'));
+  assert.deepEqual(edits(p, 'closer'), ['8::::→::::']);
+});
+
+// ---------------------------------------------------------------------------
+// 2. Duplicate attributes (proposal 4)
+// ---------------------------------------------------------------------------
+
+test('migrate: duplicate attributes are collapsed to the value v1 uses', () => {
+  const text = doc('A [span]{color=red color=blue} and :badge[B]{color=red color=green}.\n\n:::note{#a #b} T\nx\n:::\n\n## H {.c .c}');
+  const p = checkCase(text);
+  assert.deepEqual(edits(p, 'duplicate-attrs'), [
+    '5:A [span]{color=red color=blue} and :badge[B]{color=red color=green}.→A [span]{color=blue} and :badge[B]{color=green}.',
+    '7::::note{#a #b} T→:::note{#b} T',
+    '11:## H {.c .c}→## H {.c}',
+  ]);
+  // Only a repeated class renders differently: v1 writes it twice (v() reads each class once).
+  assert.match(renderSmd(text).html, /<h2 class="smd-u-c smd-u-c" id="h"/);
+  assert.match(renderSmd(p.result).html, /<h2 class="smd-u-c" id="h"/);
+});
+
+test('migrate: attribute lists in code are left alone', () => {
+  const text = doc('`[x]{color=red color=blue}`\n\n```\n[x]{color=red color=blue}\n```');
+  assert.deepEqual(changes(checkCase(text), 'duplicate-attrs'), []);
+});
+
+// ---------------------------------------------------------------------------
+// 3. Title text that is not shown (proposal 4)
+// ---------------------------------------------------------------------------
+
+test('migrate: container title text that title="…" hides is removed', () => {
+  const p = checkCase(doc(':::note{title="Shown"} Hidden\nx\n:::\n\n:::note{title="Only"}\ny\n:::\n\n:::warning Plain title\nz\n:::'));
+  assert.deepEqual(edits(p, 'title-text'), ['5::::note{title="Shown"} Hidden→:::note{title="Shown"}']);
+});
+
+test('migrate: title text next to a comment is a note, not a change', () => {
+  const p = checkCase(doc(':::note{title="Shown"} Hidden <!-- smd-disable-line container/title-conflict -->\nx\n:::'));
+  assert.deepEqual(changes(p, 'title-text'), []);
+  assert.equal(notes(p, 'title-text').length, 1);
+  assert.match(notes(p, 'title-text')[0].reason, /^Not rewritten: This title text is not shown/);
+});
+
+// ---------------------------------------------------------------------------
+// 4. $$ delimiters (proposal 2)
+// ---------------------------------------------------------------------------
+
+test('migrate: $$ with math on its line moves onto a line of its own', () => {
+  const p = checkCase(doc('$$ a + b\nc\nd $$\n\nText.'));
+  assert.deepEqual(changes(p, 'math-delimiters').map((s) => [s.line + 1, s.endLine + 1, s.after]), [[5, 7, '$$\na + b\nc\nd\n$$']]);
+  assert.equal(changes(p, 'math-delimiters')[0].keeps, 'v1');
+});
+
+test('migrate: $$ splits keep the math in quotes, lists and containers', () => {
+  const quoted = checkCase(doc('> $$ x\n> y $$'));
+  assert.deepEqual(changes(quoted, 'math-delimiters').map((s) => s.after), ['> $$\n> x\n> y\n> $$']);
+  const listed = checkCase(doc('- item\n\n  $$ x\n  y $$\n- next'));
+  assert.deepEqual(changes(listed, 'math-delimiters').map((s) => s.after), ['  $$\n  x\n  y\n  $$']);
+  const marked = checkCase(doc('- $$ x\n  y $$'));
+  assert.deepEqual(changes(marked, 'math-delimiters').map((s) => s.after), ['- $$\n  x\n  y\n  $$']);
+  const contained = checkCase(doc(':::note\n$$ x\ny $$\n:::'));
+  assert.deepEqual(changes(contained, 'math-delimiters').map((s) => s.line + 1), [6]);
+  const opener = checkCase(doc('$$ x\ny\n$$'));
+  assert.deepEqual(changes(opener, 'math-delimiters').map((s) => s.after), ['$$\nx\ny\n$$']);
+});
+
+test('migrate: own-line and one-line $$, and $$ in code, are left alone', () => {
+  for (const body of ['$$\nx\n$$', '$$x + y$$', '```\n$$ x\ny $$\n```', '    $$ x\n    y $$', 'Text with `$$ x` in code.']) {
+    assert.deepEqual(changes(checkCase(doc(body)), 'math-delimiters'), [], body);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 5. Braces after headings (proposal 5)
+// ---------------------------------------------------------------------------
+
+test('migrate: an empty {} or a bare {word} after a heading is removed', () => {
+  const p = checkCase(doc('## Object {}\n\n## Returns {ok}\n\n## Both {#id ok}'));
+  assert.deepEqual(edits(p, 'heading-braces'), ['5:## Object {}→## Object', '7:## Returns {ok}→## Returns', '9:## Both {#id ok}→## Both {#id}']);
+});
+
+test('migrate: heading attributes v2 keeps, and {agent}, are not rewritten', () => {
+  const p = checkCase(doc('## Kept {#id .c}\n\n## Skipped {agent=skip}\n\n## Flag {agent}\n\n```\n## Code {}\n```'));
+  assert.deepEqual(changes(p, 'heading-braces'), []);
+  assert.deepEqual(notes(p, 'heading-braces').map((s) => s.line + 1), [9]);
+});
+
+// ---------------------------------------------------------------------------
+// 6. Unknown directives (proposal 7b)
+// ---------------------------------------------------------------------------
+
+test('migrate: a literal :name[ outside the vocabulary is escaped', () => {
+  const p = checkCase(doc('See :abbr[HTML], (:x[1]) and :Badge[wrong case].'));
+  assert.deepEqual(edits(p, 'unknown-directive'), ['5:See :abbr[HTML], (:x[1]) and :Badge[wrong case].→See \\:abbr[HTML], (\\:x[1]) and \\:Badge[wrong case].']);
+  assert.equal(changes(p, 'unknown-directive')[0].keeps, 'v2');
+  assert.equal(changes(p, 'unknown-directive')[0].proposal, '7b');
+});
+
+test('migrate: known directives, code, math, HTML, links, attributes and other colons are left alone', () => {
+  const body = [
+    ':badge[ok]{color=green} :kbd[K] `:code[x]` $:m[x]$ \\:done[x] a:b[c] :open[ without a close',
+    '',
+    '[link](https://x.test/:p[1]) <span title=":t[1]">s</span> [s]{title=":v[1]"}',
+    '',
+    '```',
+    ':y[1]',
+    '```',
+    '',
+    '<div>',
+    ':z[1]',
+    '</div>',
+    '',
+    '$$',
+    ':w[1]',
+    '$$',
+  ].join('\n');
+  assert.deepEqual(changes(checkCase(doc(body)), 'unknown-directive'), []);
+});
+
+// ---------------------------------------------------------------------------
+// 7. Include sections (proposal 9)
+// ---------------------------------------------------------------------------
+
+const files: Record<string, string> = { 'terms.smd': '---\nsmd: 1\n---\n\n## Refunds\n\nWithin 30 days.\n\n## Pricing\n\nMonthly.\n' };
+const readFile = (p: string) => files[p];
+
+test('migrate: an include section found by a part of its heading becomes the heading\'s id', () => {
+  const text = doc(':::include{file="terms.smd" section="refund"}\nSee the terms.\n:::');
+  const p = checkCase(text, { readFile });
+  assert.deepEqual(edits(p, 'include-section'), ['5::::include{file="terms.smd" section="refund"}→:::include{file="terms.smd" section="refunds"}']);
+  assert.match(v1(p.result, { readFile }), /Within 30 days/);
+  assert.deepEqual(changes(plan(text), 'include-section'), [], 'without a reader, includes are left alone');
+});
+
+test('migrate: an include section that matches exactly is left alone', () => {
+  for (const section of ['refunds', 'Refunds', 'pricing']) {
+    const text = doc(`:::include{file="terms.smd" section="${section}"}\nSee the terms.\n:::`);
+    assert.deepEqual(changes(checkCase(text, { readFile }), 'include-section'), [], section);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// 8. Enumerated values (proposal 11)
+// ---------------------------------------------------------------------------
+
+test('migrate: enumerated values are written in the vocabulary\'s case', () => {
+  const text = doc(':::decision{status=Accepted} T\nx\n:::\n\n:::api{method=get path="/v1"}\nx\n:::\n\nRate :metric[3%]{label="Rate" trend=Up good=DOWN}.', 'smd: 1\nstatus: Draft\naudience: Both\ntheme: Dark');
+  const p = checkCase(text, {}, false);
+  // v1 reads them in any case already; only the audience label, which v1 translates in lower case only, changes.
+  assert.equal(v1(p.result), v1(text).replace('For Both', 'For both'));
+  assert.deepEqual(edits(p, 'value-case'), [
+    '3:status: Draft→status: draft', '4:audience: Both→audience: both', '5:theme: Dark→theme: dark',
+    '8::::decision{status=Accepted} T→:::decision{status=accepted} T',
+    '12::::api{method=get path="/v1"}→:::api{method=GET path="/v1"}',
+    '16:Rate :metric[3%]{label="Rate" trend=Up good=DOWN}.→Rate :metric[3%]{label="Rate" trend=up good=down}.',
+  ]);
+  assert.equal(changes(p, 'value-case')[0].keeps, 'v2');
+});
+
+test('migrate: values in their case, values outside the vocabulary and code are left alone', () => {
+  const text = doc(':::decision{status=accepted} T\nx\n:::\n\n:::decision{status=Weird} T\nx\n:::\n\n`:metric[1]{label=x trend=Up}`\n\n```\n:::api{method=get path="/"}\n```', 'smd: 1\nstatus: draft');
+  assert.deepEqual(changes(checkCase(text), 'value-case'), []);
+});
+
+// ---------------------------------------------------------------------------
+// 9. Typography (proposal 8)
+// ---------------------------------------------------------------------------
+
+test('migrate: what the typographer changes is a note, or with keepTypography, typography: true', () => {
+  const text = doc('"Quotes" -- dash... (c)\n\n`"code"` and $x--y$ stay.', 'smd: 1\ntitle: "It\'s here"');
+  const counted = checkCase(text);
+  assert.deepEqual(changes(counted, 'typography'), []);
+  const [n] = notes(counted, 'typography');
+  assert.match(n.reason, /changes 6 places today \(3 quotes, 1 dash, 1 ellipsis, 1 symbol\), on line\(s\) 3, 6\. Run with --keep-typography/);
+  const kept = checkCase(text, { keepTypography: true }, false);
+  assert.deepEqual(edits(kept, 'typography'), ['4:→typography: true']);
+  assert.equal(changes(kept, 'typography')[0].keeps, 'v2');
+  assert.match(kept.result, /^---\nsmd: 2\ntitle: "It's here"\ntypography: true\n---\n/);
+});
+
+test('migrate: no typography step without typographic text, or when the key is set', () => {
+  assert.deepEqual(plan(doc('Plain text, `"code"`.'), { keepTypography: true }).steps.filter((s) => s.kind === 'typography'), []);
+  assert.deepEqual(plan(doc('"Quotes"', 'smd: 1\ntypography: false'), { keepTypography: true }).steps.filter((s) => s.kind === 'typography'), []);
+});
+
+test('migrate: keepTypography adds front matter to a document without it', () => {
+  const p = checkCase('"Quotes" here.\n', { keepTypography: true }, false);
+  assert.equal(p.result, '---\nsmd: 2\ntypography: true\n---\n\n"Quotes" here.\n');
+  assert.equal(formatSmd(p.result), p.result);
+});
+
+// ---------------------------------------------------------------------------
+// 10. Fuzzy links (proposal 8)
+// ---------------------------------------------------------------------------
+
+test('migrate: a bare domain linked today is a note, or with linkDomains, an autolink', () => {
+  const text = doc('Docs at example.com and docs.example.org/guide, not https://x.test, www.x.test, a@b.test or `c.test`.');
+  const noted = checkCase(text);
+  assert.deepEqual(notes(noted, 'fuzzy-link').map((s) => s.line + 1), [5]);
+  assert.match(notes(noted, 'fuzzy-link')[0].reason, /"example\.com", "docs\.example\.org\/guide" are linked today/);
+  const linked = checkCase(text, { linkDomains: true }, false);
+  assert.deepEqual(edits(linked, 'fuzzy-link').map((e) => e.split('→')[1]), [
+    'Docs at <https://example.com> and <https://docs.example.org/guide>, not https://x.test, www.x.test, a@b.test or `c.test`.',
+  ]);
+});
+
+// ---------------------------------------------------------------------------
+// 11. Variables (proposal 10)
+// ---------------------------------------------------------------------------
+
+test('migrate: a shown value YAML reads differently is a note, or with quoteVariables, quoted', () => {
+  const text = doc('Release {{release}}, flag {{flag}}.', 'smd: 1\nversion: 2.10\nrelease: 1.0 # the first\nflag: True\nunused: 3.0\nsame: 2\ntitled: "2.10"');
+  const noted = checkCase(text);
+  assert.deepEqual(notes(noted, 'variable-spelling').map((s) => s.line + 1), [3, 4, 5]);
+  assert.match(notes(noted, 'variable-spelling')[0].reason, /"version: 2\.10" is shown as "2\.1" today and as "2\.10" in spec v2/);
+  const quoted = checkCase(text, { quoteVariables: true }, false);
+  assert.deepEqual(edits(quoted, 'variable-spelling'), ['3:version: 2.10→version: "2.10"', '4:release: 1.0 # the first→release: "1.0" # the first', '5:flag: True→flag: "True"']);
+  assert.match(v1(quoted.result), /Release 1\.0, flag True\./);
+});
+
+// ---------------------------------------------------------------------------
+// 12. The smd key (versioning rules)
+// ---------------------------------------------------------------------------
+
+test('migrate: smd: 1, a missing key, an invalid value or no front matter become smd: 2', () => {
+  assert.deepEqual(edits(checkCase(doc('x')), 'version'), ['2:smd: 1→smd: 2']);
+  assert.deepEqual(edits(checkCase(doc('x', 'title: T')), 'version'), ['2:→smd: 2']);
+  assert.equal(checkCase(doc('x', 'title: T')).result, doc('x', 'smd: 2\ntitle: T'));
+  for (const value of ['true', '"1"', '1.0', '[1] # list']) {
+    const p = checkCase(doc('x', `smd: ${value}`));
+    assert.equal(p.result, doc('x', value.includes('#') ? 'smd: 2 # list' : 'smd: 2'), value);
+    assert.equal(p.from, 1);
+  }
+  const bare = checkCase('# Title\n\nText.\n');
+  assert.equal(bare.result, '---\nsmd: 2\n---\n\n# Title\n\nText.\n');
+  assert.equal(formatSmd(bare.result), bare.result);
+  assert.equal(plan('').result, '---\nsmd: 2\n---\n');
+});
+
+test('migrate: smd: 2 needs nothing, a newer version and broken front matter are notes', () => {
+  const v2 = plan(doc('## Returns {ok}', 'smd: 2'));
+  assert.deepEqual(v2, { from: 2, steps: [], result: doc('## Returns {ok}', 'smd: 2') }, 'a v2 document already reads {ok} as text');
+  const v3 = plan(doc('x', 'smd: 3'));
+  assert.equal(v3.from, 3);
+  assert.deepEqual(v3.steps.map((s) => [s.kind, s.note]), [['version', true]]);
+  const broken = plan('---\nsmd: [1\n---\n\nx\n');
+  assert.deepEqual(changes(broken, 'version'), []);
+  assert.match(notes(broken, 'version')[0].reason, /front matter does not parse/);
+  // YAML reads an indented line after it as part of the value ("1 more"): rewriting the `1` would not make it 2.
+  const continued = plan(doc('x', 'smd: 1\n  more'));
+  assert.deepEqual(changes(continued, 'version'), []);
+  assert.match(notes(continued, 'version')[0].reason, /not written as a value on its own line/);
+});
+
+// ---------------------------------------------------------------------------
+// The plan as a whole
+// ---------------------------------------------------------------------------
+
+const corpusDir = path.join(__dirname, 'compat', 'corpus');
+const corpusRead = (rel: string) => {
+  try { return fs.readFileSync(path.join(corpusDir, rel), 'utf8'); } catch { return undefined; }
+};
+
+test('migrate: corpus/migrate.smd has a case for every step', () => {
+  const text = fs.readFileSync(path.join(corpusDir, 'migrate.smd'), 'utf8');
+  assert.equal(formatSmd(text), text, 'fmt-clean');
+  assert.deepEqual(validateSmd(text, { readFile: corpusRead, today: TODAY }).filter((d) => d.severity === 'error' || d.severity === 'warning'), []);
+  const p = plan(text, { readFile: corpusRead });
+  assert.deepEqual(p.steps.map((s) => `${s.kind}:${s.line + 1}${s.note ? ' note' : ''}`), [
+    'closer:15', 'closer:19', 'duplicate-attrs:25', 'title-text:29', 'math-delimiters:35', 'heading-braces:38', 'unknown-directive:42',
+    'include-section:51', 'value-case:5', 'value-case:57', 'value-case:61', 'typography:65 note', 'fuzzy-link:65 note', 'variable-spelling:6 note', 'version:2',
+  ]);
+  assert.deepEqual(new Set(p.steps.map((s) => s.kind)), new Set(KIND_ORDER), 'every kind of step');
+  // Only the steps that keep the v2 meaning change the v1 rendering, and these don't show.
+  assert.equal(v1(p.result, { readFile: corpusRead }), v1(text, { readFile: corpusRead }));
+  const all = plan(text, { readFile: corpusRead, keepTypography: true, linkDomains: true, quoteVariables: true });
+  assert.deepEqual(all.steps.filter((s) => s.note), []);
+  assert.match(all.result, /^---\nsmd: 2\n[^]*version: "2\.10"\n[^]*typography: true\n---\n/);
+  assert.match(all.result, /Docs live at <https:\/\/example\.com> and www\.example\.org\./);
+  assert.deepEqual(changes(plan(all.result, { readFile: corpusRead, force: true })), []);
+});
+
+/** Every tracked .smd file of the repository (and the untracked ones beside them), found without Git. */
+function repositoryDocuments(): string[] {
+  const root = path.join(__dirname, '..', '..');
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (['node_modules', 'dist', 'out', 'site'].includes(entry.name) || entry.name.startsWith('.')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.smd')) out.push(full);
+    }
+  };
+  walk(root);
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+test('migrate: every .smd file in the repository gets a plan that settles and keeps its v1 rendering', () => {
+  const documents = repositoryDocuments();
+  assert.ok(documents.length > 30, `found ${documents.length} documents`);
+  for (const file of documents) {
+    const text = fs.readFileSync(file, 'utf8');
+    const reader = (rel: string) => {
+      try { return fs.readFileSync(path.resolve(path.dirname(file), rel), 'utf8'); } catch { return undefined; }
+    };
+    const p = plan(text, { readFile: reader });
+    assert.deepEqual(changes(plan(p.result, { readFile: reader, force: true })), [], file);
+    if (!changes(p).some((s) => s.keeps === 'v2')) assert.equal(v1(p.result, { readFile: reader }), v1(text, { readFile: reader }), file);
+  }
+});
+
+test('migrate: the report groups steps by kind, with 1-based lines and short diffs', () => {
+  const p = plan(doc('::::note\nx\n:::\n\nSee :abbr[x].'));
+  const report = migrationReport('a.smd', p);
+  assert.match(report, /^a\.smd: 3 changes and 0 notes to migrate from smd: 1 to spec v2\n/);
+  assert.match(report, /\n {2}Closing fences \(proposal 3; v1 rendering kept\):\n {4}Spec v2 pairs[^\n]*\n {4}line 7\n {6}- :::\n {6}\+ ::::\n/);
+  assert.match(report, /Unknown inline directives \(proposal 7b; v2 meaning kept\)/);
+  assert.match(report, /Spec version \(RFC versioning rules; v1 rendering kept\)/);
+  assert.equal(migrationReport('b.smd', plan(doc('x', 'smd: 2'))), 'b.smd: already spec v2 (smd: 2)\n');
+  assert.match(migrationSummary([p, plan(doc('x', 'smd: 2'))]), /^\n2 files checked: 1 to migrate to spec v2 \(3 changes, 0 notes\)\.\nDry run: nothing was written\. Styled Markdown 2\.0 applies the migration\.\n$/);
+});
+
+// ---------------------------------------------------------------------------
+// The CLI
+// ---------------------------------------------------------------------------
+
+const cli = path.join(__dirname, '..', 'dist', 'cli.js');
+
+test('CLI: smd migrate --to 2 --dry-run, its options and exit codes', { skip: !fs.existsSync(cli) && 'run npm run build first' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'smd-migrate-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'old.smd'), doc('"Quoted" text.\n\n::::note\nx\n:::'));
+    fs.writeFileSync(path.join(dir, 'new.smd'), doc('Text.', 'smd: 2'));
+    const run = (...args: string[]) => spawnSync(process.execPath, [cli, 'migrate', ...args], { cwd: dir, encoding: 'utf8' });
+
+    const report = run('old.smd', '--to', '2', '--dry-run');
+    assert.equal(report.status, 1, 'steps to migrate: exit 1');
+    assert.match(report.stdout, /old\.smd: 2 changes and 1 note to migrate from smd: 1 to spec v2/);
+    assert.match(report.stdout, /Dry run: nothing was written/);
+    assert.equal(fs.readFileSync(path.join(dir, 'old.smd'), 'utf8'), doc('"Quoted" text.\n\n::::note\nx\n:::'), 'nothing is written');
+
+    const clean = run('new.smd', '--to', '2', '--dry-run');
+    assert.equal(clean.status, 0, 'nothing to migrate: exit 0');
+    assert.match(clean.stdout, /new\.smd: already spec v2 \(smd: 2\)/);
+
+    const json = run('.', '--to', '2', '--dry-run', '--json', '--keep-typography');
+    assert.equal(json.status, 1);
+    const parsed = JSON.parse(json.stdout) as { files: Array<{ file: string; from: number; steps: Array<{ kind: string }>; result: string }>; changes: number; notes: number };
+    assert.deepEqual(parsed.files.map((f) => [path.basename(f.file), f.from, f.steps.map((s) => s.kind)]), [
+      ['new.smd', 2, []], ['old.smd', 1, ['closer', 'typography', 'version']],
+    ]);
+    assert.deepEqual([parsed.changes, parsed.notes], [3, 0]);
+    assert.match(parsed.files[1].result, /typography: true/);
+
+    const usage = (args: string[], message: RegExp) => {
+      const r = run(...args);
+      assert.equal(r.status, 2, args.join(' '));
+      assert.match(r.stderr, message);
+    };
+    usage(['old.smd', '--to', '2'], /^1\.10 can only report: run with --dry-run\. Styled Markdown 2\.0 applies the migration\.\n$/);
+    usage(['old.smd', '--dry-run'], /migrate needs --to 2\./);
+    usage(['old.smd', '--to', '3', '--dry-run'], /Cannot migrate to "3": the only target is spec v2/);
+    usage(['old.smd', '--to', '2', '--dry-run', '--keep-typo'], /Unknown option "--keep-typo" for migrate/);
+    usage(['missing.smd', '--to', '2', '--dry-run'], /No \.smd files found/);
+    assert.match(spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' }).stdout, /smd migrate <files\|dirs\.\.\.> --to 2 --dry-run/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

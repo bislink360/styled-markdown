@@ -109,6 +109,25 @@ Collapsed section for long content.
 | `question` | purple | open decision | `<question>` | `> [!IMPORTANT]` |
 | `details` | — | long optional content | `<details>` (omitted with `--brief`) | `<details><summary>` |
 
+### GitHub alerts
+
+GitHub's alert syntax works too: a blockquote whose first line is only `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` (in any case) renders as the matching callout, so a README-style document looks the same in the preview and on GitHub.
+
+```markdown
+> [!WARNING]
+> Rotate the keys before you deploy.
+```
+
+| Alert | Renders as | Agent view |
+|---|---|---|
+| `[!NOTE]` | `note` | `<note>` |
+| `[!TIP]` | `tip` | `<tip>` |
+| `[!IMPORTANT]` | `info` (as `smd from-md` converts it) | `<info>` |
+| `[!WARNING]` | `warning` | `<warning>` |
+| `[!CAUTION]` | `danger` | `<danger>` |
+
+The callout shows its type as its title (alerts have none of their own). `smd to-md` keeps the alert as written, and the exports show it as the callout. Anything else stays a blockquote, as on GitHub: text after the marker on its line, an unknown kind, a quote with only the marker, or a quote inside a list item or another quote. Use `:::warning Title` when you want a title or `{collapsible}`. Since 1.10; earlier versions show the quote with its `[!WARNING]` line.
+
 ## 3. Text styling and colors
 
 ```markdown
@@ -193,6 +212,7 @@ Version {{version}} ships on {{release.date}}. :badge[v{{version}}]{color=indigo
 - **SMD Tasks view** (VS Code Explorer): open tasks from every `.smd` file in the workspace, grouped by owner, due date or document; see [section 13](#13-vs-code-editing-assistance).
 - **Problems panel:** open tasks past their due date show a `task/overdue` notice.
 - **`smd tasks docs/`** lists open tasks across every document, overdue first, then by priority. `--mine @api-team` filters by owner, `--json` gives machine-readable output, `--csv` and `--gantt` export (below).
+- **Tasks are what the preview shows with a checkbox.** A task-shaped line in code, in raw HTML or display math, or one that continues a paragraph (`- [ ] x` indented four spaces under a line of text) is text in the preview and on GitHub, so `smd tasks`, `smd meta`, outlines, the Tasks view and `task/overdue` leave it out too.
 
 ```text
 docs/checkout.smd:61  [ ] [P1] Server-side validation returns all field errors @api-team (due 2026-09-25, OVERDUE)  — Requirements
@@ -508,6 +528,8 @@ Any styled block.
 
 A bare `:::` closes the innermost block, so nesting works at any depth. Outer colons (`::::`) are optional but readable. Columns stack on narrow screens. **Agent view:** layout wrappers disappear and tab labels become `Tab "npm":`.
 
+**Unknown containers** (a misspelt name, or a container from a newer version) render as a box with their content and keep their title: `:::frobnicate Release notes` shows **Release notes** as a card-style title in the box, a `Release notes:` line in the agent view and a `**Release notes**` paragraph in `smd to-md`, and the validator warns `container/unknown` with the closest known name. Before 1.10 the title was dropped. A `:::box` takes no title, as before.
+
 ## 9. Diagrams and math
 
 ````markdown
@@ -614,7 +636,8 @@ An `:::agent` block inside a section marked `{agent=skip}` is omitted with the s
 ## 11. Headings, links and anchors
 
 - `## Title {#custom-id}` sets a stable anchor, and `{.lead}` adds a class (`{.page-break}` starts a new page when printed: [section 16](#pdf-and-printing)).
-- Headings get automatic ids, so `[see API](#api)` works. Broken anchors and missing relative files are reported.
+- Headings get automatic ids, so `[see API](#api)` works. Broken anchors and missing relative files are reported. How ids are made is in [SPEC.md §4.2.3](SPEC.md#423-heading-ids).
+- **GitHub ids** work too. GitHub keeps `_` and doesn't collapse hyphens, so `## max_tokens` is `#maxtokens` here and `#max_tokens` on GitHub. A link by the GitHub id is accepted, with an info note and a quick fix to `#maxtokens` (it doesn't work in the preview), and go to definition, hover, find references and rename follow it. `smd to-md` writes `<a id="maxtokens"></a>` before such headings, so links by either id work on GitHub; `smd from-md` drops those lines again.
 - The outline view and folding follow headings and blocks.
 
 ---
@@ -648,7 +671,7 @@ An `:::agent` block inside a section marked `{agent=skip}` is omitted with the s
 | Go to definition | `F12` or `Ctrl+Click` on `#anchor`, `other.smd#anchor`, a relative file, a `related:` entry or a `[text][label]` reference jumps to the heading, `{#id}` block, file or definition |
 | Format Document | `Shift+Alt+F` or format on save applies the `smd fmt` rules: container fence colons by nesting level, canonical attribute lists, aligned tables, blank lines around blocks. Layout only; the rendered document never changes |
 | Find references | `Shift+F12` on a heading, or on the `#anchor` of a link, lists the heading and every link to it in the workspace's `.smd` and `.md` files |
-| Rename heading | `F2` on a heading renames it and updates every `#anchor` and `other.smd#anchor` link to it across the workspace, including the numbered anchors of later headings with the same text. Headings with an explicit `{#id}` keep their anchor, so links are left alone |
+| Rename heading | `F2` on a heading renames it and updates every `#anchor` and `other.smd#anchor` link to it across the workspace, including the numbered anchors of later headings with the same text. Headings with an explicit `{#id}` keep their anchor, so links are left alone. Links by the heading's GitHub id (`#max_tokens`) follow it too |
 | Refactorings | `Ctrl+.` with a selection wraps it in `:::note`, `:::tip`, `:::warning`, `:::danger`, `:::card`, `:::details`, `:::agent` or `:::human` (a selection that splits a code block or container isn't offered). On a callout's opening line: convert it to another callout type. In a blockquote that starts with `[!NOTE]`-style alerts or a bold label (`**Warning:**`, `**Tip**:`…): convert it to the matching callout |
 | SMD Tasks view | In the Explorer of any workspace with `.smd` files: the open tasks of every `.smd` file. **Group Tasks By…** in the view's title bar switches between owner (Unassigned last), due date (Overdue, Today, This week, Later, No due date) and document, and is remembered per workspace. Inside each group: overdue first, then priority, then due date. Each task shows its priority, due date and owners; hover for its section and file. Click to open it at its line; tick the checkbox to check it off in the file (saved unless it had unsaved changes). The eye button shows completed tasks too; the badge counts overdue tasks. Updates as you type, save, and create or delete files |
 | Document status | The status bar shows the front matter `status` of the active `.smd` file (`Draft`, `Review`, `Approved`, `Deprecated`, `Archived`, each with its icon), **No status** when there is none, and a warning for a value outside the five. Click it, or run **Set Document Status…**, to pick a status: the usual next step (draft → review → approved → deprecated → archived) comes first, the current one is marked, and each says what it means to readers. Only the front matter changes, as one undoable edit that is not saved: the `status:` value is replaced in place (quotes and comments kept), or a `status:` line is added after `summary:` (else `title:`, else at the end); a file without front matter gets `smd: 1` and `status:`. An existing `updated:` is set to today (`smd.status.updateDate`). Front matter that does not parse is left alone |
@@ -690,11 +713,12 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `file="nope.ts"` | `fence/embed-missing` | — |
 | `:::include{file="nope.smd"}`, `section="Nope"`, `a.smd` including `b.smd` including `a.smd` | `include/missing-file`, `include/missing-section`, `include/cycle` | — |
 | `[x](#rolout)`, `[x](plan.smd#rolout)` | `link/missing-anchor` | → closest heading id |
+| `[x](#max_tokens)` to `## max_tokens` (GitHub's id) | `link/github-anchor` (info) | → `#maxtokens` |
 | `[x](gone.md)`, `related: [gone.smd]` | `link/missing-file` | — |
 | `[x][undefined-ref]` | `link/undefined-reference` | — |
 | `:ref[fig-chekout]` | `figure/unknown-ref` | → closest figure id |
 | two `:::figure{#fig-a}` | `figure/duplicate-id` | — |
-| `:::figure{kind=tabel}` | `figure/kind` | → `table` |
+| `:::figure{kind=tabel}` | `figure/kind` (deprecated: `attrs/value` in 2.0) | → `table` |
 | `[^retires]` with only `[^retries]: …` defined | `footnote/undefined` | → `[^retries]` |
 | `[^old]: …` that nothing references, `[^1]: …` twice | `footnote/unused` (info), `footnote/duplicate` | — |
 | `- API: …` in a `:::glossary` | `glossary/entry` | — (write `- **API**: …`) |
@@ -707,11 +731,24 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | `## 1.1.0` above `## 1.2.0`, or `## 1.2.0` twice | `changelog/order`, `changelog/duplicate` | — |
 | `:::quote` with no text, no `author`, or `cite="javascript:…"` | `quote/empty`, `quote/author`, `quote/cite` | — |
 | missing `smd: 1` | `frontmatter/version` | adds it |
+| `smd: true`, `smd: 1.0`, `smd: [1]` | `frontmatter/version` (info) | → `smd: 1` |
 | `theme: neon` | `frontmatter/value` | — (lists the allowed values) |
 | `status: aproved`, `theme: Dark` | `frontmatter/status`, `frontmatter/value` | → `approved`, `dark` |
 | `toc: yes`, `updated: 2026/9/5` | `frontmatter/type`, `frontmatter/date` | → `true`, `2026-09-05` |
 | `updated` more than 180 days ago | `frontmatter/stale` | — |
 | overdue open task | `task/overdue` | — |
+| a pipe inside a code span in a table cell (`grep a`, pipe, `wc -l`) | `table/pipe-in-code` (info): the pipe still splits the cell, as on GitHub | puts a backslash before the pipe |
+
+**Ahead of 2.0.** These hints (and one info) point at what Styled Markdown 2.0 rejects or reads differently. They never fail a check, `--strict` included, and each fix keeps how the document renders today:
+
+| Examples | Rule | Quick fix |
+|---|---|---|
+| `::::` closing `:::tab` | `container/colons` | → `:::` (the opener's count, as `smd fmt` writes it) |
+| `[x]{color=red color=blue}`, `{#a #b}`, `{.x .x}` | `attrs/duplicate` | → `{color=blue}` (each once, with the value that is used) |
+| `:::note{title="A"} B` | `container/title-conflict` | removes `B`, which is not shown |
+| `## Object {}`, `## Returns {ok}` | `heading/attrs-text` | removes the braces |
+| `section="deploy"` finding `## Rapid deployment` | `include/section-match` (info) | → `section="rapid-deployment"` |
+| `:::agent{priority=high}` | `deprecated/agent-priority` | removes `priority` |
 
 The full list is in [SPEC.md §7](SPEC.md#7-validation-rules). **Validate All .smd Files in Workspace** checks the whole project.
 
@@ -723,7 +760,7 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 
 | Rule | Fixed when |
 |---|---|
-| `frontmatter/version` | `smd:` is missing (adds `smd: 1`) |
+| `frontmatter/version` | `smd:` is missing (adds `smd: 1`), or its value reads as 1 without being a whole number, e.g. `true` or `1.0` (→ `smd: 1`) |
 | `frontmatter/unknown-key` | a standard key is close, e.g. `titel` → `title` |
 | `frontmatter/status`, `frontmatter/audience`, `frontmatter/value` | exactly one allowed value is close, e.g. `aproved` → `approved`, `Dark` → `dark` |
 | `frontmatter/accent` | the color is a misspelled named color, e.g. `bleu` → `blue` |
@@ -734,8 +771,10 @@ A fix is attached only when there is exactly one sensible repair. VS Code offers
 | `attrs/unknown` | exactly one accepted attribute name is close and not already set, e.g. `colr` → `color` |
 | `attrs/value` | exactly one allowed value is close (block and directive values, named colors, `size`, `weight`, `font`, `align`, `:priority[…]`, heading `agent=skip`), or a `date`/`:due[…]` is year-first, e.g. `2026/10/5` → `2026-10-05` |
 | `link/missing-anchor` | a heading id is close |
+| `link/github-anchor` | always: the heading's own id |
 | `footnote/undefined` | exactly one defined footnote label is close, e.g. `[^retires]` → `[^retries]` |
 | `variable/undefined` | a front matter key is close, e.g. `{{verison}}` → `{{version}}` |
+| `container/colons`, `attrs/duplicate`, `container/title-conflict`, `heading/attrs-text`, `include/section-match`, `deprecated/agent-priority` | always (except `{agent}` after a heading, and title text beside an HTML comment): the change keeps how the document renders, and makes it read the same in spec v2 |
 
 Everything else needs a decision only the author can make (which file was meant, where a block should end inside a list, what a missing attribute should be), so it has no fix. Fixes never touch values with several equally close matches, dates like `09/05/2026` whose day/month order is unclear, or `style=…`, which takes several words.
 
@@ -975,6 +1014,8 @@ smd report <files|dirs> --since <date|git-ref> [-o report.smd] [--title "…"] [
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd validate <files|dirs> --format github [--summary <file>] [...]   GitHub annotations (section 15); --summary appends a job summary
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
+smd migrate <files|dirs> --to 2 --dry-run [--json] [--keep-typography] [--link-domains] [--quote-variables]
+                 what migrating to spec v2 would change (below); exit 0 nothing to do, 1 changes, 2 usage error
 smd render <file> [-o out.html]                     standalone page, with a print stylesheet
 smd pdf <file> [-o out.pdf] [--format A4|Letter] [--landscape]   PDF; needs Playwright or Puppeteer (section 16)
 smd docx <file> [-o out.docx] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only]   Word; needs Pandoc (section 16)
@@ -993,6 +1034,29 @@ smd --version
 ```
 
 `validate` and `fmt` take any number of files and directories, so Git hooks pass them just the staged files (setups for pre-commit, lint-staged and plain Git hooks are in [INSTALL.md](INSTALL.md#pre-commit-hooks)). After `--`, every argument is a file, even one whose name starts with `-`.
+
+### Migrating to spec v2: `smd migrate`
+
+`smd migrate <files|dirs> --to 2 --dry-run` reports what each document needs so that it means the same under spec v2 (`smd: 2`, Styled Markdown 2.0) as it does today: closing fences with their container's colon count, duplicate attributes collapsed, hidden container title text removed, `$$` delimiters on their own lines, `{}` and bare `{word}` after headings removed, literal unknown `:name[…]` escaped, include sections by the heading's id, enumerated values in the vocabulary's case, and `smd: 2`. The steps, and which RFC proposal each follows, are in [SPEC.md §10.1](SPEC.md#101-migrating-to-spec-v2). Unlike `smd fmt`, it changes text, so it is a command of its own.
+
+```text
+docs/plan.smd: 2 changes and 1 note to migrate from smd: 1 to spec v2
+
+  Closing fences (proposal 3; v1 rendering kept):
+    Spec v2 pairs a closing fence with the innermost open container that has as many colons (proposal 3). …
+    line 15
+      - ::::
+      + :::
+
+  Typography (proposal 8; v2 meaning kept):
+    line 23, note: … The typographer changes 4 places today (4 quotes), on line(s) 23. Run with --keep-typography …
+```
+
+- 1.10 only reports, so `--dry-run` is required; Styled Markdown 2.0 applies the migration. Nothing is written.
+- `--json` prints the plan: per file, each step's `kind`, `proposal`, `keeps` (`v1`: v1 rendering unchanged; `v2`: the v2 meaning kept), 0-based `line` and `endLine`, `before`, `after`, `reason` and `note`, and the migrated text as `result`.
+- `--keep-typography` adds `typography: true` where the typographer changes text, to keep curly quotes and dashes under v2, which turns them off; `--link-domains` writes bare domains linked today as `<https://…>`; `--quote-variables` quotes front matter values shown other than as written (`version: 2.10`). Without them, each is a note.
+- Exit code 0 when nothing needs migrating, 1 when something does (a CI step can watch for documents that still need it), 2 on a usage error (no `--dry-run`, `--to` other than 2, an unknown option or no files).
+- In VS Code, **Styled Markdown: Preview Migration to Spec v2** shows the report for the current file in an output panel.
 
 ### Document catalog: `smd index`
 

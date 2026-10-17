@@ -1,6 +1,7 @@
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { parseFrontMatter } from './frontmatter';
+import { aliasedHeading } from './headingAliases';
 import { anchorLine } from './links';
 import { renderSmd, type Heading } from './render';
 
@@ -64,7 +65,9 @@ export interface Excerpt {
 export function sectionExcerpt(text: string, id: string, maxLines = 20): Excerpt | undefined {
   const lines = text.split(/\r?\n/);
   const headings = renderSmd(text).headings;
-  const i = headings.findIndex((h) => h.slug === id);
+  // A heading's GitHub id (`#foo_bar` for `#foobar`) names it too.
+  const slug = aliasedHeading(text, id)?.slug ?? id;
+  const i = headings.findIndex((h) => h.slug === slug);
   if (i >= 0) {
     const h = headings[i];
     const next = headings.slice(i + 1).find((n) => n.level <= h.level);

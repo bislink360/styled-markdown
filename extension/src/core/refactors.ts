@@ -1,3 +1,4 @@
+import { GITHUB_ALERTS } from './alerts';
 import { CONTAINER_CLOSE, CONTAINER_OPEN } from './containers';
 import { CALLOUT_TYPES } from './spec';
 
@@ -85,8 +86,7 @@ function isBalanced(lines: string[]): boolean {
 // Blockquote callouts → :::callout
 // ---------------------------------------------------------------------------
 
-/** The same mapping as `smd from-md` for GitHub alerts, plus common bold labels. */
-const ALERTS: Record<string, string> = { NOTE: 'note', TIP: 'tip', IMPORTANT: 'info', WARNING: 'warning', CAUTION: 'danger' };
+/** Common bold labels; GitHub alerts map as `smd from-md` and rendering map them (GITHUB_ALERTS). */
 const LABELS: Record<string, string> = {
   note: 'note', info: 'info', important: 'info', tip: 'tip', hint: 'tip', success: 'success', done: 'success',
   warning: 'warning', caution: 'danger', danger: 'danger', question: 'question',
@@ -110,7 +110,7 @@ export function blockquoteToCallout(text: string, line: number): { type: string;
   let first = body[0];
   const alert = /^\[!(\w+)\]\s*$/.exec(first);
   if (alert) {
-    type = ALERTS[alert[1].toUpperCase()];
+    type = GITHUB_ALERTS[alert[1].toUpperCase()];
     first = '';
   } else {
     const label = /^(?:\*\*|__)(\w+)(?::(?:\*\*|__)|(?:\*\*|__):)\s*/.exec(first);

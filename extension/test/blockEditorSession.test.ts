@@ -548,7 +548,8 @@ test('setAttr and setTitle change only the opening line, and only what they set'
   const expected = lines(DOC);
   expected[9] = lineOf();
   assert.equal(h.doc.text, expected.join('\n'));
-  assert.equal((await h.send({ type: 'setAttr', key: callout().key, name: 'color', value: 'a"b\'c', editId: 'e' }))?.type, 'notice');
+  // A backslash before a quote would read as an escape: no attribute list holds this value.
+  assert.equal((await h.send({ type: 'setAttr', key: callout().key, name: 'color', value: String.raw`a\"b'c`, editId: 'e' }))?.type, 'notice');
   assert.equal((await h.send({ type: 'setTitle', key: block(h.render(), 'Last').key, title: 'x', editId: 'f' }))?.type, 'notice', 'not a container');
 });
 
@@ -866,7 +867,7 @@ test('setInline: a wrong name, a field the form lacks or a value that can\'t be 
   await refused({ type: 'setInline', key: ship.key, index: 2, name: 'priority', attrs: { content: 'P0' }, editId: 'r' });
   // Content that would end the brackets early, or a value no attribute list can hold.
   assert.equal((await refused({ type: 'setInline', key: ship.key, index: 0, name: 'badge', content: 'a]b', editId: 'r' }) as { fallback?: string }).fallback, ship.key);
-  await refused({ type: 'setInline', key: ship.key, index: 0, name: 'badge', attrs: { color: 'a"b\'c' }, editId: 'r' });
+  await refused({ type: 'setInline', key: ship.key, index: 0, name: 'badge', attrs: { color: String.raw`a\"b'c` }, editId: 'r' });
   await refused({ type: 'setInline', key: ship.key, index: 0, name: 'badge', content: 'two\nlines', editId: 'r' });
 });
 

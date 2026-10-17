@@ -88,7 +88,8 @@ test('variables: the markdown-it plugin reads the front matter, can be turned of
 
 test('variables: documents that do not use them render exactly as before', () => {
   const files = execFileSync('git', ['ls-files', '*.smd', '*.md'], { cwd: root, encoding: 'utf8' }).split('\n')
-    .filter((f) => f && !f.endsWith('variables.smd') && !f.includes('node_modules'));
+    // variables.smd and the migrate corpus (its variable-spelling step) use {{…}} on purpose.
+    .filter((f) => f && !f.endsWith('variables.smd') && !f.endsWith('corpus/migrate.smd') && !f.includes('node_modules'));
   assert.ok(files.length > 30);
   const on = new MarkdownIt({ html: true }).use(smd, { frontMatter: true });
   const off = new MarkdownIt({ html: true }).use(smd, { frontMatter: true, variables: false });
