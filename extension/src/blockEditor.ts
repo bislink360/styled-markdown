@@ -99,7 +99,7 @@ class BlockEditorPanel implements vscode.Disposable {
       saveImage: (bytes, extension, name) => this.saveImage(bytes, extension, name),
       // Numbered inline directives and spans: the page edits them in small forms (setInline).
       render: (text) => renderBlocks(text, { ...options(), inlineIndex: true }),
-      scan: (lines) => scanInline(lines, { allowHtml: options().allowHtml }),
+      scan: (lines, spec) => scanInline(lines, { allowHtml: options().allowHtml, spec }),
       // Table blocks: the grid (tableCell, tableRow, tableCol, tableAlign).
       table: (lines) => readTable(lines, { allowHtml: options().allowHtml }),
       segment: (text) => segmentSmd(text, options()),

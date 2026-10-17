@@ -7,6 +7,7 @@ import { inlineDirective, styledSpan, type DirectiveMeta, type SpanMeta } from '
 import type { SmdContext } from './markdownItSetup';
 import { createMarkdownIt } from './render';
 import { INLINE_DIRECTIVES } from './spec';
+import type { SpecEnv, SpecVersion } from './specVersion';
 import { own } from './util';
 
 /**
@@ -236,10 +237,11 @@ function placeOf(r: Recorded, text: string, lines: readonly string[], layout: La
  * `lines` (the block's own lines, as split on line breaks). Directives and spans inside code, math, HTML, escapes,
  * link destinations, image text and `:::include` blocks are not there, as they are not rendered as such.
  */
-export function scanInline(lines: readonly string[], options: { allowHtml?: boolean } = {}): InlineItem[] {
+export function scanInline(lines: readonly string[], options: { allowHtml?: boolean; spec?: SpecVersion } = {}): InlineItem[] {
   const md = parser(options.allowHtml ?? true);
   const source = lines.map(normalized);
-  const env: RecordingEnv & Record<string, unknown> = {};
+  // The block is read with its document's spec version, as rendering reads it.
+  const env: RecordingEnv & SpecEnv & Record<string, unknown> = { smdSpec: options.spec ?? 1 };
   const tokens: Token[] = [];
   md.block.parse(source.join('\n'), md, env, tokens);
   const items: InlineItem[] = [];

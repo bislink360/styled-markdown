@@ -149,7 +149,7 @@ test('frontMatterFields: every known key, with its value, kind and choices; refu
   assert.deepEqual([by.owners.kind, by.owners.value], ['list', '@maya, @api']);
   assert.deepEqual([by.updated.kind, by.created.kind, by.created.value], ['date', 'date', '']);
   assert.deepEqual(by.toc.options, ['', 'true', 'false']);
-  assert.deepEqual(by.smd.options, ['', '1']);
+  assert.deepEqual(by.smd.options, ['', '1', '2']);
   const loose = frontMatterFields(['---', 'updated: next week', '---']);
   assert.ok(!isFrontMatterRefusal(loose));
   assert.equal(loose.find((f) => f.name === 'updated')?.kind, 'text', 'a date that is not YYYY-MM-DD');

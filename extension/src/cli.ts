@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import {
   agentView, applyFixes, DECISION_STATUS_FILTERS, decisionLog, decisionLogMarkdown, diffSmd, formatRelated, formatSmd, ganttDate,
   ganttDocument, getDocumentInfo, markdownToSmd, notionRequests, outline, parseSelector, relatedDocs, renderPage, renderRiskPage,
-  RISK_STATUS, riskRegister, riskRegisterSummary, riskRegisterText, SelectorError, SMD_VERSION, smdIndex, smdToConfluence, smdToMarkdown,
+  RISK_STATUS, riskRegister, riskRegisterSummary, riskRegisterText, SelectorError, LATEST_SPEC, smdIndex, smdToConfluence, smdToMarkdown,
   smdToNotion, statusChanges, statusReportMarkdown, suggest, tasksToCsv, tasksToGantt, type AgentViewOptions, type AgentViewResult,
   type BudgetResult, type Diagnostic, type DiffResult, type ExportOptions, type ReportDocument, type Selector, type Tokenizer,
 } from './core';
@@ -38,7 +38,7 @@ import {
 declare const __SMD_PKG_VERSION__: string;
 const pkg = { version: typeof __SMD_PKG_VERSION__ === 'string' ? __SMD_PKG_VERSION__ : '0.0.0-dev' };
 
-const HELP = `smd — Styled Markdown tool (spec v${SMD_VERSION})
+const HELP = `smd — Styled Markdown tool (spec v${LATEST_SPEC})
 
 Reading (token-efficient, for agents):
   smd outline <file.smd> [--related] [--tokenizer <name>]
@@ -342,7 +342,7 @@ function main(argv: string[]): number | Promise<number> {
       return 0;
     case '--version':
     case '-v':
-      console.log(`smd ${pkg.version} (Styled Markdown spec v${SMD_VERSION})`);
+      console.log(`smd ${pkg.version} (Styled Markdown spec v${LATEST_SPEC})`);
       return 0;
     default:
       return fail(`Unknown command "${command}".\n\n${HELP}`);

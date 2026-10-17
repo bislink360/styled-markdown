@@ -88,5 +88,5 @@ test('readFile receives the file, and render options pass through', () => {
 test('files without data get file.data.smd; a missing value renders an empty document', () => {
   const file: SmdVFile = {};
   remarkSmd()(mdast(), file);
-  assert.deepEqual(file.data?.smd, { frontMatter: {}, headings: [] });
+  assert.deepEqual(file.data?.smd, { frontMatter: {}, headings: [], spec: 1 });
 });

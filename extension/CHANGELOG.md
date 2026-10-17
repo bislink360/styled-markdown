@@ -3,10 +3,19 @@
 ## 2.0.0 — 2026-10-15
 
 ### ⚠️ Breaking changes
+- An `smd` front matter value that isn't a whole number (`smd: true`, `smd: [1]`, `smd: 1.5`, `smd: "1.0"`, `smd: 0`) is a `frontmatter/version` **warning**, as the spec v2 RFC's versioning rules say; 1.10 reported it as an info. The document is still read with the version 1 rules, so only `smd validate --strict` (and CI that fails on warnings) is affected. `smd: 1.0` and `smd: 2.0`, which YAML reads as whole numbers, are read as 1 and 2 with the same warning. **Migration:** write `smd: 1` or `smd: 2`; the quick fix and `smd validate --fix` write `smd: 1` (or `smd: 2` for `2.0`), and `smd migrate --to 2` writes `smd: 2`. (Spec v2 RFC, versioning rules.)
 
 ### Added
+- `smd: 2` selects spec v2. Every reader (rendering, the agent view, `smd to-md`, tasks, query, the validator, `smd fmt`, the Block Editor and the exporters) now knows a document's spec version: `smd: 2` (or `"2"`) is v2; `smd: 1`, no `smd` key and any invalid value are v1; a newer version (`smd: 3`) is read with the newest rules, v2, with a warning, so the document stays readable. `smd: 2` is no longer an "unsupported version" warning. No v2 rule ships in this change: every document, `smd: 2` ones included, renders, converts and validates as before. SPEC.md §10 says how the version is chosen and where each rule that differs will be marked. (Spec v2 RFC, versioning rules.)
+- A `spec: 1 | 2` option on `renderSmd`, the markdown-it plugin and the remark and rehype plugins, for hosts that can't see the front matter. The document's own `smd` wins over it; it only decides for a document without an `smd` key. The markdown-it plugin reads `smd` from the source's front matter, or from front matter passed as `env.smdVariables`, and puts the version on the render's env as `smdSpec`. `renderSmd` returns the version as `spec`, and the remark plugin puts it in `file.data.smd.spec`.
+- `specVersion(text)` (also `specVersion(frontMatterData)`) and `LATEST_SPEC` in the npm package: the one function every tool uses to decide a document's spec version.
+- Each `smd index` catalog entry has `smd`, its document's spec version (1 or 2). The catalog's own `smd` is the newest spec version the tool knows: 2 (it was 1).
+- The front matter JSON schema accepts `smd: 2` (and `"2"`), and completion offers it.
+- VS Code: the status bar item's tooltip says "Styled Markdown spec v2 (smd: 2)" for a document that opts in.
 
 ### Changed
+- `smd --version` and `smd help` name spec v2, the newest spec version this release reads (`smd 2.0.0 (Styled Markdown spec v2)`). It still reads every v1 document with the v1 rules.
+- `smd migrate --to 2 --dry-run` reads the version as every other tool does: a list such as `smd: [2]` is version 1 (it counted as 2 before), so it is migrated and its `smd` line rewritten.
 
 ### Deprecated
 

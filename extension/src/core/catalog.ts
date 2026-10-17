@@ -1,7 +1,7 @@
 import { agentView, sectionCosts, type SectionCost } from './agentView';
 import { asStringList, parseFrontMatter } from './frontmatter';
 import { getDocumentInfo, type SmdDocumentInfo } from './meta';
-import { SMD_VERSION } from './spec';
+import { LATEST_SPEC, specVersion, type SpecVersion } from './specVersion';
 
 /**
  * Document catalog (`smd index`): one JSON entry per document with its metadata, token costs,
@@ -54,6 +54,8 @@ export interface SmdIndexCounts {
 export interface SmdIndexEntry {
   /** As given, normally relative to the working directory with forward slashes. */
   path: string;
+  /** The spec version the document is read with: its front matter `smd` (1 without one). Since 2.0. */
+  smd: SpecVersion;
   /** Front matter `title`, else the first `#` heading, else the file name. */
   title: string;
   summary: string | null;
@@ -72,7 +74,7 @@ export interface SmdIndexEntry {
 export interface SmdIndex {
   format: typeof INDEX_FORMAT;
   version: number;
-  /** Styled Markdown spec version. */
+  /** The newest Styled Markdown spec version the tool that wrote the catalog knows; each entry has its document's. */
   smd: number;
   /** The tool that wrote the catalog, e.g. `smd 1.3.0`, when known. */
   generator?: string;
@@ -88,6 +90,7 @@ export function indexEntry(text: string, path: string, options: IndexOptions = {
   const view = agentView(text, { today: options.today });
   return {
     path,
+    smd: specVersion(data),
     title: info.title ?? fileName(path),
     summary: info.summary,
     status: scalar(data.status),
@@ -108,7 +111,7 @@ export function smdIndex(documents: Array<{ path: string; text: string }>, optio
   return {
     format: INDEX_FORMAT,
     version: INDEX_VERSION,
-    smd: SMD_VERSION,
+    smd: LATEST_SPEC,
     ...(options.generator ? { generator: options.generator } : {}),
     documents: sorted.map(([path, text]) => indexEntry(text, path, options)),
   };

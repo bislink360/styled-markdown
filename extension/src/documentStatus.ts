@@ -1,4 +1,5 @@
-import { parseFrontMatter, STATUS_VALUES } from './core';
+import { parseFrontMatter, specVersion, STATUS_VALUES, type SpecVersion } from './core';
+import type { FrontMatter } from './core/frontmatter';
 
 /**
  * The document status workflow (front matter `status`) without VS Code dependencies, so it can be
@@ -20,7 +21,16 @@ export type DocumentStatus =
   | { kind: 'error'; message: string };
 
 export function documentStatus(text: string): DocumentStatus {
+  return statusOf(parseFrontMatter(text));
+}
+
+/** What the status bar shows of a document: its status and the spec version it is read with, from one parse. */
+export function statusBarState(text: string): { status: DocumentStatus; spec: SpecVersion } {
   const fm = parseFrontMatter(text);
+  return { status: statusOf(fm), spec: specVersion(fm.data) };
+}
+
+function statusOf(fm: FrontMatter): DocumentStatus {
   if (fm.error) return { kind: 'error', message: fm.error.message };
   const value = fm.data.status;
   if (value === undefined || value === null || value === '') return { kind: 'missing' };
@@ -78,6 +88,15 @@ export function statusBarText(state: DocumentStatus): StatusBarText {
     default:
       return { text: '$(error) Status', tooltip: `${state.message} Fix the front matter to change the status.`, warning: true };
   }
+}
+
+/**
+ * The status bar item of a document read with `spec`: its tooltip names the spec version when the document opts
+ * into a newer one than v1, the default (`smd: 2`). Documents read with v1 show what they always did.
+ */
+export function statusBarItem(state: DocumentStatus, spec: SpecVersion): StatusBarText {
+  const bar = statusBarText(state);
+  return spec === 1 ? bar : { ...bar, tooltip: `${bar.tooltip}\nStyled Markdown spec v${spec} (smd: ${spec})` };
 }
 
 export interface StatusChoice {

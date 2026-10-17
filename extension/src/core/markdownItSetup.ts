@@ -1,4 +1,5 @@
 import type MarkdownIt from 'markdown-it';
+import type { StateCore } from 'markdown-it';
 import { alertOf, githubAlerts } from './alerts';
 import { escapeHtml } from './attrs';
 import {
@@ -9,7 +10,7 @@ import { addChangelogRules, changelogEntries } from './markdownItChangelog';
 import { expandIncludes, includedLinks } from './markdownItInclude';
 import {
   annotateContainers, collectVariables, containerBlock, envFigures, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock,
-  headingAttrs, headingIds, inlineDirective, inlineVariable, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
+  headingAttrs, headingIds, hostSpec, inlineDirective, inlineVariable, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
   variablesAsText,
 } from './markdownItRules';
 import { glossaryTerms } from './markdownItGlossary';
@@ -39,6 +40,11 @@ export interface SmdContext {
   variables?: boolean;
   /** The labels for one render, in the document's language. */
   messages(env: unknown): Messages;
+  /**
+   * For hosts: puts the spec version on the env before block parsing (see hostSpec). renderSmd leaves it out: it
+   * sets `env.smdSpec` itself.
+   */
+  spec?: (state: StateCore) => void;
 }
 
 /** The syntax to add, all resolved. */
@@ -74,6 +80,7 @@ export function hostContext(md: MarkdownIt, options: MarkdownItSmdOptions): SmdC
     ownLines: options.sourceLines ?? false,
     variables: options.variables ?? true,
     messages: (env) => messagesFor(hostLanguage(env, options.lang)),
+    spec: hostSpec(options.spec),
   };
 }
 
@@ -96,6 +103,8 @@ const applied = new WeakSet<MarkdownIt>();
 export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext): void {
   if (applied.has(md)) return;
   applied.add(md);
+  // First of all, so every rule after it can read the spec version from the env.
+  if (ctx.spec) md.core.ruler.after('normalize', 'smd_spec', ctx.spec);
   if (features.frontMatter) addFrontMatter(md, ctx);
   if (features.containers) addContainers(md, ctx);
   if (features.math) addMath(md);
