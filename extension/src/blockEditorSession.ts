@@ -13,6 +13,7 @@ import { FRONT_MATTER_FIELDS, frontMatterFields, isFrontMatterRefusal, setFrontM
 import { editInline, scanInline, SPAN, type InlineChange, type InlineItem, type RenderedInline } from './core/inlineEdit';
 import { applyLineEdits, deleteBlock, insertBlock, lineEditToTextEdit, minimalEdit, moveBlock, splitLines, type LineEdit, type LineRange, type TextEdit } from './core/sourceEdit';
 import { CONTAINERS, INLINE_DIRECTIVES, NAMED_COLORS, PRIORITY_VALUES, type ContainerSpec, type InlineDirectiveSpec } from './core/spec';
+import { specVersion, type SpecVersion } from './core/specVersion';
 import {
   TABLE_ALIGNS, alignTable, cellTexts, deleteColumn, deleteRow, insertColumn, insertRow, isRefusal, readTable, sameShape, setAlign, setCell, tableShape,
   type TableAlign, type TableCellRef, type TableEdit, type TableRefusal, type TableSource,
@@ -620,8 +621,8 @@ export interface SessionOptions {
   themePref?(frontMatter: Record<string, unknown>): string;
   /** The title a new front matter gets (the file name). */
   title?: string;
-  /** The inline directives and styled spans of a block's lines (scanInline with the render's allowHtml). */
-  scan?(lines: readonly string[]): InlineItem[];
+  /** The inline directives and styled spans of a block's lines (scanInline with the render's allowHtml and the document's spec version). */
+  scan?(lines: readonly string[], spec: SpecVersion): InlineItem[];
   /** A table block's lines read for the grid (readTable with the render's allowHtml). */
   table?(lines: readonly string[]): TableSource | TableRefusal;
   /**
@@ -1092,13 +1093,13 @@ export class BlockEditorSession {
   private inlineViews(key: string, lines: readonly string[], rendered: readonly RenderedInline[] | undefined, variables: Variables): InlineView[] | undefined {
     if (!rendered?.length) return undefined;
     this.inlineRendered.items.set(key, rendered);
-    const items = this.scan(lines);
+    const items = this.scan(lines, specVersion(variables));
     const agree = inlineAgree(items, rendered, variables);
     return rendered.map((r, i) => inlineView(i, r, items[i], agree));
   }
 
-  private scan(lines: readonly string[]): InlineItem[] {
-    return this.options.scan?.(lines) ?? scanInline(lines);
+  private scan(lines: readonly string[], spec: SpecVersion): InlineItem[] {
+    return this.options.scan?.(lines, spec) ?? scanInline(lines, { spec });
   }
 
   private frontMatterView(s: Segment, lines: readonly string[], owners: Problems): FrontMatterView {
@@ -1334,15 +1335,17 @@ export class BlockEditorSession {
     if (!found) return;
     const { range } = found;
     const lines = found.lines.slice(range.start, range.end);
-    const items = this.scan(lines);
-    const item = this.inlineItem(m, found, items);
+    const data = parseFrontMatter(found.text).data;
+    const spec = specVersion(data);
+    const items = this.scan(lines, spec);
+    const item = this.inlineItem(m, found, items, data);
     if (!item) return this.fallback(m, 'This item can\'t be edited here: edit the block\'s source instead.');
     if (!offered(m, inlineFields(item) ?? [])) return this.notice(m.editId, `The form of this ${(ownEntry(INLINE_LABELS, item.name) ?? item.name).toLowerCase()} has no such field.`);
     const change: InlineChange = { ...(m.content === undefined ? {} : { content: m.content }), ...(m.attrs ? { attrs: m.attrs } : {}) };
     const at = item.at!.line;
     const next = editInline(lines[at], item, change) ?? lines[at];
     const after = [...lines.slice(0, at), next, ...lines.slice(at + 1)];
-    if (!changedAsAsked(items, this.scan(after), m.index, change)) {
+    if (!changedAsAsked(items, this.scan(after, spec), m.index, change)) {
       return this.fallback(m, 'That value can\'t be written here: edit the block\'s source instead.');
     }
     const span = lineSpan(found.text, { start: range.start + at, end: range.start + at + 1 })!;
@@ -1356,11 +1359,11 @@ export class BlockEditorSession {
   }
 
   /** The item a setInline names, when the block's source and HTML agree on every item and it has a form; else undefined. */
-  private inlineItem(m: SetInlineMessage, found: Found, items: readonly InlineItem[]): InlineItem | undefined {
+  private inlineItem(m: SetInlineMessage, found: Found, items: readonly InlineItem[], data: Variables): InlineItem | undefined {
     const item = items[m.index];
     if (item?.name !== m.name || !inlineFields(item)) return undefined;
     const rendered = this.renderedInline(m.key, found);
-    return rendered && inlineAgree(items, rendered, parseFrontMatter(found.text).data) ? item : undefined;
+    return rendered && inlineAgree(items, rendered, data) ? item : undefined;
   }
 
   /** What the HTML numbers in a block now: from the last render when the document is as it was then, else rendered again. */

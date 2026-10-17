@@ -9,6 +9,7 @@ import {
 } from './markdownItRules';
 import type { SmdContext } from './markdownItSetup';
 import type { Env, Heading } from './render';
+import { specOf, type SpecEnv } from './specVersion';
 
 /**
  * `:::include` in markdown-it. Right after block parsing, the body of each include is replaced by the block
@@ -19,7 +20,7 @@ import type { Env, Heading } from './render';
  */
 
 /** The env of a parse that only looks for headings in a file to include; it includes nothing itself. */
-interface ScanEnv { smdIncludeScan: true }
+interface ScanEnv extends SpecEnv { smdIncludeScan: true }
 
 const isScan = (env: unknown) => (env as Partial<ScanEnv> | undefined)?.smdIncludeScan === true;
 
@@ -44,7 +45,7 @@ function expandInclude(state: StateCore, i: number, root: () => IncludeScope, ct
   const read = ctx.options(state.env).readFile;
   const result = loadInclude(request, scope, {
     readFile: read && ((path) => read(path, state.env)),
-    headings: (text) => headingsOf(state.md, text),
+    headings: (text) => headingsOf(state.md, text, state.env),
   });
   meta.include = result;
   if (!result.ok) return;
@@ -85,10 +86,13 @@ function adopt(t: Token, from: IncludedFrom, level: number, line: number): void 
 
 const shiftedTag = (tag: string, shift: number) => (shift ? `h${shiftedLevel(Number(tag.slice(1)), shift)}` : tag);
 
-/** The headings of a whole file, with the ids headingIds gives them, to find a section in. */
-function headingsOf(md: MarkdownIt, text: string): Heading[] {
+/**
+ * The headings of a whole file, with the ids headingIds gives them, to find a section in. The file is read with the
+ * including document's spec version (from its env, `including`), as its included lines are.
+ */
+function headingsOf(md: MarkdownIt, text: string, including: unknown): Heading[] {
   const fm = parseFrontMatter(text);
-  const scan: ScanEnv = { smdIncludeScan: true };
+  const scan: ScanEnv = { smdIncludeScan: true, smdSpec: specOf(including) };
   const tokens = md.parse(fm.body, scan);
   // A host may leave heading ids off, so they are given here (ids the parse gave are kept).
   const env = { headings: [] as Heading[], slugs: new Map<string, number>(), lineOffset: fm.bodyStartLine };

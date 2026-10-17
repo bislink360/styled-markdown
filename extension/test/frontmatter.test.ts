@@ -19,7 +19,7 @@ test('values offered for completion come from the schema', () => {
   assert.deepEqual(frontMatterValues('status'), ['draft', 'review', 'approved', 'deprecated', 'archived']);
   assert.deepEqual(frontMatterValues('theme'), ['auto', 'light', 'dark']);
   assert.deepEqual(frontMatterValues('toc'), ['true', 'false']);
-  assert.deepEqual(frontMatterValues('smd'), ['1']);
+  assert.deepEqual(frontMatterValues('smd'), ['1', '2']);
   assert.ok(frontMatterValues('accent').includes('indigo'));
   assert.deepEqual(frontMatterValues('title'), []);
   assert.deepEqual(frontMatterValues('custom'), []);

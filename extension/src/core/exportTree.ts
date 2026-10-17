@@ -214,8 +214,8 @@ class TreeBuilder {
 
   /** Inline Markdown in a title or an attribute, parsed as renderSmd parses container titles. */
   inlineMarkdown(source: string): Inline[] {
-    const { smdVariables, smdFigures } = this.parsed.env;
-    const tokens = this.parsed.md.parseInline(source, { smdVariables, smdFigures, messages: this.m });
+    const { smdVariables, smdFigures, smdSpec } = this.parsed.env;
+    const tokens = this.parsed.md.parseInline(source, { smdVariables, smdFigures, smdSpec, messages: this.m });
     return this.inline(tokens[0]);
   }
 

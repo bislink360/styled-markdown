@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { applyFixes, renderSmd, validateSmd, type Diagnostic, type ValidateOptions } from '../src/core';
+import { applyFixes, renderSmd, specVersion, validateSmd, type Diagnostic, type ValidateOptions } from '../src/core';
 
 /**
  * The 1.10 hints for what spec v2 rejects or reads differently, each with a fix that keeps rendering. Hints (one info),
- * except what 2.0 reports in every document: attrs/duplicate and container/title-conflict are errors, and priority on
- * :::agent is an attrs/unknown warning.
+ * except what 2.0 reports in every document: attrs/duplicate and container/title-conflict are errors, priority on
+ * :::agent is an attrs/unknown warning, and an invalid smd value is a frontmatter/version warning.
  */
 
 const HINT_CODES = ['container/colons', 'heading/attrs-text', 'include/section-match', 'frontmatter/version'];
@@ -168,37 +168,56 @@ test('duplicates and title conflicts are errors in every document: no front matt
   }
 });
 
-test('frontmatter/version: values Number() reads as 1 that are not whole numbers are an info, fixed to smd: 1', () => {
+test('frontmatter/version: a value that is not a whole number is a warning (2.0), reads as version 1 and is fixed to smd: 1', () => {
   const cases: Array<[string, string]> = [
-    ['smd: true', 'a boolean'], ['smd: [1]', 'a list'], ['smd: 1.0', 'a decimal'], ['smd: 0x1', 'a decimal'],
-    ['smd: "1.0"', 'a string that is not a whole number'], ['smd: " 1"', 'a string that is not a whole number'], ['smd: 1.0 # v1', 'a decimal'],
+    ['smd: true', 'a boolean'], ['smd: [1]', 'a list'], ['smd: [2]', 'a list'], ['smd: 1.0', 'a decimal'], ['smd: 0x1', 'a decimal'],
+    ['smd: 1.5', 'a decimal'], ['smd: 0', 'not a positive number'], ['smd: -2', 'not a positive number'], ['smd: "0"', 'not a positive number'],
+    ['smd: "1.0"', 'a string that is not a whole number'], ['smd: " 1"', 'a string that is not a whole number'], ['smd: v2', 'a string that is not a whole number'],
+    ['smd: 1.0 # v1', 'a decimal'],
   ];
   for (const [line, kind] of cases) {
     const text = doc('Body', line);
     const [d, ...rest] = only('frontmatter/version', text);
     assert.equal(rest.length, 0, line);
-    assert.equal(d.severity, 'info', line);
+    assert.equal(d.severity, 'warning', line);
     assert.equal(d.line, 1);
-    assert.ok(d.message.includes(` is ${kind}, which counts as version 1 today. The spec version is a whole number, and Styled Markdown 2.0 reports other values as a warning. Write "smd: 1".`), `${line}: ${d.message}`);
+    assert.ok(d.message.endsWith(` is ${kind}, but the spec version is a whole number: this tool reads the document with the version 1 rules. Write "smd: 1", or "smd: 2" for the spec v2 rules (smd migrate --to 2 writes it).`), `${line}: ${d.message}`);
+    assert.equal(specVersion(text), 1, line);
     const after = fixed('frontmatter/version', text);
     assert.equal(after.split('\n')[1], line.endsWith('# v1') ? 'smd: 1 # v1' : 'smd: 1', line);
     assert.deepEqual(only('frontmatter/version', after), [], line);
   }
   // A list written on its own lines is reported without a fix.
   const [block] = only('frontmatter/version', doc('Body', 'smd:\n  - 1'));
-  assert.equal(block.severity, 'info');
+  assert.equal(block.severity, 'warning');
   assert.equal(block.fix, undefined);
+  // An empty value is YAML's null.
+  assert.equal(only('frontmatter/version', doc('Body', 'smd:'))[0].severity, 'warning');
 });
 
-test('frontmatter/version: whole numbers and digit strings pass; other versions warn, v2 until 2.0', () => {
-  for (const line of ['smd: 1', 'smd: "1"', "smd: '01'"]) assert.deepEqual(only('frontmatter/version', doc('Body', line)), [], line);
-  const [v2] = only('frontmatter/version', doc('Body', 'smd: 2'));
-  assert.equal(v2.severity, 'warning');
-  assert.equal(v2.message, 'Unsupported Styled Markdown version "2": spec v2 is not supported until Styled Markdown 2.0. This tool reads the document with the version 1 rules.');
-  const [v3] = only('frontmatter/version', doc('Body', 'smd: 3'));
-  assert.deepEqual([v3.severity, v3.message], ['warning', 'Unsupported Styled Markdown version "3". This tool supports version 1.']);
+test('frontmatter/version: a whole number written as a decimal reads as that number, with a warning and a fix', () => {
+  const text = doc('Body', 'smd: 2.0');
+  const [d] = only('frontmatter/version', text);
+  assert.equal(d.severity, 'warning');
+  assert.ok(d.message.endsWith('"smd: 2.0" is a decimal, but the spec version is a whole number: this tool reads the document with the version 2 rules. Write "smd: 2".'), d.message);
+  assert.equal(specVersion(text), 2);
+  assert.equal(fixed('frontmatter/version', text).split('\n')[1], 'smd: 2');
+});
+
+test('frontmatter/version: versions 1 and 2 pass, as whole numbers or digit strings; a newer version warns and reads as v2', () => {
+  for (const line of ['smd: 1', 'smd: "1"', "smd: '01'", 'smd: 2', 'smd: "2"', 'smd: 2 # spec v2']) {
+    assert.deepEqual(only('frontmatter/version', doc('Body', line)), [], line);
+  }
+  for (const line of ['smd: 3', 'smd: "3"', 'smd: 12']) {
+    const [newer] = only('frontmatter/version', doc('Body', line));
+    const n = line.replaceAll(/\D/g, '');
+    assert.deepEqual([newer.severity, newer.message, newer.fix], ['warning',
+      `Styled Markdown version ${n} is newer than this tool knows, so it reads the document with the version 2 rules. Update Styled Markdown, or write "smd: 2".`, undefined], line);
+    assert.equal(specVersion(doc('Body', line)), 2, line);
+  }
   const [missing] = only('frontmatter/version', '---\ntitle: x\n---\n');
   assert.equal(missing.severity, 'info');
+  assert.equal(missing.message, 'Add "smd: 1" to the front matter so tools know which Styled Markdown version this file targets.', 'unchanged in 2.0');
 });
 
 test('the 1.10 hints can be configured and suppressed like other rules', () => {
@@ -219,13 +238,15 @@ const corpusDiagnostics = (name: string, unsuppressed = false) => {
   return validateSmd(unsuppressed ? text.replaceAll('smd-disable', 'smd-xisable').replaceAll('smd-enable', 'smd-xnable') : text, corpusOptions);
 };
 
-test('the hints that stay hints are never an error or a warning by default', () => {
+test('the hints that stay hints are never an error or a warning by default (frontmatter/version is a warning since 2.0)', () => {
   const seen = new Set<string>();
   for (const name of ['v2-hints.smd', 'smd-version.smd']) {
     for (const d of corpusDiagnostics(name)) {
       if (!HINT_CODES.includes(d.code)) continue;
       seen.add(d.code);
-      assert.ok(d.severity === 'hint' || d.severity === 'info', `${name}: ${d.code} is ${d.severity}`);
+      // The RFC's versioning rules make an invalid `smd` value a warning in 2.0 (smd-version.smd says `smd: 1.0`).
+      const expected = d.code === 'frontmatter/version' ? ['warning'] : ['hint', 'info'];
+      assert.ok(expected.includes(d.severity), `${name}: ${d.code} is ${d.severity}`);
     }
   }
   assert.deepEqual([...seen].sort(), [...HINT_CODES].sort(), 'the corpus documents pin every case');

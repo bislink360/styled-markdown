@@ -4,7 +4,7 @@ import type { Diagnostic, Severity } from './validate';
 /** Every diagnostic code the validator reports, with what it checks. */
 export const RULE_CODES: Record<string, string> = {
   'frontmatter/invalid': 'YAML front matter does not parse, is not a mapping, or is never closed',
-  'frontmatter/version': '`smd` version missing, not a whole number, or unsupported',
+  'frontmatter/version': '`smd` version missing, not a whole number, or newer than this tool knows',
   'frontmatter/unknown-key': 'Non-standard front matter key',
   'frontmatter/status': 'Invalid `status` value',
   'frontmatter/audience': 'Invalid `audience` value',

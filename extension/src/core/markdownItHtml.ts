@@ -12,6 +12,7 @@ import {
 } from './include';
 import { quoteCite } from './quote';
 import { CALLOUT_TYPES, STATUS_VALUES } from './spec';
+import type { SpecVersion } from './specVersion';
 import type { SmdContext } from './markdownItSetup';
 import type { ContainerMeta, FootnoteMeta } from './markdownItRules';
 import type { Env } from './render';
@@ -379,19 +380,24 @@ interface Directive {
   color: string | null;
   today?: string;
   m: Messages;
+  /** The document's spec version, for the inline Markdown in the content. */
+  spec: SpecVersion;
 }
 
 export function renderInlineDirective(
-  md: MarkdownIt, name: string, content: string, values: Record<string, string>, today?: string, m: Messages = EN,
+  md: MarkdownIt, name: string, content: string, values: Record<string, string>, today?: string, m: Messages = EN, spec: SpecVersion = 1,
 ): string {
   const color = values.color ? resolveColor(values.color) : null;
   const render = DIRECTIVES.get(name);
-  return render ? render({ md, content, values, color, today, m }) : escapeHtml(content);
+  return render ? render({ md, content, values, color, today, m, spec }) : escapeHtml(content);
 }
 
-function badge({ md, content, color }: Directive): string {
-  const style = color ? ` style="--smd-badge:${escapeHtml(color)}"` : '';
-  return `<span class="smd-badge"${style}>${md.renderInline(content)}</span>`;
+/** A directive's content as inline Markdown, read with the document's spec version. */
+const inlineContent = ({ md, content, spec }: Directive): string => md.renderInline(content, { smdSpec: spec });
+
+function badge(d: Directive): string {
+  const style = d.color ? ` style="--smd-badge:${escapeHtml(d.color)}"` : '';
+  return `<span class="smd-badge"${style}>${inlineContent(d)}</span>`;
 }
 
 function kbd({ content }: Directive): string {
@@ -463,7 +469,8 @@ function metricTone(trend: string, good: string): string {
   return trend === good ? 'good' : 'bad';
 }
 
-function metric({ md, content, values, m }: Directive): string {
+function metric(d: Directive): string {
+  const { values, m } = d;
   const trend = metricTrend(values);
   const tone = metricTone(trend, (values.good ?? 'up').toLowerCase());
   const arrow = TREND_ARROWS.get(trend) ?? '';
@@ -471,15 +478,16 @@ function metric({ md, content, values, m }: Directive): string {
   const spoken = [TREND_ARROWS.has(trend) ? term(m, 'trend', trend) : '', tone === 'flat' ? '' : term(m, 'tone', tone)].filter(Boolean).join(', ');
   const sr = spoken ? `<span class="smd-sr-only"> (${spoken})</span>` : '';
   const delta = values.delta ? `<span class="smd-metric-delta smd-metric-${tone}"><span aria-hidden="true">${arrow}</span> ${escapeHtml(values.delta)}${sr}</span>` : '';
-  return `<span class="smd-metric"><span class="smd-metric-value">${md.renderInline(content)}</span><span class="smd-metric-label">${escapeHtml(values.label ?? '')}</span>${delta}</span>`;
+  return `<span class="smd-metric"><span class="smd-metric-value">${inlineContent(d)}</span><span class="smd-metric-label">${escapeHtml(values.label ?? '')}</span>${delta}</span>`;
 }
 
-function status({ md, content, values, color, m }: Directive): string {
+function status(d: Directive): string {
+  const { content, values, color, m } = d;
   const dot = color ?? 'var(--smd-gray)';
   // The text says the status; the dot only repeats it in colour. Without text, the colour name stands in.
   const text = content.trim() ? '' : escapeHtml(values.color === undefined ? m['statusDot.label'] : term(m, 'color', values.color));
   const dotA11y = text ? ` role="img" aria-label="${text}"` : ' aria-hidden="true"';
-  return `<span class="smd-status"><span class="smd-status-dot" style="background:${escapeHtml(dot)}"${dotA11y}></span>${md.renderInline(content)}</span>`;
+  return `<span class="smd-status"><span class="smd-status-dot" style="background:${escapeHtml(dot)}"${dotA11y}></span>${inlineContent(d)}</span>`;
 }
 
 const DIRECTIVES = new Map<string, (d: Directive) => string>([

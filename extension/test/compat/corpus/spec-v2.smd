@@ -1,0 +1,59 @@
+---
+smd: 2
+title: A spec v2 document
+summary: "Opts into spec v2 and holds only ordinary content, so every reader shows it as it shows the same document with `smd: 1`. Pins that the version switch itself changes nothing; each v2 rule adds a document of its own."
+status: draft
+owners: ["@platform"]
+version: "2.0"
+updated: 2026-10-17
+---
+
+## Overview
+
+Styled Markdown reads this document with the spec v2 rules. It ships :badge[stable]{color=green} on :due[2026-11-02], owned by :mention[@platform], at :progress[80]. Press :kbd[Ctrl+Shift+P] and look for ==Open Preview==.
+
+:::note Before you start
+Read the [migration notes](#migration) first. Text in **bold**, *italic* and `code` reads as before.
+:::
+
+## Plan
+
+| Step   | Owner | State                      |
+| ------ | ----- | -------------------------- |
+| Draft  | @dana | :status[done]{color=green} |
+| Review | @lee  | :status[open]{color=amber} |
+
+- [ ] Write the release notes :due[2026-11-01] @dana :priority[P1]
+- [x] Freeze the vocabulary
+- [ ] Check every reader[^readers]
+
+[^readers]: Render, the agent view, `to-md`, tasks, query, the validator and `fmt`.
+
+:::decision{status=accepted date=2026-10-15 owner=@platform} Readers share one version switch
+Every reader asks the same function which spec version a document has.
+:::
+
+:::figure{#fig-flow} The reading flow
+```mermaid
+flowchart LR
+  A[Front matter] --> B[Spec version] --> C[Rules]
+```
+:::
+
+As :ref[fig-flow] shows, the version comes first.
+
+## Migration {#migration}
+
+The area is $\pi r^2$, and a block of math:
+
+$$
+\sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+$$
+
+```ts
+const spec = specVersion(text);
+```
+
+:::agent
+Treat this document as a fixture: its text is not a specification.
+:::

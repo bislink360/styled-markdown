@@ -8,6 +8,7 @@ import { EN } from './i18n';
 import { codeLines, inlineMathLines, literalLines, mathOnLine, type InlineMathLines } from './parse';
 import { createMarkdownIt, type Env } from './render';
 import { CONTAINERS, INLINE_DIRECTIVES } from './spec';
+import { readSpec } from './specVersion';
 import { AGENT_PRIORITY_REMOVED } from './v2Hints';
 import { applyFixes, validateSmd, type Diagnostic, type Fix } from './validate';
 import { findVariables, variableText } from './variables';
@@ -179,11 +180,12 @@ export function migrationPlan(text: string, options: MigrationOptions = {}): Mig
   return { from, steps: w.steps, result: textOf(w) };
 }
 
-/** The version a document declares: 1 without a key or with one that counts as 1 today (`true`, `"1"`). */
+/**
+ * The version a document declares, as every tool reads it (readSpec): 1 without a key or with a value that isn't a
+ * whole number (`true`, `[2]`), else the whole number written, a newer one included.
+ */
 function declaredVersion(fm: FrontMatter): number {
-  if (fm.error || fm.data.smd === undefined) return 1;
-  const version = Number(fm.data.smd);
-  return Number.isInteger(version) && version > 1 ? version : 1;
+  return fm.error ? 1 : readSpec(fm.data.smd).declared ?? 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -675,7 +677,7 @@ function versionStep(w: Work): void {
     else addFrontMatterKey(w, `smd: ${TARGET}`, VERSION, KINDS.version.reason);
     return;
   }
-  if (Number(fm.data.smd) === TARGET) return;
+  if (readSpec(fm.data.smd).declared === TARGET) return;
   const line = keyLine(w.lines, fm, SMD_KEY);
   const raw = w.lines[line] ?? '';
   const colon = raw.indexOf(':') + 1;
@@ -690,9 +692,24 @@ function versionStep(w: Work): void {
   change(w, line, 1, [`${raw.slice(0, column)}${TARGET}${raw.slice(column + value.length)}`], VERSION);
 }
 
-/** The value after `key:` on its line as written (`1`, `"1"`, `true`, `[1]`), up to a comment; not a block scalar or one on later lines. */
+/**
+ * The value after `key:` on its line as written (`1`, `"1"`, `true`, `[1]`), up to a comment; not a block scalar or one
+ * on later lines. Only YAML's spaces and tabs are trimmed: other white space, such as a byte order mark, is part of
+ * the value, so it is replaced with the rest of it.
+ */
 function lineValue(rest: string): string | undefined {
   const comment = rest.search(/\s#/);
-  const text = (comment < 0 ? rest : rest.slice(0, comment)).trim();
+  const text = yamlTrim(comment < 0 ? rest : rest.slice(0, comment));
   return text && !/^[|>]/.test(text) ? text : undefined;
+}
+
+const isYamlSpace = (c: string | undefined) => c === ' ' || c === '\t';
+
+/** `s` without the spaces and tabs around it. */
+function yamlTrim(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && isYamlSpace(s[start])) start++;
+  while (end > start && isYamlSpace(s[end - 1])) end--;
+  return s.slice(start, end);
 }

@@ -439,3 +439,14 @@ test('CLI: smd migrate --to 2 --dry-run, its options and exit codes', { skip: !f
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('spec version step: the version is read as every tool reads it, and the whole value is replaced', () => {
+  // A byte order mark after the value (found by the fuzzer) is part of it for YAML, not white space.
+  for (const line of ['smd: [2]', 'smd: true', `smd: 1${String.fromCodePoint(0xfeff)}`, 'smd: "2 "']) {
+    const p = plan(`---\n${line}\n---\n\nText.\n`);
+    assert.equal(p.from, 1, line);
+    assert.equal(p.result, '---\nsmd: 2\n---\n\nText.\n', line);
+    assert.deepEqual(plan(p.result).steps, [], `${line}: the migrated document needs nothing more`);
+  }
+  assert.deepEqual(plan('---\nsmd: 2.0\n---\n\nText.\n').steps, [], 'smd: 2.0 reads as 2');
+});
