@@ -1,0 +1,30 @@
+---
+smd: 2
+title: Includes in spec v2
+summary: "Pins proposal 9: with smd: 2, :::include section= matches a heading's id, or its whole text in any case, and never a part of it. include-terms.smd says smd: 1, but the including document's version decides."
+status: draft
+updated: 2026-10-17
+---
+
+## By heading text
+
+The whole text of a heading, in any case, with its subsections:
+
+:::include{file="include-terms.smd" section="PRICING" level=3}
+See [Pricing](include-terms.smd#pricing) in the shared terms.
+:::
+
+## By heading id
+
+:::include{file="include-terms.smd" section="#refunds" level=3}
+See [Refunds](include-terms.smd#refunds) in the shared terms.
+:::
+
+## A part of a heading's text
+
+In spec v1 `section="refund"` finds "Refunds". In spec v2 it names no heading, so the fallback shows:
+
+<!-- smd-disable-next-line include/missing-section -->
+:::include{file="include-terms.smd" section="refund"}
+The refund policy is in [the shared terms](include-terms.smd#refunds).
+:::

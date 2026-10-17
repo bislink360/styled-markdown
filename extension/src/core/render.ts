@@ -9,6 +9,7 @@ import { renderFrontMatterError, renderHeader } from './markdownItHtml';
 import type { FigureEnv, VariableEnv } from './markdownItRules';
 import { documentRiskMatrixHtml } from './riskHtml';
 import { resolveSpec, type SpecEnv, type SpecVersion } from './specVersion';
+import { shownValues } from './variables';
 
 export { HEADING_ATTRS, slugify } from './markdownItRules';
 export { dueState } from './markdownItHtml';
@@ -164,7 +165,7 @@ export function documentFrame(parsed: Omit<ParsedTokens, 'tokens'>, header = tru
   const error = unread ? renderFrontMatterError(unread, messages) : '';
   return {
     open: `<article class="smd-doc"${languageAttrs(lang, messages)}${style}>`,
-    header: error + (header ? renderHeader((s) => md.renderInline(s, { messages, smdSpec: parsed.spec }), data, messages) : ''),
+    header: error + (header ? renderHeader((s) => md.renderInline(s, { messages, smdSpec: parsed.spec }), data, messages, parsed.shown) : ''),
     toc: data.toc === true ? renderToc(env.headings, messages) : '',
   };
 }
@@ -176,6 +177,8 @@ export interface ParsedTokens {
   env: Env;
   /** The front matter. */
   data: Record<string, unknown>;
+  /** The front matter values the document shows, in `{{name}}` and the header: spelled as written in spec v2 (shownValues). */
+  shown: Record<string, unknown>;
   lang: string;
   messages: Messages;
   /** The lines of front matter that could not be read, as written (see unreadFrontMatter). */
@@ -202,14 +205,15 @@ function parseTokens(text: string, fm: ParsedDocument, options: RenderOptions): 
   const messages = messagesFor(lang);
   // Before parsing, so every rule reads the version from the env (see specVersion.ts).
   const spec = resolveSpec(data, options.spec);
+  const shown = shownValues(data, text, spec) as Record<string, unknown>;
   const env: Env = {
-    lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts, source: text, smdVariables: data, messages, smdSpec: spec,
+    lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts, source: text, smdVariables: shown, messages, smdSpec: spec,
   };
   // markdown-it treats a lone \r as a line break, but every other tool here splits lines on \r?\n.
   // A space keeps heading lines and data-line (preview scroll sync) in step with the editor.
   const tokens = md.parse(fm.body.replace(/\r(?!\n)/g, ' '), env);
   const unread = unreadFrontMatter(text, fm);
-  return { md, tokens, env, data, lang, messages, spec, ...(unread ? { unread } : {}) };
+  return { md, tokens, env, data, shown, lang, messages, spec, ...(unread ? { unread } : {}) };
 }
 
 /**

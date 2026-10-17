@@ -4,6 +4,7 @@ import { parseFrontMatter } from './frontmatter';
 import { EN, label, type Messages } from './i18n';
 import { findSection, sectionsOf, slugify } from './sections';
 import type { Heading } from './render';
+import { specVersion, type SpecVersion } from './specVersion';
 
 /**
  * Transclusion: `:::include{file="shared/terms.smd" section="Pricing" level=3}` … `:::` stands for the body of
@@ -99,12 +100,21 @@ export interface IncludeScope {
   root?: string;
   /** What the whole document has included so far (shared by every scope of one document). */
   read: { count: number; chars: number };
+  /**
+   * The spec version of the root document, which every include it leads to is read with (`section=` matching, SPEC
+   * §3.4); 1 when left out.
+   */
+  spec?: SpecVersion;
 }
 
 const lf = (text: string) => text.replaceAll(/\r\n?/g, '\n');
 
-export function rootScope(root?: string): IncludeScope {
-  return { dir: '', chain: [], shift: 0, ...(root === undefined ? {} : { root: lf(root) }), read: { count: 0, chars: 0 } };
+/**
+ * The scope of a root document. `spec` is its spec version: a renderer passes the one on its env; line-based readers
+ * leave it out, and the root text's front matter decides.
+ */
+export function rootScope(root?: string, spec: SpecVersion = root === undefined ? 1 : specVersion(root)): IncludeScope {
+  return { dir: '', chain: [], shift: 0, ...(root === undefined ? {} : { root: lf(root) }), read: { count: 0, chars: 0 }, spec };
 }
 
 /** The scope of the document a loaded include reads. */
@@ -157,7 +167,7 @@ export function loadInclude(request: IncludeRequest, scope: IncludeScope, source
   if (scope.root !== undefined && lf(text) === scope.root) return fail('cycle', [...scope.chain, path]);
   if (text.length > INCLUDE_LIMITS.chars) return fail('too-large');
   const lines = text.split(/\r?\n/);
-  const range = includedRange(text, lines.length, request, source);
+  const range = includedRange(text, lines.length, request, source, scope.spec);
   if (!range) return fail('missing-section');
   if (!counted(scope.read, lines, range)) return fail('too-large');
   const own = request.level && range.top ? request.level - range.top : 0;
@@ -166,13 +176,13 @@ export function loadInclude(request: IncludeRequest, scope: IncludeScope, source
 
 interface LineRange { start: number; end: number; top?: number }
 
-/** The included lines, and the level of their top heading when `level` needs it. */
-function includedRange(text: string, lineCount: number, request: IncludeRequest, source: IncludeSource): LineRange | undefined {
+/** The included lines, and the level of their top heading when `level` needs it. `spec` is the including document's. */
+function includedRange(text: string, lineCount: number, request: IncludeRequest, source: IncludeSource, spec?: SpecVersion): LineRange | undefined {
   const body = { start: parseFrontMatter(text).bodyStartLine, end: lineCount - 1 };
   if (!request.section && !request.level) return body;
   const headings = source.headings(text);
   if (!request.section) return { ...body, top: headings.length ? Math.min(...headings.map((h) => h.level)) : undefined };
-  const hit = findSection(sectionsOf(headings, lineCount), request.section);
+  const hit = findSection(sectionsOf(headings, lineCount), request.section, spec);
   return hit && { start: hit.start, end: hit.end, top: hit.heading.level };
 }
 

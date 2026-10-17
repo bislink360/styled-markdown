@@ -118,7 +118,7 @@ test('renderSmd puts the version on the env before parsing and on the result; th
   assert.equal(parseSmdTokens(doc('smd: 2')).env.smdSpec, 2);
   assert.equal(parseSmdTokens(doc(undefined), { spec: 2 }).env.smdSpec, 2);
   assert.equal(parseSmdTokens(doc('smd: 2')).spec, 2);
-  // The option changes nothing else: no v2 rule exists yet.
+  // The option changes nothing else here: no v2 rule applies to this document.
   assert.equal(renderSmd(doc(undefined), { spec: 2, today }).html, renderSmd(doc(undefined), { today }).html);
 });
 
@@ -285,17 +285,36 @@ const READERS: Record<string, (text: string) => unknown> = {
   pandoc: (t) => smdToPandocHtml(t, { today }),
 };
 
-test('no v2 rule yet: every reader gives the same output for smd: 1, no smd key and smd: 2 (examples and the corpus)', () => {
+/**
+ * Documents a v2 rule reads differently, by path (forward slashes), and the rule. Each rule's own tests pin the
+ * difference; here they only check that a document without `smd` reads as with `smd: 1`.
+ */
+const READ_DIFFERENTLY_IN_V2: Record<string, string> = {
+  'examples/showcase.smd': 'proposal 10: `version: 1.0` shows 1.0',
+  'extension/test/compat/corpus/migrate.smd': 'proposal 10: `version: 2.10` shows 2.10',
+  'extension/test/compat/corpus/v2-variables.smd': 'proposal 10: values keep their YAML spelling',
+};
+const posix = (file: string) => file.split(path.sep).join('/');
+
+test('every reader gives the same output for smd: 1, no smd key and smd: 2, where no v2 rule applies (examples and the corpus)', () => {
   assert.ok(DOCUMENTS.length >= 20, `${DOCUMENTS.length} documents`);
   for (const file of DOCUMENTS) {
     const text = fs.readFileSync(path.join(root, file), 'utf8').replaceAll('\r\n', '\n');
     const texts = Object.fromEntries(Object.entries(VARIANTS).map(([k, line]) => [k, withVersionLine(text, line)]));
     assert.deepEqual([specVersion(texts.v1), specVersion(texts.none), specVersion(texts.v2)], [1, 1, 2], file);
+    const differs = Object.hasOwn(READ_DIFFERENTLY_IN_V2, posix(file));
     for (const [name, read] of Object.entries(READERS)) {
       const v1 = stable(read(texts.v1));
       assert.equal(stable(read(texts.none)), v1, `${name}: ${file} without an smd key`);
-      assert.equal(stable(read(texts.v2)), v1, `${name}: ${file} with smd: 2`);
+      if (!differs) assert.equal(stable(read(texts.v2)), v1, `${name}: ${file} with smd: 2`);
     }
+  }
+});
+
+test('the documents a v2 rule reads differently do read differently with smd: 2', () => {
+  for (const file of Object.keys(READ_DIFFERENTLY_IN_V2)) {
+    const text = fs.readFileSync(path.join(root, file), 'utf8').replaceAll('\r\n', '\n');
+    assert.notEqual(stable(READERS.render(withVersionLine(text, VARIANTS.v2))), stable(READERS.render(withVersionLine(text, VARIANTS.v1))), file);
   }
 });
 
