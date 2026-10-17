@@ -1,8 +1,9 @@
 import { findAttrsEnd, itemValue, lexAttrItems, parseAttrs, type Attrs } from './attrs';
-import { CONTAINER_CLOSE, CONTAINER_OPEN } from './containers';
+import { closeContainers, closesDisplayMath, CONTAINER_CLOSE, CONTAINER_OPEN } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { HEADING_ATTRS } from './sections';
 import { CONTAINERS, INLINE_DIRECTIVES, STYLE_KEYS } from './spec';
+import { specVersion, type SpecVersion } from './specVersion';
 import { own } from './util';
 
 /**
@@ -27,7 +28,7 @@ export function formatSmd(text: string): string {
   const bodyStart = fm.present && !(fm.error && fm.bodyStartLine === 0) ? fm.bodyStartLine : 0;
 
   const out: Line[] = lines.slice(0, bodyStart).map((t, i) => ({ text: t, kind: i === bodyStart - 1 ? 'fmEnd' : 'raw', indent: 0 }));
-  out.push(...formatBody(lines.slice(bodyStart)));
+  out.push(...formatBody(lines.slice(bodyStart), specVersion(fm.data)));
   return spaceBlocks(out).map((l) => l.text).join(eol) + (out.some((l) => l.kind !== 'blank') ? eol : '');
 }
 
@@ -40,11 +41,13 @@ type Kind =
 
 interface Line { text: string; kind: Kind; indent: number }
 
-interface ContainerNode { open: number; close: number; children: ContainerNode[] }
+interface ContainerNode { open: number; close: number; colons: number; children: ContainerNode[] }
 
 /** State shared by the block readers while the body is formatted. */
 interface Body {
   lines: string[];
+  /** The spec version the document is read with: display math and closing fences differ. */
+  spec: SpecVersion;
   out: Line[];
   // Container tree, used to pick colon counts once every fence is known.
   roots: ContainerNode[];
@@ -64,8 +67,8 @@ const indentOf = (s: string) => /^[ \t]*/.exec(s)![0].replace(/\t/g, '    ').len
 const push = (b: Body, text: string, kind: Kind) => b.out.push({ text, kind, indent: indentOf(text) });
 const prevKind = (b: Body) => b.out[b.out.length - 1]?.kind;
 
-function formatBody(lines: string[]): Line[] {
-  const b: Body = { lines, out: [], roots: [], stack: [], balanced: true, opens: new Map(), closes: new Map() };
+function formatBody(lines: string[], spec: SpecVersion): Line[] {
+  const b: Body = { lines, spec, out: [], roots: [], stack: [], balanced: true, opens: new Map(), closes: new Map() };
   for (let i = 0; i < lines.length; i++) {
     for (const read of BLOCK_READERS) {
       const last = read(b, i);
@@ -89,16 +92,20 @@ const readCode: BlockReader = (b, i) => {
   return j;
 };
 
-/** Display math `$$ … $$`, on one line or several. */
+/**
+ * Display math `$$ … $$`, on one line or several. In spec v2 a line that starts with `$$` and has more text on it (not
+ * `$$…$$`) is text, and only a line that is just `$$` closes the math.
+ */
 const readMath: BlockReader = (b, i) => {
   const raw = b.lines[i];
   const trimmed = raw.trim();
   if (!trimmed.startsWith('$$')) return null;
   const rest = trimmed.slice(2);
   if (rest.endsWith('$$') && rest.length > 2) { push(b, raw, 'text'); return i; }
+  if (b.spec === 2 && rest) return null;
   push(b, raw, 'mathOpen');
   let j = i + 1;
-  for (; j < b.lines.length && !b.lines[j].trimEnd().endsWith('$$'); j++) push(b, b.lines[j], 'math');
+  for (; j < b.lines.length && !closesDisplayMath(b.lines[j], b.spec); j++) push(b, b.lines[j], 'math');
   if (j < b.lines.length) push(b, b.lines[j], 'mathClose');
   return j;
 };
@@ -124,15 +131,17 @@ const readContainerFence: BlockReader = (b, i) => {
   const raw = b.lines[i];
   const close = CONTAINER_CLOSE.exec(raw);
   if (close) {
-    const node = b.stack.pop();
-    if (node) node.close = b.out.length; else b.balanced = false;
+    // Spec v2: containers closed with the one the fence closes have no fence of their own; their colons are kept.
+    const closed = closeContainers(b.stack, close[2].length, b.spec, (n) => n.colons);
+    const node = closed.at(-1);
+    if (node && closed.length === 1) node.close = b.out.length; else b.balanced = false;
     b.closes.set(b.out.length, close[1]);
     push(b, `${close[1]}${close[2]}`, 'close');
     return i;
   }
   const open = CONTAINER_OPEN.exec(raw);
   if (!open) return null;
-  const node: ContainerNode = { open: b.out.length, close: -1, children: [] };
+  const node: ContainerNode = { open: b.out.length, close: -1, colons: open[2].length, children: [] };
   (b.stack[b.stack.length - 1]?.children ?? b.roots).push(node);
   b.stack.push(node);
   b.opens.set(b.out.length, { indent: open[1], name: open[3], rest: open[4] });

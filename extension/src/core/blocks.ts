@@ -3,6 +3,7 @@ import { CONTAINER_CLOSE } from './containers';
 import { numberedInlineTokens, SPAN, type RenderedInline } from './inlineEdit';
 import type { ContainerMeta, DirectiveMeta, SpanMeta } from './markdownItRules';
 import { documentFrame, parseSmdTokens, type Heading, type ParsedTokens, type RenderOptions } from './render';
+import type { SpecVersion } from './specVersion';
 
 /**
  * The block editor's view of a document: its lines cut into front matter, blocks and the gaps between them, and
@@ -101,10 +102,22 @@ const TRIMMED = new Set([LIST, 'blockquote']);
 
 const blockType = (t: Token) => BLOCK_TYPES[t.type] ?? t.type.replace(/_open$/, '');
 
-/** The document's lines and where markdown-it's line 0 is in them. */
+/** The document's lines, where markdown-it's line 0 is in them, and the spec version the document is read with. */
 interface Source {
   lines: string[];
   offset: number;
+  spec: SpecVersion;
+}
+
+/**
+ * Whether a container group ends on the line at `end`, its closing fence. Spec v1: when that line is a closing fence.
+ * Spec v2: when the container has a closing fence of its own (the close token's line, see containerBlock); one closed
+ * with a container around it ends before that one's fence.
+ */
+function closedOn(group: readonly Token[], src: Source, end: number): boolean {
+  if (src.spec === 1) return CONTAINER_CLOSE.test(src.lines[end]);
+  const close = group.at(-1);
+  return close?.type === 'container_smd_close' && close.map?.[0] === end - src.offset;
 }
 
 /** Segments of a range of lines, and for each token group the index of the segment it is in (-1 for none). */
@@ -141,7 +154,7 @@ function blockRange(group: readonly Token[], src: Source, to: number): { start: 
   const body = Math.min(map[1] + src.offset, to);
   let end = body;
   const type = blockType(group[0]);
-  if (type === CONTAINER && end < to && CONTAINER_CLOSE.test(src.lines[end])) end++;
+  if (type === CONTAINER && end < to && closedOn(group, src, end)) end++;
   if (TRIMMED.has(type)) {
     while (end > start + 1 && BLANK.test(src.lines[end - 1])) end--;
   }
@@ -214,7 +227,7 @@ function assignKeys(segments: readonly Segment[], lines: readonly string[], seen
 /** The segments of a parsed document, with the top-level token groups and the segment each belongs to. */
 function segmentParsed(text: string, parsed: ParsedTokens): Layout & { groups: Token[][] } {
   const lines = text.split(LINE_BREAK);
-  const src: Source = { lines, offset: parsed.env.lineOffset };
+  const src: Source = { lines, offset: parsed.env.lineOffset, spec: parsed.spec };
   const groups = groupTokens(parsed.tokens);
   const body = layout(groups, src, src.offset, lines.length);
   const segments = src.offset > 0 ? [segment('frontmatter', 0, src.offset), ...body.segments] : body.segments;

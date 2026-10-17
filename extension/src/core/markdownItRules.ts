@@ -1,6 +1,6 @@
 import type { StateBlock, StateCore, StateInline, Token } from 'markdown-it';
 import { attrsToStyle, emptyAttrs, escapeHtml, findAttrsEnd, parseAttrs, type Attrs } from './attrs';
-import { ContainerInfo, parseContainerInfo } from './containers';
+import { closesDisplayMath, ContainerInfo, displayMathOpener, parseContainerInfo } from './containers';
 import { FigureCounter, figureTargets, type FigureNumber } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter, unreadFrontMatter } from './frontmatter';
@@ -28,9 +28,17 @@ const lineText = (state: StateBlock, l: number) => state.src.slice(state.bMarks[
 // ---------------------------------------------------------------------------
 
 /**
+ * The colon counts of the containers whose body is being parsed, outermost first, for the containers opened inside
+ * them (spec v2 pairs closing fences by colon count). A list or a quote starts afresh: a closing fence in it can't
+ * close a container around it.
+ */
+const openAround = new WeakMap<StateBlock, readonly number[]>();
+
+/**
  * Block rule for `:::name …` containers. Unlike markdown-it-container, it
  * tracks nesting: a bare `:::` closes the innermost open container, and
- * fenced code and `$$` display math inside a container are skipped. Colon counts are cosmetic.
+ * fenced code and `$$` display math inside a container are skipped. In spec v1 colon counts are cosmetic; in spec v2
+ * a closing fence closes the innermost container opened with as many colons (see closedBy in containers.ts).
  */
 export function containerBlock(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
   if (state.sCount[startLine] - state.blkIndent >= 4) return false;
@@ -38,8 +46,11 @@ export function containerBlock(state: StateBlock, startLine: number, endLine: nu
   if (!open) return false;
   if (silent) return true;
 
-  const closeLine = findContainerClose(state, startLine, endLine);
-  const end = closeLine === -1 ? endLine : closeLine;
+  const v2 = isV2(state.env);
+  const outer = openAround.get(state) ?? [];
+  const around = (state.parentType as string) === 'container' ? outer : [];
+  const close = findContainerClose(state, startLine, endLine, { colons: open[1].length, around, v2 });
+  const end = close.line === -1 ? endLine : close.line;
 
   const oldParent = state.parentType;
   const oldLineMax = state.lineMax;
@@ -50,19 +61,30 @@ export function containerBlock(state: StateBlock, startLine: number, endLine: nu
   openToken.block = true;
   openToken.info = open[2];
   openToken.map = [startLine, end];
+  openAround.set(state, [...around, open[1].length]);
   state.md.block.tokenize(state, startLine + 1, end);
+  openAround.set(state, outer);
   const closeToken = state.push('container_smd_close', 'div', -1);
   closeToken.markup = open[1];
   closeToken.block = true;
+  // Spec v2: the closing fence's line, when the container has one of its own (blocks.ts); not one around it closes it.
+  if (v2 && close.own) closeToken.map = [close.line, close.line + 1];
   state.parentType = oldParent;
   state.lineMax = oldLineMax;
-  state.line = closeLine === -1 ? end : closeLine + 1;
+  state.line = close.own ? close.line + 1 : end;
   return true;
 }
 
-interface ContainerScan {
-  /** Containers opened inside the one being closed. */
-  depth: number;
+/** The container being closed: its colon count, those of the containers it is directly in, and the version. */
+interface ScannedContainer {
+  colons: number;
+  around: readonly number[];
+  v2: boolean;
+}
+
+interface ContainerScan extends ScannedContainer {
+  /** The colon counts of the containers opened inside the one being closed, outermost first. */
+  open: number[];
   /** The open code fence (``` or ~~~ run), if any. */
   fence: string | null;
   /** The last line of the `$$` display math being skipped, or -1. */
@@ -73,40 +95,68 @@ interface ContainerScan {
   math: boolean;
 }
 
-/** The line of the bare `:::` that closes the container opened on startLine, or -1 when it runs to the end. */
-function findContainerClose(state: StateBlock, startLine: number, endLine: number): number {
+/**
+ * Where the container opened on startLine ends: the line of its closing fence (`own`), the line of a fence that closes a
+ * container around it and so this one too (spec v2), or -1 when it runs to the end.
+ */
+function findContainerClose(state: StateBlock, startLine: number, endLine: number, container: ScannedContainer): { line: number; own: boolean } {
   const math = state.md.block.ruler.getRules('').includes(mathBlock);
-  const scan: ContainerScan = { depth: 0, fence: null, mathEnd: -1, endLine, math };
+  const scan: ContainerScan = { ...container, open: [], fence: null, mathEnd: -1, endLine, math };
   for (let l = startLine + 1; l < endLine; l++) {
     const text = lineText(state, l);
     if (text.length && state.sCount[l] < state.blkIndent) break; // outdented: parent list/quote ended
-    if (closesContainer(state, l, text, scan)) return l;
+    const closing = closesContainer(state, l, text, scan);
+    if (closing) return { line: l, own: closing === OWN };
   }
-  return -1;
+  return { line: -1, own: false };
 }
 
-/** Follow fences, display math and nesting over one line; true when it is the bare `:::` that closes the scanned container. */
-function closesContainer(state: StateBlock, l: number, text: string, scan: ContainerScan): boolean {
+const OWN = 'own';
+const AROUND = 'around';
+/** What a line closes, seen from the scanned container: it (`own`), one around it (`around`), or nothing it ends. */
+type Closing = typeof OWN | typeof AROUND | null;
+
+/** Follow fences, display math and nesting over one line; whether it is a closing fence that ends the scanned container. */
+function closesContainer(state: StateBlock, l: number, text: string, scan: ContainerScan): Closing {
   if (scan.fence) {
     if (closesFence(text, scan.fence)) scan.fence = null;
-    return false;
+    return null;
   }
   // Indented code, and the lines of display math, are opaque.
-  if (state.sCount[l] - state.blkIndent >= 4 || l <= scan.mathEnd) return false;
+  if (state.sCount[l] - state.blkIndent >= 4 || l <= scan.mathEnd) return null;
   const fence = /^(`{3,}|~{3,})/.exec(text);
   if (fence) {
     scan.fence = fence[1];
-    return false;
+    return null;
   }
-  if (opensDisplayMath(state, l, text, scan)) return false;
-  if (/^:{3,}\s*[a-zA-Z]/.test(text)) {
-    scan.depth++;
-    return false;
+  if (opensDisplayMath(state, l, text, scan)) return null;
+  const opener = /^(:{3,})\s*[a-zA-Z]/.exec(text);
+  if (opener) {
+    scan.open.push(opener[1].length);
+    return null;
   }
-  if (!/^:{3,}\s*$/.test(text)) return false;
-  if (scan.depth === 0) return true;
-  scan.depth--;
-  return false;
+  const closer = /^(:{3,})\s*$/.exec(text);
+  return closer ? closeWith(scan, closer[1].length) : null;
+}
+
+/**
+ * What a closing fence with `colons` colons closes (see closedBy in containers.ts). Spec v1: the innermost open
+ * container. Spec v2: the innermost one opened with as many colons, inside the scanned container, the scanned one, or
+ * one around it; else the innermost.
+ */
+function closeWith(scan: ContainerScan, colons: number): Closing {
+  if (scan.v2) {
+    const inner = scan.open.lastIndexOf(colons);
+    if (inner >= 0) {
+      scan.open.length = inner;
+      return null;
+    }
+    if (colons === scan.colons) return OWN;
+    if (scan.around.includes(colons)) return AROUND;
+  }
+  if (!scan.open.length) return OWN;
+  scan.open.pop();
+  return null;
 }
 
 /** Whether line l opens display math, read exactly as mathBlock reads it; the scan then skips to its last line. */
@@ -425,15 +475,16 @@ export function mathBlock(state: StateBlock, startLine: number, endLine: number,
 
 /**
  * The last line of the `$$` display math opening on startLine (startLine itself for `$$…$$` on one line), or -1
- * when none opens there: the line doesn't start with `$$`, or no later line before endLine ends with `$$`.
+ * when none opens there: the line opens no math, or no later line before endLine closes it (see displayMathOpener).
+ * Spec v1: a line starting with `$$` opens, a line ending with `$$` closes. Spec v2: a line that is only `$$` opens
+ * and closes.
  */
 function mathBlockEnd(state: StateBlock, startLine: number, endLine: number): number {
-  const first = lineText(state, startLine);
-  if (!first.startsWith('$$')) return -1;
-  const rest = first.slice(2);
-  if (rest.trimEnd().endsWith('$$') && rest.trim().length > 2) return startLine;
+  const spec = specOf(state.env);
+  const opener = displayMathOpener(lineText(state, startLine), spec);
+  if (opener !== 'block') return opener === 'line' ? startLine : -1;
   for (let l = startLine + 1; l < endLine; l++) {
-    if (lineText(state, l).trimEnd().endsWith('$$')) return l;
+    if (closesDisplayMath(lineText(state, l), spec)) return l;
   }
   return -1;
 }

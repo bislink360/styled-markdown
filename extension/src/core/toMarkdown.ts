@@ -1,9 +1,9 @@
 import { parseAttrs } from './attrs';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, unknownContainerTitle, type ContainerInfo } from './containers';
+import { closedBy, CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, unknownContainerTitle, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import {
-  containerEnd, findIncludes, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
+  containerEnd, hasIncludes, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
 import { githubIds, markdownHeadings, type MarkdownHeading } from './githubSlug';
 import { expandedFigures, figuresOf, includedLines, includeKey, includeSource, type ExpandedFigures } from './includeText';
@@ -11,6 +11,7 @@ import { aroundInlineMath, convertedParts, inlineItemLines, inlineMathLines, lit
 import { quoteCite } from './quote';
 import { HEADING_ATTRS, renderSmd } from './render';
 import { riskMatrixMarkdown } from './risks';
+import { specVersion, type SpecVersion } from './specVersion';
 import { own } from './util';
 import { documentVariables, substituteLine, type Variables } from './variables';
 
@@ -42,7 +43,8 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
   const inlineMath = inlineMathLines(text);
   // So may an inline item's text (`:badge[foo` on one line, `bar]{color=green}` on the next): it converts as a whole.
   const inlineItems = inlineItemLines(text);
-  interface Frame { len: number; prefix: string; close?: string; end?: string[] }
+  // The version of the document (an included one's is the including one's, as are its front matter variables).
+  const spec = specVersion(variables);
   const stack: Frame[] = [];
   const prefix = () => stack.map((f) => f.prefix).join('');
   const emit = (line: string) => {
@@ -61,6 +63,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       i = end + 1;
     }
   }
+  const bodyStart = i;
 
   for (; i < lines.length; i++) {
     const line = lines[i];
@@ -100,10 +103,7 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
     const notLiteral = !literal.has(i);
     const close = notLiteral && CONTAINER_CLOSE.exec(line);
     if (close && stack.length) {
-      stack.at(-1)!.end?.forEach((l) => emit(l));
-      const frame = stack.pop()!;
-      if (frame.close !== undefined) emit(frame.close);
-      if (frame.prefix) emit(''); // end the blockquote so the next one doesn't merge into it
+      closeFrames(stack, closedBy(stack.map((f) => f.len), close[2].length, spec), emit);
       continue;
     }
     const open = notLiteral && CONTAINER_OPEN.exec(line);
@@ -111,17 +111,17 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
     if (open && info) {
       if (info.name === 'include') {
         const len = open[2].length;
-        i = includeMarkdown(info, { lines, open: i, options, numbering, emit, keepBody: () => stack.push({ len, prefix: '' }) });
+        i = includeMarkdown(info, { lines, open: i, from: bodyStart, spec, options, numbering, emit, keepBody: () => stack.push({ len, prefix: '' }) });
         continue;
       }
-      const title = info.title ? convertInline(substituteLine(info.title, variables), figures.byId) : '';
+      const title = info.title ? convertInline(substituteLine(info.title, variables, spec), figures.byId) : '';
       const head = containerMarkdown({ name: info.name, title, values: info.attrs.values, id: info.attrs.id, figure: figures.own.get(i + numbering.offset), text });
       for (const l of head.before ?? []) emit(l);
       stack.push({ len: open[2].length, prefix: head.prefix, ...(head.close === undefined ? {} : { close: head.close }), ...(head.end ? { end: head.end } : {}) });
       for (const l of head.inside ?? []) emit(l);
       continue;
     }
-    emit(lineMarkdown(line, literal.has(i), { variables, figures: figures.byId }, inlineMath.get(i), inlineItems.get(i)));
+    emit(lineMarkdown(line, literal.has(i), { variables, figures: figures.byId, spec }, inlineMath.get(i), inlineItems.get(i)));
   }
   return headingAnchors(text, out.join('\n').replace(/\n{3,}/g, '\n\n'), options);
 }
@@ -155,7 +155,7 @@ function headingAnchors(text: string, markdown: string, options: ToMarkdownOptio
  * Undefined when they don't pair up (the converted text has more or fewer headings).
  */
 function headingIdPairs(text: string, markdown: string, readFile: ToMarkdownOptions['readFile']): HeadingIds[] | undefined {
-  const own = readFile && findIncludes(text.split(/\r?\n/)).length ? renderSmd(text, { readFile }).headings : parseSmd(text).headings;
+  const own = readFile && hasIncludes(text) ? renderSmd(text, { readFile }).headings : parseSmd(text).headings;
   const plain = markdownHeadings(withoutFrontMatter(markdown));
   if (plain.length !== own.length) return undefined;
   const github = githubIds(plain.map((h) => h.text));
@@ -215,21 +215,37 @@ const figureNumbering = (options: ToMarkdownOptions, text: string): FigureNumber
  * inline items that run over several lines (see inlineItemLines): each item converts as a whole.
  */
 function lineMarkdown(
-  line: string, literal: boolean, document: { variables: Variables; figures: ReadonlyMap<string, FigureNumber> }, math?: ReadonlyArray<[number, number]>,
+  line: string, literal: boolean, document: { variables: Variables; figures: ReadonlyMap<string, FigureNumber>; spec: SpecVersion }, math?: ReadonlyArray<[number, number]>,
   parts?: ReadonlyArray<InlinePart>,
 ): string {
   if (literal) return line;
   const content = /^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line;
   // Math is set aside before `{{name}}` is replaced, as rendering reads it.
-  const convert = (text: string) => convertInline(substituteLine(text, document.variables), document.figures);
+  const convert = (text: string) => convertInline(substituteLine(text, document.variables, document.spec), document.figures);
   const asWritten = content === line;
   return aroundInlineMath(content, convert, asWritten ? math : undefined, asWritten ? convertedParts(parts, (whole) => aroundInlineMath(whole, convert)) : []);
+}
+
+/** A container being converted: its colon count, the prefix of its lines, and what closes it. */
+interface Frame { len: number; prefix: string; close?: string; end?: string[] }
+
+/** A closing fence closes the frames from index `at` on (see closedBy), innermost first. */
+function closeFrames(stack: Frame[], at: number, emit: (line: string) => void): void {
+  while (stack.length > Math.max(at, 0)) {
+    stack.at(-1)!.end?.forEach((l) => emit(l));
+    const frame = stack.pop()!;
+    if (frame.close !== undefined) emit(frame.close);
+    if (frame.prefix) emit(''); // end the blockquote so the next one doesn't merge into it
+  }
 }
 
 interface IncludeAt {
   lines: string[];
   /** The line of the `:::include`. */
   open: number;
+  /** The first body line, and the version: spec v2 pairs closing fences by colon count. */
+  from: number;
+  spec: SpecVersion;
   options: ToMarkdownOptions;
   numbering: FigureNumbering;
   emit: (line: string) => void;
@@ -246,7 +262,7 @@ function includeMarkdown(info: ContainerInfo, at: IncludeAt): number {
   const { lines, open, options } = at;
   const request = includeRequest(info.attrs.values);
   const scope = includeScopes.get(options) ?? rootScope(lines.join('\n'));
-  const end = containerEnd(lines, open);
+  const end = containerEnd(lines, open, at.spec, at.from);
   const result = request && loadInclude(request, scope, includeSource(options.readFile));
   if (result?.ok) {
     const inc = result.include;

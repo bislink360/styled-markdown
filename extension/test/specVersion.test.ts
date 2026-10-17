@@ -293,6 +293,9 @@ const READ_DIFFERENTLY_IN_V2: Record<string, string> = {
   'examples/showcase.smd': 'proposal 10: `version: 1.0` shows 1.0',
   'extension/test/compat/corpus/migrate.smd': 'proposal 10: `version: 2.10` shows 2.10',
   'extension/test/compat/corpus/v2-variables.smd': 'proposal 10: values keep their YAML spelling',
+  'extension/test/compat/corpus/v2-hints.smd': 'proposal 3: closing fences with other colon counts',
+  'extension/test/compat/corpus/v2-math.smd': 'proposal 2: $ delimiters',
+  'extension/test/compat/corpus/v2-fences.smd': 'proposal 3: closing fences',
 };
 const posix = (file: string) => file.split(path.sep).join('/');
 
