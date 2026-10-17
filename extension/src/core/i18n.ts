@@ -27,6 +27,7 @@ export const EN = {
   'docStatus.deprecated': 'deprecated',
   'docStatus.archived': 'archived',
   'toc.title': 'Contents',
+  'frontMatter.error': 'Front matter could not be read',
 
   // Callouts and other containers
   'callout.note': 'Note',

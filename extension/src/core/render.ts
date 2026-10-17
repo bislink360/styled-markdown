@@ -2,10 +2,10 @@ import MarkdownIt from 'markdown-it';
 import type { Token } from 'markdown-it';
 import hljs from 'highlight.js/lib/common';
 import { escapeHtml, resolveColor } from './attrs';
-import { type FrontMatter, parseFrontMatter } from './frontmatter';
+import { type FrontMatter, parseFrontMatter, unreadFrontMatter } from './frontmatter';
 import { documentLanguage, EN, isEnglish, isEnglishMessages, messagesFor, runtimeLabels, type Messages } from './i18n';
 import { applySmd, smdFeatures, type SmdContext } from './markdownItSetup';
-import { renderHeader } from './markdownItHtml';
+import { renderFrontMatterError, renderHeader } from './markdownItHtml';
 import type { FigureEnv, VariableEnv } from './markdownItRules';
 import { documentRiskMatrixHtml } from './riskHtml';
 import { resolveSpec, type SpecEnv, type SpecVersion } from './specVersion';
@@ -130,8 +130,8 @@ export function renderSmd(text: string, options: RenderOptions = {}): RenderResu
   return renderParsed(text, parseFrontMatter(text), options);
 }
 
-/** The front matter of a document and the body after it, however they were split. */
-export type ParsedDocument = Pick<FrontMatter, 'data' | 'body' | 'bodyStartLine'>;
+/** The front matter of a document and the body after it, however they were split (with the error, when it has one). */
+export type ParsedDocument = Pick<FrontMatter, 'data' | 'body' | 'bodyStartLine'> & Partial<Pick<FrontMatter, 'error'>>;
 
 /**
  * renderSmd with the front matter already split off, for hosts that remove it before the
@@ -153,14 +153,18 @@ export interface DocumentFrame {
   toc: string;
 }
 
-/** The frame of a parsed document, once its body is rendered (the contents come from the env). */
+/**
+ * The frame of a parsed document, once its body is rendered (the contents come from the env). Front matter that
+ * could not be read is shown as written in an error block where the header goes, `header: false` included.
+ */
 export function documentFrame(parsed: Omit<ParsedTokens, 'tokens'>, header = true): DocumentFrame {
-  const { md, env, data, lang, messages } = parsed;
+  const { md, env, data, lang, messages, unread } = parsed;
   const accent = typeof data.accent === 'string' ? resolveColor(data.accent) : null;
   const style = accent ? ` style="--smd-accent:${escapeHtml(accent)}"` : '';
+  const error = unread ? renderFrontMatterError(unread, messages) : '';
   return {
     open: `<article class="smd-doc"${languageAttrs(lang, messages)}${style}>`,
-    header: header ? renderHeader((s) => md.renderInline(s, { messages, smdSpec: parsed.spec }), data, messages) : '',
+    header: error + (header ? renderHeader((s) => md.renderInline(s, { messages, smdSpec: parsed.spec }), data, messages) : ''),
     toc: data.toc === true ? renderToc(env.headings, messages) : '',
   };
 }
@@ -174,6 +178,8 @@ export interface ParsedTokens {
   data: Record<string, unknown>;
   lang: string;
   messages: Messages;
+  /** The lines of front matter that could not be read, as written (see unreadFrontMatter). */
+  unread?: string[];
   /** The spec version the document is read with (also on the env as `smdSpec`). */
   spec: SpecVersion;
 }
@@ -202,7 +208,8 @@ function parseTokens(text: string, fm: ParsedDocument, options: RenderOptions): 
   // markdown-it treats a lone \r as a line break, but every other tool here splits lines on \r?\n.
   // A space keeps heading lines and data-line (preview scroll sync) in step with the editor.
   const tokens = md.parse(fm.body.replace(/\r(?!\n)/g, ' '), env);
-  return { md, tokens, env, data, lang, messages, spec };
+  const unread = unreadFrontMatter(text, fm);
+  return { md, tokens, env, data, lang, messages, spec, ...(unread ? { unread } : {}) };
 }
 
 /**

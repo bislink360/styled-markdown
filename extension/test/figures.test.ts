@@ -164,10 +164,11 @@ test('figures: validation reports duplicate ids and unknown references, with a f
   assert.match(applyFixes(src, diagnostics).text, /See :ref\[fig-checkout\] and :ref\[other\]/);
 });
 
-test('figures: an unknown kind is a figure/kind warning with a fix; other containers keep attrs/value errors', () => {
+test('figures: an unknown kind is an attrs/value error with a fix, as on other containers (a figure/kind warning before 2.0)', () => {
   const src = ':::figure{kind=tabel}\nx\n:::\n';
   const [kind] = validateSmd(src);
-  assert.deepEqual(codes(validateSmd(src)), ['0:figure/kind:warning']);
+  assert.deepEqual(codes(validateSmd(src)), ['0:attrs/value:error']);
+  assert.equal(kind.message, 'Invalid kind "tabel" on ":::figure" — did you mean "table"? Use one of: figure, table, listing.');
   assert.match(kind.message, /Invalid kind "tabel" on ":::figure" — did you mean "table"\?/);
   assert.match(applyFixes(src, validateSmd(src)).text, /kind=table/);
   assert.deepEqual(codes(validateSmd(':::risk{impact=hgh}\nx\n:::\n')), ['0:attrs/value:error']);
@@ -176,13 +177,13 @@ test('figures: an unknown kind is a figure/kind warning with a fix; other contai
 
 // Requires `npm run build`.
 const cli = join(__dirname, '..', 'dist', 'cli.js');
-test('figures: smd validate still exits 0 on a 1.5-era document with an unknown figure kind', { skip: !existsSync(cli) && 'run npm run build first' }, () => {
+test('figures: since 2.0 smd validate exits 1 on a document with an unknown figure kind (1.6–1.10: exit 0, a figure/kind warning)', { skip: !existsSync(cli) && 'run npm run build first' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'smd-fig-'));
   try {
     writeFileSync(join(dir, 'old.smd'), '---\nsmd: 1\n---\n\n:::figure{kind=tabel} Limits\n| a |\n| - |\n| 1 |\n:::\n');
     const run = spawnSync(process.execPath, [cli, 'validate', 'old.smd', '--no-mermaid'], { cwd: dir, encoding: 'utf8' });
-    assert.equal(run.status, 0, run.stdout + run.stderr);
-    assert.match(run.stdout, /warning .*figure\/kind/);
+    assert.equal(run.status, 1, run.stdout + run.stderr);
+    assert.match(run.stdout, /error .*Invalid kind "tabel".*attrs\/value/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

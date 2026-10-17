@@ -9,6 +9,7 @@ import { codeLines, inlineMathLines, literalLines, mathOnLine, type InlineMathLi
 import { createMarkdownIt, type Env } from './render';
 import { CONTAINERS, INLINE_DIRECTIVES } from './spec';
 import { readSpec } from './specVersion';
+import { AGENT_PRIORITY_REMOVED } from './v2Hints';
 import { applyFixes, validateSmd, type Diagnostic, type Fix } from './validate';
 import { findVariables, variableText } from './variables';
 
@@ -23,7 +24,7 @@ import { findVariables, variableText } from './variables';
 
 /** What a step rewrites, in the order the steps run. */
 export type MigrationKind =
-  | 'closer' | 'duplicate-attrs' | 'title-text' | 'math-delimiters' | 'heading-braces' | 'unknown-directive'
+  | 'closer' | 'duplicate-attrs' | 'title-text' | 'agent-priority' | 'math-delimiters' | 'heading-braces' | 'unknown-directive'
   | 'include-section' | 'value-case' | 'typography' | 'fuzzy-link' | 'variable-spelling' | 'version';
 
 export interface MigrationStep {
@@ -74,11 +75,15 @@ const KINDS: Record<MigrationKind, { proposal: string; keeps: 'v1' | 'v2'; reaso
   },
   'duplicate-attrs': {
     proposal: '4', keeps: 'v1',
-    reason: 'Spec v2 reports a key, an id or a class given twice as an error (proposal 4). Each is kept once, with the value v1 uses (the last), where it first appears.',
+    reason: 'Styled Markdown 2.0 reports a key, an id or a class given twice as an error in every document (proposal 4). Each is kept once, with the value v1 uses (the last), where it first appears.',
   },
   'title-text': {
     proposal: '4', keeps: 'v1',
-    reason: 'Spec v2 reports a container titled both by title="…" and by text as an error (proposal 4). The text, which v1 does not show, is removed.',
+    reason: 'Styled Markdown 2.0 reports a container titled both by title="…" and by text as an error in every document (proposal 4). The text, which v1 does not show, is removed.',
+  },
+  'agent-priority': {
+    proposal: '12', keeps: 'v1',
+    reason: 'Styled Markdown 2.0 removed "priority" on ":::agent", which no tool read (proposal 12), so it is an unknown attribute in every document. It is removed; nothing renders differently.',
   },
   'math-delimiters': {
     proposal: '2', keeps: 'v1',
@@ -160,6 +165,7 @@ export function migrationPlan(text: string, options: MigrationOptions = {}): Mig
   fixStep(w, 'container/colons', 'closer');
   fixStep(w, 'attrs/duplicate', 'duplicate-attrs');
   fixStep(w, 'container/title-conflict', 'title-text');
+  fixStep(w, 'attrs/unknown', 'agent-priority', (d) => d.message === AGENT_PRIORITY_REMOVED);
   mathStep(w);
   fixStep(w, 'heading/attrs-text', 'heading-braces');
   unknownDirectiveStep(w);
@@ -240,13 +246,13 @@ function applyLineFixes(w: Work, fixes: Fix[], kind: MigrationKind): void {
  */
 const unsuppressed = (text: string) => text.replaceAll('smd-disable', 'smd-xisable').replaceAll('smd-enable', 'smd-xnable');
 
-/** Apply the fixes of the hint `code` until none is left, and note the hints that have no fix. */
-function fixStep(w: Work, code: string, kind: MigrationKind): void {
+/** Apply the fixes of the diagnostic `code` (those `which` picks) until none is left, and note the ones that have no fix. */
+function fixStep(w: Work, code: string, kind: MigrationKind, which: (d: Diagnostic) => boolean = () => true): void {
   const options = { readFile: kind === 'include-section' ? w.options.readFile : undefined };
   let text = textOf(w);
   let manual: Diagnostic[] = [];
   for (let pass = 0; pass < FIX_PASSES; pass++) {
-    const found = validateSmd(unsuppressed(text), options).filter((d) => d.code === code);
+    const found = validateSmd(unsuppressed(text), options).filter((d) => d.code === code && which(d));
     if (pass === 0) manual = found.filter((d) => !d.fix);
     const fixed = applyFixes(text, found);
     if (!fixed.applied) break;

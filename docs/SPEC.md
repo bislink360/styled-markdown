@@ -45,6 +45,9 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 
 A YAML mapping between `---` lines at the very start of the file. It is parsed with the YAML *core* schema, so `2026-09-26` stays a string.
 
+- **Opening and closing:** the first line is `---`. The front matter ends at the next line that is `---` or `...` (YAML's document end marker), trailing spaces allowed. Front matter that is never closed is not front matter: the `---` is a thematic break and the lines after it are the body.
+- **Front matter that can't be read** *(all documents, since 2.0; spec v2 RFC, proposal 1)*: when the lines up to the closer are not a YAML mapping (the YAML doesn't parse, or is a list or a scalar), renderers show them as written, escaped, in a visible error block where the header goes (`<div class="smd-frontmatter-error" role="note">` with the label "Front matter could not be read" and the lines in `<pre><code>`). The body after the closer renders as usual, and the document has no front matter values. The usual cause is a forgotten closing `---`, which makes a later thematic break the closer. The agent view shows a `[front matter could not be read]` line and the lines in a fenced block, `smd export --to md` keeps them as written, and `smd validate` reports `frontmatter/invalid` (an error). Before 2.0 those lines were hidden.
+
 | Key | Type | Meaning |
 |-----|------|---------|
 | `smd` | integer | Spec version: `1` or `2`. **Recommended.** It selects the rules the document is read with (§10): `smd: 2` is spec v2; `smd: 1`, or no `smd` key, is spec v1. A whole number; a string of digits (`"2"`) is tolerated. Other values (`true`, `[2]`, `1.5`, `"v2"`) are read as version 1 and reported as a `frontmatter/version` warning (an info in 1.10); a newer version (`smd: 3`) is read with the newest rules the tool has, with a warning. Tools before 2.0 warn about `smd: 2` and read the document with the version 1 rules. |
@@ -117,7 +120,7 @@ Any Markdown content, including other containers.
 | `tabs` → `tab` | Tab group; each `tab` title is its label | `title` (on `tab`) |
 | `columns` → `column` | Side-by-side layout (stacks on narrow screens) | `width` (`30%` or ratio `2`) |
 | `steps` | Renders the ordered list inside as numbered steps | — |
-| `agent` | Content addressed to AI agents (instructions, constraints) | `title`, `priority` (deprecated: no tool reads it, see §11) |
+| `agent` | Content addressed to AI agents (instructions, constraints) | `title` (`priority` was removed in 2.0, see §11.2) |
 | `human` | Content addressed to human readers only | `title` |
 
 | `decision` | Decision record (ADR-style); title = the decision | `status` (`proposed` `accepted` `rejected` `superseded` `deprecated`), `date`, `owner` |
@@ -459,7 +462,7 @@ renders *What's new in 2.10* and *Version 2.10 ships on 2026-10-20. Questions: @
 - Prefer quotes that need no escape: `'say "hi"'`. `smd fmt` writes double quotes, single quotes for a value with a `"`, and double quotes with `\"` only for a value with both kinds of quote.
 - `.class` adds a utility class (rendered as `smd-u-<class>`); `#id` sets the element id.
 - A bare `flag` means `flag=true`.
-- **Duplicates:** a key or an `#id` given more than once takes its last value, and a class given more than once is added more than once. Styled Markdown 2.0 reports duplicates as errors in every document (with the same rendering), so 1.10 reports them as the hint `attrs/duplicate`. A container's `title=` likewise wins over title text after the attributes, which is not shown; 1.10 reports both together as the hint `container/title-conflict`, and 2.0 as an error.
+- **Duplicates:** an attribute list gives each key, `#id` and class once. One given more than once is the error `attrs/duplicate` in every document since 2.0 (a hint in 1.10; spec v2 RFC, proposal 4). Renderers keep resolving it as before, so no document changes meaning: a key or an `#id` takes its last value, and a repeated class is added more than once. A container is likewise titled by `title=` or by text after its attributes, not both: both together is the error `container/title-conflict` (a hint in 1.10), and the attribute wins, the text not being shown. `smd validate --fix` and `smd migrate --to 2` fix both.
 - **Enumerated values** (the fixed choices of a container or directive attribute, such as `:::decision{status}`, `:::api{method}` and `:metric{trend good}`) are matched in any case: `status=Accepted` is `status=accepted`, and `trend=Up` is `trend=up`. Renderers use the value as the vocabulary lists it (`status=Accepted` renders as `accepted`, `method=get` as `GET`). The same holds for the enumerated front matter keys `status`, `audience` and `theme` (§2.1). `smd fmt` leaves the case of all of them as written, so a formatted document stays formatted; writing them in the vocabulary's case is left to `smd migrate --to 2`. Directive names, style attribute values (§5.1) and named colors (§5.2) are matched as written.
 
 ### 5.1 Style attributes
@@ -504,7 +507,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 
 | Code | Severity | Trigger |
 |------|----------|---------|
-| `frontmatter/invalid` | error | YAML does not parse, or is not a mapping, or is unclosed |
+| `frontmatter/invalid` | error | YAML does not parse, or is not a mapping, or is unclosed. Since 2.0 the lines of closed front matter that can't be read render in an error block (§2.1) |
 | `frontmatter/version` | info / warning | `smd` missing (info; fix: add it), not a whole number (warning since 2.0, an info in 1.10: `true`, `[2]`, `1.5`, `"1.0"`, `0`, read as version 1; fix: `smd: 1`; a whole number written as a decimal, `2.0`, is read as that number, fix: `smd: 2`), or newer than the tool knows (warning; read with the newest rules). `1`, `2` and strings of digits such as `"2"` are accepted |
 | `frontmatter/unknown-key` | hint | Non-standard key (fix when a close match exists) |
 | `frontmatter/status` · `/audience` · `/accent` · `/type` · `/date` | warning / error | Invalid values (fix: the one close allowed value or color, `true`/`false` for `yes`/`no`/`"true"`, `2026-09-05` for `2026/9/5`) |
@@ -516,18 +519,18 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `container/unclosed` | error | Missing closing `:::` (fix: add it at the end of the document, for an unindented container) |
 | `container/stray-close` | warning | `:::` with nothing open |
 | `container/colons` | hint | A closing fence has another colon count than the container it closes (`::::` closing `:::tab`). It closes the innermost container today; in spec v2 it closes the innermost one opened with as many colons (fix: the opener's count, as `smd fmt` writes it) |
-| `container/title-conflict` | hint | A container has both `title=` and title text after its attributes; the attribute wins and the text is not shown. An error in 2.0 (fix: remove the text) |
+| `container/title-conflict` | error | A container has both `title=` and title text after its attributes; the attribute wins and the text is not shown. A hint in 1.10, an error in every document since 2.0 (fix: remove the text) |
 | `container/parent` | warning | `tab` outside `tabs`, `column` outside `columns` |
 | `container/agent-in-skip` | warning | An `agent` block inside a section whose heading has `{agent=skip}`: the agent view leaves the section out, so agents never read the instructions |
 | `attrs/syntax` | error | Malformed `{…}` |
-| `attrs/unknown` | warning | Attribute not accepted in this position (fix when one accepted name is close and not already set) |
-| `attrs/value` | error | Invalid color, size, width, progress value… (fix when one allowed value is close, or a year-first date needs `-` separators) |
-| `attrs/duplicate` | hint | A key, an `#id` or a class given more than once in one attribute list; the last one is used. An error in 2.0 (fix: each once, with the value that is used, where it first appears) |
+| `attrs/unknown` | warning | Attribute not accepted in this position (fix when one accepted name is close and not already set). `priority` on an `agent` block, removed in 2.0, is reported on the attribute, with a fix that removes it |
+| `attrs/value` | error | Invalid color, size, width, progress value, enumerated container value such as a `figure`'s `kind`… (fix when one allowed value is close, or a year-first date needs `-` separators). An invalid `kind` was the warning `figure/kind` before 2.0 |
+| `attrs/duplicate` | error | A key, an `#id` or a class given more than once in one attribute list; the last one is used. A hint in 1.10, an error in every document since 2.0 (fix: each once, with the value that is used, where it first appears) |
 | `heading/attrs-text` | hint | A heading ends in `{}` or in a list with a bare word (`{ok}`), which is dropped today and is heading text in spec v2 (fix: remove the braces or the words, keeping today's rendering; none for `{agent}`) |
 | `directive/unknown` | warning | `:name[…]` close to a known directive (fix: closest name) |
 | `directive/content` | error | Directive needs `[content]` |
 | `mermaid/type` · `mermaid/empty` | error / warning | Unknown diagram type (fix: closest type) / empty diagram |
-| `mermaid/syntax` | warning | The diagram does not parse (checked with Mermaid's own parser where the tool ships it) |
+| `mermaid/syntax` | error | The diagram does not parse (checked with Mermaid's own parser where the tool ships it). A warning from 1.2 to 1.10, an error in every document since 2.0; there is no fix |
 | `math/syntax` · `math/unclosed` | error | KaTeX parse error / unclosed `$$` |
 | `fence/unclosed` | error | Unclosed code fence (fix: add it at the end of the document, for an unindented fence) |
 | `link/missing-anchor` | warning | `[x](#id)` or `[x](other.smd#id)` with no heading or element with that id (fix: closest id) |
@@ -536,7 +539,6 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `link/undefined-reference` | warning | `[text][label]` or `[label][]` with no `[label]: …` definition |
 | `figure/unknown-ref` | warning | `:ref[id]` names no `figure` in the document (fix: closest figure id) |
 | `figure/duplicate-id` | warning | Two `figure` blocks share an `{#id}`; references go to the first |
-| `figure/kind` | warning | `kind` on a `figure` is not `figure`, `table` or `listing`; it counts as `figure` (fix: closest value). A warning rather than `attrs/value`, so documents that passed before 1.6 keep passing. **Deprecated:** 2.0 reports it as `attrs/value` (§11), so rule settings and suppressions that name `figure/kind` should name `attrs/value` too |
 | `glossary/entry` | warning | A list item in a `glossary` is not `**Term**: definition` (its list then renders as a plain list and defines no terms), or an entry has no definition |
 | `glossary/duplicate` | warning | A term is defined again (in any glossary of the document); uses link to the first definition |
 | `glossary/duplicate-id` | warning | A term's id `term-{slug}` is also the id of a heading (such as `## Term limits`) or of another element in the document; links to it and the term's uses may lead there. Give the other element its own `{#id}` or rename one of them |
@@ -557,12 +559,11 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `footnote/duplicate` | warning | A second definition of a footnote label; the first one is used |
 | `variable/undefined` | info | `{{name}}` names no front matter key; it is shown as written (fix: the closest key). `info`, since `{{…}}` in prose may be meant literally, as in documents written before 1.6 |
 | `variable/not-text` | warning | `{{name}}` names a front matter mapping or empty value, which has no text; it is shown as written |
-| `deprecated/agent-priority` | hint | `priority` on an `agent` block, which no tool reads; 2.0 removes it (fix: remove it) |
 | `task/overdue` | info | Open task past its `:due[…]` date |
 | `table/pipe-in-code` | info | A pipe inside a code span in a table row. GFM splits a row into cells at every pipe without a backslash before it, code spans included, so the code span never forms, as on GitHub (fix: put a backslash before the pipe; the cell shows the pipe without it) |
-| `rules/unknown` | warning | A suppression comment names an unknown rule code (fix: closest code) |
+| `rules/unknown` | warning | A suppression comment or a rule setting names an unknown rule code (fix: closest code). For a code removed in 2.0 (`figure/kind`, `deprecated/agent-priority`) the message names the code that reports those problems now, and the fix changes to it |
 
-The hints `container/colons`, `container/title-conflict`, `attrs/duplicate`, `heading/attrs-text` and `deprecated/agent-priority`, the info `include/section-match` and the info form of `frontmatter/version` (1.10) warn early about what Styled Markdown 2.0 rejects or reads differently. They never make a document that passed fail, `--strict` included, and each fix keeps how the document renders today.
+The hints `container/colons` and `heading/attrs-text` and the info `include/section-match` (1.10) warn early about what spec v2 reads differently. They never make a document that passed fail, `--strict` included, and each fix keeps how the document renders today. Since 2.0, in every document, the 1.10 hints `attrs/duplicate` and `container/title-conflict` are errors and the 1.10 info form of `frontmatter/version` is a warning.
 
 Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.smdrc.json` file in the document's folder or a parent folder has `{"rules": {"<code>" | "<category>/*" | "*": "off" | "error" | "warning" | "info" | "hint"}}`. The nearest file applies, the search stops at the repository root, and the most specific key wins. Inside a document, the comments `<!-- smd-disable-next-line [codes] -->`, `<!-- smd-disable-line [codes] -->` and `<!-- smd-disable [codes] -->` … `<!-- smd-enable [codes] -->` silence rules. No codes means every rule. Codes are separated by spaces or commas and may be `category/*`.
 
@@ -662,6 +663,16 @@ The value as YAML reads it decides, so `smd: 2.0`, the number 2, is spec v2, wit
 |---|---|---|---|
 | *None yet: Styled Markdown 2.0 adds the v2 rules of the RFC (`docs/SPEC-V2-PROPOSALS.smd`) one by one* | | | |
 
+**Rules for every document.** Some 2.0 changes apply whatever `smd` says, so they are not in the table: v1 documents get them too. Each is marked *all documents* where it is defined:
+
+| Rule | Section | Since 2.0, in every document | Before 2.0 |
+|---|---|---|---|
+| Front matter that can't be read | §2.1 | Its lines are shown in an error block; the body renders as usual | Everything up to the closing line was hidden |
+| Duplicate attributes, container title conflicts | §5, §7 | `attrs/duplicate` and `container/title-conflict` are errors; rendering is unchanged | Hints (1.10) |
+| Mermaid syntax | §7 | `mermaid/syntax` is an error | A warning |
+| An invalid `kind` on a `figure` | §7 | An `attrs/value` error | The warning `figure/kind` |
+| `priority` on `:::agent` | §11.2 | Removed: an `attrs/unknown` warning | Accepted, with a hint (1.10) |
+
 Implementations decide the version in one place: in this repository, `specVersion(text)` (or `specVersion(frontMatterData)`) for tools that have the text, and `isV2(env)` for markdown-it rules, which read the `smdSpec` the renderer puts on the env before parsing (`extension/src/core/specVersion.ts`).
 
 Additive features (new containers, directives, front matter keys) keep the spec version; older renderers degrade gracefully (unknown containers render as a box, with their title since 1.10 (§3), unknown keys are kept). Only breaking changes increment `smd`.
@@ -702,6 +713,7 @@ The steps run in this order. "v1" steps leave the document rendering as before w
 | Closing fences | proposal 3 | v1 | A closing fence is written with its container's colon count (`::::` closing `:::tab` becomes `:::`), as `smd fmt` writes it and the `container/colons` fix does |
 | Duplicate attributes | proposal 4 | v1 | A key, `#id` or class given twice is kept once, with the value v1 uses (the last), where it first appears (`attrs/duplicate`). Only a repeated class renders differently: v1 writes it twice |
 | Title text that is not shown | proposal 4 | v1 | The title text of a container that also has `title=` is removed (`container/title-conflict`); text beside an HTML comment is a note |
+| Agent priority | proposal 12 | v1 | `priority` on `:::agent`, removed in 2.0 (§11.2), is removed, with the braces when nothing else is in them (`attrs/unknown`). No tool read it, so nothing renders differently |
 | `$$` delimiters | proposal 2 | v1 | A `$$` line that also has math on it is split, so each delimiter is on a line of its own (`$$ x` becomes `$$` and `x`), with the block's indentation, `>` markers or list indentation. The math is the same |
 | Braces after headings | proposal 5 | v1 | An empty `{}` or a bare `{word}` after a heading is removed (`heading/attrs-text`); `{agent}` is a note |
 | Unknown directives | proposal 7b | v2 | A literal `:name[…]` whose name isn't an inline directive as written (`:abbr[HTML]`, `:Badge[x]`) gets its colon escaped (`\:abbr[HTML]`), so v2 doesn't read it as a directive. CommonMark shows `\:` as `:` |
@@ -716,12 +728,7 @@ A document that already says `smd: 2` (or a newer version) needs nothing. Suppre
 
 ## 11. Deprecated
 
-These still work in spec v1 and in every 1.x release, with a hint (or a note in the message) from 1.10. Styled Markdown 2.0 removes them.
-
-| Deprecated | Since | In 2.0 | Instead |
-|---|---|---|---|
-| `priority` on `:::agent` | 1.10 | Removed, unless a meaning is agreed first; no tool reads it | Leave it out. 1.10 reports it as the hint `deprecated/agent-priority`, with a fix that removes it |
-| The `figure/kind` diagnostic code | 1.10 | An invalid `kind` on a `figure` is reported as `attrs/value` | Name `attrs/value` as well as `figure/kind` in rule settings and suppression comments. The 1.10 message says so |
+What is deprecated still works, and is removed in a later major. What 1.10 deprecated is removed in 2.0 (§11.2); nothing in the document syntax is deprecated in 2.0. The CLI's older export command names are (§11.1).
 
 ### 11.1 Deprecated tool names
 
@@ -733,3 +740,13 @@ Styled Markdown 2.0 gathers the CLI's exports under one command, `smd export <fi
 | `smd to-md <file>` | 2.0 | `smd export <file> --to md` |
 | `smd pdf <file>` | 2.0 | `smd export <file> --to pdf` |
 | `smd docx <file>` | 2.0 | `smd export <file> --to docx` |
+
+### 11.2 Removed in 2.0
+
+Deprecated in 1.10, with a hint (or a note in the message), and removed in Styled Markdown 2.0 for every document, whatever its `smd` value.
+
+| Removed | Deprecated in | What 2.0 does | Migration |
+|---|---|---|---|
+| `priority` on `:::agent` | 1.10 | No meaning was agreed and no tool read it: it is an unknown attribute, the warning `attrs/unknown`, reported on the attribute. The block renders as before | `smd validate --fix` or `smd migrate --to 2` removes it (with the braces when nothing else is in them) |
+| The `deprecated/agent-priority` diagnostic code | 1.10 | The problem is reported as `attrs/unknown`. A rule setting or suppression comment that names the code (or `deprecated/*`) gets a `rules/unknown` warning that says so, and sets or silences nothing | Name `attrs/unknown` instead (the comment's quick fix does it) |
+| The `figure/kind` diagnostic code | 1.10 | An invalid `kind` on a `figure` is an `attrs/value` error, as on every other container. A rule setting or suppression comment that names `figure/kind` gets a `rules/unknown` warning that says the code was merged into `attrs/value`, and sets or silences nothing | Fix the `kind` (the `attrs/value` quick fix offers the closest value), or name `attrs/value` |

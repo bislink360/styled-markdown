@@ -6,6 +6,7 @@ const TITLES: Record<MigrationKind, string> = {
   closer: 'Closing fences',
   'duplicate-attrs': 'Duplicate attributes',
   'title-text': 'Container title text that is not shown',
+  'agent-priority': 'Priority on agent blocks',
   'math-delimiters': '$$ delimiters',
   'heading-braces': 'Braces after headings',
   'unknown-directive': 'Unknown inline directives',
