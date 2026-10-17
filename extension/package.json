@@ -2,7 +2,7 @@
   "name": "styled-markdown",
   "displayName": "Styled Markdown (.smd)",
   "description": "Markdown for humans and AI agents: callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "publisher": "bislink360",
   "author": {
     "name": "Roshan Alwis"
@@ -196,6 +196,12 @@
         "command": "smd.validateWorkspace",
         "title": "Validate All .smd Files in Workspace",
         "category": "Styled Markdown"
+      },
+      {
+        "command": "smd.previewMigration",
+        "title": "Preview Migration to Spec v2",
+        "category": "Styled Markdown",
+        "enablement": "editorLangId == smd"
       },
       {
         "command": "smd.showAgentView",

@@ -1,0 +1,61 @@
+---
+smd: 1
+title: Unknown containers
+summary: Pins how containers this version doesn't know degrade, with and without a title, so later releases are compared against it. Each one has a container/unknown warning.
+updated: 2026-10-15
+---
+
+## A title after the name
+
+:::frobnicate Release checklist
+The body of a container no version knows.
+:::
+
+:::frobnicate Title with **inline** Markdown and `code`
+- one
+- two
+:::
+
+## A title in the attributes
+
+:::frobnicate{title="From the attribute"}
+The title comes from `title=`.
+:::
+
+:::frobnicate{#unknown-styled bg=amber border=orange} Styled and titled
+Style attributes and an id still apply.
+:::
+
+## No title
+
+:::frobnicate
+Only a body.
+:::
+
+:::frobnicate{bg=blue}
+Only a body and a style.
+:::
+
+## Nested
+
+::::outer-thing Outer title
+:::card Inner card
+A known container inside an unknown one.
+:::
+
+:::inner-thing Inner title
+An unknown container inside an unknown one.
+:::
+::::
+
+::::note Known callout
+:::inside-a-note Inside a callout
+Text.
+:::
+::::
+
+## Known containers without titles
+
+:::box A box drops this text
+The box itself is known and takes no title.
+:::

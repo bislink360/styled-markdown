@@ -10,15 +10,17 @@ import {
   checkMermaid, formatSmd, FRONTMATTER_SCHEMA, frontMatterValues, parseFrontMatter, parseSmd, renderSmd, validateSmd, type Diagnostic,
 } from './core';
 import {
-  anchorLine, anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext,
+  anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext,
 } from './core/links';
 import { encodeAnchor, headingAt, linksToAnchor, renameHeading } from './core/anchors';
+import { anchorNames, anchorOrAliasLine, headingAlias } from './core/headingAliases';
 import { blockquoteToCallout, containerAt, isCallout, wrapLines, type LineEdit } from './core/refactors';
 import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from './core/footnotes';
 import { frontMatterProperty } from './core/frontmatterSchema';
 import { termHover } from './core/glossary';
 import { documentPreview, documentSymbols, embedPreview, fuzzyMatch, sectionExcerpt, type SmdSymbol } from './core/symbols';
 import { codeLines, lazyLineSet } from './core/parse';
+import { own } from './core/util';
 import { variableCompletion, variableHover, type VariableCompletion } from './core/variables';
 
 const SELECTOR: vscode.DocumentSelector = { language: 'smd' };
@@ -267,6 +269,9 @@ function anchorItems(text: string, range: vscode.Range, prefix: string): vscode.
     item.range = range;
     item.detail = t.text !== undefined ? `${'#'.repeat(t.level ?? 1)} ${t.text}` : t.line !== undefined ? `id on line ${t.line + 1}` : 'id';
     item.sortText = `3${String(i).padStart(5, '0')}`;
+    // Typing a heading's GitHub id (`#foo_bar`) finds it too, and inserts its own id (`#foobar`).
+    const alias = t.text === undefined || t.line === undefined ? undefined : headingAlias(text, t.line);
+    if (alias) item.filterText = `${prefix}${t.id} ${prefix}${alias}`;
     return item;
   });
 }
@@ -384,9 +389,10 @@ class CompletionProvider implements vscode.CompletionItemProvider {
       if (valueMatch) {
         const owner = /^\s*:{3,}\s*([\w-]+)\{/.exec(prefix)?.[1];
         const directiveName = /:([a-z][\w-]*)(?:\[[^\]]*\])?\{[^}]*$/.exec(prefix)?.[1];
-        const specValues = (owner && CONTAINERS[owner]?.values?.[valueMatch[1]])
-          ?? (directiveName && INLINE_DIRECTIVES[directiveName]?.values?.[valueMatch[1]]);
-        return (specValues || ATTR_VALUES[valueMatch[1]] || []).map((v) => {
+        // Own names and keys only: `:::constructor{constructor=` offers nothing.
+        const specValues = (owner && own(own(CONTAINERS, owner)?.values ?? {}, valueMatch[1]))
+          ?? (directiveName && own(own(INLINE_DIRECTIVES, directiveName)?.values ?? {}, valueMatch[1]));
+        return (specValues || own(ATTR_VALUES, valueMatch[1]) || []).map((v) => {
           const item = new vscode.CompletionItem(v, vscode.CompletionItemKind.EnumMember);
           if (NAMED_COLORS.includes(v as never)) item.kind = vscode.CompletionItemKind.Color;
           return item;
@@ -395,8 +401,10 @@ class CompletionProvider implements vscode.CompletionItemProvider {
       const container = /^\s*:{3,}\s*([\w-]+)\{/.exec(prefix);
       const directive = /:([a-z][\w-]*)(?:\[[^\]]*\])?\{[^}]*$/.exec(prefix);
       let keys: string[] = Object.keys(STYLE_KEYS);
-      if (container && CONTAINERS[container[1]]) keys = [...(CONTAINERS[container[1]].attrs ?? []), ...keys];
-      else if (directive && INLINE_DIRECTIVES[directive[1]]) keys = INLINE_DIRECTIVES[directive[1]].attrs;
+      const containerSpec = container ? own(CONTAINERS, container[1]) : undefined;
+      const directiveSpec = directive ? own(INLINE_DIRECTIVES, directive[1]) : undefined;
+      if (containerSpec) keys = [...(containerSpec.attrs ?? []), ...keys];
+      else if (directiveSpec) keys = directiveSpec.attrs;
       return keys.map((k) => {
         const item = new vscode.CompletionItem(k, vscode.CompletionItemKind.Property);
         item.insertText = new vscode.SnippetString(`${k}=$0`);
@@ -465,7 +473,7 @@ class HoverProvider implements vscode.HoverProvider {
     if (container) {
       const start = container[1].length;
       const end = start + container[2].length;
-      const spec = CONTAINERS[container[2]];
+      const spec = own(CONTAINERS, container[2]);
       if (spec && position.character >= start && position.character <= end) {
         const attrs = spec.attrs?.length ? `\n\nAttributes: \`${spec.attrs.join('`, `')}\` + style attributes` : '';
         return new vscode.Hover(new vscode.MarkdownString(`**:::${container[2]}** — ${spec.description}${attrs}`),
@@ -475,7 +483,7 @@ class HoverProvider implements vscode.HoverProvider {
     const range = document.getWordRangeAtPosition(position, /:[a-z][\w-]*/);
     if (range) {
       const name = document.getText(range).slice(1);
-      const spec = INLINE_DIRECTIVES[name];
+      const spec = own(INLINE_DIRECTIVES, name);
       if (spec) return new vscode.Hover(new vscode.MarkdownString(`**:${name}** — ${spec.description}\n\n\`${spec.example}\``), range);
     }
     return footnoteHover(document, position) ?? glossaryHover(document, position) ?? linkHover(document, position) ?? embedHover(document, position);
@@ -640,7 +648,8 @@ class ColorProvider implements vscode.DocumentColorProvider {
       const text = document.lineAt(i).text;
       for (const m of text.matchAll(re)) {
         const value = m[1];
-        const color = value.startsWith('#') ? hexToColor(value) : LIGHT_HEX[value] ? hexToColor(LIGHT_HEX[value]) : undefined;
+        const named = own(LIGHT_HEX, value);
+        const color = value.startsWith('#') ? hexToColor(value) : named && hexToColor(named);
         if (!color) continue;
         const start = m.index! + m[0].lastIndexOf(value);
         out.push(new vscode.ColorInformation(new vscode.Range(i, start, i, start + value.length), color));
@@ -721,7 +730,7 @@ class DefinitionProvider implements vscode.DefinitionProvider {
     const parts = splitTarget(hit.link.target);
     if (!parts) return undefined;
     if (!parts.path) {
-      const line = parts.anchor ? anchorLine(text, parts.anchor) : undefined;
+      const line = parts.anchor ? anchorOrAliasLine(text, parts.anchor) : undefined;
       return line === undefined ? undefined : at(document.uri, line);
     }
     if (document.uri.scheme !== 'file') return undefined;
@@ -734,7 +743,7 @@ class DefinitionProvider implements vscode.DefinitionProvider {
     if (other === undefined) {
       try { other = fs.readFileSync(target.fsPath, 'utf8'); } catch { return undefined; }
     }
-    return at(target, anchorLine(other, parts.anchor) ?? 0);
+    return at(target, anchorOrAliasLine(other, parts.anchor) ?? 0);
   }
 }
 
@@ -788,16 +797,18 @@ class ReferenceProvider implements vscode.ReferenceProvider {
     if (!anchor) return [];
     const docs = await workspaceDocuments(document);
     const locations: vscode.Location[] = [];
+    const target = docs.find((d) => d.uri.toString() === anchor.uri.toString());
     if (context.includeDeclaration) {
-      const target = docs.find((d) => d.uri.toString() === anchor.uri.toString());
-      const line = target ? anchorLine(target.text, anchor.id) : undefined;
+      const line = target ? anchorOrAliasLine(target.text, anchor.id) : undefined;
       if (target && line !== undefined) {
         const h = headingAt(target.text, line);
         locations.push(new vscode.Location(anchor.uri, new vscode.Range(line, h?.start ?? 0, line, h?.end ?? 0)));
       }
     }
+    // Links to a heading by its GitHub id (`#foo_bar` for `#foobar`) are references too.
+    const names = target ? anchorNames(target.text, anchor.id) : [anchor.id];
     for (const doc of docs) {
-      for (const l of linksToAnchor(doc.text, anchor.id, (p) => pointsAt(doc.uri, p, anchor.uri))) {
+      for (const l of names.flatMap((name) => linksToAnchor(doc.text, name, (p) => pointsAt(doc.uri, p, anchor.uri)))) {
         locations.push(new vscode.Location(doc.uri, new vscode.Range(l.line, l.column, l.line, l.endColumn)));
       }
     }

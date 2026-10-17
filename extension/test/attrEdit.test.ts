@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAttrs, type Attrs } from '../src/core/attrs';
+import { parseAttrs, unquoteValue, type Attrs } from '../src/core/attrs';
 import {
   containerHeader, lexAttrs, removeAttr, removeContainerAttr, setAttr, setContainerAttr, setContainerTitle, setId, type AttrItem,
 } from '../src/core/attrEdit';
@@ -22,7 +22,14 @@ function attrsOf(items: readonly AttrItem[]): Attrs {
   return attrs;
 }
 
-const PIECES = ['#id', '#x-1', '.cls', '.a_b', 'key=value', 'k="two words"', "q='it'", 'flag', 'title="A {b}"', 'n=50%', 'e=""', ' ', '  ', '=', '"', "'", '}', '{', 'x=', '.', '#', '@'];
+const PIECES = [
+  '#id', '#x-1', '.cls', '.a_b', 'key=value', 'k="two words"', "q='it'", 'flag', 'title="A {b}"', 'n=50%', 'e=""', ' ', '  ', '=', '"', "'", '}', '{', 'x=', '.', '#', '@',
+  // Escapes in quoted values (1.10), and backslashes that are not escapes.
+  String.raw`t="say \"hi\""`, String.raw`s='it\'s'`, String.raw`p="C:\dir\"`, String.raw`w="a\\"`, '\\', String.raw`\"`, String.raw`\'`,
+];
+
+/** A quoted value as written, from its unescaped value: as unquoteValue reads it back (attrs.ts). */
+const unescaped = (raw: string, quote: string) => (quote ? unquoteValue(raw.slice(1, -1), quote as '"' | "'") : raw);
 
 test('lexAttrs reads what parseAttrs reads, and its spans hold what they say', () => {
   const random = prng(3);
@@ -38,7 +45,10 @@ test('lexAttrs reads what parseAttrs reads, and its spans hold what they say', (
       assert.equal(text.trim(), text);
       if (item.kind === 'key') assert.ok(text.startsWith(item.name), JSON.stringify([src, item]));
       else assert.equal(text, `${item.kind === 'id' ? '#' : '.'}${item.name}`);
-      if (item.valueSpan) assert.equal(src.slice(item.valueSpan.start, item.valueSpan.end), `${item.quote}${item.value}${item.quote}`);
+      if (!item.valueSpan) continue;
+      const raw = src.slice(item.valueSpan.start, item.valueSpan.end);
+      assert.ok(raw.startsWith(item.quote) && raw.endsWith(item.quote), JSON.stringify([src, item]));
+      assert.equal(unescaped(raw, item.quote), item.value, JSON.stringify([src, item]));
     }
   }
 });
@@ -53,6 +63,11 @@ test('lexAttrs: spans, kinds and quote styles', () => {
     { kind: 'key', name: 'b', start: 23, end: 26, quote: '', value: '1', valueSpan: { start: 25, end: 26 } },
   ]);
   assert.equal(lexAttrs('a="unclosed'), null);
+  // An escaped quote: the value is unescaped, its span is the text as written.
+  assert.deepEqual(lexAttrs(String.raw`t="a \"b\"" u`), [
+    { kind: 'key', name: 't', start: 0, end: 11, quote: '"', value: 'a "b"', valueSpan: { start: 2, end: 11 } },
+    { kind: 'key', name: 'u', start: 12, end: 13, quote: '' },
+  ]);
 });
 
 test('setAttr changes only the value: formatted values stay formatted, others keep their quotes when they fit', () => {
@@ -69,8 +84,12 @@ test('setAttr changes only the value: formatted values stay formatted, others ke
   assert.equal(setAttr('collapsible', 'collapsible', 'false'), 'collapsible=false');
   assert.equal(setAttr('open=false', 'open', true), 'open');
   assert.equal(setAttr('open', 'open', true), 'open');
-  // Values no list can hold, malformed lists, bad keys.
-  assert.equal(setAttr('a=1', 'a', 'both " and \''), null);
+  // Both kinds of quote: double quotes with \" (1.10), which parseAttrs reads back.
+  assert.equal(setAttr('a=1', 'a', 'both " and \''), String.raw`a="both \" and '"`);
+  assert.equal(parseAttrs(setAttr('a=1', 'a', 'both " and \'')!)?.values.a, 'both " and \'');
+  assert.equal(setAttr("t='x'", 't', 'it\'s "q"'), String.raw`t="it's \"q\""`);
+  // Values no list can hold, malformed lists, bad keys. A backslash before a quote would read as an escape.
+  assert.equal(setAttr('a=1', 'a', String.raw`a\"b'c`), null);
   assert.equal(setAttr('a=1', 'a', 'two\nlines'), null);
   assert.equal(setAttr('a="x', 'a', '1'), null);
   assert.equal(setAttr('a=1', '1bad', '1'), null);

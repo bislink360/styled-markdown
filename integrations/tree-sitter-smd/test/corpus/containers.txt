@@ -263,6 +263,28 @@ Fence inside a container keeps a colon line
       (container_fence))))
 
 ================================================================================
+Display math inside a container keeps a colon line
+================================================================================
+:::note
+$$
+:::
+$$
+:::
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (math_block
+      (math_delimiter)
+      (math_content)
+      (math_delimiter))
+    (container_close
+      (container_fence))))
+
+================================================================================
 Container at the end of the file without a newline
 ================================================================================
 :::note

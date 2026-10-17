@@ -79,7 +79,7 @@ test('glossary: a list that is not all entries stays a list and defines nothing;
 test('glossary: documents without a glossary render exactly as with the feature turned off', () => {
   const docs = [
     ...readdirSync(join(__dirname, '..', '..', 'examples')).filter((f) => f.endsWith('.smd')).map((f) => join(__dirname, '..', '..', 'examples', f)),
-    ...readdirSync(join(__dirname, 'compat', 'corpus')).filter((f) => f !== 'glossary.smd').map((f) => join(__dirname, 'compat', 'corpus', f)),
+    ...readdirSync(join(__dirname, 'compat', 'corpus')).filter((f) => !['glossary.smd', 'glossary-typography.smd'].includes(f)).map((f) => join(__dirname, 'compat', 'corpus', f)),
   ];
   assert.ok(docs.length > 5);
   const on = new MarkdownIt({ html: true, linkify: true, typographer: true }).use(smd, { headingIds: true, sourceLines: true });

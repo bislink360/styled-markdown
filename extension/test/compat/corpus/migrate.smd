@@ -1,0 +1,72 @@
+---
+smd: 1
+title: Migrating to spec v2
+summary: Pins a case for each step of smd migrate --to 2, and text it must leave alone, so later releases are compared against them.
+status: Draft
+version: 2.10
+updated: 2026-10-15
+---
+
+## Closing fences
+
+::::tabs
+:::tab First
+Closed with four colons, which v1 reads as closing the tab.
+::::
+:::tab Second
+The second tab.
+:::
+:::
+
+## Duplicate attributes
+
+- A styled span whose color is given twice, where the last one wins:
+
+    [Blue text]{color=red color=blue}
+
+## Title text that is not shown
+
+:::note{title="Shown title"} Text that is not shown
+The title attribute wins.
+:::
+
+## Display math
+
+$$ E = mc^2
+\quad x $$
+
+## Object {}
+
+## Unknown directives
+
+Literal text such as :abbr[HTML] and :x[1] stays text, while :badge[known]{color=green}, `:code[x]` and $:m[x]$ are left alone.
+
+```text
+:::note
+:y[1] in code
+```
+
+## Included by a part of a heading
+
+:::include{file="include-terms.smd" section="refund"}
+See [Refunds](include-terms.smd#refunds) in the shared terms.
+:::
+
+## Values in another case
+
+:::decision{status=Accepted date=2026-10-15}
+Written with a capital letter.
+:::
+
+Priority :priority[High], trend :metric[3%]{label="Rate" trend=Up}.
+
+## Typography, links and variables
+
+"Quotes" -- dashes... (c) are curled today. Docs live at example.com and www.example.org. This is version {{version}}.
+
+## A stray closer
+
+The closing fence below has nothing to close. It keeps `smd fmt` from rewriting the mismatched closers above, so this document stays formatted as written.
+
+<!-- smd-disable-next-line container/stray-close -->
+:::

@@ -1,0 +1,23 @@
+---
+smd: 1
+title: Pipes in table cells
+summary: Pins how a `|` reads in a table cell, as on GitHub, so later releases are compared against it. An escaped pipe stays in its cell; one in a code span still splits the cell.
+status: draft
+updated: 2026-10-15
+---
+
+## Escaped pipes
+
+| Operator | Meaning |
+| --- | --- |
+| `a \|\| b` | Either one |
+| `x \| y` | A union type |
+| A \| B | Text with a pipe |
+
+## A pipe in a code span
+
+| Command | Meaning |
+| --- | --- |
+| `grep a | wc -l` | Count the matches |
+
+Outside a table, `a | b` is a code span as written.

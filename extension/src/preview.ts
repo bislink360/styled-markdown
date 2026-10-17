@@ -67,7 +67,8 @@ export function renderOptions(document?: vscode.TextDocument): RenderOptions {
 export function themePreference(frontMatter: Record<string, unknown>): string {
   const setting = vscode.workspace.getConfiguration('smd.preview').get<string>('theme', 'auto');
   if (setting !== 'auto') return setting;
-  return frontMatter.theme === 'light' || frontMatter.theme === 'dark' ? String(frontMatter.theme) : 'auto';
+  const theme = String(frontMatter.theme).toLowerCase();
+  return theme === 'light' || theme === 'dark' ? theme : 'auto';
 }
 
 export interface RenderStatus {

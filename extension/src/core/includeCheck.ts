@@ -6,11 +6,17 @@ import {
 import { includeSource } from './includeText';
 import { anchorIds } from './links';
 import { renderSmd } from './render';
+import { attrValueFix } from './fixes';
+import { findSection, matchesExactly, sectionsOf } from './sections';
+import type { Fix, Severity } from './validate';
 
-/** Validation of `:::include` blocks. Every problem is a warning: the block still renders, with its fallback. */
+/**
+ * Validation of `:::include` blocks. Every problem is a warning: the block still renders, with its fallback. A
+ * section found only by a part of its heading's text is an info (`include/section-match`), since spec v2 matches exactly.
+ */
 
-/** Reports a warning on `line`, columns [column, endColumn). */
-export type IncludeReport = (line: number, column: number, endColumn: number, code: string, message: string) => void;
+/** Reports a problem on `line`, columns [column, endColumn): a warning unless `severity` says otherwise. */
+export type IncludeReport = (line: number, column: number, endColumn: number, code: string, message: string, severity?: Severity, fix?: Fix) => void;
 
 export interface IncludeCheckOptions {
   fileExists?: (relativePath: string) => boolean;
@@ -55,6 +61,26 @@ function checkInclude(block: IncludeBlock, raw: string, check: Check): void {
   }
   const problem = includeProblem(request, check);
   if (problem) report(block.line, ...at(request.file), problem.code, problem.message);
+  else if (request.section) sectionMatch(block, raw, request, check);
+}
+
+/**
+ * `section="deploy"` that finds `## Rapid deployment` only because the heading's text contains it. Spec v2 matches an
+ * exact id or the whole heading text, so this is an info, with a fix to the id of the heading it finds.
+ */
+function sectionMatch(block: IncludeBlock, raw: string, request: IncludeRequest, check: Check): void {
+  const path = includePath('', request.file);
+  const text = check.source.readFile?.(path);
+  if (text === undefined || !request.section) return;
+  const hit = findSection(sectionsOf(check.source.headings(text), text.split(/\r?\n/).length), request.section);
+  if (!hit || matchesExactly(hit.heading, request.section)) return;
+  const written = block.info.attrs.values.section ?? request.section;
+  const column = raw.indexOf(written);
+  const [start, end] = column < 0 ? [0, raw.length] : [column, column + written.length];
+  const { text: heading, slug } = hit.heading;
+  check.report(block.line, start, end, 'include/section-match',
+    `section="${request.section}" finds the heading "${heading}" in "${path}" only by a part of its text. In spec v2 (smd: 2) section= matches a heading's id or its whole text, so this include would find nothing. Use the heading's id: section="${slug}".`,
+    'info', attrValueFix(block.line, raw, raw.indexOf('include'), raw.length, 'section', written, slug));
 }
 
 /** The first problem an include leads to, with its rule code. */

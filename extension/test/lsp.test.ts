@@ -390,6 +390,25 @@ test('definition: anchors, other documents and reference links', () => {
   assert.equal(definition(link.indexOf('other.smd') + 1).uri, otherUri);
 });
 
+test('GitHub ids of headings: definition, hover and completion treat them as the heading', () => {
+  const c = ready();
+  const ghFile = join(root, 'docs', 'gh.smd');
+  writeFileSync(ghFile, '# GitHub ids\n\n## max_tokens\n\nThe limit.\n');
+  const uri = uriOf(join(root, 'docs', 'gh-links.smd'));
+  const text = '## foo_bar\n\nBody.\n\n[a](#foo_bar) [b](gh.smd#max_tokens) [c](#\n';
+  c.open(uri, text);
+  const line = text.split('\n')[4];
+  const start = (n: number) => ({ start: { line: n, character: 0 }, end: { line: n, character: 0 } });
+  assert.deepEqual(c.result('textDocument/definition', c.at(uri, 4, line.indexOf('#foo_bar') + 1)), { uri, range: start(0) });
+  assert.deepEqual(c.result('textDocument/definition', c.at(uri, 4, line.indexOf('#max_tokens') + 1)), { uri: uriOf(ghFile), range: start(2) });
+  assert.match(hoverAt(text, 4, line.indexOf('#foo_bar') + 1)!.markdown, /^\*\*foo\\_bar\*\*\n[\s\S]*Body\./);
+  // The heading's id is offered, and typing its GitHub id finds it.
+  const items = completionsAt(text, 4, line.length)!.items;
+  assert.deepEqual(items.map((i) => [i.label, i.filterText]), [['foobar', 'foobar foo_bar']]);
+  // Links by GitHub id, here and to the other document, are information only.
+  assert.deepEqual(c.published(uri)?.map((d) => [d.code, d.severity]), [['link/github-anchor', 3], ['link/github-anchor', 3]]);
+});
+
 test('formatting: edits produce the formatted document', () => {
   const c = ready();
   const cases = [

@@ -1,0 +1,45 @@
+---
+smd: 1
+title: Inline items across line breaks
+summary: Pins inline directives and styled spans whose brackets run over a line break, as CommonMark link text may, so later releases are compared against it.
+status: draft
+updated: 2026-10-15
+---
+
+## Directives
+
+The build is :badge[green on
+every branch]{color=green} today.
+
+Status: :status[on track for
+the beta]{color=green}, and :priority[high]
+on one line.
+
+Press :kbd[Ctrl+Shift+P] and then
+:mention[@dana
+lee] reviews it.
+
+## Styled spans
+
+This is [styled across
+two lines]{color=red weight=bold} in a paragraph.
+
+- A list item with [a span that
+  runs on]{color=blue} inside it
+- [ ] A task with :badge[a badge
+  that wraps]{color=amber}
+
+> A quote with :badge[a badge
+> that wraps]{color=purple} too.
+
+## Next to math
+
+The mass $m$ is :badge[about
+$m_0$]{color=teal} at rest.
+
+## Not items
+
+A lone :badge[ with no closing bracket stays text.
+
+A [bracket on one line
+and its close on the next] with no attributes is text.
