@@ -191,9 +191,13 @@ test('segments: CRLF and lone CR keep their line numbers', () => {
   assert.deepEqual(shape(segmentSmd('- a\n\r\nText')), [['list', 0, 1], ['gap', 1, 2], ['paragraph', 2, 3]]);
 });
 
-test('segments: front matter that is never closed is not front matter; invalid YAML still is', () => {
+test('segments: front matter that is never closed is not front matter; invalid YAML still is, and shows in the header', () => {
   assert.deepEqual(shape(segmentSmd('---\ntitle: x\n')).map((s) => s[0]).includes('frontmatter'), false);
   assert.deepEqual(shape(segmentSmd('---\n: [bad\n---\nText\n')), [['frontmatter', 0, 3], ['paragraph', 3, 4], ['gap', 4, 5]]);
+  // Since 2.0 its lines are not hidden: the header (where the Block Editor shows the front matter) has them as written.
+  const r = renderBlocks('---\n: [bad\n---\nText\n');
+  assert.match(r.header, /^<div class="smd-frontmatter-error" role="note"[^>]*>.*<code>: \[bad<\/code><\/pre><\/div>\n$/s);
+  assert.equal(blocksHtml(r), renderSmd('---\n: [bad\n---\nText\n').html);
 });
 
 test('keys: unchanged blocks keep their keys when another block changes; duplicates are numbered', () => {

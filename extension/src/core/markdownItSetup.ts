@@ -3,7 +3,7 @@ import { alertOf, githubAlerts } from './alerts';
 import { escapeHtml } from './attrs';
 import {
   fenceRule, footnoteBackref, footnoteClose, footnoteOpen, footnoteRef, footnotesClose, footnotesOpen, renderContainer, renderHeader,
-  renderMath, renderRef, type RenderRule,
+  renderFrontMatterError, renderMath, renderRef, type RenderRule,
 } from './markdownItHtml';
 import { addChangelogRules, changelogEntries } from './markdownItChangelog';
 import { expandIncludes, includedLinks } from './markdownItInclude';
@@ -119,6 +119,7 @@ function addFrontMatter(md: MarkdownIt, ctx: SmdContext): void {
   });
   // Front matter values are shown as written: `{{name}}` in the title is not replaced.
   md.renderer.rules.smd_front_matter = (tokens, idx, _opts, env) => {
+    if (tokens[idx].info === 'error') return renderFrontMatterError(tokens[idx].content.split('\n'), ctx.messages(env));
     const header = renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), tokens[idx].meta as Record<string, unknown>, ctx.messages(env));
     return `${header}\n`;
   };

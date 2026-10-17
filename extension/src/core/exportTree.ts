@@ -99,7 +99,7 @@ export function exportTree(text: string, options: ExportOptions = {}): ExportDoc
   const parsed = parseSmdTokens(text, { readFile: options.readFile, agentBlocks: options.agentBlocks, lang: options.lang, today: '1970-01-01' });
   const builder = new TreeBuilder(parsed, options);
   const header = options.header === false ? [] : builder.header();
-  const blocks = [...header, ...builder.blocks(0, parsed.tokens.length)];
+  const blocks = [...builder.unreadFrontMatter(), ...header, ...builder.blocks(0, parsed.tokens.length)];
   const title = typeof parsed.data.title === 'string' ? parsed.data.title : undefined;
   return { blocks, title, lang: parsed.lang, messages: parsed.messages };
 }
@@ -343,6 +343,13 @@ class TreeBuilder {
     const meta = this.tokens[open].meta as ContainerMeta;
     const call: ContainerCall = { b: this, meta, title: meta.title ? this.plain(meta.title) : '', body: () => this.blocks(open + 1, close) };
     return { blocks: containerRule(meta.name)(call), next: close + 1 };
+  }
+
+  /** Front matter that could not be read: its lines as written, in a danger callout, as renderSmd's error block. */
+  unreadFrontMatter(): Block[] {
+    const lines = this.parsed.unread;
+    if (!lines) return [];
+    return [{ kind: 'callout', type: 'danger', title: this.m['frontMatter.error'], blocks: [{ kind: 'code', code: lines.join('\n'), lang: 'yaml' }] }];
   }
 
   /** The front matter facts renderSmd shows in its header, but the title (the page's own). */

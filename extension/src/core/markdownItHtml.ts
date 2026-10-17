@@ -50,6 +50,15 @@ ${meta.length ? `<div class="smd-doc-meta">${meta.map((m) => `<div>${m}</div>`).
 </header>`;
 }
 
+/**
+ * Front matter that is closed but could not be read (its YAML does not parse, or is not a mapping): its lines as
+ * written, in a visible error block where the header goes, so nothing above the closing line is hidden.
+ */
+export function renderFrontMatterError(lines: readonly string[], m: Messages = EN): string {
+  const title = escapeHtml(m['frontMatter.error']);
+  return `<div class="smd-frontmatter-error" role="note" aria-label="${title}" data-line="0"><div class="smd-frontmatter-error-title">${title}</div><pre class="smd-frontmatter-error-yaml"><code>${escapeHtml(lines.join('\n'))}</code></pre></div>\n`;
+}
+
 function headerFacts(data: Record<string, unknown>, status: string, m: Messages): string[] {
   const top: string[] = [];
   if (status) {
