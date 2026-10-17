@@ -14,7 +14,7 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 
 | # | Principle | What it means in practice |
 |---|-----------|---------------------------|
-| 1 | **Superset, never fork** | Every valid `.md` file is a valid `.smd` file with identical meaning. Rename `.md` → `.smd` and nothing breaks. |
+| 1 | **Superset, never fork** | Every valid `.md` file is a valid `.smd` file with identical meaning. Rename `.md` → `.smd` and nothing breaks. Spec v2 also shows text as GitHub does: no typographic quotes or dashes unless the document asks for them, and only GFM autolink literals become links (§4.8). |
 | 2 | **Readable as plain text** | The raw source must still read well in a terminal, a diff, a code review or an LLM context window. No HTML soup, no opaque IDs. |
 | 3 | **Borrow proven syntax** | Containers follow the *generic directives* proposal used by remark-directive, MyST and Docusaurus; attribute lists follow Pandoc; alerts map to GitHub alerts. Nothing is invented where a convention already exists. |
 | 4 | **Semantic before presentational** | Prefer `:::warning` over red text. Colors are *named tokens* (`red`, `green`, `accent`) that adapt to light/dark themes instead of hard-coded hex. |
@@ -64,6 +64,7 @@ A YAML mapping between `---` lines at the very start of the file. It is parsed w
 | `toc` | boolean | `true` renders a table of contents after the header |
 | `related` | list | Paths or URLs of related documents |
 | `lang` | string | Language of the labels the renderer adds (callout titles, "Figure 2", "overdue"…), a BCP 47 tag such as `de` or `pt-BR`; see §2.2. Default English |
+| `typography` | boolean | Spec v2: `true` turns on typographic quotes, dashes and ellipses (§4.8). Spec v1 always has them, and ignores the key |
 
 The values of the enum keys (`status`, `audience`, `theme`) are matched in any case: `audience: Both` is `both` (§5).
 
@@ -202,7 +203,7 @@ Every API call counts against the SLO; the error budget is what is left.
 - **Entries:** the bullet list directly inside a `glossary` holds its entries. Each item starts with a bold term and a colon, `**Term**: definition` (or `**Term:** definition`); the rest of the item is the definition, and may have inline Markdown, more paragraphs and nested lists. A list renders as a glossary only when every item is an entry; otherwise it stays a plain list and defines nothing (`glossary/entry`). Other content in the block, such as an introduction, renders as usual. A document may have several glossaries; they share one set of terms.
 - **Rendering:** `<div class="smd-glossary">`, the title if any (`<div class="smd-glossary-title">`), then `<dl class="smd-glossary-list">` with `<dt id="term-{slug}"><dfn>Term</dfn></dt><dd>definition</dd>` for each entry. When a term is defined twice, the first definition wins and only its `<dt>` has the id (`glossary/duplicate`). Term ids are never renumbered: when a heading or another element of the document already has the id (`## Term limits` is `#term-limits`, as is the term *Limits*), it stays on both, and `glossary/duplicate-id` warns, so links that work today keep working and the author decides which element keeps it.
 - **Uses:** elsewhere in the document, the first use of each term in each section (the text between two headings of any level) links to its definition, with the definition's plain text as a tooltip: `<a class="smd-term" href="#term-api"><abbr title="Application Programming Interface">API</abbr></a>` for an abbreviation, `<a class="smd-term" href="#term-error-budget" title="How much …">error budget</a>` for any other term. Later uses in the same section stay plain text.
-- **Matching:** a use is a whole word: no letter, digit or `_` on either side, no `.` `/` `@` `#` `-` just before it and no `.` `/` `@` `-` followed by a letter or digit just after it, so `API.md`, `/api`, `#API` and `API-first` are not uses. An *abbreviation* (a term with capital letters and no lower-case ones: `API`, `SLO`, `P99`) matches only as written. Any other term matches as written or with the case of its first letter changed (`Error budget`, `error budget`), not otherwise (`ERROR BUDGET`). Longer terms win (`API gateway` over `API`). Straight and typographic quotes and dashes are the same character for matching (`'` `‘` `’`, `"` `“` `”`, `--` `–`, `---` `—`), so a term with an apostrophe (`Builder's rule`) is found in rendered text, where the typographer curled it. Other word forms (plurals) are not uses.
+- **Matching:** a use is a whole word: no letter, digit or `_` on either side, no `.` `/` `@` `#` `-` just before it and no `.` `/` `@` `-` followed by a letter or digit just after it, so `API.md`, `/api`, `#API` and `API-first` are not uses. An *abbreviation* (a term with capital letters and no lower-case ones: `API`, `SLO`, `P99`) matches only as written. Any other term matches as written or with the case of its first letter changed (`Error budget`, `error budget`), not otherwise (`ERROR BUDGET`). Longer terms win (`API gateway` over `API`). Straight and typographic quotes and dashes are the same character for matching (`'` `‘` `’`, `"` `“` `”`, `--` `–`, `---` `—`), so a term with an apostrophe (`Builder's rule`) is found in rendered text, where typography (§4.8) curled it. Other word forms (plurals) are not uses.
 - **Never changed:** headings (so heading ids and the table of contents stay the same), container titles, glossaries themselves, code spans and blocks, math, links and their text (raw `<a>` links too), autolinks and URLs, raw HTML blocks and tags, image alt text, attribute lists and inline directives. Footnote references and footnote definitions (§4.6) are never marked either.
 - **Includes (§3.4):** included text is part of the rendered document. A glossary in an included file defines terms for the whole document (so a shared glossary can be included), and the document's terms are marked in included text, under the same first-use-per-section rule. `smd validate` counts uses in included text when it can read the include, so a term used only there is not `glossary/unused`; editor hovers know the document's own glossaries.
 - **Accessibility:** a definition is never available only on hover. Each marked use is a link to its `<dt>`, which keyboard and screen-reader users can follow (rendered pages move focus to it), and the expansion of an abbreviation is its `<abbr title>`.
@@ -443,11 +444,32 @@ renders *What's new in 2.10* and *Version 2.10 ships on 2026-10-20. Questions: @
 - **Only defined names are replaced.** `{{name}}` for a key the front matter doesn't have, or whose value is a mapping or empty, stays exactly as written, so documents that show Handlebars, Jinja or Mustache syntax in prose render as before. The validator reports them (§7): `variable/undefined` as info, with the closest key as a fix, and `variable/not-text` as a warning.
 - **Escaping:** `\{{name}}` shows `{{name}}` (the backslash escapes the brace, as for any Markdown punctuation), and so does a code span. `{{{name}}}` (Handlebars' triple braces) is never a variable.
 - **Where values are shown:** text in paragraphs, headings, lists, tables, block quotes and footnotes, link text, image alt text, container titles (`:::note Upgrading to {{version}}`, also `title="…"`) and inline directive content (`:badge[v{{version}}]`, `:due[{{release.date}}]`; there the value becomes part of the content, so `:due` checks the date it names).
-- **Order:** values are put in while inline Markdown is parsed, before anything that works on the resulting text: a glossary term (§3.5) inside a value is marked like any other use (and is a use for `glossary/unused`), task labels and heading text include the value, and the typographer treats it as text.
+- **Order:** values are put in while inline Markdown is parsed, before anything that works on the resulting text: a glossary term (§3.5) inside a value is marked like any other use (and is a use for `glossary/unused`), task labels and heading text include the value, and typography (§4.8) treats it as text.
 - **Never replaced:** code spans, fenced and indented code, math, Mermaid, raw HTML (tags, attribute values and HTML blocks) and comments, link and image destinations and reference definitions (URLs keep `{{…}}`; renderers percent-encode the braces), attribute lists other than a container's title, and the front matter itself: the header shows `title` and `summary` as written.
 - **Heading ids** come from the heading as written: `## What's new in {{version}}` has the id `whats-new-in-version` whatever the value, so links don't break when the value changes. The heading text (table of contents, outline, `smd agent --section`, `smd tasks` sections) shows the value.
 - **Includes:** text included with `:::include` (§3.4) uses the *including* document's front matter, since the included body comes without its own.
 - **Tools:** rendered output, the agent view (§8a), `smd to-md` (§8), `smd tasks` and `smd query` (task text, due dates and block titles), `smd meta` and the editors' outlines show the values; `smd fmt` leaves `{{name}}` as written. In the markdown-it plugin the `variables` option (default on) turns them off; the plugin reads the front matter from the source, and a host that removes the front matter first can pass its data as `env.smdVariables`.
+
+### 4.8 Typography and autolinks
+
+*Spec v2 (`smd: 2`); spec v2 RFC, proposal 8.*
+
+Text is shown as written: renderers make no typographic replacements unless the front matter says `typography: true`. With it, they make these:
+
+| Written | With `typography: true` |
+|---|---|
+| `"double"`, `'single'`, `it's` | “double”, ‘single’, it’s |
+| `--`, `---` | – (en dash), — (em dash) |
+| `...` | … |
+| `(c)`, `(r)`, `(tm)`, `+-` | ©, ®, ™, ± |
+
+- **Where:** text in paragraphs, headings, lists, tables, block quotes and footnotes, container titles, inline directive content, the header's `title` and `summary`, front matter values shown with `{{key}}` (§4.7), and text included with `:::include` (§3.4), which follows the including document's front matter. Never code, math, raw HTML, link destinations or the text of an autolink.
+- **Autolinks:** text becomes a link only as a GFM autolink literal: a URL that starts with `http://`, `https://` or `ftp://`, a `mailto:` address, `www.` followed by a domain (in lower case; linked as `http://www.…`), or an e-mail address (`team@example.com`). A bare domain (`example.com`, `README.md`), a protocol-relative `//host` and `WWW.` in capitals are text. `typography: true` doesn't change links. `<https://…>` autolinks and `[text](url)` links are links as in CommonMark.
+- **The key:** `typography: true`, a YAML boolean; any other value leaves typography off. A spec v1 document may have the key; it has no effect there.
+- **What doesn't change:** heading ids come from the source text in either version (§4.2.3). The agent view, `smd to-md`, tasks and query show the source text. Glossary terms match straight and typographic quotes and dashes alike (§3.5), so they are found with typography on or off.
+- **Hosts:** the markdown-it plugin applies these rules to a spec v2 document (`smd: 2` in its front matter, or the plugin's `spec: 2` option) whatever the host's `typographer` and `linkify` options say, but it only takes away: a host with the typographer off (the Obsidian plugin) shows no typography even with `typography: true`, and a host with `linkify` off makes no autolinks. A host that removes the front matter passes `typography` with the rest of it in `env.smdVariables`.
+
+**Spec v1 (documents without `smd: 2`):** renderers make the typographic replacements above everywhere, and link bare domains whose top-level domain linkify knows (`example.com` as `http://example.com`, `README.md` as `http://README.md`), `//host` and `WWW.` in any case, but not `www.` before an unknown top-level domain (`www.shop.test`): markdown-it's typographer and fuzzy linkify. `typography` has no effect. The markdown-it plugin follows the host's `typographer` and `linkify` options. Tools before 2.0 read a spec v2 document this way too. `smd migrate --to 2 --keep-typography --link-domains` keeps a v1 document's look under v2 (§10.1).
 
 ---
 
@@ -661,7 +683,7 @@ The value as YAML reads it decides, so `smd: 2.0`, the number 2, is spec v2, wit
 
 | Rule | Section | Spec v2 (`smd: 2`) | Spec v1 |
 |---|---|---|---|
-| *None yet: Styled Markdown 2.0 adds the v2 rules of the RFC (`docs/SPEC-V2-PROPOSALS.smd`) one by one* | | | |
+| Typography and autolinks | §4.8 | Text as written unless the front matter says `typography: true`; only GFM autolink literals are links (`www.`, `https://`, e-mail) | Typographic quotes, dashes, ellipses and symbols always; bare domains (`example.com`) are links too |
 
 **Rules for every document.** Some 2.0 changes apply whatever `smd` says, so they are not in the table: v1 documents get them too. Each is marked *all documents* where it is defined:
 
@@ -719,8 +741,8 @@ The steps run in this order. "v1" steps leave the document rendering as before w
 | Unknown directives | proposal 7b | v2 | A literal `:name[…]` whose name isn't an inline directive as written (`:abbr[HTML]`, `:Badge[x]`) gets its colon escaped (`\:abbr[HTML]`), so v2 doesn't read it as a directive. CommonMark shows `\:` as `:` |
 | Include sections | proposal 9 | v1 | A `section=` that finds its heading only by a part of the heading's text is rewritten to the heading's id (`include/section-match`). Needs the included file |
 | Enumerated values | proposal 11 | v2 | Container, directive and front matter values are written in the vocabulary's case: `status=Accepted` → `accepted`, `method=get` → `GET`, `theme: Dark` → `dark`. Directive content such as `:priority[High]` is shown as written, and is left alone |
-| Typography | proposal 8 | v2 | With `--keep-typography`, `typography: true` is added to the front matter of a document whose text the typographer changes (curly quotes, dashes, ellipses, `(c)` and other symbols), to keep them under v2; otherwise a note counts those places |
-| Bare domain links | proposal 8 | v2 | A note for each bare domain linked today (`example.com`), which v2 doesn't link; with `--link-domains`, it is written as `<https://example.com>` |
+| Typography | proposal 8 | v2 | With `--keep-typography`, `typography: true` is added to the front matter of a document whose text the typographer changes (curly quotes, dashes, ellipses, `(c)` and other symbols), so spec v2 shows them as v1 does (§4.8); otherwise a note counts those places |
+| Bare domain links | proposal 8 | v1 | A note for each link v1 makes that v2 doesn't (§4.8): a bare domain (`example.com`), `//host`, `WWW.` in capitals; with `--link-domains`, it is written as a Markdown link to the address v1 links, `[example.com](http://example.com)`, which both versions show the same (a `--`, `...` or `(c)` in its text is escaped, so typography leaves it alone). A link in the front matter's `title` or `summary`, and `www.` text that v2 links and v1 doesn't (`www.shop.test`), are notes |
 | Front matter values | proposal 10 | v2 | A note for each value the page header or a `{{key}}` shows other than as written (`version: 2.10` shows `2.1` in v1 and `2.10` in v2); with `--quote-variables`, it is quoted, so every version shows `2.10` |
 | Spec version | versioning rules | v1 | `smd: 1`, a missing key, a value that counts as 1 (`true`, `"1"`) or a missing front matter becomes `smd: 2`. Tools before 2.0 warn about `smd: 2` and read the document with the v1 rules |
 
