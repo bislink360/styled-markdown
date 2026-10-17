@@ -74,23 +74,35 @@ export function wrapLines(text: string, startLine: number, endLine: number, name
  * Do these lines open and close every code fence and container they contain? In spec v2 each closing fence must have
  * its container's colon count: one that closes several, or matches none, may pair differently with fences outside.
  */
+type CodeFence = { char: string; len: number } | null;
+
+/** The open code fence after a line, and whether the line belongs to a fence (opener, body or closer). */
+function codeFenceStep(raw: string, fence: CodeFence): { fence: CodeFence; inFence: boolean } {
+  const mark = /^\s{0,3}(`{3,}|~{3,})/.exec(raw);
+  if (fence) {
+    const closes = mark && mark[1][0] === fence.char && mark[1].length >= fence.len && !raw.slice(mark[0].length).trim();
+    return { fence: closes ? null : fence, inFence: true };
+  }
+  return mark ? { fence: { char: mark[1][0], len: mark[1].length }, inFence: true } : { fence: null, inFence: false };
+}
+
+/** Does this closing fence close exactly one container, its own (by colon count in spec v2)? */
+function closesOwn(raw: string, open: number[], spec: SpecVersion): boolean {
+  const colons = closerColons(raw);
+  const closed = closeContainers(open, colons, spec, (c) => c);
+  return closed.length === 1 && (spec !== 2 || closed[0] === colons);
+}
+
 function isBalanced(lines: string[], spec: SpecVersion): boolean {
-  let fence: { char: string; len: number } | null = null;
+  let fence: CodeFence = null;
   const open: number[] = [];
   for (const raw of lines) {
-    const mark = /^\s{0,3}(`{3,}|~{3,})/.exec(raw);
-    if (fence) {
-      if (mark && mark[1][0] === fence.char && mark[1].length >= fence.len && !raw.slice(mark[0].length).trim()) fence = null;
-      continue;
-    }
-    if (mark) { fence = { char: mark[1][0], len: mark[1].length }; continue; }
+    const step = codeFenceStep(raw, fence);
+    fence = step.fence;
+    if (step.inFence) continue;
     if (CONTAINER_CLOSE.test(raw)) {
-      const colons = closerColons(raw);
-      const closed = closeContainers(open, colons, spec, (c) => c);
-      if (closed.length !== 1 || (spec === 2 && closed[0] !== colons)) return false;
-      continue;
-    }
-    if (CONTAINER_OPEN.test(raw)) open.push(openerColons(raw));
+      if (!closesOwn(raw, open, spec)) return false;
+    } else if (CONTAINER_OPEN.test(raw)) open.push(openerColons(raw));
   }
   return !fence && open.length === 0;
 }

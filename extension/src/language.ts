@@ -7,7 +7,7 @@ import { loadMermaidParser } from './mermaidLoader';
 import {
   CALLOUT_TYPES, CONTAINERS, FRONTMATTER_KEYS, INLINE_DIRECTIVES, NAMED_COLORS, SIZE_VALUES, STATUS_VALUES, AUDIENCE_VALUES,
   STYLE_KEYS, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, MERMAID_TYPES, VARIABLE_SYNTAX,
-  checkMermaid, formatSmd, FRONTMATTER_SCHEMA, frontMatterValues, parseFrontMatter, parseSmd, renderSmd, specVersion, validateSmd, type Diagnostic,
+  checkMermaid, formatSmd, FRONTMATTER_SCHEMA, frontMatterValues, parseFrontMatter, parseSmd, renderSmd, specVersion, validateSmd, type Diagnostic, type SpecVersion,
 } from './core';
 import { closeContainers } from './core/containers';
 import {
@@ -689,6 +689,19 @@ class SymbolProvider implements vscode.DocumentSymbolProvider {
   }
 }
 
+/** A container line for folding: an opener goes on the stack; a closer folds the containers it closes. */
+function foldContainerLine(
+  text: string, i: number, stack: Array<{ line: number; colons: number }>, spec: SpecVersion, ranges: vscode.FoldingRange[],
+): void {
+  const open = /^\s{0,3}(:{3,})\s*[a-zA-Z]/.exec(text);
+  if (open) { stack.push({ line: i, colons: open[1].length }); return; }
+  const close = /^\s{0,3}(:{3,})\s*$/.exec(text);
+  if (!close) return;
+  // The fence's own container folds up to it; one closed with it, up to the line before.
+  const closed = closeContainers(stack, close[1].length, spec, (o) => o.colons);
+  closed.forEach((o, k) => ranges.push(new vscode.FoldingRange(o.line, k === closed.length - 1 ? i : i - 1)));
+}
+
 class FoldingProvider implements vscode.FoldingRangeProvider {
   provideFoldingRanges(document: vscode.TextDocument): vscode.FoldingRange[] {
     const ranges: vscode.FoldingRange[] = [];
@@ -703,15 +716,7 @@ class FoldingProvider implements vscode.FoldingRangeProvider {
         if (fence === -1) fence = i; else { ranges.push(new vscode.FoldingRange(fence, i)); fence = -1; }
         continue;
       }
-      if (fence !== -1) continue;
-      const open = /^\s{0,3}(:{3,})\s*[a-zA-Z]/.exec(text);
-      const close = open ? null : /^\s{0,3}(:{3,})\s*$/.exec(text);
-      if (open) stack.push({ line: i, colons: open[1].length });
-      else if (close) {
-        // The fence's own container folds up to it; one closed with it, up to the line before.
-        const closed = closeContainers(stack, close[1].length, spec, (o) => o.colons);
-        closed.forEach((o, k) => ranges.push(new vscode.FoldingRange(o.line, k === closed.length - 1 ? i : i - 1)));
-      }
+      if (fence === -1) foldContainerLine(text, i, stack, spec, ranges);
     }
     if (fm.present && fm.bodyStartLine > 1) ranges.push(new vscode.FoldingRange(0, fm.bodyStartLine - 1, vscode.FoldingRangeKind.Region));
     return ranges;
