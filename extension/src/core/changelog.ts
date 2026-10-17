@@ -1,5 +1,6 @@
 import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
-import { HEADING_ATTRS } from './markdownItRules';
+import { withoutHeadingAttrs } from './sections';
+import type { SpecVersion } from './specVersion';
 
 /**
  * Changelogs: `:::changelog` blocks whose headings are release entries, written `## 1.2.0 — 2026-03-01`
@@ -131,16 +132,16 @@ const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
 const HEADING = /^(\s{0,3}(#{1,6})\s+)(.*?)\s*#*\s*$/;
 
 /** Every `:::changelog` from line `from` on, with its entries; nested changelogs are blocks of their own. */
-export function findChangelogs(lines: string[], from = 0): ChangelogBlock[] {
+export function findChangelogs(lines: string[], from = 0, spec: SpecVersion = 1): ChangelogBlock[] {
   if (!lines.some((l) => /^\s{0,3}:{3,}\s*changelog\b/i.test(l))) return [];
-  const scanner = new ChangelogScanner(displayMath(lines));
+  const scanner = new ChangelogScanner(displayMath(lines), spec);
   for (let i = from; i < lines.length; i++) scanner.line(lines[i], i);
   return scanner.finish();
 }
 
 /** The entry headings of a document by line, for the agent view. */
-export function changelogEntries(lines: string[], from = 0): Map<number, ChangelogEntry> {
-  return new Map(findChangelogs(lines, from).flatMap((b) => b.entries.map((e) => [e.line, e] as const)));
+export function changelogEntries(lines: string[], from = 0, spec: SpecVersion = 1): Map<number, ChangelogEntry> {
+  return new Map(findChangelogs(lines, from, spec).flatMap((b) => b.entries.map((e) => [e.line, e] as const)));
 }
 
 interface OpenBlock { name: string; block?: ChangelogBlock; headings: ChangelogEntry[] }
@@ -151,7 +152,7 @@ class ChangelogScanner {
   private readonly stack: OpenBlock[] = [];
   private fence: string | null = null;
 
-  constructor(private readonly isMath: (line: number) => boolean) {}
+  constructor(private readonly isMath: (line: number) => boolean, private readonly spec: SpecVersion) {}
 
   line(line: string, i: number): void {
     if (this.inFence(line) || this.isMath(i)) return;
@@ -168,7 +169,7 @@ class ChangelogScanner {
     }
     const top = this.stack.at(-1);
     const heading = top?.block ? HEADING.exec(line) : null;
-    if (top && heading) top.headings.push(entryOf(heading, i));
+    if (top && heading) top.headings.push(entryOf(heading, i, this.spec));
   }
 
   finish(): ChangelogBlock[] {
@@ -195,7 +196,7 @@ class ChangelogScanner {
   }
 }
 
-function entryOf(heading: RegExpExecArray, line: number): ChangelogEntry {
-  const text = heading[3].replace(HEADING_ATTRS, '');
+function entryOf(heading: RegExpExecArray, line: number, spec: SpecVersion): ChangelogEntry {
+  const text = withoutHeadingAttrs(heading[3], spec);
   return { ...splitEntry(text), line, level: heading[2].length, column: heading[1].length };
 }

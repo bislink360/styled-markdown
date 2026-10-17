@@ -1,7 +1,7 @@
 import { parseAttrs } from './attrs';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, unknownContainerTitle, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
-import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
+import { refDirective, type Figure, type FigureNumber } from './figures';
 import {
   containerEnd, findIncludes, includeHref, includeLabel, includePath, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
@@ -9,8 +9,11 @@ import { githubIds, markdownHeadings, type MarkdownHeading } from './githubSlug'
 import { expandedFigures, figuresOf, includedLines, includeKey, includeSource, type ExpandedFigures } from './includeText';
 import { aroundInlineMath, convertedParts, inlineItemLines, inlineMathLines, literalLines, parseSmd, type InlinePart } from './parse';
 import { quoteCite } from './quote';
-import { HEADING_ATTRS, renderSmd } from './render';
+import { renderSmd } from './render';
 import { riskMatrixMarkdown } from './risks';
+import { withoutHeadingAttrs } from './sections';
+import { INLINE_DIRECTIVES } from './spec';
+import { specVersion, type SpecVersion } from './specVersion';
 import { own } from './util';
 import { documentVariables, substituteLine, type Variables } from './variables';
 
@@ -36,6 +39,8 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
   const numbering = figureNumbering(options, text);
   const figures = { byId: numbering.figures.byId, own: figuresOf(numbering.figures, numbering.key) };
   const variables = variablesOf(options, lines);
+  // The document's spec version, from its front matter: an included document's is the including one's, as in rendering.
+  const spec = specVersion(variables);
   // Indented code and display math reach the line handling below; they stay as written, as in rendering.
   const literal = literalLines(text);
   // `$inline math$` may run on from one line to the next; it stays as written too.
@@ -107,21 +112,21 @@ export function smdToMarkdown(text: string, options: ToMarkdownOptions = {}): st
       continue;
     }
     const open = notLiteral && CONTAINER_OPEN.exec(line);
-    const info = open ? parseContainerInfo(open[3] + open[4]) : null;
+    const info = open ? parseContainerInfo(open[3] + open[4], spec) : null;
     if (open && info) {
       if (info.name === 'include') {
         const len = open[2].length;
         i = includeMarkdown(info, { lines, open: i, options, numbering, emit, keepBody: () => stack.push({ len, prefix: '' }) });
         continue;
       }
-      const title = info.title ? convertInline(substituteLine(info.title, variables), figures.byId) : '';
-      const head = containerMarkdown({ name: info.name, title, values: info.attrs.values, id: info.attrs.id, figure: figures.own.get(i + numbering.offset), text });
+      const title = info.title ? convertInline(substituteLine(info.title, variables), figures.byId, spec) : '';
+      const head = containerMarkdown({ name: info.name, title, values: info.attrs.values, id: info.attrs.id, figure: figures.own.get(i + numbering.offset), text, spec });
       for (const l of head.before ?? []) emit(l);
       stack.push({ len: open[2].length, prefix: head.prefix, ...(head.close === undefined ? {} : { close: head.close }), ...(head.end ? { end: head.end } : {}) });
       for (const l of head.inside ?? []) emit(l);
       continue;
     }
-    emit(lineMarkdown(line, literal.has(i), { variables, figures: figures.byId }, inlineMath.get(i), inlineItems.get(i)));
+    emit(lineMarkdown(line, literal.has(i), { variables, figures: figures.byId, spec }, inlineMath.get(i), inlineItems.get(i)));
   }
   return headingAnchors(text, out.join('\n').replace(/\n{3,}/g, '\n\n'), options);
 }
@@ -215,13 +220,14 @@ const figureNumbering = (options: ToMarkdownOptions, text: string): FigureNumber
  * inline items that run over several lines (see inlineItemLines): each item converts as a whole.
  */
 function lineMarkdown(
-  line: string, literal: boolean, document: { variables: Variables; figures: ReadonlyMap<string, FigureNumber> }, math?: ReadonlyArray<[number, number]>,
-  parts?: ReadonlyArray<InlinePart>,
+  line: string, literal: boolean, document: { variables: Variables; figures: ReadonlyMap<string, FigureNumber>; spec: SpecVersion },
+  math?: ReadonlyArray<[number, number]>, parts?: ReadonlyArray<InlinePart>,
 ): string {
   if (literal) return line;
-  const content = /^\s{0,3}#{1,6}\s/.test(line) ? line.replace(HEADING_ATTRS, '') : line;
+  // In spec v2 a trailing `{}` or `{word}` is heading text, which GitHub shows too.
+  const content = /^\s{0,3}#{1,6}\s/.test(line) ? withoutHeadingAttrs(line, document.spec) : line;
   // Math is set aside before `{{name}}` is replaced, as rendering reads it.
-  const convert = (text: string) => convertInline(substituteLine(text, document.variables), document.figures);
+  const convert = (text: string) => convertInline(substituteLine(text, document.variables), document.figures, document.spec);
   const asWritten = content === line;
   return aroundInlineMath(content, convert, asWritten ? math : undefined, asWritten ? convertedParts(parts, (whole) => aroundInlineMath(whole, convert)) : []);
 }
@@ -282,6 +288,8 @@ interface ContainerSource {
   figure?: Figure;
   /** The whole document (`:::risk-matrix` summarizes its risks). */
   text: string;
+  /** The document's spec version, for inline text in attribute values. */
+  spec: SpecVersion;
 }
 
 /**
@@ -321,10 +329,10 @@ function figureMarkdown({ title, id, figure }: ContainerSource): ContainerMarkdo
 }
 
 /** A blockquote of the body, then `— Author, *Source*` (the source linked to `cite` when that is http(s) or relative). */
-function quoteMarkdown({ values }: ContainerSource): ContainerMarkdown {
-  const author = values.author?.trim() ? convertInline(values.author.trim()) : '';
+function quoteMarkdown({ values, spec }: ContainerSource): ContainerMarkdown {
+  const author = values.author?.trim() ? convertInline(values.author.trim(), undefined, spec) : '';
   const cite = quoteCite(values.cite);
-  const source = values.source?.trim() ? convertInline(values.source.trim()) : '';
+  const source = values.source?.trim() ? convertInline(values.source.trim(), undefined, spec) : '';
   const linked = cite && source && !source.includes('](') ? `[${source}](${cite})` : source;
   const cited = linked && !/^[*_]/.test(linked) ? `*${linked}*` : linked;
   const by = [author, cited].filter(Boolean).join(', ');
@@ -371,41 +379,67 @@ const STATUS_EMOJI: Record<string, string> = {
 };
 
 /** Convert inline SMD syntax on one line, leaving code spans and `$inline math$` untouched. */
-export function convertInline(line: string, figures?: ReadonlyMap<string, FigureNumber>): string {
+export function convertInline(line: string, figures?: ReadonlyMap<string, FigureNumber>, spec: SpecVersion = 1): string {
   return aroundInlineMath(line, (text) => text
     .split(/(`+[^`]*`+)/)
-    .map((part, idx) => (idx % 2 === 1 ? part : convertText(part, figures)))
+    .map((part, idx) => (idx % 2 === 1 ? part : convertText(part, figures, spec)))
     .join(''));
 }
 
 /** `:ref[id]` → `[Figure 2](#id)`; references to unknown ids stay as written. */
-function refLinks(s: string, figures: ReadonlyMap<string, FigureNumber> | undefined): string {
+function refLinks(s: string, figures: ReadonlyMap<string, FigureNumber> | undefined, spec: SpecVersion): string {
   if (!figures?.size) return s;
-  return s.replace(REF_DIRECTIVE, (m, pre: string, raw: string) => {
+  return s.replace(refDirective(spec), (m, pre: string, raw: string) => {
     const id = raw.trim();
     const figure = figures.get(id);
     return figure ? `${pre}[${figure.label}](#${id})` : m;
   });
 }
 
-function convertText(s: string, figures?: ReadonlyMap<string, FigureNumber>): string {
-  return refLinks(s, figures)
-    // A name with neither `[content]` nor `{attributes}` is text, as in rendering. Content may run over a line break
-    // when an item is read whole (see convertedParts).
-    .replace(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g, (m, pre: string, name: string, content?: string, rawAttrs?: string) =>
-      (content === undefined && rawAttrs === undefined ? m : directiveMarkdown(m, pre, name, content ?? '', parseAttrs(rawAttrs ?? '')?.values ?? {})))
+/**
+ * `:name[content]{attrs}` in text: a lower-case name in spec v1, any case in spec v2 (RFC proposal 11). A name with
+ * neither `[content]` nor `{attributes}` is text, as in rendering. Content may run over a line break when an item is
+ * read whole (see convertedParts).
+ */
+const DIRECTIVE_TEXT_V1 = /(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g;
+const DIRECTIVE_TEXT_V2 = /(^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g;
+
+function convertText(s: string, figures: ReadonlyMap<string, FigureNumber> | undefined, spec: SpecVersion): string {
+  return refLinks(s, figures, spec)
+    .replace(spec >= 2 ? DIRECTIVE_TEXT_V2 : DIRECTIVE_TEXT_V1, (m, pre: string, name: string, content?: string, rawAttrs?: string) =>
+      (content === undefined && rawAttrs === undefined ? m : directiveText(m, { pre, name, content: content ?? '', rawAttrs: rawAttrs ?? '' }, spec)))
     .replace(/(!?)\[([^\]]*)\]\{([^{}\n]*)\}/g, (m, bang, content, rawAttrs) => {
       if (bang) return m;
-      const attrs = parseAttrs(rawAttrs);
-      if (!attrs) return m;
-      let t = content;
-      const style = attrs.values.style ?? '';
-      if (attrs.values.weight === 'bold') t = `**${t}**`;
-      if (style.includes('italic')) t = `*${t}*`;
-      if (style.includes('strike')) t = `~~${t}~~`;
-      return t;
+      const attrs = parseAttrs(rawAttrs, spec);
+      return attrs ? spanMarkdown(content, attrs.values) : m;
     })
     .replace(/==(?=\S)([^=]+?)(?<=\S)==/g, '**$1**');
+}
+
+/** A styled span's text, bold, italic or struck through as its `weight` and `style` say. */
+function spanMarkdown(content: string, values: Record<string, string>): string {
+  let t = content;
+  const style = values.style ?? '';
+  if (values.weight === 'bold') t = `**${t}**`;
+  if (style.includes('italic')) t = `*${t}*`;
+  if (style.includes('strike')) t = `~~${t}~~`;
+  return t;
+}
+
+/**
+ * One `:name[content]{attrs}` (`m` as written). In spec v2 a name outside the vocabulary is a directive (RFC proposal
+ * 7b): its content converts as a styled span's does, unless its attribute list can't be read, when rendering shows it
+ * as text too. In spec v1 it is text.
+ */
+function directiveText(m: string, d: { pre: string; name: string; content: string; rawAttrs: string }, spec: SpecVersion): string {
+  const name = spec >= 2 ? d.name.toLowerCase() : d.name;
+  const attrs = parseAttrs(d.rawAttrs, spec);
+  if (spec >= 2) {
+    // A list that can't be read leaves the whole item as text, as rendering does.
+    if (!attrs) return m;
+    if (!Object.hasOwn(INLINE_DIRECTIVES, name)) return `${d.pre}${spanMarkdown(d.content, attrs.values)}`;
+  }
+  return directiveMarkdown(m, d.pre, name, d.content, attrs?.values ?? {});
 }
 
 /** One `:name[content]{attrs}` in plain Markdown (`m` as written), or `m` for a name kept as written. */

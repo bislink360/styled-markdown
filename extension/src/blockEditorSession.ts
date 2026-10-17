@@ -755,12 +755,12 @@ function colorField(key: string, value: string): FormField {
  * .values as choices) and the color keys. Undefined for an unknown kind or an attribute list that doesn't parse,
  * which only the source can fix.
  */
-export function containerForm(line: string, name: string | undefined): ContainerForm | undefined {
+export function containerForm(line: string, name: string | undefined, version: SpecVersion = 1): ContainerForm | undefined {
   const spec = name ? ownEntry(CONTAINERS, name.toLowerCase()) : undefined;
-  const header = containerHeader(line);
+  const header = containerHeader(line, version);
   // An attribute list that is never closed: only the source can fix it.
   if (!spec || !header || !name || (!header.attrs && line[header.name.end] === '{')) return undefined;
-  const items = header.attrs ? lexAttrs(line.slice(header.attrs.start + 1, header.attrs.end - 1)) : [];
+  const items = header.attrs ? lexAttrs(line.slice(header.attrs.start + 1, header.attrs.end - 1), version) : [];
   if (!items) return undefined;
   const values = new Map<string, string>();
   for (const item of items) if (item.kind === 'key') values.set(item.name, item.value ?? 'true');
@@ -822,10 +822,12 @@ function inlineAttrField(key: string, spec: InlineDirectiveSpec, values: Readonl
  */
 export function inlineFields(item: InlineItem): FormField[] | undefined {
   if (!item.at) return undefined;
-  if (item.kind === SPAN) return COLOR_KEYS.map((key) => ({ ...colorField(key, item.values[key] ?? ''), label: INLINE_ATTR_LABELS[key] }));
-  const spec = ownEntry(INLINE_DIRECTIVES, item.name);
-  if (!spec) return undefined;
+  const colors = () => COLOR_KEYS.map((key) => ({ ...colorField(key, item.values[key] ?? ''), label: INLINE_ATTR_LABELS[key] }));
+  if (item.kind === SPAN) return colors();
   const content = item.at.content ? [contentField(item)] : [];
+  const spec = ownEntry(INLINE_DIRECTIVES, item.name);
+  // A directive outside the vocabulary (spec v2 only): its text and the colours it takes as a styled span does.
+  if (!spec) return [...content, ...colors()];
   return [...content, ...spec.attrs.map((key) => inlineAttrField(key, spec, item.values))];
 }
 
@@ -995,6 +997,8 @@ export class BlockEditorSession {
   private requests = 0;
   /** The inline items each top-level block's HTML numbered in the last render, by key. */
   private inlineRendered: { version: number; items: Map<string, readonly RenderedInline[]> } = { version: -1, items: new Map() };
+  /** The spec version of the document the last render showed. */
+  private viewSpec: SpecVersion = 1;
   /** The document version the session's last edit made. */
   private applied = 0;
   /** The quick fixes last listed for each block, and the document version they belong to. */
@@ -1062,6 +1066,8 @@ export class BlockEditorSession {
     const html = new Map(result.blocks.map((b) => [b.key, b.html]));
     const inline = new Map(result.blocks.map((b) => [b.key, b.inline]));
     this.inlineRendered = { version, items: new Map() };
+    // Container forms read attribute values with the document's spec version (escapes differ in spec v2).
+    this.viewSpec = specVersion(result.frontMatter);
     const view = (s: Segment): BlockView => {
       const v = this.blockView(s, lines, html, owners);
       const items = this.inlineViews(s.key, lines.slice(s.start, s.end), inline.get(s.key), result.frontMatter);
@@ -1122,7 +1128,7 @@ export class BlockEditorSession {
     if (s.container) view.container = s.container;
     if (html && isBlock) view.html = html.get(s.key) ?? '';
     if (s.children) view.children = this.childViews(s.children, lines, owners);
-    const form = s.type === CONTAINER ? containerForm(lines[s.start], s.container) : undefined;
+    const form = s.type === CONTAINER ? containerForm(lines[s.start], s.container, this.viewSpec) : undefined;
     if (form) view.form = form;
     if (isBlock && s.type === TABLE) view.table = this.tableView(lines.slice(s.start, s.end));
     const problems = problemsOf(owners.get(s.key));
@@ -1309,8 +1315,9 @@ export class BlockEditorSession {
     if (!found) return;
     const line = found.lines[found.range.start];
     let next: string | null;
-    if (m.type === 'setTitle') next = setContainerTitle(line, m.title);
-    else next = m.value === null ? removeContainerAttr(line, m.name) : setContainerAttr(line, m.name, m.value);
+    const spec = specVersion(found.text);
+    if (m.type === 'setTitle') next = setContainerTitle(line, m.title, spec);
+    else next = m.value === null ? removeContainerAttr(line, m.name, spec) : setContainerAttr(line, m.name, m.value, spec);
     if (next === null) return this.notice(m.editId, m.type === 'setTitle' ? 'That title cannot be written here.' : `"${m.name}" cannot be set to that value.`);
     const span = lineSpan(found.text, { start: found.range.start, end: found.range.start + 1 })!;
     const change = minimalEdit(line, next);
@@ -1343,7 +1350,7 @@ export class BlockEditorSession {
     if (!offered(m, inlineFields(item) ?? [])) return this.notice(m.editId, `The form of this ${(ownEntry(INLINE_LABELS, item.name) ?? item.name).toLowerCase()} has no such field.`);
     const change: InlineChange = { ...(m.content === undefined ? {} : { content: m.content }), ...(m.attrs ? { attrs: m.attrs } : {}) };
     const at = item.at!.line;
-    const next = editInline(lines[at], item, change) ?? lines[at];
+    const next = editInline(lines[at], item, change, spec) ?? lines[at];
     const after = [...lines.slice(0, at), next, ...lines.slice(at + 1)];
     if (!changedAsAsked(items, this.scan(after, spec), m.index, change)) {
       return this.fallback(m, 'That value can\'t be written here: edit the block\'s source instead.');

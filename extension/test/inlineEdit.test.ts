@@ -6,6 +6,7 @@ import { renderSmd, type RenderOptions } from '../src/core';
 import { blocksHtml, renderBlocks } from '../src/core/blocks';
 import { editInline, scanInline, SPAN, type InlineChange, type InlineItem } from '../src/core/inlineEdit';
 import { NAMED_COLORS } from '../src/core/spec';
+import { specVersion } from '../src/core/specVersion';
 import { substituteLine } from '../src/core/variables';
 import { exampleDocuments, fuzzCase, prng, type Random } from './fuzz/generate';
 
@@ -87,7 +88,7 @@ test('the scan finds every inline directive and span rendering numbers, in order
       const rendered = block.inline ?? [];
       const marks = [...block.html.matchAll(MARK)].map((m) => Number(m[1]));
       assert.deepEqual(marks.slice().sort((a, b) => a - b), rendered.map((_, i) => i), `${doc.name}, line ${block.start + 1}: one mark per item`);
-      const problem = agree(scanInline(lines.slice(block.start, block.end)), rendered, r.frontMatter);
+      const problem = agree(scanInline(lines.slice(block.start, block.end), { spec: specVersion(doc.text) }), rendered, r.frontMatter);
       assert.equal(problem, undefined, `${doc.name}, lines ${block.start + 1}-${block.end}: ${problem}\n${lines.slice(block.start, block.end).join('\n')}`);
       total += rendered.length;
     }
@@ -100,12 +101,12 @@ test('every item of the examples and the corpus that is on one line is placed on
     const lines = doc.text.split(LINE_BREAK);
     for (const block of renderBlocks(doc.text, { ...doc.options, inlineIndex: true }).blocks) {
       const blockLines = lines.slice(block.start, block.end);
-      for (const item of scanInline(blockLines)) {
+      for (const item of scanInline(blockLines, { spec: specVersion(doc.text) })) {
         // An item whose text runs over a line break (corpus/inline-line-breaks.smd) has no one line to be placed on.
         if (item.content?.includes('\n')) { assert.equal(item.at, undefined); continue; }
         assert.ok(item.at, `${doc.name}, line ${block.start + 1}: ${item.name} is placed`);
         const text = blockLines[item.at.line].slice(item.at.start, item.at.end);
-        assert.ok(item.kind === SPAN ? text.startsWith('[') : text.startsWith(`:${item.name}`), `${doc.name}: ${text}`);
+        assert.ok(item.kind === SPAN ? text.startsWith('[') : text.toLowerCase().startsWith(`:${item.name}`), `${doc.name}: ${text}`);
         if (item.at.content) assert.equal(blockLines[item.at.line].slice(item.at.content.start, item.at.content.end), item.content);
         if (item.at.attrs) assert.match(blockLines[item.at.line].slice(item.at.attrs.start, item.at.attrs.end), /^\{.*\}$/);
       }

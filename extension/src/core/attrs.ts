@@ -1,6 +1,7 @@
 import {
   ALIGN_VALUES, FONT_VALUES, NAMED_COLORS, SIZE_VALUES, STYLE_KEYS, TEXT_STYLE_VALUES, WEIGHT_VALUES,
 } from './spec';
+import type { SpecVersion } from './specVersion';
 import { own, suggest } from './util';
 
 /**
@@ -42,11 +43,14 @@ export interface AttrMatch {
 
 /**
  * The items of the inside of `{…}`, or null when it is not a well-formed attribute list. Quoted values may hold
- * `\"` and `\'` (unquoteValue); a list that only reads without them (`title="C:\dir\"`, valid before 1.10) is read
- * as before, so no list that was valid changes.
+ * `\"` and `\'` (and `\\` in spec v2; see unquoteValue). In spec v1 a list that only reads without escapes
+ * (`title="C:\dir\"`, valid before 1.10) is read as before, so no list that was valid changes; in spec v2 such a
+ * list is malformed (`title="C:\dir\\"` writes that value).
  */
-export function lexAttrItems(src: string): AttrMatch[] | null {
-  return lexWith(ATTR_ITEM, src) ?? (src.includes('\\') ? lexWith(ATTR_ITEM_V1, src) : null);
+export function lexAttrItems(src: string, spec: SpecVersion = 1): AttrMatch[] | null {
+  const items = lexWith(ATTR_ITEM, src);
+  if (items || spec >= 2) return items;
+  return src.includes('\\') ? lexWith(ATTR_ITEM_V1, src) : null;
 }
 
 function lexWith(re: RegExp, src: string): AttrMatch[] | null {
@@ -67,42 +71,63 @@ function lexWith(re: RegExp, src: string): AttrMatch[] | null {
 
 /**
  * A quoted value as written (without its quotes) → its value: `\"` in double quotes and `\'` in single quotes are
- * the quote. Every other backslash stays, `\\` included (two backslashes, until `smd: 2`), so Windows paths keep theirs.
+ * the quote, and in spec v2 `\\` is one backslash. Every other backslash stays (in spec v1 `\\` too, two
+ * backslashes), so Windows paths keep theirs.
  */
-export function unquoteValue(raw: string, quote: '"' | "'"): string {
-  return raw.includes('\\') ? raw.replaceAll(/\\([\s\S])/g, (pair, ch: string) => (ch === quote ? ch : pair)) : raw;
-}
-
-/** The value of a `key=value` item and the quotes it was written in; undefined for a flag. */
-export function itemValue(m: RegExpExecArray): { value?: string; quote: '"' | "'" | '' } {
-  if (m[4] !== undefined) return { value: unquoteValue(m[4], '"'), quote: '"' };
-  if (m[5] !== undefined) return { value: unquoteValue(m[5], "'"), quote: "'" };
-  return { value: m[6], quote: '' };
+export function unquoteValue(raw: string, quote: '"' | "'", spec: SpecVersion = 1): string {
+  if (!raw.includes('\\')) return raw;
+  return raw.replaceAll(/\\([\s\S])/g, (pair, ch: string) => (ch === quote || (ch === '\\' && spec >= 2) ? ch : pair));
 }
 
 /**
- * Parse the inside of `{...}` (without the braces). Returns null when the
- * text is not a well-formed attribute list.
+ * `value` written for the inside of `quote` quotes so that it reads back as itself in spec v2: the quote as `\"` (or
+ * `\'`), and a backslash that would otherwise go with the character after it as `\\`: a backslash before the quote,
+ * before another backslash or at the end. Every other backslash stays as it is (`C:\docs` is unchanged).
  */
-export function parseAttrs(src: string): Attrs | null {
-  const items = lexAttrItems(src);
+export function escapeQuoted(value: string, quote: '"' | "'"): string {
+  return value
+    .replaceAll(/\\+/g, (run: string, at: number) => {
+      const next = value[at + run.length];
+      // A single backslash before an ordinary character is literal; any other run is written doubled.
+      return run.length > 1 || next === undefined || next === quote ? run + run : run;
+    })
+    .replaceAll(quote, `\\${quote}`);
+}
+
+/** The value of a `key=value` item and the quotes it was written in; undefined for a flag. */
+export function itemValue(m: RegExpExecArray, spec: SpecVersion = 1): { value?: string; quote: '"' | "'" | '' } {
+  if (m[4] !== undefined) return { value: unquoteValue(m[4], '"', spec), quote: '"' };
+  if (m[5] !== undefined) return { value: unquoteValue(m[5], "'", spec), quote: "'" };
+  return { value: m[6], quote: '' };
+}
+
+/** Whether a lexed item is a bare word without a value (`{ok}`), which parseAttrs reads as `ok=true`. */
+export const isFlagItem = (m: RegExpExecArray): boolean =>
+  m[3] !== undefined && m[4] === undefined && m[5] === undefined && m[6] === undefined;
+
+/**
+ * Parse the inside of `{...}` (without the braces), read with the rules of `spec` (escapes in quoted values differ).
+ * Returns null when the text is not a well-formed attribute list.
+ */
+export function parseAttrs(src: string, spec: SpecVersion = 1): Attrs | null {
+  const items = lexAttrItems(src, spec);
   if (!items) return null;
   const attrs = emptyAttrs();
   for (const { match: m } of items) {
     if (m[1] === '.') attrs.classes.push(m[2]);
     else if (m[1] === '#') attrs.id = m[2];
-    else attrs.values[m[3]] = itemValue(m).value ?? 'true';
+    else attrs.values[m[3]] = itemValue(m, spec).value ?? 'true';
   }
   return attrs;
 }
 
 /**
  * Find the `}` closing an attribute list that starts at `start` (which must be `{`). Inside quotes a backslash
- * takes the next character with it, as in parseAttrs; when that finds no end, the list is read without escapes.
+ * takes the next character with it, as in parseAttrs; when that finds no end, a spec v1 list is read without escapes.
  */
-export function findAttrsEnd(src: string, start: number): number {
+export function findAttrsEnd(src: string, start: number, spec: SpecVersion = 1): number {
   const end = scanAttrsEnd(src, start, true);
-  return end === -1 ? scanAttrsEnd(src, start, false) : end;
+  return end === -1 && spec < 2 ? scanAttrsEnd(src, start, false) : end;
 }
 
 function scanAttrsEnd(src: string, start: number, escapes: boolean): number {

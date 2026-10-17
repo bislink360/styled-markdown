@@ -147,10 +147,11 @@ test('migrate: an empty {} or a bare {word} after a heading is removed', () => {
   assert.deepEqual(edits(p, 'heading-braces'), ['5:## Object {}→## Object', '7:## Returns {ok}→## Returns', '9:## Both {#id ok}→## Both {#id}']);
 });
 
-test('migrate: heading attributes v2 keeps, and {agent}, are not rewritten', () => {
-  const p = checkCase(doc('## Kept {#id .c}\n\n## Skipped {agent=skip}\n\n## Flag {agent}\n\n```\n## Code {}\n```'));
-  assert.deepEqual(changes(p, 'heading-braces'), []);
-  assert.deepEqual(notes(p, 'heading-braces').map((s) => s.line + 1), [9]);
+test('migrate: heading attributes v2 keeps are not rewritten, and {agent} is written agent=true', () => {
+  const p = checkCase(doc('## Kept {#id .c}\n\n## Skipped {agent=skip}\n\n## Flag {agent}\n\n## Both {agent ok}\n\n```\n## Code {}\n```'));
+  // v1 reads a bare `agent` as agent=true (data-agent="true"); written out, spec v2 reads the list as attributes too.
+  assert.deepEqual(edits(p, 'heading-braces'), ['9:## Flag {agent}→## Flag {agent=true}', '11:## Both {agent ok}→## Both {agent=true ok}', '11:## Both {agent=true ok}→## Both {agent=true}']);
+  assert.deepEqual(notes(p, 'heading-braces'), []);
 });
 
 // ---------------------------------------------------------------------------
@@ -335,7 +336,7 @@ test('migrate: corpus/migrate.smd has a case for every step', () => {
   assert.deepEqual(validateSmd(text, { readFile: corpusRead, today: TODAY }).filter((d) => d.severity === 'error' || d.severity === 'warning'), []);
   const p = plan(text, { readFile: corpusRead });
   assert.deepEqual(p.steps.map((s) => `${s.kind}:${s.line + 1}${s.note ? ' note' : ''}`), [
-    'closer:15', 'closer:19', 'duplicate-attrs:26', 'title-text:31', 'agent-priority:38', 'math-delimiters:44', 'heading-braces:47', 'unknown-directive:51',
+    'closer:15', 'closer:19', 'duplicate-attrs:26', 'title-text:31', 'agent-priority:38', 'math-delimiters:44', 'heading-braces:47', 'attr-escapes:78', 'unknown-directive:51', 'unknown-directive:79',
     'include-section:60', 'value-case:5', 'value-case:66', 'value-case:70', 'typography:74 note', 'fuzzy-link:74 note', 'variable-spelling:6 note', 'version:2',
   ]);
   assert.deepEqual(new Set(p.steps.map((s) => s.kind)), new Set(KIND_ORDER), 'every kind of step');

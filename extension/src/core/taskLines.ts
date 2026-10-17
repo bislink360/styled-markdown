@@ -1,5 +1,7 @@
 import { parseFrontMatter } from './frontmatter';
 import { renderedTaskLines } from './parse';
+import { withoutHeadingAttrs } from './sections';
+import type { SpecVersion } from './specVersion';
 
 /**
  * The lines of a document that tasks are read from: headings (each task belongs to the one above it) and
@@ -12,6 +14,8 @@ export type TaskScanLine =
 
 const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
 const HEADING = /^\s{0,3}#{1,6}\s+(.*?)(?:\s+\{[^{}]*\})?\s*#*\s*$/;
+/** A heading with its trailing braces, for spec v2, where only an attribute list is left out (see withoutHeadingAttrs). */
+const HEADING_V2 = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
 /** A task-shaped line: the number of an ordered item, the mark and the text. */
 const TASK = /^\s*(?:[-*+]|(\d+)[.)])\s+\[([ xX])\]\s+(.*)$/;
 /** Four columns of indentation, or a tab: a task-shaped line there may be code or continue a paragraph. */
@@ -73,7 +77,7 @@ function fenceStep(line: string, fence: string | null): { fence: string | null; 
  * a task-shaped line that continues a paragraph is text. The parse is only asked about lines whose shape leaves that
  * open (see needsParse), so most documents parse nothing here.
  */
-export function scanTasks(text: string, from = parseFrontMatter(text).bodyStartLine): TaskScanLine[] {
+export function scanTasks(text: string, from = parseFrontMatter(text).bodyStartLine, spec: SpecVersion = 1): TaskScanLine[] {
   const lines = text.split(/\r?\n/);
   const found: TaskScanLine[] = [];
   let fence: string | null = null;
@@ -86,14 +90,24 @@ export function scanTasks(text: string, from = parseFrontMatter(text).bodyStartL
     fence = step.fence;
     if (step.inFence) continue;
     const raw = inRaw(line);
-    const h = HEADING.exec(line);
-    if (h) { found.push({ kind: 'heading', line: i, text: h[1] }); continue; }
+    const heading = headingText(line, spec);
+    if (heading !== undefined) { found.push({ kind: 'heading', line: i, text: heading }); continue; }
     const m = TASK.exec(line);
     // A task's text can't be empty, as in rendering.
     if (!m?.[3].trim()) continue;
     if (!needsParse(line, i > from ? lines[i - 1] : undefined, m[1], raw) || isTask(i)) found.push({ kind: 'task', line: i, mark: m[2], body: m[3] });
   }
   return found;
+}
+
+/**
+ * A heading line's text without its trailing attribute list: in spec v1 any trailing `{…}`, in spec v2 only an
+ * attribute list (`## Returns {ok}` is "Returns {ok}"). Undefined for a line that is not a heading.
+ */
+function headingText(line: string, spec: SpecVersion): string | undefined {
+  if (spec < 2) return HEADING.exec(line)?.[1];
+  const h = HEADING_V2.exec(line);
+  return h ? withoutHeadingAttrs(h[1], spec) : undefined;
 }
 
 /** The zero-based lines of a document's open tasks: the ones `extractTasks` (and so `smd tasks`) lists as open. */

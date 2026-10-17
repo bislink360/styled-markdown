@@ -4,8 +4,8 @@ import { ContainerInfo, parseContainerInfo } from './containers';
 import { FigureCounter, figureTargets, type FigureNumber } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter, unreadFrontMatter } from './frontmatter';
-import { renderInlineDirective, withoutDueNotes } from './markdownItHtml';
-import { HEADING_ATTRS, slugify } from './sections';
+import { renderInlineDirective, renderUnknownDirective, withoutDueNotes } from './markdownItHtml';
+import { HEADING_ATTRS, headingAttrList, slugify } from './sections';
 import { INLINE_DIRECTIVES } from './spec';
 import { isSpecVersion, resolveSpec, specOf, type SpecEnv, type SpecVersion } from './specVersion';
 import type { IncludeResult, IncludeScope } from './include';
@@ -133,15 +133,15 @@ export interface ContainerMeta extends ContainerInfo {
 }
 
 export function annotateContainers(state: StateCore): void {
-  annotateTokens(state.tokens, state.src);
+  annotateTokens(state.tokens, state.src, specOf(state.env));
 }
 
-/** Parse the opening line of every container in `tokens` (parsed from `src`) into its meta. */
-export function annotateTokens(tokens: Token[], src: string): void {
+/** Parse the opening line of every container in `tokens` (parsed from `src`, read with `spec`) into its meta. */
+export function annotateTokens(tokens: Token[], src: string, spec: SpecVersion = 1): void {
   const stack: Token[] = [];
   for (const token of tokens) {
     if (token.type === 'container_smd_open') {
-      const info = parseContainerInfo(token.info) ?? { name: 'box', attrs: emptyAttrs(), title: '' };
+      const info = parseContainerInfo(token.info, spec) ?? { name: 'box', attrs: emptyAttrs(), title: '' };
       const meta: ContainerMeta = { ...info, close: '</div>' };
       if (info.name === 'risk-matrix') meta.source = src;
       token.meta = meta;
@@ -192,18 +192,15 @@ export function styledSpan(state: StateInline, silent: boolean): boolean {
   if (state.src.charCodeAt(start) !== 0x5b /* [ */) return false;
   const labelEnd = state.md.helpers.parseLinkLabel(state, start, true);
   if (labelEnd < 0 || state.src[labelEnd + 1] !== '{') return false;
-  const attrsEnd = findAttrsEnd(state.src, labelEnd + 1);
+  const spec = specOf(state.env);
+  const attrsEnd = findAttrsEnd(state.src, labelEnd + 1, spec);
   if (attrsEnd < 0) return false;
-  const attrs = parseAttrs(state.src.slice(labelEnd + 2, attrsEnd));
+  const attrs = parseAttrs(state.src.slice(labelEnd + 2, attrsEnd), spec);
   if (!attrs) return false;
 
   if (!silent) {
-    const { style } = attrsToStyle(attrs);
     const open = state.push('smd_span_open', 'span', 1);
-    const classes = ['smd-span', ...attrs.classes.map((c) => `smd-u-${c}`)];
-    open.attrSet('class', classes.join(' '));
-    if (style) open.attrSet('style', style);
-    if (attrs.id) open.attrSet('id', attrs.id);
+    setSpanAttrs(open, attrs, 'smd-span');
     // The attributes as written, for the exporters (exportTree.ts), which map them rather than read the CSS.
     open.meta = { values: attrs.values } satisfies SpanMeta;
     const oldMax = state.posMax;
@@ -217,17 +214,42 @@ export function styledSpan(state: StateInline, silent: boolean): boolean {
   return true;
 }
 
-/** `:name[content]{attrs}` inline directives (badge, kbd, progress, mention, status). */
+/** The class, style and id of `[text]{attrs}` on its opening token, with `base` first among the classes. */
+function setSpanAttrs(open: Token, attrs: Attrs, base: string): void {
+  const { style } = attrsToStyle(attrs);
+  open.attrSet('class', [base, ...attrs.classes.map((c) => `smd-u-${c}`)].join(' '));
+  if (style) open.attrSet('style', style);
+  if (attrs.id) open.attrSet('id', attrs.id);
+}
+
+/** A directive's name: lower case in spec v1 (`:Badge[x]` is text); any case in spec v2 (RFC proposal 11). */
+const DIRECTIVE_NAME_V1 = /^:([a-z][a-z0-9-]*)(?=[[{])/;
+const DIRECTIVE_NAME_V2 = /^:([A-Za-z][A-Za-z0-9-]*)(?=[[{])/;
+
+/**
+ * The name of the inline directive whose `:` is at `start` (lower-cased in spec v2), or undefined. The `:` comes at
+ * the start, or after whitespace or opening punctuation (the prefix rule). In spec v1 only the vocabulary's names, as
+ * written, are directives; in spec v2 any name is (RFC proposal 7b), in any case.
+ */
+export function directiveNameAt(src: string, start: number, end: number, spec: SpecVersion): { name: string; length: number } | undefined {
+  if (src.charCodeAt(start) !== 0x3a /* : */) return undefined;
+  const prev = start > 0 ? src[start - 1] : ' ';
+  if (!/[\s([{>*_~"'-]/.test(prev)) return undefined;
+  const m = (spec >= 2 ? DIRECTIVE_NAME_V2 : DIRECTIVE_NAME_V1).exec(src.slice(start, end));
+  if (!m) return undefined;
+  // Own names only: `:constructor[x]` is not a known directive (in spec v2 it is an unknown one).
+  if (spec < 2 && !Object.hasOwn(INLINE_DIRECTIVES, m[1])) return undefined;
+  return { name: spec >= 2 ? m[1].toLowerCase() : m[1], length: m[0].length };
+}
+
+/** `:name[content]{attrs}` inline directives (badge, kbd, progress, mention, status…; in spec v2 any name). */
 export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdContext): boolean {
   const start = state.pos;
-  if (state.src.charCodeAt(start) !== 0x3a /* : */) return false;
-  const prev = start > 0 ? state.src[start - 1] : ' ';
-  if (!/[\s([{>*_~"'-]/.test(prev)) return false;
-  const m = /^:([a-z][a-z0-9-]*)(?=[[{])/.exec(state.src.slice(start, state.posMax));
-  // Own names only: `:constructor[x]` is not a directive.
-  if (!m || !Object.hasOwn(INLINE_DIRECTIVES, m[1])) return false;
-  const name = m[1];
-  let pos = start + m[0].length;
+  const spec = specOf(state.env);
+  const at = directiveNameAt(state.src, start, state.posMax, spec);
+  if (!at) return false;
+  const name = at.name;
+  let pos = start + at.length;
 
   let content = '';
   if (state.src[pos] === '[') {
@@ -238,9 +260,9 @@ export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdCon
   }
   let attrs = emptyAttrs();
   if (state.src[pos] === '{') {
-    const end = findAttrsEnd(state.src, pos);
+    const end = findAttrsEnd(state.src, pos, spec);
     if (end < 0) return false;
-    const parsed = parseAttrs(state.src.slice(pos + 1, end));
+    const parsed = parseAttrs(state.src.slice(pos + 1, end), spec);
     if (!parsed) return false;
     attrs = parsed;
     pos = end + 1;
@@ -252,7 +274,8 @@ export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdCon
 
 /**
  * A directive's token: its HTML, or for `:ref[id]` an `smd_ref` token resolved when rendering (the figure may come later).
- * Front matter variables in the content are replaced first (`:badge[v{{version}}]`).
+ * Front matter variables in the content are replaced first (`:badge[v{{version}}]`). A name outside the vocabulary
+ * (spec v2 only) renders its content in a `smd-directive smd-directive-<name>` span, styled as `[text]{attrs}` is.
  */
 function pushDirective(state: StateInline, name: string, content: string, attrs: Attrs, ctx: SmdContext): void {
   if (name === 'ref') {
@@ -261,7 +284,10 @@ function pushDirective(state: StateInline, name: string, content: string, attrs:
   }
   const text = ctx.variables ? substituteLine(content, envVariables(state.env)) : content;
   const token = state.push('html_inline', '', 0);
-  token.content = renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today, ctx.messages(state.env), specOf(state.env));
+  const spec = specOf(state.env);
+  token.content = Object.hasOwn(INLINE_DIRECTIVES, name)
+    ? renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today, ctx.messages(state.env), spec)
+    : renderUnknownDirective(state.md, name, text, attrs, spec);
   token.meta = { directive: name, content: text, values: attrs.values } satisfies DirectiveMeta;
 }
 
@@ -681,7 +707,8 @@ function markTask(state: StateCore, i: number, checked: boolean): void {
 /** The plain text of a task's inline tokens: text, code, and the text of inline HTML such as directives. */
 function taskLabel(children: Token[], done: boolean): string {
   return children.map((c) => {
-    if (c.type === 'text' || c.type === 'code_inline' || c.type === 'smd_variable') return c.content;
+    // An escaped character (`\:`) is a text_special token until markdown-it joins the text, after this rule.
+    if (c.type === 'text' || c.type === 'text_special' || c.type === 'code_inline' || c.type === 'smd_variable') return c.content;
     if (c.type === 'html_inline') return htmlText(done ? withoutDueNotes(c.content) : c.content);
     if (c.type === 'image') return taskLabel(c.children ?? [], done);
     return c.type === 'softbreak' || c.type === 'hardbreak' ? ' ' : '';
@@ -802,14 +829,16 @@ function includedSlugs(tokens: Token[], later: Array<[Token, Heading, string]>):
 
 export function headingAttrs(state: StateCore): void {
   const tokens = state.tokens;
+  const spec = specOf(state.env);
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].type !== 'heading_open') continue;
     const inline = tokens[i + 1];
     const last = inline.children?.[inline.children.length - 1];
     if (!last || last.type !== 'text') continue;
-    const m = HEADING_ATTRS.exec(last.content);
-    const attrs = m ? parseAttrs(m[1]) : null;
-    if (!m || !attrs) continue;
+    // In spec v2 a trailing `{}` or `{word}` is heading text (RFC proposal 5).
+    const list = headingAttrList(last.content, spec);
+    if (!list) continue;
+    const { match: m, attrs } = list;
     last.content = last.content.slice(0, m.index);
     inline.content = inline.content.replace(HEADING_ATTRS, '');
     if (attrs.id) tokens[i].attrSet('id', attrs.id);

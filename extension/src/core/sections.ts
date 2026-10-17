@@ -1,9 +1,46 @@
+import { isFlagItem, lexAttrItems, parseAttrs, type Attrs } from './attrs';
 import type { Heading } from './render';
+import type { SpecVersion } from './specVersion';
 
 /** Heading ids and sections: a heading up to the next heading of the same or a higher level. */
 
 /** `## Title {#custom-id .class agent=skip}` — trailing attribute list on a heading. */
 export const HEADING_ATTRS = /\s+\{([^{}]*)\}\s*$/; // NOSONAR(typescript:S5852): matched against one heading line
+
+/** A heading's trailing attribute list: the HEADING_ATTRS match (`index` is where its spaces start) and what it says. */
+export interface HeadingAttrList {
+  match: RegExpExecArray;
+  attrs: Attrs;
+}
+
+/**
+ * The attribute list ending a heading's text, as rendering reads it with the rules of `spec`: a trailing `{…}` that
+ * parses. In spec v2 it must also have items, each `#id`, `.class` or `key=value` (RFC proposal 5): an empty `{}` or
+ * a list with a bare word (`{ok}`) is heading text. Undefined when the heading has none.
+ */
+export function headingAttrList(text: string, spec: SpecVersion = 1): HeadingAttrList | undefined {
+  const match = HEADING_ATTRS.exec(text);
+  const attrs = match ? parseAttrs(match[1], spec) : null;
+  if (!match || !attrs || (spec >= 2 && !recognisableItems(match[1], spec))) return undefined;
+  return { match, attrs };
+}
+
+/** A list that has items, none of them a bare word. */
+function recognisableItems(src: string, spec: SpecVersion): boolean {
+  const items = lexAttrItems(src, spec);
+  return !!items?.length && !items.some(({ match }) => isFlagItem(match));
+}
+
+/**
+ * A heading's text without its trailing attribute list, for the line-based readers. In spec v1 any trailing `{…}` is
+ * removed, as these readers always did, whether or not it parses; in spec v2 only a list that rendering reads as
+ * attributes (headingAttrList), so the rest stays heading text, as it renders.
+ */
+export function withoutHeadingAttrs(text: string, spec: SpecVersion = 1): string {
+  if (spec < 2) return text.replace(HEADING_ATTRS, '');
+  const list = headingAttrList(text, spec);
+  return list ? text.slice(0, list.match.index) : text;
+}
 
 export function slugify(text: string): string {
   return text

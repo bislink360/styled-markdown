@@ -9,6 +9,7 @@ const TITLES: Record<MigrationKind, string> = {
   'agent-priority': 'Priority on agent blocks',
   'math-delimiters': '$$ delimiters',
   'heading-braces': 'Braces after headings',
+  'attr-escapes': 'Backslashes in attribute values',
   'unknown-directive': 'Unknown inline directives',
   'include-section': 'Include sections',
   'value-case': 'Enumerated values',

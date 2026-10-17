@@ -5,7 +5,7 @@ import {
 } from './budget';
 import { CONTAINER_CLOSE, CONTAINER_OPEN, isKnownContainer, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
-import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
+import { refDirective, type Figure, type FigureNumber } from './figures';
 import { findFootnotes, type FootnoteDefinition } from './footnotes';
 import { parseFrontMatter, asStringList, unreadFrontMatter } from './frontmatter';
 import {
@@ -19,10 +19,11 @@ import {
   alertLines, aroundInlineMath, convertedParts, fenceLines, inlineItemLines, inlineMathLines, lazyLineSet, literalLines, parseSmd, renderedTaskLines,
   type AlertLines, type InlineItemLines, type InlineMathLines, type InlinePart,
 } from './parse';
-import { dueState, HEADING_ATTRS, type Heading } from './render';
-import { matchesHeading, sectionsOf, type Section } from './sections';
+import { dueState, type Heading } from './render';
+import { matchesHeading, sectionsOf, withoutHeadingAttrs, type Section } from './sections';
 import { quoteCite } from './quote';
-import { CALLOUT_TYPES } from './spec';
+import { CALLOUT_TYPES, INLINE_DIRECTIVES } from './spec';
+import { specVersion, type SpecVersion } from './specVersion';
 import { openTaskLines } from './taskLines';
 import { own } from './util';
 import { documentVariables, substituteVariables, type Variables } from './variables';
@@ -399,12 +400,14 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
   const lineRefs = options.lineRefs ?? true;
   const { figures, ownFigures, literal, inlineMath, alerts, inlineItems, taskLines } = documentContext(lines, options);
   const variables = options.variables ?? documentVariables(lines);
+  // The document's spec version, from its front matter: an included document's is the including one's, as in rendering.
+  const spec = specVersion(variables);
   const text = (s: string, openTask = false, math?: ReadonlyArray<[number, number]>, parts?: ReadonlyArray<InlinePart>) => {
-    const read: TextContext = { today: options.today, openTask, figures: figures.byId, variables };
+    const read: TextContext = { today: options.today, openTask, figures: figures.byId, variables, spec };
     // An item that runs over several lines is read whole, as rendering reads it; each line shows its part.
     return styledText(s, read, math, convertedParts(parts, (whole) => styledText(whole, read)));
   };
-  const changelogs = options.changelogs ?? changelogEntries(lines);
+  const changelogs = options.changelogs ?? changelogEntries(lines, 0, spec);
   interface Frame { name: string; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
   const dropping = () => stack.some((f) => f.drop);
@@ -478,7 +481,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
       continue;
     }
     const open = CONTAINER_OPEN.exec(line);
-    const info = open ? parseContainerInfo(open[3] + open[4]) : null;
+    const info = open ? parseContainerInfo(open[3] + open[4], spec) : null;
     if (open && info) {
       flushDone(i);
       const title = info.title ? text(info.title) : '';
@@ -505,7 +508,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     const h = /^(\s{0,3}#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
     if (h) {
       flushDone(i);
-      emit(`${h[1].trim()} ${headingText(h[2], changelogs.get(i), text)}${lineRefs ? `  [L${i + 1}]` : ''}`, i);
+      emit(`${h[1].trim()} ${headingText(h[2], changelogs.get(i), text, spec)}${lineRefs ? `  [L${i + 1}]` : ''}`, i);
       continue;
     }
 
@@ -605,8 +608,8 @@ export function agentViewOfRange(lines: string[], start: number, end: number, op
 }
 
 /** A heading's words; a changelog release in brief, `1.2.0 (2026-03-01)`, the version without its link. */
-function headingText(raw: string, entry: ChangelogEntry | undefined, text: (s: string) => string): string {
-  if (!entry) return text(raw.replace(HEADING_ATTRS, ''));
+function headingText(raw: string, entry: ChangelogEntry | undefined, text: (s: string) => string, spec: SpecVersion): string {
+  if (!entry) return text(withoutHeadingAttrs(raw, spec));
   const version = text(versionLabel(entry.version));
   return entry.date ? `${version} (${text(entry.date)})` : version;
 }
@@ -689,11 +692,17 @@ const STATUS_WORDS: Record<string, string> = { green: 'ok', teal: 'ok', red: 'ba
 export function inlineText(
   line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables, math?: ReadonlyArray<[number, number]>,
 ): string {
-  return styledText(line, { today, openTask, figures, variables }, math);
+  // The front matter decides the rules: a spec v2 document's directives read in any case, and unknown ones show their content.
+  return styledText(line, { today, openTask, figures, variables, spec: specVersion(variables) }, math);
+}
+
+/** inlineText of a line whose front matter variables are already replaced, read with the rules of `spec`. Internal. */
+export function plainInlineText(line: string, spec: SpecVersion): string {
+  return styledText(line, { openTask: false, spec });
 }
 
 /** How inlineText reads a line: the date for overdue tasks, whether it is an open task's, the figures and front matter. */
-interface TextContext { today?: string; openTask: boolean; figures?: ReadonlyMap<string, FigureNumber>; variables?: Variables }
+interface TextContext { today?: string; openTask: boolean; figures?: ReadonlyMap<string, FigureNumber>; variables?: Variables; spec: SpecVersion }
 
 /**
  * inlineText, with parts of the line already converted (see convertedParts): they are put back as converted, and the
@@ -702,34 +711,53 @@ interface TextContext { today?: string; openTask: boolean; figures?: ReadonlyMap
 function styledText(line: string, read: TextContext, math?: ReadonlyArray<[number, number]>, replaced?: ReadonlyArray<[number, number, string]>): string {
   return aroundInlineMath(line, (text) => text
     .split(/(`+[^`]*`+)/)
-    .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, read.variables), read.today, read.openTask, read.figures)))
+    .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, read.variables), read)))
     .join(''), math, replaced);
 }
 
 /** `:ref[id]` → `Figure 2 (id)`; references to unknown ids stay as written. */
-function refText(s: string, figures: ReadonlyMap<string, FigureNumber> | undefined): string {
+function refText(s: string, figures: ReadonlyMap<string, FigureNumber> | undefined, spec: SpecVersion): string {
   if (!figures?.size) return s;
-  return s.replace(REF_DIRECTIVE, (m, pre: string, raw: string) => {
+  return s.replace(refDirective(spec), (m, pre: string, raw: string) => {
     const id = raw.trim();
     const figure = figures.get(id);
     return figure ? `${pre}${figure.label} (${id})` : m;
   });
 }
 
-function plain(s: string, today: string | undefined, openTask: boolean, figures?: ReadonlyMap<string, FigureNumber>): string {
-  return refText(s, figures)
+/**
+ * `:name[content]{attrs}` in text: a lower-case name in spec v1, any case in spec v2 (RFC proposal 11). A name with
+ * neither `[content]` nor `{attributes}` is text, as in rendering. Content may run over a line break when an item is
+ * read whole (see convertedParts).
+ */
+const DIRECTIVE_TEXT_V1 = /(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g;
+const DIRECTIVE_TEXT_V2 = /(^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g;
+
+function plain(s: string, { today, openTask, figures, spec }: TextContext): string {
+  return refText(s, figures, spec)
     .replace(/!\[([^\]\n]*)\]\([^)\n]*\)/g, (_m, alt) => (alt ? `[image: ${alt}]` : ''))
-    // A name with neither `[content]` nor `{attributes}` is text, as in rendering. Content may run over a line break
-    // when an item is read whole (see convertedParts).
-    .replace(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g, (m, pre: string, name: string, content?: string, rawAttrs?: string) =>
-      (content === undefined && rawAttrs === undefined ? m : directiveText(m, { pre, name, content: content ?? '', rawAttrs: rawAttrs ?? '' }, today, openTask)))
-    .replace(/(!?)\[([^\]]*)\]\{([^{}\n]*)\}/g, (m, bang, content, rawAttrs) => (bang || !parseAttrs(rawAttrs) ? m : content))
+    .replace(spec >= 2 ? DIRECTIVE_TEXT_V2 : DIRECTIVE_TEXT_V1, (m, pre: string, name: string, content?: string, rawAttrs?: string) =>
+      (content === undefined && rawAttrs === undefined
+        ? m
+        : directiveText(m, { pre, name: spec >= 2 ? name.toLowerCase() : name, content: content ?? '', rawAttrs: rawAttrs ?? '' }, { today, openTask, spec })))
+    .replace(/(!?)\[([^\]]*)\]\{([^{}\n]*)\}/g, (m, bang, content, rawAttrs) => (bang || !parseAttrs(rawAttrs, spec) ? m : content))
     .replace(/==(?=\S)([^=]+?)(?<=\S)==/g, '$1');
 }
 
-/** One `:name[content]{attrs}` in plain text (`m` as written), or `m` for a name the agent view keeps as written. */
-function directiveText(m: string, { pre, name, content, rawAttrs }: { pre: string; name: string; content: string; rawAttrs: string }, today: string | undefined, openTask: boolean): string {
-  const v = parseAttrs(rawAttrs)?.values ?? {};
+/**
+ * One `:name[content]{attrs}` in plain text (`m` as written), or `m` for a name the agent view keeps as written. In
+ * spec v2 a name outside the vocabulary is a directive that shows its content (RFC proposal 7b), as a styled span does;
+ * in spec v1 it is text.
+ */
+function directiveText(
+  m: string, { pre, name, content, rawAttrs }: { pre: string; name: string; content: string; rawAttrs: string },
+  { today, openTask, spec }: { today: string | undefined; openTask: boolean; spec: SpecVersion },
+): string {
+  const attrs = parseAttrs(rawAttrs, spec);
+  // In spec v2 a list that can't be read leaves the whole item as text, as rendering does.
+  if (spec >= 2 && !attrs) return m;
+  if (spec >= 2 && !Object.hasOwn(INLINE_DIRECTIVES, name)) return `${pre}${content}`;
+  const v = attrs?.values ?? {};
   const status = own(STATUS_WORDS, v.color ?? '');
   switch (name) {
     case 'badge': return `${pre}[${content}]`;

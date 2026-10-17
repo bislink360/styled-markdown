@@ -3,7 +3,8 @@ import { parseFrontMatter } from './frontmatter';
 import { parseSmd } from './parse';
 import { dueState } from './render';
 import { validateSmd, type Diagnostic, type ValidateOptions } from './validate';
-import { inlineText } from './agentView';
+import { inlineText, plainInlineText } from './agentView';
+import { specVersion, type SpecVersion } from './specVersion';
 import { scanTasks } from './taskLines';
 import { substituteLine } from './variables';
 import { priorityRank } from './util';
@@ -42,28 +43,38 @@ export interface SmdDocumentInfo {
 /** Parse every task (open and done) with its owner, priority and due date. Fenced and indented code holds none (see scanTasks). */
 export function extractTasks(text: string, today?: string): TaskInfo[] {
   const fm = parseFrontMatter(text);
+  const spec = specVersion(fm.data);
   const tasks: TaskInfo[] = [];
   let section: string | null = null;
-  for (const item of scanTasks(text, fm.bodyStartLine)) {
+  for (const item of scanTasks(text, fm.bodyStartLine, spec)) {
     if (item.kind === 'heading') section = inlineText(item.text, undefined, false, undefined, fm.data);
-    else tasks.push(taskInfo(item, section, fm.data, today));
+    else tasks.push(taskInfo(item, section, { data: fm.data, spec }, today));
   }
   return tasks;
 }
 
+/** A task's due date, priority and mentions; in spec v2 the directive names are read in any case (`:Due[…]`). */
+const TASK_FIELDS = {
+  1: { due: /:due\[([^\]]+)\]/, priority: /:priority\[([^\]]+)\]/, mention: /:mention\[([^\]]+)\]/g },
+  2: { due: /:due\[([^\]]+)\]/i, priority: /:priority\[([^\]]+)\]/i, mention: /:mention\[([^\]]+)\]/gi },
+} as const;
+
 /** One task line as a task, under the heading `section`. */
-function taskInfo(item: { line: number; mark: string; body: string }, section: string | null, data: Record<string, unknown>, today?: string): TaskInfo {
+function taskInfo(
+  item: { line: number; mark: string; body: string }, section: string | null, { data, spec }: { data: Record<string, unknown>; spec: SpecVersion }, today?: string,
+): TaskInfo {
   const body = substituteLine(item.body, data);
-  const due = /:due\[([^\]]+)\]/.exec(body)?.[1]?.trim();
-  const priority = /:priority\[([^\]]+)\]/.exec(body)?.[1]?.trim();
+  const fields = TASK_FIELDS[spec];
+  const due = fields.due.exec(body)?.[1]?.trim();
+  const priority = fields.priority.exec(body)?.[1]?.trim();
   const assignees = [
-    ...[...body.matchAll(/:mention\[([^\]]+)\]/g)].map((x) => x[1].trim()),
+    ...[...body.matchAll(fields.mention)].map((x) => x[1].trim()),
     ...[...body.replace(/`[^`]*`/g, '').matchAll(/(?:^|\s)(@[\w.-]+)/g)].map((x) => x[1]),
   ];
   const done = item.mark !== ' ';
   return {
     // Owner, priority and due date live in their own fields, so strip them from the text.
-    text: inlineText(body)
+    text: plainInlineText(body, spec)
       .replace(/\s*\(due [^)]*\)/, '')
       .replace(/\s*\[(?:P\d|critical|high|medium|low)\]/i, '')
       .replace(/(^|\s)@[\w.-]+(?=\s|$)/g, '')
@@ -123,7 +134,7 @@ export function getDocumentInfo(text: string, options: ValidateOptions = {}): Sm
       continue;
     }
     const open = CONTAINER_OPEN.exec(line);
-    const info = open ? parseContainerInfo(open[3] + open[4]) : null;
+    const info = open ? parseContainerInfo(open[3] + open[4], rendered.spec) : null;
     if (open && info) {
       containers[info.name] = (containers[info.name] ?? 0) + 1;
       const v = info.attrs.values;

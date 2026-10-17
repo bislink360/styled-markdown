@@ -16,7 +16,8 @@ import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } 
 import { codeLines, inlineItemLines, inlineMathLines, lazyLineSet, literalLines, mathOnLine, parseSmd, type InlineMathLines } from './parse';
 import { openTaskLines } from './taskLines';
 import { checkTablePipes } from './tableCheck';
-import { sectionsOf, type Section } from './sections';
+import { headingAttrList, sectionsOf, withoutHeadingAttrs, type Section } from './sections';
+import { specVersion, type SpecVersion } from './specVersion';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
 import { own, suggest } from './util';
@@ -92,6 +93,8 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, options, inCode);
   // For the checks of text: nothing in code or math is syntax, so what they find there is not reported.
   const pushText = outsideLiteral(push, literalText(text, lines, fm.bodyStartLine));
+  // The rules the body is read with (headings, directives and attribute escapes differ in spec v2).
+  const spec = specVersion(fm.data);
 
   // --- Body ---------------------------------------------------------------
   interface Open { name: string; len: number; line: number }
@@ -102,7 +105,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   let firstH1: { text: string; line: number } | null = null;
   const isOpenTask = lazyLineSet(() => new Set(openTaskLines(text)));
   // Directives whose text runs over several lines are checked whole, at the line their attributes end on.
-  const multiLine = multiLineDirectives(text, lines);
+  const multiLine = multiLineDirectives(text, lines, spec);
   const multiLineEnds = new Map(multiLine.map((d) => [d.line, [d.col, d.end] as [number, number]]));
 
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
@@ -163,13 +166,13 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     if (open) {
       const len = open[2].length;
       const col = open[1].length;
-      const info = parseContainerInfo(open[3] + open[4]);
+      const info = parseContainerInfo(open[3] + open[4], spec);
       if (info) {
         const parent = stack[stack.length - 1];
         const nameStart = raw.indexOf(open[3], col + len);
         const nameEnd = nameStart + info.name.length;
         checkContainer(info, i, nameStart, nameEnd, parent?.name, push, raw);
-        checkContainerHints(info, i, raw, nameEnd, push);
+        checkContainerHints(info, i, raw, nameEnd, push, spec);
         stack.push({ name: info.name, len, line: i });
       }
       continue;
@@ -177,17 +180,17 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
     // Headings
     const h1 = /^#\s+(.+?)\s*#*\s*$/.exec(raw);
-    if (h1 && !firstH1) firstH1 = { text: h1[1].replace(HEADING_ATTRS, ''), line: i };
-    if (/^\s{0,3}#{1,6}\s/.test(raw)) checkHeadingAttrs(raw, i, pushText);
+    if (h1 && !firstH1) firstH1 = { text: withoutHeadingAttrs(h1[1], spec), line: i };
+    if (/^\s{0,3}#{1,6}\s/.test(raw)) checkHeadingAttrs(raw, i, pushText, spec);
 
     // Open tasks that are past their due date: lines rendering shows with a checkbox (see scanTasks)
     const openTask = /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(raw) && isOpenTask(i);
-    const due = openTask ? /:due\[(\d{4}-\d{2}-\d{2})\]/.exec(raw) : null;
+    const due = openTask ? (spec >= 2 ? DUE_V2 : DUE_V1).exec(raw) : null;
     if (due && dueState(due[1], options.today) === 'overdue') {
       pushText(i, due.index, due.index + due[0].length, 'info', 'task/overdue', `Open task is overdue (due ${due[1]}).`);
     }
 
-    checkInline(raw, i, pushText, fm.data, multiLineEnds.get(i));
+    checkInline(raw, i, pushText, { variables: fm.data, spec }, multiLineEnds.get(i));
   }
 
   if (fence) {
@@ -205,7 +208,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       'The front matter title is already rendered as the document heading; this "# heading" duplicates it.');
   }
 
-  for (const d of multiLine) checkDirective({ line: d.line, text: withoutCode(lines[d.line]), push: pushText }, d, fm.data);
+  for (const d of multiLine) checkDirective({ line: d.line, text: withoutCode(lines[d.line]), push: pushText, spec }, d, fm.data);
   checkTablePipes(text, lines, push);
   checkLinks(text, pushText, options);
   checkIncludes(text, (line, column, endColumn, code, message, severity = 'warning', fix) => push(line, column, endColumn, severity, code, message, fix), options);
@@ -215,7 +218,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   const expanded = lines.map((l) => substituteLine(l, fm.data));
   const terms = checkGlossary({ lines, expanded }, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
   checkTermIds(terms, text, lines, fm.bodyStartLine, push);
-  for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
+  for (const block of findChangelogs(expanded, fm.bodyStartLine, spec)) checkChangelog(block.entries, lines, push);
   for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
   checkVariables(lines, fm.bodyStartLine, fm.data, pushText, inCode);
   checkAgentInSkipped(text, lines, fm.bodyStartLine, push);
@@ -479,45 +482,57 @@ const withoutCode = (raw: string): string => raw.replace(/(`+)([\s\S]*?)\1/g, (m
  * The inline checks of one line. `ending` is the part of a directive that runs on from the lines above and ends here
  * (see multiLineDirectives): it is checked whole, so its `]{…}` is not a styled span.
  */
-function checkInline(raw: string, line: number, push: Push, variables: Variables, ending?: [number, number]): void {
+function checkInline(raw: string, line: number, push: Push, read: { variables: Variables; spec: SpecVersion }, ending?: [number, number]): void {
   const text = withoutCode(raw);
+  const { spec } = read;
 
-  const at: InlineAt = { line, text, push };
+  const at: InlineAt = { line, text, push, spec };
 
-  // :directive[content]{attrs}
+  // :directive[content]{attrs}; any case in spec v2, where `:Badge[x]` is `:badge[x]` (RFC proposal 11)
   const directiveSpans: Array<[number, number]> = ending ? [[ending[0] - 1, ending[1]]] : [];
-  for (const m of text.matchAll(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g)) {
+  for (const m of text.matchAll(spec >= 2 ? DIRECTIVE_USE_V2 : DIRECTIVE_USE_V1)) {
     if (!m[3] && !m[4]) continue;
-    const col = m.index! + m[1].length;
+    const col = m.index + m[1].length;
     const end = col + m[0].length - m[1].length;
     directiveSpans.push([col, end]);
-    checkDirective(at, { name: m[2], col, end, content: m[3], attrList: m[4] }, variables);
+    checkDirective(at, { name: directiveName(m[2], spec), col, end, content: m[3], attrList: m[4] }, read.variables);
   }
   checkStyledSpans(at, directiveSpans);
-  checkInlineAttrLists(raw, text, line, push);
+  checkInlineAttrLists(raw, text, line, push, spec);
 }
+
+/** `:name[content]{attrs}` on a line: the name in lower case in spec v1, in any case in spec v2. */
+const DIRECTIVE_USE_V1 = /(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g;
+const DIRECTIVE_USE_V2 = /(^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g;
+/** A `:due[date]` on a task line. */
+const DUE_V1 = /:due\[(\d{4}-\d{2}-\d{2})\]/;
+const DUE_V2 = /:due\[(\d{4}-\d{2}-\d{2})\]/i;
+
+/** A directive's name as rendering reads it: as written in spec v1, lower-cased in spec v2. */
+const directiveName = (name: string, spec: SpecVersion) => (spec >= 2 ? name.toLowerCase() : name);
 
 /**
  * The inline directives whose text runs over several lines (`:badge[foo` on one line, `bar]{color=green}` on the
  * next), as rendering reads them (see inlineItemLines). Each is placed on its last line, from the start of its part
  * there to its end, where its attribute list is.
  */
-function multiLineDirectives(text: string, lines: string[]): Array<DirectiveUse & { line: number }> {
+function multiLineDirectives(text: string, lines: string[], spec: SpecVersion): Array<DirectiveUse & { line: number }> {
   if (!lines.some((l) => l.includes(':') && l.includes('['))) return [];
   const found: Array<DirectiveUse & { line: number }> = [];
+  const item = spec >= 2 ? /^:([A-Za-z][A-Za-z0-9-]*)(\[[^\]]*\])?(\{[^{}\n]*\})?$/ : /^:([a-z][a-z0-9-]*)(\[[^\]]*\])?(\{[^{}\n]*\})?$/;
   for (const parts of inlineItemLines(text).values()) {
-    for (const { item, index } of parts) {
-      const m = index === 0 ? /^:([a-z][a-z0-9-]*)(\[[^\]]*\])?(\{[^{}\n]*\})?$/.exec(item.text) : null;
-      const [line, start, end] = item.parts.at(-1)!;
+    for (const { item: { text: source, parts: all }, index } of parts) {
+      const m = index === 0 ? item.exec(source) : null;
+      const [line, start, end] = all.at(-1)!;
       // A line break in the content reads as a space, as it renders.
-      if (m) found.push({ line, name: m[1], col: start, end, content: m[2]?.replaceAll('\n', ' '), attrList: m[3] });
+      if (m) found.push({ line, name: directiveName(m[1], spec), col: start, end, content: m[2]?.replaceAll('\n', ' '), attrList: m[3] });
     }
   }
   return found;
 }
 
-/** Where an inline check reports: the line, its text with inline code blanked out, and the push. */
-interface InlineAt { line: number; text: string; push: Push }
+/** Where an inline check reports: the line, its text with inline code blanked out, the push, and the spec version. */
+interface InlineAt { line: number; text: string; push: Push; spec: SpecVersion }
 
 /** One `:name[content]{attrs}` on the line: `content` and `attrList` keep their brackets. */
 interface DirectiveUse { name: string; col: number; end: number; content?: string; attrList?: string }
@@ -527,7 +542,7 @@ function checkDirective(at: InlineAt, d: DirectiveUse, variables: Variables): vo
   const spec = own(INLINE_DIRECTIVES, d.name);
   if (!spec) { unknownDirective(at, d); return; }
   if (spec.content && !d.content) push(line, d.col, d.end, 'error', 'directive/content', `":${d.name}" needs content in brackets, e.g. ${spec.example}.`);
-  const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1)) : null;
+  const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1), at.spec) : null;
   if (d.attrList && !attrs) { push(line, d.col, d.end, 'error', 'attrs/syntax', 'Malformed attribute list.'); return; }
   // Checked with front matter variables replaced: :due[{{deadline}}] is the date in "deadline".
   const content = substituteLine(d.content?.slice(1, -1) ?? '', variables).trim();
@@ -535,12 +550,26 @@ function checkDirective(at: InlineAt, d: DirectiveUse, variables: Variables): vo
   if (attrs) checkDirectiveAttrs(at, d, spec, attrs);
 }
 
-/** Only flag names that look intentional, e.g. ":badg[..]" — not "see:[link]". */
-function unknownDirective({ line, push }: InlineAt, { name, col, end }: DirectiveUse): void {
+/**
+ * A name outside the vocabulary. In spec v1 it is text, and only a name that looks intentional is flagged, e.g.
+ * ":badg[..]", not "see:[link]". In spec v2 it is a directive that renders its content (RFC proposal 7b): every one
+ * is a `directive/unknown` warning, with a fix when a known name is close, and its style attributes are checked as a
+ * styled span's are (other keys may be the directive's own, in a tool that knows it).
+ */
+function unknownDirective(at: InlineAt, d: DirectiveUse): void {
+  const { line, push, spec } = at;
+  const { name, col, end } = d;
   const hint = suggest(name, Object.keys(INLINE_DIRECTIVES));
-  if (!hint) return;
-  push(line, col, end, 'warning', 'directive/unknown', `Unknown inline directive ":${name}" — did you mean ":${hint}"?`,
-    { line, column: col + 1, endColumn: col + 1 + name.length, replacement: hint, title: `Change to ":${hint}"` });
+  const fix: Fix | undefined = hint ? { line, column: col + 1, endColumn: col + 1 + name.length, replacement: hint, title: `Change to ":${hint}"` } : undefined;
+  if (spec < 2) {
+    if (hint) push(line, col, end, 'warning', 'directive/unknown', `Unknown inline directive ":${name}" — did you mean ":${hint}"?`, fix);
+    return;
+  }
+  push(line, col, end, 'warning', 'directive/unknown',
+    `Unknown inline directive ":${name}"${hint ? ` — did you mean ":${hint}"?` : '.'} It renders as its content, in a plain span.`, fix);
+  const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1), spec) : null;
+  if (d.attrList && !attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed attribute list.'); return; }
+  for (const p of attrs ? attrsToStyle(attrs).problems : []) push(line, col, end, p.severity, 'attrs/value', p.message, styleFix(line, at.text, col, end, p));
 }
 
 function checkDirectiveContent({ line, text, push }: InlineAt, { name, col, end }: DirectiveUse, content: string, attrs: Attrs | null): void {
@@ -582,12 +611,12 @@ function checkDirectiveAttr(
 }
 
 /** `[text]{attrs}` styled spans; the attribute lists that belong to directives are skipped. */
-function checkStyledSpans({ line, text, push }: InlineAt, directiveSpans: Array<[number, number]>): void {
+function checkStyledSpans({ line, text, push, spec }: InlineAt, directiveSpans: Array<[number, number]>): void {
   for (const m of text.matchAll(/\]\{([^{}\n]*)\}/g)) {
     const col = m.index! + 1;
     const end = col + m[0].length - 1;
     if (directiveSpans.some(([s, e]) => col > s && col < e)) continue;
-    const attrs = parseAttrs(m[1]);
+    const attrs = parseAttrs(m[1], spec);
     if (!attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed attribute list. Expected {key=value key2="value 2" .class}.'); continue; }
     const keys = Object.keys(attrs.values);
     for (const key of keys) {
@@ -738,14 +767,14 @@ function missingAnchor(
 /** Figure ids are unique, and every `:ref[id]` names a figure of this document. */
 /** Figure ids and `:ref[id]` references; `included` lists the ids of figures brought in by `:::include`. */
 function checkFigures(text: string, lines: string[], bodyStart: number, push: Push, included: () => Set<string>): void {
-  const figures = parseSmd(text).figures;
+  const { figures, spec } = parseSmd(text);
   const targets = figureTargets(figures);
   for (const f of figures) {
     const first = f.id ? targets.get(f.id) : undefined;
     if (first && first !== f) duplicateFigure(f, first, lines[f.line], push);
   }
   let fromIncludes: Set<string> | undefined;
-  for (const ref of findRefs(lines, bodyStart)) {
+  for (const ref of findRefs(lines, bodyStart, spec)) {
     if (targets.has(ref.id)) continue;
     fromIncludes ??= included();
     if (!fromIncludes.has(ref.id)) unknownRef(ref, [...targets.keys(), ...fromIncludes], push);
@@ -998,14 +1027,16 @@ function checkMath(tex: string, line: number, wholeLine: WholeLine): void {
   if (error !== null) wholeLine(line, 'error', 'math/syntax', `Math error: ${error}`);
 }
 
-function checkHeadingAttrs(raw: string, line: number, push: Push): void {
+function checkHeadingAttrs(raw: string, line: number, push: Push, spec: SpecVersion): void {
   const m = HEADING_ATTRS.exec(raw);
   if (!m) return;
   const col = m.index + m[0].indexOf('{');
   const end = col + m[1].length + 2;
-  const attrs = parseAttrs(m[1]);
+  const attrs = parseAttrs(m[1], spec);
   if (!attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed heading attribute list. Expected {#id .class agent=skip}.'); return; }
-  checkHeadingHints(line, raw, m.index, col, end - 1, push);
+  // In spec v2 an empty list, or one with a bare word, is heading text (RFC proposal 5): there is nothing to check.
+  if (spec >= 2 && !headingAttrList(raw, spec)) return;
+  checkHeadingHints(line, raw, m.index, col, end - 1, push, spec);
   const keys = Object.keys(attrs.values);
   for (const [key, value] of Object.entries(attrs.values)) {
     if (key !== 'agent') {
