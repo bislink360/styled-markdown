@@ -46,7 +46,7 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 A YAML mapping between `---` lines at the very start of the file. It is parsed with the YAML *core* schema, so `2026-09-26` stays a string.
 
 - **Opening and closing:** the first line is `---`. The front matter ends at the next line that is `---` or `...` (YAML's document end marker), trailing spaces allowed. Front matter that is never closed is not front matter: the `---` is a thematic break and the lines after it are the body.
-- **Front matter that can't be read** *(all documents, since 2.0; spec v2 RFC, proposal 1)*: when the lines up to the closer are not a YAML mapping (the YAML doesn't parse, or is a list or a scalar), renderers show them as written, escaped, in a visible error block where the header goes (`<div class="smd-frontmatter-error" role="note">` with the label "Front matter could not be read" and the lines in `<pre><code>`). The body after the closer renders as usual, and the document has no front matter values. The usual cause is a forgotten closing `---`, which makes a later thematic break the closer. The agent view shows a `[front matter could not be read]` line and the lines in a fenced block, `smd to-md` keeps them as written, and `smd validate` reports `frontmatter/invalid` (an error). Before 2.0 those lines were hidden.
+- **Front matter that can't be read** *(all documents, since 2.0; spec v2 RFC, proposal 1)*: when the lines up to the closer are not a YAML mapping (the YAML doesn't parse, or is a list or a scalar), renderers show them as written, escaped, in a visible error block where the header goes (`<div class="smd-frontmatter-error" role="note">` with the label "Front matter could not be read" and the lines in `<pre><code>`). The body after the closer renders as usual, and the document has no front matter values. The usual cause is a forgotten closing `---`, which makes a later thematic break the closer. The agent view shows a `[front matter could not be read]` line and the lines in a fenced block, `smd export --to md` keeps them as written, and `smd validate` reports `frontmatter/invalid` (an error). Before 2.0 those lines were hidden.
 
 | Key | Type | Meaning |
 |-----|------|---------|
@@ -120,7 +120,7 @@ Any Markdown content, including other containers.
 | `tabs` → `tab` | Tab group; each `tab` title is its label | `title` (on `tab`) |
 | `columns` → `column` | Side-by-side layout (stacks on narrow screens) | `width` (`30%` or ratio `2`) |
 | `steps` | Renders the ordered list inside as numbered steps | — |
-| `agent` | Content addressed to AI agents (instructions, constraints) | `title` (`priority` was removed in 2.0, see §11) |
+| `agent` | Content addressed to AI agents (instructions, constraints) | `title` (`priority` was removed in 2.0, see §11.2) |
 | `human` | Content addressed to human readers only | `title` |
 
 | `decision` | Decision record (ADR-style); title = the decision | `status` (`proposed` `accepted` `rejected` `superseded` `deprecated`), `date`, `owner` |
@@ -682,7 +682,7 @@ The steps run in this order. "v1" steps leave the document rendering as before w
 | Closing fences | proposal 3 | v1 | A closing fence is written with its container's colon count (`::::` closing `:::tab` becomes `:::`), as `smd fmt` writes it and the `container/colons` fix does |
 | Duplicate attributes | proposal 4 | v1 | A key, `#id` or class given twice is kept once, with the value v1 uses (the last), where it first appears (`attrs/duplicate`). Only a repeated class renders differently: v1 writes it twice |
 | Title text that is not shown | proposal 4 | v1 | The title text of a container that also has `title=` is removed (`container/title-conflict`); text beside an HTML comment is a note |
-| Agent priority | proposal 12 | v1 | `priority` on `:::agent`, removed in 2.0 (§11), is removed, with the braces when nothing else is in them (`attrs/unknown`). No tool read it, so nothing renders differently |
+| Agent priority | proposal 12 | v1 | `priority` on `:::agent`, removed in 2.0 (§11.2), is removed, with the braces when nothing else is in them (`attrs/unknown`). No tool read it, so nothing renders differently |
 | `$$` delimiters | proposal 2 | v1 | A `$$` line that also has math on it is split, so each delimiter is on a line of its own (`$$ x` becomes `$$` and `x`), with the block's indentation, `>` markers or list indentation. The math is the same |
 | Braces after headings | proposal 5 | v1 | An empty `{}` or a bare `{word}` after a heading is removed (`heading/attrs-text`); `{agent}` is a note |
 | Unknown directives | proposal 7b | v2 | A literal `:name[…]` whose name isn't an inline directive as written (`:abbr[HTML]`, `:Badge[x]`) gets its colon escaped (`\:abbr[HTML]`), so v2 doesn't read it as a directive. CommonMark shows `\:` as `:` |
@@ -697,12 +697,7 @@ A document that already says `smd: 2` (or a newer version) needs nothing. Suppre
 
 ## 11. Deprecated
 
-These still work in spec v1 and in every 1.x release, with a hint (or a note in the message) from 1.10. Styled Markdown 2.0 removes them.
-
-| Deprecated | Since | In 2.0 | Instead |
-|---|---|---|---|
-| `priority` on `:::agent` | 1.10 | Removed, unless a meaning is agreed first; no tool reads it | Leave it out. 1.10 reports it as the hint `deprecated/agent-priority`, with a fix that removes it |
-| The `figure/kind` diagnostic code | 1.10 | An invalid `kind` on a `figure` is reported as `attrs/value` | Name `attrs/value` as well as `figure/kind` in rule settings and suppression comments. The 1.10 message says so |
+What is deprecated still works, and is removed in a later major. What 1.10 deprecated is removed in 2.0 (§11.2); nothing in the document syntax is deprecated in 2.0. The CLI's older export command names are (§11.1).
 
 ### 11.1 Deprecated tool names
 
@@ -714,3 +709,13 @@ Styled Markdown 2.0 gathers the CLI's exports under one command, `smd export <fi
 | `smd to-md <file>` | 2.0 | `smd export <file> --to md` |
 | `smd pdf <file>` | 2.0 | `smd export <file> --to pdf` |
 | `smd docx <file>` | 2.0 | `smd export <file> --to docx` |
+
+### 11.2 Removed in 2.0
+
+Deprecated in 1.10, with a hint (or a note in the message), and removed in Styled Markdown 2.0 for every document, whatever its `smd` value.
+
+| Removed | Deprecated in | What 2.0 does | Migration |
+|---|---|---|---|
+| `priority` on `:::agent` | 1.10 | No meaning was agreed and no tool read it: it is an unknown attribute, the warning `attrs/unknown`, reported on the attribute. The block renders as before | `smd validate --fix` or `smd migrate --to 2` removes it (with the braces when nothing else is in them) |
+| The `deprecated/agent-priority` diagnostic code | 1.10 | The problem is reported as `attrs/unknown`. A rule setting or suppression comment that names the code (or `deprecated/*`) gets a `rules/unknown` warning that says so, and sets or silences nothing | Name `attrs/unknown` instead (the comment's quick fix does it) |
+| The `figure/kind` diagnostic code | 1.10 | An invalid `kind` on a `figure` is an `attrs/value` error, as on every other container. A rule setting or suppression comment that names `figure/kind` gets a `rules/unknown` warning that says the code was merged into `attrs/value`, and sets or silences nothing | Fix the `kind` (the `attrs/value` quick fix offers the closest value), or name `attrs/value` |
