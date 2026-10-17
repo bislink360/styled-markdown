@@ -5,7 +5,8 @@ import { dueState } from './render';
 import { validateSmd, type Diagnostic, type ValidateOptions } from './validate';
 import { inlineText } from './agentView';
 import { scanTasks } from './taskLines';
-import { substituteLine } from './variables';
+import { specVersion } from './specVersion';
+import { shownValues, substituteLine } from './variables';
 import { priorityRank } from './util';
 
 export interface TaskInfo {
@@ -42,11 +43,13 @@ export interface SmdDocumentInfo {
 /** Parse every task (open and done) with its owner, priority and due date. Fenced and indented code holds none (see scanTasks). */
 export function extractTasks(text: string, today?: string): TaskInfo[] {
   const fm = parseFrontMatter(text);
+  // `{{name}}` shows the values as the document shows them: spelled as written in spec v2.
+  const shown = shownValues(fm.data, text, specVersion(fm.data)) as Record<string, unknown>;
   const tasks: TaskInfo[] = [];
   let section: string | null = null;
   for (const item of scanTasks(text, fm.bodyStartLine)) {
-    if (item.kind === 'heading') section = inlineText(item.text, undefined, false, undefined, fm.data);
-    else tasks.push(taskInfo(item, section, fm.data, today));
+    if (item.kind === 'heading') section = inlineText(item.text, undefined, false, undefined, shown);
+    else tasks.push(taskInfo(item, section, shown, today));
   }
   return tasks;
 }
