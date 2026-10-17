@@ -285,17 +285,32 @@ const READERS: Record<string, (text: string) => unknown> = {
   pandoc: (t) => smdToPandocHtml(t, { today }),
 };
 
-test('no v2 rule yet: every reader gives the same output for smd: 1, no smd key and smd: 2 (examples and the corpus)', () => {
+/**
+ * The documents a v2 rule reads differently, by the rule that does: their own tests compare both versions
+ * (v2BlockRules.test.ts). Every other document reads the same with either version.
+ */
+const READ_DIFFERENTLY: Record<string, string> = {
+  'migrate.smd': 'a closing fence and $$ delimiters that smd migrate rewrites (proposals 2 and 3)',
+  'v2-hints.smd': 'closing fences with other colon counts (proposal 3)',
+  'v2-math.smd': '$$ delimiters (proposal 2)',
+  'v2-fences.smd': 'closing fences (proposal 3)',
+};
+
+test('every reader gives the same output for smd: 1, no smd key and smd: 2, but where a v2 rule applies (examples and the corpus)', () => {
   assert.ok(DOCUMENTS.length >= 20, `${DOCUMENTS.length} documents`);
   for (const file of DOCUMENTS) {
     const text = fs.readFileSync(path.join(root, file), 'utf8').replaceAll('\r\n', '\n');
     const texts = Object.fromEntries(Object.entries(VARIANTS).map(([k, line]) => [k, withVersionLine(text, line)]));
     assert.deepEqual([specVersion(texts.v1), specVersion(texts.none), specVersion(texts.v2)], [1, 1, 2], file);
+    const same = !Object.hasOwn(READ_DIFFERENTLY, path.basename(file));
+    let differs = false;
     for (const [name, read] of Object.entries(READERS)) {
       const v1 = stable(read(texts.v1));
       assert.equal(stable(read(texts.none)), v1, `${name}: ${file} without an smd key`);
-      assert.equal(stable(read(texts.v2)), v1, `${name}: ${file} with smd: 2`);
+      if (same) assert.equal(stable(read(texts.v2)), v1, `${name}: ${file} with smd: 2`);
+      else differs ||= stable(read(texts.v2)) !== v1;
     }
+    assert.ok(same || differs, `${file} reads the same with smd: 2: remove it from READ_DIFFERENTLY`);
   }
 });
 

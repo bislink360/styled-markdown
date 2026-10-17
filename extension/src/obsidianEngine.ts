@@ -6,6 +6,7 @@ import { parseFenceInfo } from './core/fence';
 import { parseFrontMatter } from './core/frontmatter';
 import { markdownItSmd } from './core/markdownIt';
 import { INLINE_DIRECTIVES } from './core/spec';
+import { specVersion, type SpecVersion } from './core/specVersion';
 
 /**
  * The renderer behind the Obsidian plugin (integrations/obsidian), bundled into its main.js. It is the markdown-it
@@ -182,18 +183,18 @@ export function noteModel(md: MarkdownIt, text: string, containers = true): Note
   const lines = text.split(/\r?\n/);
   const fm = parseFrontMatter(text);
   const lang = typeof fm.data.lang === 'string' ? fm.data.lang : undefined;
-  return { lines, containers: containers ? containerRanges(md, lines, fm.bodyStartLine) : [], variables: fm.data, lang };
+  return { lines, containers: containers ? containerRanges(md, lines, fm.bodyStartLine, specVersion(fm.data)) : [], variables: fm.data, lang };
 }
 
 /**
  * The outermost `:::` containers of a note, by line, as the engine's block parser finds them (so code fences, nesting
  * and containers inside lists or quotes are as the engine sees them). The front matter lines are blanked first. A
- * container left open runs to the end of the note.
+ * container left open runs to the end of the note. `spec` is the note's spec version (closing fences, `$$` math).
  */
-export function containerRanges(md: MarkdownIt, lines: string[], bodyStartLine = 0): LineRange[] {
+export function containerRanges(md: MarkdownIt, lines: string[], bodyStartLine = 0, spec: SpecVersion = 1): LineRange[] {
   const source = lines.map((line, i) => (i < bodyStartLine ? '' : line)).join('\n');
   const tokens: Token[] = [];
-  md.block.parse(source, md, {}, tokens);
+  md.block.parse(source, md, spec === 1 ? {} : { smdSpec: spec }, tokens);
   const last = lines.length - 1;
   const ranges = tokens
     .filter((t) => t.type === 'container_smd_open' && t.map)

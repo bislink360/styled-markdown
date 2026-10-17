@@ -8,7 +8,7 @@ import { EN } from './i18n';
 import { codeLines, inlineMathLines, literalLines, mathOnLine, type InlineMathLines } from './parse';
 import { createMarkdownIt, type Env } from './render';
 import { CONTAINERS, INLINE_DIRECTIVES } from './spec';
-import { readSpec } from './specVersion';
+import { readSpec, specVersion } from './specVersion';
 import { AGENT_PRIORITY_REMOVED } from './v2Hints';
 import { applyFixes, validateSmd, type Diagnostic, type Fix } from './validate';
 import { findVariables, variableText } from './variables';
@@ -266,13 +266,16 @@ function fixStep(w: Work, code: string, kind: MigrationKind, which: (d: Diagnost
 // $$ delimiters (proposal 2)
 // ---------------------------------------------------------------------------
 
-/** The block tokens of the body as rendering parses it, with the line the body starts on. */
+/**
+ * The block tokens of the body as rendering parses it, with the line the body starts on: with the rules of the version
+ * the document says (v1 for every document being migrated; v2 for one that already says smd: 2, planned with `force`).
+ */
 function bodyTokens(text: string, typographer = true): { tokens: Token[]; md: ReturnType<typeof createMarkdownIt>; env: Env; fm: FrontMatter } {
   const fm = parseFrontMatter(text);
   const md = createMarkdownIt();
   if (!typographer) md.set({ typographer: false });
   const env: Env = {
-    lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), source: text, smdVariables: fm.data, messages: EN,
+    lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), source: text, smdVariables: fm.data, messages: EN, smdSpec: specVersion(fm.data),
     options: { allowHtml: true, agentBlocks: 'collapsed', readFile: undefined, today: '2000-01-01' },
   };
   // As renderSmd: markdown-it reads a lone \r as a line break, the line scanners don't.

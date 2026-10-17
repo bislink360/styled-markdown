@@ -124,7 +124,7 @@ Then write normal Markdown, adding Styled Markdown only where it helps the reade
 
 Rules:
 
-- A line with only `:::` closes the **innermost** open container. Using more colons on outer containers (`::::tabs`) is optional but improves readability.
+- A line with only `:::` closes the **innermost** open container. Using more colons on outer containers (`::::tabs`) is optional but improves readability. In a document with `smd: 2`, a closing fence closes the innermost container opened with as many colons, so write each one with its opener's colons, and put `$$` math delimiters on lines of their own.
 - Attributes go **directly after** the name with no space: `:::card{accent=blue} Title`, `[text]{color=red}`.
 - Use named colors, not hex, unless matching a brand color.
 - Don't repeat the front matter `title` as a `# H1`.

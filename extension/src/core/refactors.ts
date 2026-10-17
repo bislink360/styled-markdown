@@ -1,6 +1,7 @@
 import { GITHUB_ALERTS } from './alerts';
-import { CONTAINER_CLOSE, CONTAINER_OPEN } from './containers';
+import { closeContainers, closerColons, CONTAINER_CLOSE, CONTAINER_OPEN, openerColons } from './containers';
 import { CALLOUT_TYPES } from './spec';
+import { specVersion, type SpecVersion } from './specVersion';
 
 /** Replace lines [startLine, endLine] (inclusive, zero-based) with `lines`. */
 export interface LineEdit {
@@ -17,10 +18,14 @@ export interface ContainerAt {
   nameColumn: number;
 }
 
-/** Scan containers outside code fences. Unclosed containers end at the last line. */
-function containers(lines: string[]): ContainerAt[] {
+/**
+ * Scan containers outside code fences, closing fences paired as spec version `spec` reads them (closedBy in
+ * containers.ts). Unclosed containers end at the last line; one closed with a container around it, on the line
+ * before that one's fence.
+ */
+function containers(lines: string[], spec: SpecVersion): ContainerAt[] {
   const found: ContainerAt[] = [];
-  const stack: ContainerAt[] = [];
+  const stack: Array<ContainerAt & { colons: number }> = [];
   let fence: { char: string; len: number } | null = null;
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
@@ -31,19 +36,19 @@ function containers(lines: string[]): ContainerAt[] {
     }
     if (mark) { fence = { char: mark[1][0], len: mark[1].length }; continue; }
     if (CONTAINER_CLOSE.test(raw)) {
-      const c = stack.pop();
-      if (c) { c.closeLine = i; found.push(c); }
+      const closed = closeContainers(stack, closerColons(raw), spec, (c) => c.colons);
+      closed.forEach((c, k) => found.push({ name: c.name, openLine: c.openLine, closeLine: k === closed.length - 1 ? i : i - 1, nameColumn: c.nameColumn }));
       continue;
     }
     const open = CONTAINER_OPEN.exec(raw);
-    if (open) stack.push({ name: open[3].toLowerCase(), openLine: i, closeLine: lines.length - 1, nameColumn: raw.indexOf(open[3], open[1].length + open[2].length) });
+    if (open) stack.push({ name: open[3].toLowerCase(), openLine: i, closeLine: lines.length - 1, nameColumn: raw.indexOf(open[3], open[1].length + open[2].length), colons: open[2].length });
   }
-  return [...found, ...stack];
+  return [...found, ...stack.map(({ name, openLine, closeLine, nameColumn }) => ({ name, openLine, closeLine, nameColumn }))];
 }
 
 /** The innermost container whose fences enclose `line` (including the fence lines themselves). */
 export function containerAt(text: string, line: number): ContainerAt | undefined {
-  return containers(text.split(/\r?\n/))
+  return containers(text.split(/\r?\n/), specVersion(text))
     .filter((c) => c.openLine <= line && line <= c.closeLine)
     .sort((a, b) => b.openLine - a.openLine)[0];
 }
@@ -57,7 +62,7 @@ export function wrapLines(text: string, startLine: number, endLine: number, name
   const lines = text.split(/\r?\n/);
   const selected = lines.slice(startLine, endLine + 1);
   if (!selected.some((l) => l.trim())) return undefined;
-  if (!isBalanced(selected)) return undefined;
+  if (!isBalanced(selected, specVersion(text))) return undefined;
   const inner = Math.max(2, ...selected.map((l) => /^\s{0,3}(:{3,})/.exec(l)?.[1].length ?? 0));
   const colons = ':'.repeat(inner + 1);
   const indent = /^\s*/.exec(selected.find((l) => l.trim())!)![0];
@@ -65,21 +70,41 @@ export function wrapLines(text: string, startLine: number, endLine: number, name
   return { startLine, endLine, lines: [`${indent}${colons}${name}`, ...selected, `${indent}${colons}`] };
 }
 
-/** Do these lines open and close every code fence and container they contain? */
-function isBalanced(lines: string[]): boolean {
-  let fence: { char: string; len: number } | null = null;
-  let depth = 0;
-  for (const raw of lines) {
-    const mark = /^\s{0,3}(`{3,}|~{3,})/.exec(raw);
-    if (fence) {
-      if (mark && mark[1][0] === fence.char && mark[1].length >= fence.len && !raw.slice(mark[0].length).trim()) fence = null;
-      continue;
-    }
-    if (mark) { fence = { char: mark[1][0], len: mark[1].length }; continue; }
-    if (CONTAINER_CLOSE.test(raw)) { if (--depth < 0) return false; continue; }
-    if (CONTAINER_OPEN.test(raw)) depth++;
+/**
+ * Do these lines open and close every code fence and container they contain? In spec v2 each closing fence must have
+ * its container's colon count: one that closes several, or matches none, may pair differently with fences outside.
+ */
+type CodeFence = { char: string; len: number } | null;
+
+/** The open code fence after a line, and whether the line belongs to a fence (opener, body or closer). */
+function codeFenceStep(raw: string, fence: CodeFence): { fence: CodeFence; inFence: boolean } {
+  const mark = /^\s{0,3}(`{3,}|~{3,})/.exec(raw);
+  if (fence) {
+    const closes = mark && mark[1][0] === fence.char && mark[1].length >= fence.len && !raw.slice(mark[0].length).trim();
+    return { fence: closes ? null : fence, inFence: true };
   }
-  return !fence && depth === 0;
+  return mark ? { fence: { char: mark[1][0], len: mark[1].length }, inFence: true } : { fence: null, inFence: false };
+}
+
+/** Does this closing fence close exactly one container, its own (by colon count in spec v2)? */
+function closesOwn(raw: string, open: number[], spec: SpecVersion): boolean {
+  const colons = closerColons(raw);
+  const closed = closeContainers(open, colons, spec, (c) => c);
+  return closed.length === 1 && (spec !== 2 || closed[0] === colons);
+}
+
+function isBalanced(lines: string[], spec: SpecVersion): boolean {
+  let fence: CodeFence = null;
+  const open: number[] = [];
+  for (const raw of lines) {
+    const step = codeFenceStep(raw, fence);
+    fence = step.fence;
+    if (step.inFence) continue;
+    if (CONTAINER_CLOSE.test(raw)) {
+      if (!closesOwn(raw, open, spec)) return false;
+    } else if (CONTAINER_OPEN.test(raw)) open.push(openerColons(raw));
+  }
+  return !fence && open.length === 0;
 }
 
 // ---------------------------------------------------------------------------
