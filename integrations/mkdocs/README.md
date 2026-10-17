@@ -39,7 +39,7 @@ List `search` too when you add `plugins:`: MkDocs only adds it by itself when th
 ## What it does
 
 - **Pages:** every `.smd` file in `docs_dir` is a page, at the URL a `.md` file of the same name would have (`guide/setup.smd` → `guide/setup/`). It shows up in the navigation, the search index and `nav:` like any page. When a `.smd` and a `.md` file have the same URL, the `.smd` page is built and the build warns.
-- **Title:** front matter `title`, else the first `#` heading, else MkDocs' usual fallback. The front matter also renders as the page header (title, status, owners, tags), as in `smd render`.
+- **Title:** front matter `title`, else the first `#` heading, else MkDocs' usual fallback. The front matter also renders as the page header (title, status, owners, tags), as in `smd export --to html`.
 - **Table of contents:** from the document's headings and their ids (`## Setup {#install}` → `#install`), so the theme's table of contents, permalinks and anchor checks work.
 - **Links:** links between `.smd` pages, and from `.smd` to `.md` pages, point at the built pages (`setup.smd#install` → `../setup/#install`), with or without `use_directory_urls`. Links from `.md` pages to `.smd` files work through MkDocs itself. Images and other files keep their relative paths.
 - **`:::include` and code embeds** (```` ```ts file="…" ````) read files inside `docs_dir` only; anything outside shows the block's fallback text. Put documents that are only included in a folder listed in `exclude_docs`.
