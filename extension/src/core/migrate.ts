@@ -686,9 +686,24 @@ function versionStep(w: Work): void {
   change(w, line, 1, [`${raw.slice(0, column)}${TARGET}${raw.slice(column + value.length)}`], VERSION);
 }
 
-/** The value after `key:` on its line as written (`1`, `"1"`, `true`, `[1]`), up to a comment; not a block scalar or one on later lines. */
+/**
+ * The value after `key:` on its line as written (`1`, `"1"`, `true`, `[1]`), up to a comment; not a block scalar or one
+ * on later lines. Only YAML's spaces and tabs are trimmed: other white space, such as a byte order mark, is part of
+ * the value, so it is replaced with the rest of it.
+ */
 function lineValue(rest: string): string | undefined {
   const comment = rest.search(/\s#/);
-  const text = (comment < 0 ? rest : rest.slice(0, comment)).trim();
+  const text = yamlTrim(comment < 0 ? rest : rest.slice(0, comment));
   return text && !/^[|>]/.test(text) ? text : undefined;
+}
+
+const isYamlSpace = (c: string | undefined) => c === ' ' || c === '\t';
+
+/** `s` without the spaces and tabs around it. */
+function yamlTrim(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && isYamlSpace(s[start])) start++;
+  while (end > start && isYamlSpace(s[end - 1])) end--;
+  return s.slice(start, end);
 }
