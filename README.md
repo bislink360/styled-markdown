@@ -148,7 +148,7 @@ History and research. People see it; agents skip it.
 | `smd tasks <dir> [--mine @me]` | Open tasks across docs, overdue first |
 | `smd issues <dir> [--apply] [--create] [--close]` | Sync tasks with GitHub Issues through your `gh` login. A dry run unless `--apply`: checks off tasks whose issue closed, `--create` opens issues for unlinked tasks (and links them), `--close` closes issues of done tasks |
 | `smd decisions <dir> [--status accepted] [--md]` | Decision log across docs, newest first; `--md -o docs/decisions.smd` writes an ADR index to commit |
-| `smd tasks <dir> --csv` · `--gantt [--smd]` | Export tasks to a spreadsheet, or a Mermaid Gantt chart of due dates (`--smd`: a document `smd render` draws) |
+| `smd tasks <dir> --csv` · `--gantt [--smd]` | Export tasks to a spreadsheet, or a Mermaid Gantt chart of due dates (`--smd`: a document `smd export --to html` draws) |
 | `smd risks <dir> [--html]` | Risk register: every risk scored impact × likelihood, highest first, with a matrix; `--html` for a colour-coded page |
 | `smd report <dir> --since <date\|git-ref> [-o status.smd]` | Draft a status report: tasks done and added since, open tasks (overdue and due this week first), decisions since, high-impact risks, linked to their sections |
 | `smd query "<selector>" <paths> [--json]` | Decisions, risks, APIs, callouts, tasks or headings by type and attributes, e.g. `risk[impact>=high]` |
@@ -157,10 +157,12 @@ History and research. People see it; agents skip it.
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
 | `smd migrate <paths> --to 2 --dry-run [--json]` | Report what migrating to spec v2 (`smd: 2`) would change so each doc keeps its meaning; exit 0 when nothing needs it, 1 when something does, 2 on a usage error. 1.10 only reports; 2.0 applies it ([steps](docs/SPEC.md#101-migrating-to-spec-v2)) |
 | `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
-| `smd render` · `to-md` · `from-md` · `meta` | Convert and inspect; `render` pages have a print stylesheet (Print → Save as PDF) |
-| `smd export --to confluence\|notion <file> [-o out]` | A page for your wiki: Confluence storage format (callouts, code, expands, tasks and statuses as built-in macros) or Notion API blocks cut into request bodies. It only writes the file: no network, no credentials ([mapping](docs/FEATURES.md#confluence-and-notion-smd-export)) |
-| `smd pdf <file> [--format A4\|Letter] [--landscape]` | PDF with diagrams as vectors, if you have installed Playwright or Puppeteer (smd bundles no browser) |
-| `smd docx <file> [--reference-doc house.docx]` | Word document with real headings, tables, captions, footnotes and equations, if you have installed [Pandoc](https://pandoc.org/installing.html) (smd bundles none); also **Export to Word (.docx)** in VS Code |
+| `smd export <file> --to <format> [-o out]` | Every export in one command. Without `--to`, the extension of `-o` picks the format (`.html`, `.md`, `.pdf`, `.docx`). The older names `smd render`, `to-md`, `pdf` and `docx` still work |
+| `… --to html` · `md` | A standalone page with a print stylesheet (Print → Save as PDF), or plain GitHub Markdown |
+| `… --to pdf [--format A4\|Letter] [--landscape]` | PDF with diagrams as vectors, if you have installed Playwright or Puppeteer (smd bundles no browser) |
+| `… --to docx [--reference-doc house.docx]` | Word document with real headings, tables, captions, footnotes and equations, if you have installed [Pandoc](https://pandoc.org/installing.html) (smd bundles none); also **Export to Word (.docx)** in VS Code |
+| `… --to confluence` · `notion` | A page for your wiki: Confluence storage format (callouts, code, expands, tasks and statuses as built-in macros) or Notion API blocks cut into request bodies. It only writes the file: no network, no credentials ([mapping](docs/FEATURES.md#confluence-and-notion-smd-export)) |
+| `smd from-md` · `meta` | Upgrade Markdown to `.smd`; a document's full JSON summary |
 | `smd build <dir> --out site` | Static docs site: a page per doc, sidebar, breadcrumbs, search, backlinks and a task/decision/risk dashboard |
 | `smd mcp [--root <dir>]` | MCP server for agents: `outline`, `section`, `agent`, `tasks`, `validate` and `query` as tools ([setup](docs/AGENTS.md#mcp-server)) |
 | `smd lsp --stdio` | Language server for Neovim, Helix, Zed and other LSP editors: diagnostics, quick fixes, outline, hover, completion, go to definition, formatting (also `smd-language-server`; [setup](docs/EDITORS.md)) |
@@ -309,7 +311,7 @@ It uses the runner's Node.js (18+) and the CLI bundled in this repository, so no
 
 ### Static sites: Astro, Docusaurus, Next.js
 
-`styled-markdown/remark` and `styled-markdown/rehype` are unified plugins that render documents exactly as `smd render` does, inside remark/rehype pipelines:
+`styled-markdown/remark` and `styled-markdown/rehype` are unified plugins that render documents exactly as `smd export --to html` does, inside remark/rehype pipelines:
 
 ```js
 // astro.config.mjs

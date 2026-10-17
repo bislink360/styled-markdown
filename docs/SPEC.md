@@ -86,7 +86,7 @@ lang: de        # Hinweis, Abbildung 2, überfällig, Fußnoten …
 - **What changes**: rendered HTML only. The article gets `lang="…"` (and the page `<html lang="…">`) and the labels the page script shows (copy buttons, diagram messages) travel with it in `data-smd-labels`. Values the author wrote are translated only where they are vocabulary: `status: draft`, `:priority[high]`, `impact=high`, `color=green` with no text. Dates, numbers, titles and all other text stay as written.
 - **What does not change**: agent views, `smd outline`, `smd to-md` (including its "Figure 2" labels), validator messages and JSON outputs stay English. They are read by agents and tools, for which stable, compact output matters more than the reader's language.
 - **English**: a document without `lang`, or with `lang: en` (or any `en-…` tag), renders exactly as it did before `lang` existed.
-- **Fallback**: renderers may take a language for documents that don't name one: `renderSmd(text, { lang })`, the markdown-it plugin's `lang` option or a render's `env.lang`, and `--lang` on `smd render`, `smd pdf` and `smd build`. The document's own `lang` always wins. `smd build` labels its navigation, search and dashboard in `--lang`, else the home document's `lang`, else English.
+- **Fallback**: renderers may take a language for documents that don't name one: `renderSmd(text, { lang })`, the markdown-it plugin's `lang` option or a render's `env.lang`, and `--lang` on `smd export` and `smd build`. The document's own `lang` always wins. `smd build` labels its navigation, search and dashboard in `--lang`, else the home document's `lang`, else English.
 
 ---
 
@@ -701,3 +701,14 @@ These still work in spec v1 and in every 1.x release, with a hint (or a note in 
 |---|---|---|---|
 | `priority` on `:::agent` | 1.10 | Removed, unless a meaning is agreed first; no tool reads it | Leave it out. 1.10 reports it as the hint `deprecated/agent-priority`, with a fix that removes it |
 | The `figure/kind` diagnostic code | 1.10 | An invalid `kind` on a `figure` is reported as `attrs/value` | Name `attrs/value` as well as `figure/kind` in rule settings and suppression comments. The 1.10 message says so |
+
+### 11.1 Deprecated tool names
+
+Styled Markdown 2.0 gathers the CLI's exports under one command, `smd export <file> --to <format>`. The older command names stay as aliases with the same options, output and exit codes, and print no warning (scripts that read stderr keep working). They may be removed in 3.0.
+
+| Deprecated | Since | Instead |
+|---|---|---|
+| `smd render <file>` | 2.0 | `smd export <file> --to html` |
+| `smd to-md <file>` | 2.0 | `smd export <file> --to md` |
+| `smd pdf <file>` | 2.0 | `smd export <file> --to pdf` |
+| `smd docx <file>` | 2.0 | `smd export <file> --to docx` |
