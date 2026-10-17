@@ -1,7 +1,10 @@
-import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
+import {
+  closeContainers, closerColons, closesDisplayMath, CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, displayMathOpener, parseContainerInfo,
+} from './containers';
 import { findFootnotes } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
 import { slugify } from './sections';
+import { specVersion, type SpecVersion } from './specVersion';
 
 /**
  * Glossaries: `:::glossary` blocks whose list items are `**Term**: definition`, and the uses of those terms
@@ -191,9 +194,12 @@ interface BlockScan {
 const ITEM = /^( {0,3})[-*+][ \t]+(\S.*)$/;
 const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
 
-/** Every `:::glossary` block of a document and the entries of its lists, from `from` (the first body line) on. */
-export function findGlossary(lines: string[], from = 0): Glossary {
-  const scanner = new GlossaryScanner(displayMath(lines));
+/**
+ * Every `:::glossary` block of a document and the entries of its lists, from `from` (the first body line) on, read with
+ * the rules of spec version `spec` (display math, closing fences).
+ */
+export function findGlossary(lines: string[], from = 0, spec: SpecVersion = 1): Glossary {
+  const scanner = new GlossaryScanner(displayMath(lines, spec), spec);
   for (let i = from; i < lines.length; i++) scanner.line(lines[i], i);
   return scanner.finish(lines.length - 1);
 }
@@ -201,18 +207,18 @@ export function findGlossary(lines: string[], from = 0): Glossary {
 /** Follows code fences, display math and container nesting line by line, and scans the lines directly inside glossaries. */
 class GlossaryScanner {
   readonly glossary: Glossary = { entries: [], problems: [], blocks: [] };
-  /** Names of the open containers, innermost last. */
-  private readonly stack: string[] = [];
+  /** The open containers' names and colon counts, innermost last. */
+  private readonly stack: Array<{ name: string; colons: number }> = [];
   private fence: string | null = null;
   /** The outermost open glossary. */
   private scan: BlockScan | null = null;
 
-  constructor(private readonly isMath: (line: number) => boolean) {}
+  constructor(private readonly isMath: (line: number) => boolean, private readonly spec: SpecVersion) {}
 
   line(line: string, i: number): void {
     // A `:::` line in display math is math: it neither opens nor closes a container.
     if (this.inFence(line) || (!this.isMath(i) && this.container(line, i))) return;
-    if (this.scan && this.stack.at(-1) === 'glossary') scanLine(this.scan, line, i, this.glossary);
+    if (this.scan && this.stack.at(-1)?.name === 'glossary') scanLine(this.scan, line, i, this.glossary);
   }
 
   finish(last: number): Glossary {
@@ -243,10 +249,11 @@ class GlossaryScanner {
     if (open) {
       const name = parseContainerInfo(open[3] + open[4])?.name ?? '';
       if (!this.scan && name === 'glossary') this.scan = { start: i, items: [], blank: false };
-      this.stack.push(name);
+      this.stack.push({ name, colons: open[2].length });
     } else {
-      this.stack.pop();
-      if (this.scan && !this.stack.includes('glossary')) this.endBlock(i);
+      const closed = closeContainers(this.stack, closerColons(line), this.spec, (o) => o.colons);
+      // A glossary closed with a container around it (spec v2) ends on the line before that one's fence.
+      if (this.scan && !this.stack.some((o) => o.name === 'glossary')) this.endBlock(closed.at(-1)?.name === 'glossary' ? i : i - 1);
     }
     return true;
   }
@@ -345,6 +352,7 @@ interface SkipState {
   fence: string | null;
   math: boolean;
   comment: boolean;
+  spec: SpecVersion;
 }
 
 /** Whether a line is outside the text where terms are used; follows fences, `$$` math and `<!-- … -->`. */
@@ -359,10 +367,17 @@ function skipped(line: string, state: SkipState): boolean {
     return true;
   }
   if (state.math) {
-    state.math = !line.trimEnd().endsWith('$$');
+    state.math = !closesDisplayMath(line, state.spec);
     return true;
   }
   return startsSkip(line, state);
+}
+
+/** Whether a line opens display math that runs on to later lines; undefined when it is not math (spec v2 only). */
+function opensMath(trimmed: string, spec: SpecVersion): boolean | undefined {
+  if (spec === 1) return !(trimmed.length > 4 && trimmed.endsWith('$$'));
+  const opener = displayMathOpener(trimmed, spec);
+  return opener ? opener === 'block' : undefined;
 }
 
 function startsSkip(line: string, state: SkipState): boolean {
@@ -372,8 +387,9 @@ function startsSkip(line: string, state: SkipState): boolean {
     return true;
   }
   const trimmed = line.trim();
-  if (trimmed.startsWith('$$')) {
-    state.math = !(trimmed.length > 4 && trimmed.endsWith('$$'));
+  const math = trimmed.startsWith('$$') ? opensMath(trimmed, state.spec) : undefined;
+  if (math !== undefined) {
+    state.math = math;
     return true;
   }
   if (trimmed.startsWith('<!--')) {
@@ -388,14 +404,14 @@ function startsSkip(line: string, state: SkipState): boolean {
  * Every use of a defined term outside glossaries, footnote definitions, code, math, comments, headings,
  * container lines, links, URLs and attribute values, from `from` (the first body line) on.
  */
-export function findTermUses(lines: string[], from: number, glossary: Glossary): TermUse[] {
+export function findTermUses(lines: string[], from: number, glossary: Glossary, spec: SpecVersion = 1): TermUse[] {
   const matcher = termMatcher(firstEntries(glossary.entries));
   if (!matcher) return [];
   // Footnote definitions render in the footnotes section, where terms are not marked.
   const footnotes = findFootnotes(lines.join('\n')).definitions.map((d): [number, number] => [d.line, d.endLine]);
   const blocks = [...glossary.blocks, ...footnotes];
   const notText = (i: number) => blocks.some(([start, end]) => i >= start && i <= end);
-  const state: SkipState = { fence: null, math: false, comment: false };
+  const state: SkipState = { fence: null, math: false, comment: false, spec };
   const uses: TermUse[] = [];
   for (let i = from; i < lines.length; i++) {
     if (notText(i) || skipped(lines[i], state)) continue;
@@ -409,12 +425,13 @@ export function findTermUses(lines: string[], from: number, glossary: Glossary):
 /** The defined term at a zero-based line and UTF-16 column (a use, or the term in its entry); undefined when there is none. */
 export function termAt(text: string, line: number, column: number): TermUse | undefined {
   const lines = text.split(/\r?\n/);
-  const from = parseFrontMatter(text).bodyStartLine;
-  const glossary = findGlossary(lines, from);
+  const fm = parseFrontMatter(text);
+  const spec = specVersion(fm.data);
+  const glossary = findGlossary(lines, fm.bodyStartLine, spec);
   if (!glossary.entries.length) return undefined;
   const entry = glossary.entries.find((e) => e.line === line && column >= e.column && column <= e.endColumn);
   if (entry) return { entry, line, column: entry.column, endColumn: entry.endColumn };
-  return findTermUses(lines, from, glossary).find((u) => u.line === line && column >= u.column && column <= u.endColumn);
+  return findTermUses(lines, fm.bodyStartLine, glossary, spec).find((u) => u.line === line && column >= u.column && column <= u.endColumn);
 }
 
 /** Hover text for the defined term at a zero-based line and UTF-16 column, with the span it describes. */

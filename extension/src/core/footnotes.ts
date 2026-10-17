@@ -1,4 +1,6 @@
+import { displayMathOpener } from './containers';
 import { parseFrontMatter } from './frontmatter';
+import { specVersion, type SpecVersion } from './specVersion';
 
 /**
  * Footnotes as written in the source (GFM): `[^label]` references and `[^label]: text` definitions,
@@ -47,7 +49,9 @@ export function findFootnotes(text: string): DocumentFootnotes {
   const definitions: FootnoteDefinition[] = [];
   const references: FootnoteReference[] = [];
   let fence: string | null = null;
-  for (let i = parseFrontMatter(text).bodyStartLine; i < lines.length; i++) {
+  const fm = parseFrontMatter(text);
+  const spec = specVersion(fm.data);
+  for (let i = fm.bodyStartLine; i < lines.length; i++) {
     const mark = FENCE.exec(lines[i]);
     if (fence) {
       if (mark && closesFence(lines[i], mark[1], fence)) fence = null;
@@ -59,7 +63,7 @@ export function findFootnotes(text: string): DocumentFootnotes {
     if (def) {
       const column = def[1].length + 2;
       definitions.push({
-        label: normalizeFootnoteLabel(def[2]), raw: def[2], line: i, endLine: definitionEnd(lines, i), column, endColumn: column + def[2].length,
+        label: normalizeFootnoteLabel(def[2]), raw: def[2], line: i, endLine: definitionEnd(lines, i, spec), column, endColumn: column + def[2].length,
       });
     }
     references.push(...referencesIn(line, i, def ? def[0].length : 0));
@@ -89,17 +93,25 @@ const BLOCK_START = [
   /^\s{0,3}#{1,6}(\s|$)/, /^\s{0,3}>/, /^\s{0,3}(`{3,}|~{3,})/, /^\s{0,3}:{3,}/, /^\s{0,3}\$\$/, /^\s{0,3}([-*+]|1[.)])\s/, DEFINITION,
 ];
 
+const MATH_START = /^\s{0,3}\$\$/;
+
+/** Whether a line starts another block (BLOCK_START); in spec v2 a `$$` line does only when display math opens on it. */
+function startsBlock(line: string, spec: SpecVersion): boolean {
+  if (spec === 2 && MATH_START.test(line)) return displayMathOpener(line.trim(), spec) !== null;
+  return BLOCK_START.some((re) => re.test(line));
+}
+
 /**
  * The last line of the definition starting on `start`: indented lines continue it, blank lines may
  * separate its paragraphs, and an unindented line right after its text continues that text (lazily).
  */
-function definitionEnd(lines: string[], start: number): number {
+function definitionEnd(lines: string[], start: number, spec: SpecVersion): number {
   let last = start;
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i];
     if (!line.trim()) continue;
     const indented = /^( {4}|\t)/.test(line);
-    const lazy = i === last + 1 && !BLOCK_START.some((re) => re.test(line));
+    const lazy = i === last + 1 && !startsBlock(line, spec);
     if (!indented && !lazy) break;
     last = i;
   }

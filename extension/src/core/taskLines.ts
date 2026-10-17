@@ -1,5 +1,7 @@
+import { displayMathOpener } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { renderedTaskLines } from './parse';
+import { specVersion, type SpecVersion } from './specVersion';
 
 /**
  * The lines of a document that tasks are read from: headings (each task belongs to the one above it) and
@@ -28,25 +30,37 @@ const BLANK = /^\s*$/;
  * up to its end, any other HTML block up to a blank line. Lines it holds are asked of the parse, so a line it holds
  * wrongly only costs a parse.
  */
-function rawBlocks(): (line: string) => boolean {
+function rawBlocks(spec: () => SpecVersion): (line: string) => boolean {
   let end: RegExp | null = null;
   return (line) => {
     if (end) {
       if (end.test(line)) end = null;
       return true;
     }
-    end = rawBlockEnd(line);
+    end = rawBlockEnd(line, spec);
     return end !== null;
   };
 }
 
-/** What ends the raw HTML or display math a line opens (see rawBlocks), or null when it opens none. */
-function rawBlockEnd(line: string): RegExp | null {
+/** A line that may close display math in spec v2: only `$$` once its indentation and quote markers are left out. */
+const V2_MATH_END = /^[\s>]*\$\$\s*$/;
+
+/**
+ * What ends the raw HTML or display math a line opens (see rawBlocks), or null when it opens none. `spec` gives the
+ * document's version, asked only for a `$$` line.
+ */
+function rawBlockEnd(line: string, spec: () => SpecVersion): RegExp | null {
   const text = line.replace(/^[\s>]*/, '');
   if (text.startsWith('<!--')) return text.includes('-->', 4) ? null : /-->/;
   if (/^<(?:pre|script|style|textarea)\b/i.test(text)) return /<\/(?:pre|script|style|textarea)>/i;
-  if (text.startsWith('$$')) return text.length > 2 && text.trimEnd().endsWith('$$') ? null : /\$\$\s*$/;
+  if (text.startsWith('$$')) return mathBlockEnd(text, spec());
   return text.startsWith('<') ? BLANK : null;
+}
+
+/** What ends the display math a line starting with `$$` opens (spec v2: a line that is only `$$`), or null for none. */
+function mathBlockEnd(text: string, spec: SpecVersion): RegExp | null {
+  if (spec === 1) return text.length > 2 && text.trimEnd().endsWith('$$') ? null : /\$\$\s*$/;
+  return displayMathOpener(text, spec) === 'block' ? V2_MATH_END : null;
 }
 
 /**
@@ -79,7 +93,8 @@ export function scanTasks(text: string, from = parseFrontMatter(text).bodyStartL
   let fence: string | null = null;
   let rendered: ReadonlySet<number> | undefined;
   const isTask = (i: number) => (rendered ??= renderedTaskLines(text)).has(i);
-  const inRaw = rawBlocks();
+  let spec: SpecVersion | undefined;
+  const inRaw = rawBlocks(() => (spec ??= specVersion(text)));
   for (let i = from; i < lines.length; i++) {
     const line = lines[i];
     const step = fenceStep(line, fence);

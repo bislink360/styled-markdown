@@ -3,7 +3,7 @@ import { changelogEntries, versionLabel, type ChangelogEntry } from './changelog
 import {
   omissionOrder, omissionPointer, omittableSections, withOmitted, type BudgetResult, type BudgetSection, type Tokenizer,
 } from './budget';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, isKnownContainer, parseContainerInfo, type ContainerInfo } from './containers';
+import { closedBy, closerColons, CONTAINER_CLOSE, CONTAINER_OPEN, isKnownContainer, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import { findFootnotes, type FootnoteDefinition } from './footnotes';
@@ -23,6 +23,7 @@ import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { matchesHeading, sectionsOf, type Section } from './sections';
 import { quoteCite } from './quote';
 import { CALLOUT_TYPES } from './spec';
+import { specVersion } from './specVersion';
 import { openTaskLines } from './taskLines';
 import { own } from './util';
 import { documentVariables, substituteVariables, type Variables } from './variables';
@@ -388,8 +389,10 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     // An item that runs over several lines is read whole, as rendering reads it; each line shows its part.
     return styledText(s, read, math, convertedParts(parts, (whole) => styledText(whole, read)));
   };
-  const changelogs = options.changelogs ?? changelogEntries(lines);
-  interface Frame { name: string; close?: string; drop: boolean; start: number }
+  // The version of the document the lines are from (an included document's is the including one's, as is its front matter).
+  const spec = specVersion(variables);
+  const changelogs = options.changelogs ?? changelogEntries(lines, 0, spec);
+  interface Frame { name: string; colons: number; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
   const dropping = () => stack.some((f) => f.drop);
   const inAgent = () => stack.some((f) => f.name === 'agent');
@@ -453,9 +456,11 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
     // ---- containers ----
     if (CONTAINER_CLOSE.test(line)) {
-      const frame = stack[stack.length - 1];
-      if (frame) {
-        flushDone(i);
+      // The containers the fence closes, innermost first (spec v2 may close several, see closedBy).
+      const at = closedBy(stack.map((f) => f.colons), closerColons(line), spec);
+      if (at >= 0) flushDone(i);
+      while (stack.length > Math.max(at, 0)) {
+        const frame = stack.at(-1)!;
         if (frame.close) emit(frame.close, i);
         stack.pop();
       }
@@ -466,7 +471,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     if (open && info) {
       flushDone(i);
       const title = info.title ? text(info.title) : '';
-      const frame: Frame = { name: info.name, drop: false, start: i };
+      const frame: Frame = { name: info.name, colons: open[2].length, drop: false, start: i };
       stack.push(frame);
       if (info.name === 'human' && !options.includeHuman) { frame.drop = true; continue; }
       if (info.name === 'details' && options.brief) {
@@ -583,7 +588,8 @@ function alertTags(alerts: readonly AlertLines[], lines: string[], emit: (line: 
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
   const text = lines.join('\n');
-  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text), inlineMath: inlineMathLines(text),
+  const variables = documentVariables(lines);
+  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines, 0, specVersion(variables)), variables, literalLines: literalLines(text), inlineMath: inlineMathLines(text),
     alerts: alertLines(text), inlineItems: inlineItemLines(text), taskLines: renderedTaskLines(text) };
   return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
 }
@@ -743,8 +749,9 @@ function directiveText(m: string, { pre, name, content, rawAttrs }: { pre: strin
  */
 function sectionViews(lines: string[], from: number, documentOptions: TransformOptions): (start: number, end: number) => string {
   const text = lines.join('\n');
+  const variables = documentVariables(lines);
   const options = {
-    ...documentOptions, figures: expandedFigures(text, viewReader(documentOptions)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text),
+    ...documentOptions, figures: expandedFigures(text, viewReader(documentOptions)), changelogs: changelogEntries(lines, 0, specVersion(variables)), variables, literalLines: literalLines(text),
     inlineMath: inlineMathLines(text),
   };
   if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);
