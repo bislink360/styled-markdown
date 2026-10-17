@@ -395,6 +395,17 @@ interface TransformOptions extends AgentViewOptions {
   includeScope?: IncludeScope;
 }
 
+/**
+ * A closing fence closes the open containers from index `at` on (see closedBy), innermost first: `close` sees each
+ * while it is still open, then it is taken off.
+ */
+function popFrames<T>(stack: T[], at: number, close: (frame: T) => unknown): void {
+  while (stack.length > Math.max(at, 0)) {
+    close(stack.at(-1)!);
+    stack.pop();
+  }
+}
+
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
@@ -475,11 +486,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
       // The containers the fence closes, innermost first (spec v2 may close several, see closedBy).
       const at = closedBy(stack.map((f) => f.colons), closerColons(line), spec);
       if (at >= 0) flushDone(i);
-      while (stack.length > Math.max(at, 0)) {
-        const frame = stack.at(-1)!;
-        if (frame.close) emit(frame.close, i);
-        stack.pop();
-      }
+      popFrames(stack, at, (frame) => frame.close && emit(frame.close, i));
       continue;
     }
     const open = CONTAINER_OPEN.exec(line);

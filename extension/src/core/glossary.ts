@@ -194,6 +194,9 @@ interface BlockScan {
 const ITEM = /^( {0,3})[-*+][ \t]+(\S.*)$/;
 const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
 
+const GLOSSARY = 'glossary';
+const isGlossary = (open: { name: string } | undefined) => open?.name === GLOSSARY;
+
 /**
  * Every `:::glossary` block of a document and the entries of its lists, from `from` (the first body line) on, read with
  * the rules of spec version `spec` (display math, closing fences).
@@ -218,7 +221,7 @@ class GlossaryScanner {
   line(line: string, i: number): void {
     // A `:::` line in display math is math: it neither opens nor closes a container.
     if (this.inFence(line) || (!this.isMath(i) && this.container(line, i))) return;
-    if (this.scan && this.stack.at(-1)?.name === 'glossary') scanLine(this.scan, line, i, this.glossary);
+    if (this.scan && isGlossary(this.stack.at(-1))) scanLine(this.scan, line, i, this.glossary);
   }
 
   finish(last: number): Glossary {
@@ -248,12 +251,12 @@ class GlossaryScanner {
     if (this.scan) endList(this.scan, this.glossary);
     if (open) {
       const name = parseContainerInfo(open[3] + open[4])?.name ?? '';
-      if (!this.scan && name === 'glossary') this.scan = { start: i, items: [], blank: false };
+      if (!this.scan && name === GLOSSARY) this.scan = { start: i, items: [], blank: false };
       this.stack.push({ name, colons: open[2].length });
     } else {
       const closed = closeContainers(this.stack, closerColons(line), this.spec, (o) => o.colons);
       // A glossary closed with a container around it (spec v2) ends on the line before that one's fence.
-      if (this.scan && !this.stack.some((o) => o.name === 'glossary')) this.endBlock(closed.at(-1)?.name === 'glossary' ? i : i - 1);
+      if (this.scan && !this.stack.some(isGlossary)) this.endBlock(isGlossary(closed.at(-1)) ? i : i - 1);
     }
     return true;
   }
