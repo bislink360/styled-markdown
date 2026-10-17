@@ -5,10 +5,12 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- `smd export <file> --to <format> [-o <file>]` is the one export command (spec v2 RFC, "Tool and API changes for 2.0"). The formats are every single-document export the CLI has: `html` (what `smd render` writes), `md` (`smd to-md`), `pdf`, `docx`, `confluence` and `notion`, each with its own options as before (`--lang`, `--format` and `--landscape` for PDF, `--pandoc`, `--reference-doc` and `--html-only` for Word) and the same output, byte for byte. Without `--to`, the extension of `-o` picks the format: `.html`, `.md`, `.pdf` or `.docx`, in any case; `--to` wins when both are given (so `--to docx --html-only -o page.html` still writes Pandoc's HTML). No format, an empty or unknown one, or an `-o` extension that names none is a usage error (exit 2) that lists the formats, with a "did you mean" for a near miss. `smd export --help` lists every option. `smd --help` lists `smd export` with its formats instead of the separate commands, and a line naming the older ones. `smd build` stays its own command, since it writes a site from a folder, not a file. Nothing changes in the VS Code extension, whose export commands don't go through the CLI.
 
 ### Changed
 
 ### Deprecated
+- The CLI's export command names, in favour of `smd export`: `smd render` (use `smd export <file> --to html`), `smd to-md` (`--to md`), `smd pdf` (`--to pdf`) and `smd docx` (`--to docx`). They keep working as aliases, with the same options, output and exit codes, and print no warning, so scripts that read stderr are unaffected. They may be removed in 3.0 (SPEC.md §11.1). `smd export --to confluence|notion` is unchanged; only its usage message, which now lists every format, is new.
 
 ### Fixed
 ## 1.10.0 — 2026-10-16

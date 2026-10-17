@@ -406,6 +406,6 @@ test('smd export: Confluence and Notion to stdout, and the usage on a bad format
   assert.ok(requests.length >= 1 && requests[0].children.length);
   const bad = run(['--to', 'word', 'examples/adr-0007-event-bus.smd']);
   assert.equal(bad.status, 2);
-  assert.match(bad.stderr, /Unknown export format "word"[\s\S]*smd export --to confluence\|notion/);
+  assert.match(bad.stderr, /Unknown export format "word"[\s\S]*smd export <file\.smd> --to html\|md\|pdf\|docx\|confluence\|notion/);
   assert.equal(run(['examples/adr-0007-event-bus.smd']).status, 2);
 });
