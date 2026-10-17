@@ -103,7 +103,7 @@ The CLI is a **single self-contained file** with no dependencies. Pick one metho
 
 ```bash
 npm install -g https://github.com/bislink360/styled-markdown/releases/download/v1.10.0/styled-markdown-1.10.0.tgz
-smd --version       # smd 1.10.0 (Styled Markdown spec v1)
+smd --version       # smd 2.0.0 (Styled Markdown spec v2)
 ```
 
 The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v1.10.0/styled-markdown-1.10.0.tgz`); see [npm/README.md](../npm/README.md).
@@ -121,7 +121,7 @@ node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs --version
 cd styled-markdown/extension
 npm install && npm run build
 npm link            # now `smd` works everywhere
-smd --version       # smd 1.10.0 (Styled Markdown spec v1)
+smd --version       # smd 2.0.0 (Styled Markdown spec v2)
 ```
 
 **Without linking:** `node extension/dist/cli.js <command>`.
