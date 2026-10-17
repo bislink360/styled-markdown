@@ -12,7 +12,7 @@ import {
 } from './include';
 import { quoteCite } from './quote';
 import { CALLOUT_TYPES, STATUS_VALUES } from './spec';
-import type { SpecVersion } from './specVersion';
+import type { SpecEnv } from './specVersion';
 import type { SmdContext } from './markdownItSetup';
 import type { ContainerMeta, FootnoteMeta } from './markdownItRules';
 import type { Env } from './render';
@@ -380,20 +380,20 @@ interface Directive {
   color: string | null;
   today?: string;
   m: Messages;
-  /** The document's spec version, for the inline Markdown in the content. */
-  spec: SpecVersion;
+  /** The document's rules, for the inline Markdown in the content: its spec version and typography (specEnv). */
+  spec: SpecEnv;
 }
 
 export function renderInlineDirective(
-  md: MarkdownIt, name: string, content: string, values: Record<string, string>, today?: string, m: Messages = EN, spec: SpecVersion = 1,
+  md: MarkdownIt, name: string, content: string, values: Record<string, string>, today?: string, m: Messages = EN, spec: SpecEnv = {},
 ): string {
   const color = values.color ? resolveColor(values.color) : null;
   const render = DIRECTIVES.get(name);
   return render ? render({ md, content, values, color, today, m, spec }) : escapeHtml(content);
 }
 
-/** A directive's content as inline Markdown, read with the document's spec version. */
-const inlineContent = ({ md, content, spec }: Directive): string => md.renderInline(content, { smdSpec: spec });
+/** A directive's content as inline Markdown, read with the document's rules. */
+const inlineContent = ({ md, content, spec }: Directive): string => md.renderInline(content, { ...spec });
 
 function badge(d: Directive): string {
   const style = d.color ? ` style="--smd-badge:${escapeHtml(d.color)}"` : '';

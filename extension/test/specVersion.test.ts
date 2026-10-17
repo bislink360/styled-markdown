@@ -235,14 +235,18 @@ const root = path.join(__dirname, '..', '..');
 const smdFiles = (dir: string) => fs.readdirSync(path.join(root, dir)).filter((f) => f.endsWith('.smd')).map((f) => path.join(dir, f));
 const DOCUMENTS = [...smdFiles('examples'), ...smdFiles(path.join('extension', 'test', 'compat', 'corpus'))];
 
-/** The document with its `smd` line written as `line` (one line, so every other line keeps its number). */
+/**
+ * The document with its `smd` line written as `line`, and `typography: true` after it unless it has the key, so spec
+ * v2 keeps v1's typography (proposal 8; typography.test.ts compares it). Every variant gets the same lines.
+ */
 function withVersionLine(text: string, line: string): string {
   const fm = parseFrontMatter(text);
-  if (!fm.present || fm.error) return `---\n${line}\n---\n${text}`;
+  const lineAndTypography = Object.hasOwn(fm.data, 'typography') ? [line] : [line, 'typography: true'];
+  if (!fm.present || fm.error) return `---\n${lineAndTypography.join('\n')}\n---\n${text}`;
   const lines = text.split('\n');
   const at = lines.findIndex((l, i) => i > 0 && i < fm.bodyStartLine && /^smd\s*:/.test(l));
-  if (at > 0) lines[at] = line;
-  else lines.splice(1, 0, line);
+  if (at > 0) lines.splice(at, 1, ...lineAndTypography);
+  else lines.splice(1, 0, ...lineAndTypography);
   return lines.join('\n');
 }
 
@@ -285,17 +289,32 @@ const READERS: Record<string, (text: string) => unknown> = {
   pandoc: (t) => smdToPandocHtml(t, { today }),
 };
 
-test('no v2 rule yet: every reader gives the same output for smd: 1, no smd key and smd: 2 (examples and the corpus)', () => {
+/**
+ * The documents a v2 rule reads differently, by the rule that does: their own tests compare both versions
+ * (typography.test.ts). Every other document reads the same with either version.
+ */
+const READ_DIFFERENTLY: Record<string, string> = {
+  'glossary.smd': 'API.md, a bare domain that spec v2 doesn\'t link (proposal 8)',
+  'migrate.smd': 'a bare domain, which spec v2 doesn\'t link (proposal 8)',
+  'v2-typography.smd': 'bare domains and //host, which spec v2 doesn\'t link (proposal 8)',
+  'v2-typography-on.smd': 'bare domains and //host, which spec v2 doesn\'t link (proposal 8)',
+};
+
+test('every reader gives the same output for smd: 1, no smd key and smd: 2, but where a v2 rule applies (examples and the corpus)', () => {
   assert.ok(DOCUMENTS.length >= 20, `${DOCUMENTS.length} documents`);
   for (const file of DOCUMENTS) {
     const text = fs.readFileSync(path.join(root, file), 'utf8').replaceAll('\r\n', '\n');
     const texts = Object.fromEntries(Object.entries(VARIANTS).map(([k, line]) => [k, withVersionLine(text, line)]));
     assert.deepEqual([specVersion(texts.v1), specVersion(texts.none), specVersion(texts.v2)], [1, 1, 2], file);
+    const same = !Object.hasOwn(READ_DIFFERENTLY, path.basename(file));
+    let differs = false;
     for (const [name, read] of Object.entries(READERS)) {
       const v1 = stable(read(texts.v1));
       assert.equal(stable(read(texts.none)), v1, `${name}: ${file} without an smd key`);
-      assert.equal(stable(read(texts.v2)), v1, `${name}: ${file} with smd: 2`);
+      if (same) assert.equal(stable(read(texts.v2)), v1, `${name}: ${file} with smd: 2`);
+      else differs ||= stable(read(texts.v2)) !== v1;
     }
+    assert.ok(same || differs, `${file} reads the same with smd: 2: remove it from READ_DIFFERENTLY`);
   }
 });
 

@@ -183,6 +183,10 @@
         "de",
         "pt-BR"
       ]
+    },
+    "typography": {
+      "description": "Spec v2: true turns on typographic quotes, dashes and ellipses (v1 always has them)",
+      "type": "boolean"
     }
   },
   "additionalProperties": true

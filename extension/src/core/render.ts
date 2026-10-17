@@ -8,7 +8,8 @@ import { applySmd, smdFeatures, type SmdContext } from './markdownItSetup';
 import { renderFrontMatterError, renderHeader } from './markdownItHtml';
 import type { FigureEnv, VariableEnv } from './markdownItRules';
 import { documentRiskMatrixHtml } from './riskHtml';
-import { resolveSpec, type SpecEnv, type SpecVersion } from './specVersion';
+import { resolveSpec, specEnv, type SpecEnv, type SpecVersion } from './specVersion';
+import { typographyOf } from './typography';
 
 export { HEADING_ATTRS, slugify } from './markdownItRules';
 export { dueState } from './markdownItHtml';
@@ -76,11 +77,11 @@ export interface Env extends FigureEnv, VariableEnv, SpecEnv {
 /** Every .smd rule, reading its options from the env (renderSmd and parseSmd put them there). */
 const SMD_CONTEXT: SmdContext = {
   options: (env) => (env as Env | undefined)?.options ?? {},
-  // Only the document's figures, variables, labels and spec version go along, so `:ref[id]` and `{{name}}` in a title
-  // resolve, the title reads with the document's rules, and nothing else changes.
+  // Only the document's figures, variables, labels and rules (spec version, typography) go along, so `:ref[id]` and
+  // `{{name}}` in a title resolve, the title reads with the document's rules, and nothing else changes.
   title: (text, env) => {
-    const { smdFigures, smdVariables, messages, smdSpec } = (env as Env | undefined) ?? {};
-    return titleMarkdown().renderInline(text, { smdFigures, smdVariables, messages, smdSpec });
+    const { smdFigures, smdVariables, messages } = (env as Env | undefined) ?? {};
+    return titleMarkdown().renderInline(text, { smdFigures, smdVariables, messages, ...specEnv(env) });
   },
   riskMatrix: (source, messages) => documentRiskMatrixHtml(source, messages),
   ownLines: true,
@@ -164,7 +165,7 @@ export function documentFrame(parsed: Omit<ParsedTokens, 'tokens'>, header = tru
   const error = unread ? renderFrontMatterError(unread, messages) : '';
   return {
     open: `<article class="smd-doc"${languageAttrs(lang, messages)}${style}>`,
-    header: error + (header ? renderHeader((s) => md.renderInline(s, { messages, smdSpec: parsed.spec }), data, messages) : ''),
+    header: error + (header ? renderHeader((s) => md.renderInline(s, { messages, ...specEnv(env) }), data, messages) : ''),
     toc: data.toc === true ? renderToc(env.headings, messages) : '',
   };
 }
@@ -204,6 +205,7 @@ function parseTokens(text: string, fm: ParsedDocument, options: RenderOptions): 
   const spec = resolveSpec(data, options.spec);
   const env: Env = {
     lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts, source: text, smdVariables: data, messages, smdSpec: spec,
+    smdTypography: typographyOf(data),
   };
   // markdown-it treats a lone \r as a line break, but every other tool here splits lines on \r?\n.
   // A space keeps heading lines and data-line (preview scroll sync) in step with the editor.
