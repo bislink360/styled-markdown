@@ -20,7 +20,7 @@ import {
 } from './core/tableEdit';
 import type { BlockTemplate } from './core/templates';
 import { own as ownEntry } from './core/util';
-import { substituteLine, type Variables } from './core/variables';
+import { shownValues, substituteLine, type Variables } from './core/variables';
 
 // ---------------------------------------------------------------------------
 // Protocol
@@ -1062,9 +1062,12 @@ export class BlockEditorSession {
     const html = new Map(result.blocks.map((b) => [b.key, b.html]));
     const inline = new Map(result.blocks.map((b) => [b.key, b.inline]));
     this.inlineRendered = { version, items: new Map() };
+    // `{{name}}` in the HTML shows the values as the document shows them (spelled as written in spec v2).
+    const spec = specVersion(result.frontMatter);
+    const shown = shownValues(result.frontMatter, text, spec);
     const view = (s: Segment): BlockView => {
       const v = this.blockView(s, lines, html, owners);
-      const items = this.inlineViews(s.key, lines.slice(s.start, s.end), inline.get(s.key), result.frontMatter);
+      const items = this.inlineViews(s.key, lines.slice(s.start, s.end), inline.get(s.key), { variables: shown, spec });
       if (items) v.inline = items;
       return v;
     };
@@ -1090,11 +1093,13 @@ export class BlockEditorSession {
   }
 
   /** A top-level block's inline items, by number; each has a form when the source and the HTML agree on every one. */
-  private inlineViews(key: string, lines: readonly string[], rendered: readonly RenderedInline[] | undefined, variables: Variables): InlineView[] | undefined {
+  private inlineViews(
+    key: string, lines: readonly string[], rendered: readonly RenderedInline[] | undefined, document: { variables: Variables; spec: SpecVersion },
+  ): InlineView[] | undefined {
     if (!rendered?.length) return undefined;
     this.inlineRendered.items.set(key, rendered);
-    const items = this.scan(lines, specVersion(variables));
-    const agree = inlineAgree(items, rendered, variables);
+    const items = this.scan(lines, document.spec);
+    const agree = inlineAgree(items, rendered, document.variables);
     return rendered.map((r, i) => inlineView(i, r, items[i], agree));
   }
 

@@ -12,8 +12,10 @@ import { findSection, matchesExactly, sectionsOf } from './sections';
 import type { Fix, Severity } from './validate';
 
 /**
- * Validation of `:::include` blocks. Every problem is a warning: the block still renders, with its fallback. A
- * section found only by a part of its heading's text is an info (`include/section-match`), since spec v2 matches exactly.
+ * Validation of `:::include` blocks. Every problem is a warning: the block still renders, with its fallback. Sections
+ * are found as the including document's spec version finds them (SPEC §3.4). In spec v1, a section found only by a part
+ * of its heading's text is an info (`include/section-match`), since spec v2 matches exactly; a spec v2 document never
+ * finds one that way, so its section is missing instead (`include/missing-section`).
  */
 
 /** Reports a problem on `line`, columns [column, endColumn): a warning unless `severity` says otherwise. */
@@ -71,9 +73,10 @@ function checkInclude(block: IncludeBlock, raw: string, check: Check): void {
 
 /**
  * `section="deploy"` that finds `## Rapid deployment` only because the heading's text contains it. Spec v2 matches an
- * exact id or the whole heading text, so this is an info, with a fix to the id of the heading it finds.
+ * exact id or the whole heading text, so this is an info, with a fix to the id of the heading it finds. Spec v1 only.
  */
 function sectionMatch(block: IncludeBlock, raw: string, request: IncludeRequest, check: Check): void {
+  if (check.scope.spec === 2) return;
   const path = includePath('', request.file);
   const text = check.source.readFile?.(path);
   if (text === undefined || !request.section) return;

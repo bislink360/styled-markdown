@@ -11,7 +11,7 @@ import { isSpecVersion, isV2, resolveSpec, specOf, type SpecEnv, type SpecVersio
 import type { IncludeResult, IncludeScope } from './include';
 import type { SmdContext } from './markdownItSetup';
 import type { Env, Heading } from './render';
-import { substituteLine, variableAt, lookupVariable, type Variables } from './variables';
+import { shownValues, substituteLine, variableAt, lookupVariable, type Variables } from './variables';
 
 export { HEADING_ATTRS, slugify } from './sections';
 
@@ -346,12 +346,12 @@ export function envVariables(env: unknown): Variables | undefined {
 /**
  * Keep the document's front matter on the env for `{{name}}`, unless the env already has it: renderSmd puts
  * it there, and so may a host that removes the front matter before rendering. Inline-only parses (titles)
- * keep the document's.
+ * keep the document's. The values are the ones the document shows (shownValues): spelled as written in spec v2.
  */
 export function collectVariables(state: StateCore): void {
   const env = state.env as VariableEnv | undefined;
   if (state.inlineMode || !env || typeof env !== 'object' || env.smdVariables) return;
-  if (state.src.startsWith('---')) env.smdVariables = parseFrontMatter(state.src).data;
+  if (state.src.startsWith('---')) env.smdVariables = shownValues(parseFrontMatter(state.src).data, state.src, specOf(env));
 }
 
 // ---------------------------------------------------------------------------
@@ -665,7 +665,8 @@ function footnoteItem(state: StateCore, content: Token[], use: { n: number; coun
 
 /**
  * `---` YAML front matter on the first line, as one `smd_front_matter` token carrying the parsed data. Front matter
- * that could not be read has its lines as written in `content`, which render in an error block.
+ * that could not be read has its lines as written in `content`, which render in an error block. Otherwise, in spec v2
+ * its content is the front matter's source, so the header can show values as written (see addFrontMatter).
  */
 export function frontMatterBlock(state: StateBlock, startLine: number, _endLine: number, silent: boolean): boolean {
   if (startLine !== 0 || state.blkIndent !== 0 || lineText(state, 0).trimEnd() !== '---') return false;
@@ -680,7 +681,7 @@ export function frontMatterBlock(state: StateBlock, startLine: number, _endLine:
   if (unread) {
     token.info = 'error';
     token.content = unread.join('\n');
-  }
+  } else if (isV2(state.env)) token.content = state.src.slice(0, state.eMarks[fm.bodyStartLine - 1]);
   state.line = fm.bodyStartLine;
   return true;
 }

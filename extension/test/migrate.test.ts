@@ -21,12 +21,17 @@ const notes = (p: MigrationPlan, kind?: MigrationKind) => p.steps.filter((s) => 
 /** The steps of a kind as `line:before→after`, lines 1-based. */
 const edits = (p: MigrationPlan, kind: MigrationKind) => changes(p, kind).map((s) => `${s.line + 1}:${s.before}→${s.after}`);
 /**
- * v1 HTML without what moves with the source lines (`data-line`) or names the include's query (`data-include`), and
+ * HTML without what moves with the source lines (`data-line`) or names the include's query (`data-include`), and
  * with each class once: v1 writes a repeated class twice, which collapsing duplicate attributes leaves out.
  */
-const v1 = (text: string, options: MigrationOptions = {}) => renderSmd(text, { readFile: options.readFile, today: TODAY }).html
+const comparable = (html: string) => html
   .replaceAll(/ data-line="\d+"/g, '').replaceAll(/ data-include="[^"]*"/g, '')
   .replaceAll(/ class="([^"]*)"/g, (_, names: string) => ` class="${[...new Set(names.split(' '))].join(' ')}"`);
+/** The document read with the v1 rules, as tools before 2.0 read a migrated `smd: 2` document (comparable HTML). */
+const v1 = (text: string, options: MigrationOptions = {}) =>
+  comparable(renderSmd(text.replace(/^smd: 2(\r?)$/m, 'smd: 1$1'), { readFile: options.readFile, today: TODAY }).html);
+/** The document read with its own version's rules: a migrated document with the v2 rules (comparable HTML). */
+const asIs = (text: string, options: MigrationOptions = {}) => comparable(renderSmd(text, { readFile: options.readFile, today: TODAY }).html);
 const crlf = (s: string) => s.replaceAll('\n', '\r\n');
 
 /** The checks every case gets: v1 rendering kept (when asked), the same plan with CRLF, and nothing left to do. */
@@ -197,6 +202,9 @@ test('migrate: an include section found by a part of its heading becomes the hea
   const p = checkCase(text, { readFile });
   assert.deepEqual(edits(p, 'include-section'), ['5::::include{file="terms.smd" section="refund"}→:::include{file="terms.smd" section="refunds"}']);
   assert.match(v1(p.result, { readFile }), /Within 30 days/);
+  // Spec v2 matches only the id or the whole text: the migrated document includes under v2 what the original did under v1.
+  assert.equal(asIs(p.result, { readFile }), v1(text, { readFile }));
+  assert.doesNotMatch(asIs(text.replace('smd: 1', 'smd: 2'), { readFile }), /Within 30 days/, 'unmigrated, v2 finds no section');
   assert.deepEqual(changes(plan(text), 'include-section'), [], 'without a reader, includes are left alone');
 });
 
@@ -277,13 +285,28 @@ test('migrate: a bare domain linked today is a note, or with linkDomains, an aut
 // ---------------------------------------------------------------------------
 
 test('migrate: a shown value YAML reads differently is a note, or with quoteVariables, quoted', () => {
-  const text = doc('Release {{release}}, flag {{flag}}.', 'smd: 1\nversion: 2.10\nrelease: 1.0 # the first\nflag: True\nunused: 3.0\nsame: 2\ntitled: "2.10"');
+  // `estimate` is in no `{{…}}`, but the agent view's header lists it; `toc` is a key the headers leave out.
+  const text = doc('Release {{release}}, flag {{flag}}.', 'smd: 1\nversion: 2.10\nrelease: 1.0 # the first\nflag: True\nestimate: 3.0\nsame: 2\ntitled: "2.10"\ntoc: True');
   const noted = checkCase(text);
-  assert.deepEqual(notes(noted, 'variable-spelling').map((s) => s.line + 1), [3, 4, 5]);
+  assert.deepEqual(notes(noted, 'variable-spelling').map((s) => s.line + 1), [3, 4, 5, 6]);
   assert.match(notes(noted, 'variable-spelling')[0].reason, /"version: 2\.10" is shown as "2\.1" today and as "2\.10" in spec v2/);
   const quoted = checkCase(text, { quoteVariables: true }, false);
-  assert.deepEqual(edits(quoted, 'variable-spelling'), ['3:version: 2.10→version: "2.10"', '4:release: 1.0 # the first→release: "1.0" # the first', '5:flag: True→flag: "True"']);
+  assert.deepEqual(edits(quoted, 'variable-spelling'), [
+    '3:version: 2.10→version: "2.10"', '4:release: 1.0 # the first→release: "1.0" # the first', '5:flag: True→flag: "True"', '6:estimate: 3.0→estimate: "3.0"',
+  ]);
   assert.match(v1(quoted.result), /Release 1\.0, flag True\./);
+  // The step keeps the v2 meaning: unquoted, the migrated document shows under v2 what quoted shows everywhere.
+  assert.match(asIs(noted.result), /Release 1\.0, flag True\./);
+  assert.equal(asIs(quoted.result), v1(quoted.result));
+});
+
+test('migrate: a value in a list or a nested key that shows differently is a note to quote by hand', () => {
+  const text = doc('Number {{release.number}}.', 'smd: 1\ntags: [docs, 1.10]\nrelease:\n  number: 4.0\n  name: x\nother:\n  deep: 1.0');
+  const p = checkCase(text, { quoteVariables: true }, false);
+  assert.deepEqual(changes(p, 'variable-spelling'), []);
+  // tags (the header shows them), release (used), and other (the agent view's header lists it as JSON).
+  assert.deepEqual(notes(p, 'variable-spelling').map((s) => s.line + 1), [3, 4, 7]);
+  assert.match(notes(p, 'variable-spelling')[0].reason, /"tags" .*quote it by hand/);
 });
 
 // ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import { acceptAnyFootnote, mathInline, type ContainerMeta, type TaskBoxMeta } f
 import { createMarkdownIt, type Env, type Heading, type ResolvedOptions } from './render';
 import { CALLOUT_TYPES } from './spec';
 import { specVersion, type SpecVersion } from './specVersion';
-import type { Variables } from './variables';
+import { shownValues, type Variables } from './variables';
 
 /**
  * Incremental parsing for headings and anchor ids: what validation, outlines, the outline view and
@@ -152,7 +152,8 @@ interface ParseVariables {
 
 function documentVariablesOf(lines: string[], fm: { data: Record<string, unknown>; bodyStartLine: number }, text: string): ParseVariables {
   const uses = lines.some((l) => l.includes('{{'));
-  return { key: uses ? text.split(/\r?\n/, fm.bodyStartLine).join('\n') : '', data: uses ? fm.data : {}, spec: specVersion(fm.data) };
+  const spec = specVersion(fm.data);
+  return { key: uses ? text.split(/\r?\n/, fm.bodyStartLine).join('\n') : '', data: uses ? shownValues(fm.data, text, spec) : {}, spec };
 }
 
 const OPTIONS: ResolvedOptions = { allowHtml: true, agentBlocks: 'collapsed', readFile: undefined, today: '' };

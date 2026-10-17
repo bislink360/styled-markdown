@@ -1,4 +1,4 @@
-import yaml from 'js-yaml';
+import yaml, { type Schema, type Type } from 'js-yaml';
 
 export interface FrontMatter {
   /** Parsed YAML (empty object when there is no front matter). */
@@ -17,6 +17,35 @@ export interface FrontMatter {
  * so dates such as `updated: 2026-09-01` stay plain strings.
  */
 export function parseFrontMatter(text: string): FrontMatter {
+  return splitFrontMatter(text, yaml.CORE_SCHEMA);
+}
+
+/** The YAML types whose values a document shows differently from how they are written: `2.10` is 2.1, `True` is true. */
+const RESPELLED = ['bool', 'int', 'float'] as const;
+
+/**
+ * CORE_SCHEMA, except that a plain scalar YAML reads as a boolean or a number stays the text written in the source
+ * (`2.10`, `True`, `0x1F`, `1e3`). Quoted, block and null values read as in CORE_SCHEMA.
+ */
+const SOURCE_SPELLING = yaml.CORE_SCHEMA.extend({
+  implicit: RESPELLED.map((name) => {
+    // js-yaml exports its types at run time; its typings leave them (and their tag) out.
+    const type = (yaml as unknown as { types: Record<(typeof RESPELLED)[number], Type & { tag: string }> }).types[name];
+    return new yaml.Type(type.tag, { kind: 'scalar', resolve: (data: string) => type.resolve(data), construct: (data: string) => data });
+  }),
+});
+
+/**
+ * The front matter data of `text` as spec v2 shows it (SPEC §4.7): what {@link parseFrontMatter} reads, except that
+ * every plain number and boolean, in lists and nested mappings too, is the string written in the YAML source
+ * (`version: 2.10` is `"2.10"`, not 2.1). Undefined when the text has no front matter, or front matter that doesn't parse.
+ */
+export function sourceSpelledData(text: string): Record<string, unknown> | undefined {
+  const fm = splitFrontMatter(text, SOURCE_SPELLING);
+  return fm.present && !fm.error ? fm.data : undefined;
+}
+
+function splitFrontMatter(text: string, schema: Schema): FrontMatter {
   const lines = text.split(/\r?\n/);
   if (lines[0]?.trimEnd() !== '---') {
     return { data: {}, present: false, bodyStartLine: 0, body: text };
@@ -35,7 +64,7 @@ export function parseFrontMatter(text: string): FrontMatter {
   const raw = lines.slice(1, end).join('\n');
   const body = lines.slice(end + 1).join('\n');
   try {
-    const loaded = yaml.load(raw, { schema: yaml.CORE_SCHEMA });
+    const loaded = yaml.load(raw, { schema });
     if (loaded !== undefined && loaded !== null && (typeof loaded !== 'object' || Array.isArray(loaded))) {
       return {
         data: {}, present: true, bodyStartLine: end + 1, body,
