@@ -11,8 +11,10 @@ import { footnoteAt, footnoteLabelPrefix, footnoteLabels, footnoteText } from '.
 import { frontMatterProperty } from './core/frontmatterSchema';
 import { anchorTargets, findLinks, isDocumentPath, linkAt, pathCompletionContext, splitTarget, type LinkCompletionContext } from './core/links';
 import { termHover } from './core/glossary';
+import { headingAlias } from './core/headingAliases';
 import { documentPreview, embedPreview, sectionExcerpt } from './core/symbols';
 import { codeLines, lazyLineSet } from './core/parse';
+import { own } from './core/util';
 import { variableCompletion, variableHover } from './core/variables';
 
 /** LSP CompletionItemKind values used here. */
@@ -28,6 +30,8 @@ export interface AssistItem {
   /** Text to insert instead of the label. */
   insertText?: string;
   sortText?: string;
+  /** Text the client matches what is typed against, instead of the label. */
+  filterText?: string;
 }
 
 /** Items that replace the text from column `from` to the cursor. */
@@ -146,12 +150,17 @@ function pathRank(isDirectory: boolean, isDoc: boolean): number {
 }
 
 function anchorItems(text: string, prefix: string): AssistItem[] {
-  return anchorTargets(text).map((t, i) => ({
-    label: `${prefix}${t.id}`,
-    kind: COMPLETION_KIND.reference,
-    detail: anchorDetail(t.text, t.level, t.line),
-    sortText: `3${String(i).padStart(5, '0')}`,
-  }));
+  return anchorTargets(text).map((t, i) => {
+    // Typing a heading's GitHub id (`#foo_bar`) finds it too, and inserts its own id (`#foobar`).
+    const alias = t.text === undefined || t.line === undefined ? undefined : headingAlias(text, t.line);
+    return {
+      label: `${prefix}${t.id}`,
+      kind: COMPLETION_KIND.reference,
+      detail: anchorDetail(t.text, t.level, t.line),
+      sortText: `3${String(i).padStart(5, '0')}`,
+      ...(alias ? { filterText: `${prefix}${t.id} ${prefix}${alias}` } : {}),
+    };
+  });
 }
 
 function anchorDetail(text: string | undefined, level: number | undefined, line: number | undefined): string {
@@ -231,15 +240,19 @@ function attributeValueAt(inside: string): { key: string; value: string } | unde
 }
 
 function attributeValueItems(key: string, container: string | undefined, directive: string | undefined): AssistItem[] {
-  const own = container ? CONTAINERS[container]?.values?.[key] : undefined;
-  const values = own ?? (directive ? INLINE_DIRECTIVES[directive]?.values?.[key] : undefined) ?? ATTR_VALUES[key] ?? [];
+  // Own names and keys only: `:::constructor{constructor=` offers nothing.
+  const ofContainer = container ? own(own(CONTAINERS, container)?.values ?? {}, key) : undefined;
+  const ofDirective = directive ? own(own(INLINE_DIRECTIVES, directive)?.values ?? {}, key) : undefined;
+  const values = ofContainer ?? ofDirective ?? own(ATTR_VALUES, key) ?? [];
   return values.map((label) => ({ label, kind: (NAMED_COLORS as readonly string[]).includes(label) ? COMPLETION_KIND.color : COMPLETION_KIND.enumMember }));
 }
 
 function attributeKeyItems(container: string | undefined, directive: string | undefined): AssistItem[] {
   let keys = Object.keys(STYLE_KEYS);
-  if (container && CONTAINERS[container]) keys = [...(CONTAINERS[container].attrs ?? []), ...keys];
-  else if (directive && INLINE_DIRECTIVES[directive]) keys = INLINE_DIRECTIVES[directive].attrs;
+  const containerSpec = container ? own(CONTAINERS, container) : undefined;
+  const directiveSpec = directive ? own(INLINE_DIRECTIVES, directive) : undefined;
+  if (containerSpec) keys = [...(containerSpec.attrs ?? []), ...keys];
+  else if (directiveSpec) keys = directiveSpec.attrs;
   return keys.map((key) => ({ label: key, kind: COMPLETION_KIND.property, insertText: `${key}=`, documentation: STYLE_KEYS[key] }));
 }
 
@@ -302,7 +315,7 @@ export function hoverAt(text: string, line: number, column: number, env: AssistE
 
 function containerHover(lineText: string, column: number): AssistHover | undefined {
   const container = CONTAINER_LINE.exec(lineText);
-  const spec = container && CONTAINERS[container[2]];
+  const spec = container && own(CONTAINERS, container[2]);
   if (!container || !spec) return undefined;
   const start = container[1].length;
   const end = start + container[2].length;
@@ -317,7 +330,7 @@ function directiveHover(lineText: string, column: number): AssistHover | undefin
     const end = start + match[0].length;
     if (column < start || column > end) continue;
     const name = match[0].slice(1);
-    const spec = INLINE_DIRECTIVES[name];
+    const spec = own(INLINE_DIRECTIVES, name);
     return spec ? { markdown: `**:${name}** — ${spec.description}\n\n\`${spec.example}\``, start, end } : undefined;
   }
   return undefined;

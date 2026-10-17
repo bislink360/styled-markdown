@@ -1,4 +1,4 @@
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { parseSmd } from './parse';
 import { dueState } from './render';
@@ -96,6 +96,7 @@ export function getDocumentInfo(text: string, options: ValidateOptions = {}): Sm
 
   const stack: Array<{ name: string; line: number; title: string; body: string[] }> = [];
   let fence: string | null = null;
+  const inMath = displayMath(lines);
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
     const line = lines[i];
     for (const s of stack) if (s.name === 'agent') s.body.push(line);
@@ -112,6 +113,7 @@ export function getDocumentInfo(text: string, options: ValidateOptions = {}): Sm
       }
       continue;
     }
+    if (inMath(i)) continue;
     if (CONTAINER_CLOSE.test(line) && stack.length) {
       const done = stack.pop()!;
       if (done.name === 'agent') {

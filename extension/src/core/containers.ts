@@ -1,4 +1,5 @@
 import { Attrs, emptyAttrs, findAttrsEnd, parseAttrs } from './attrs';
+import { CONTAINERS } from './spec';
 
 /** A parsed container opening line: `:::name{attrs} Title text`. */
 export interface ContainerInfo {
@@ -9,8 +10,45 @@ export interface ContainerInfo {
   attrsError?: string;
 }
 
-export const CONTAINER_OPEN = /^(\s{0,3})(:{3,})\s*([a-zA-Z][\w-]*)(.*)$/;
+/**
+ * Whether the vocabulary defines a container name (spec §3.1). Any other name is an unknown container: it renders as
+ * a box that keeps its title, and the validator warns (spec §3).
+ */
+export const isKnownContainer = (name: string): boolean => Object.hasOwn(CONTAINERS, name);
+
+/** An unknown container's title, which it keeps when it degrades (spec §3); empty for known containers. */
+export const unknownContainerTitle = (name: string, title: string): string => (isKnownContainer(name) ? '' : title);
+
+export const CONTAINER_OPEN =/^(\s{0,3})(:{3,})\s*([a-zA-Z][\w-]*)(.*)$/;
 export const CONTAINER_CLOSE = /^(\s{0,3})(:{3,})\s*$/;
+
+/**
+ * For the line scanners that pair container fences: the last line of the `$$` display math that line `i` opens, or
+ * -1. As rendering reads it (mathBlock): a line starting with `$$` (after up to three spaces) opens math that ends
+ * on itself for `$$…$$`, else on the next line ending with `$$`; with no such line it opens nothing. Math is opaque,
+ * as code is, so a `:::` line inside it neither opens nor closes a container.
+ */
+function displayMathEnd(lines: readonly string[], i: number): number {
+  const open = /^ {0,3}\$\$/.exec(lines[i]);
+  if (!open) return -1;
+  const rest = lines[i].slice(open[0].length);
+  if (rest.trimEnd().endsWith('$$') && rest.trim().length > 2) return i;
+  for (let l = i + 1; l < lines.length; l++) if (lines[l].trimEnd().endsWith('$$')) return l;
+  return -1;
+}
+
+/**
+ * A test for the lines of `$$` display math (see displayMathEnd), for a scan that asks about its lines in order and
+ * skips code fences itself: true for a line that opens math and for the lines up to its closing line.
+ */
+export function displayMath(lines: readonly string[]): (line: number) => boolean {
+  let end = -1;
+  return (line) => {
+    if (line <= end) return true;
+    end = displayMathEnd(lines, line);
+    return end >= 0;
+  };
+}
 
 export function parseContainerInfo(info: string): ContainerInfo | null {
   const m = /^\s*([a-zA-Z][\w-]*)(.*)$/.exec(info);

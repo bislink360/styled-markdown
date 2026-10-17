@@ -217,7 +217,8 @@ function renderToc(headings: Heading[], m: Messages): string {
 export function renderStandaloneHtml(text: string, css: string, runtimeJs: string, options: RenderOptions = {}): string {
   const result = renderSmd(text, options);
   const title = typeof result.frontMatter.title === 'string' ? result.frontMatter.title : result.headings[0]?.text ?? 'Document';
-  const theme = ['light', 'dark'].includes(String(result.frontMatter.theme)) ? String(result.frontMatter.theme) : 'auto';
+  const named = String(result.frontMatter.theme).toLowerCase();
+  const theme = ['light', 'dark'].includes(named) ? named : 'auto';
   return pageHtml({ title, theme, body: result.html, css, runtimeJs, cdn: true, lang: result.lang });
 }
 

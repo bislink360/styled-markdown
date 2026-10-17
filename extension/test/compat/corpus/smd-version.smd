@@ -1,0 +1,11 @@
+---
+smd: 1.0
+title: A decimal spec version
+summary: Pins how a document whose smd key is written as a decimal reads, a value 1.10 reports and spec v2 rejects, so later releases are compared against it.
+status: draft
+updated: 2026-10-15
+---
+
+## Reading
+
+The front matter says `smd: 1.0`. The value counts as version 1, so the document reads with v1 rules.

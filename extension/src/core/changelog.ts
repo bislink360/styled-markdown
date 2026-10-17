@@ -1,4 +1,4 @@
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
+import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
 import { HEADING_ATTRS } from './markdownItRules';
 
 /**
@@ -133,7 +133,7 @@ const HEADING = /^(\s{0,3}(#{1,6})\s+)(.*?)\s*#*\s*$/;
 /** Every `:::changelog` from line `from` on, with its entries; nested changelogs are blocks of their own. */
 export function findChangelogs(lines: string[], from = 0): ChangelogBlock[] {
   if (!lines.some((l) => /^\s{0,3}:{3,}\s*changelog\b/i.test(l))) return [];
-  const scanner = new ChangelogScanner();
+  const scanner = new ChangelogScanner(displayMath(lines));
   for (let i = from; i < lines.length; i++) scanner.line(lines[i], i);
   return scanner.finish();
 }
@@ -145,14 +145,16 @@ export function changelogEntries(lines: string[], from = 0): Map<number, Changel
 
 interface OpenBlock { name: string; block?: ChangelogBlock; headings: ChangelogEntry[] }
 
-/** Follows code fences and container nesting line by line, and collects the headings directly inside changelogs. */
+/** Follows code fences, display math and container nesting line by line, and collects the headings directly inside changelogs. */
 class ChangelogScanner {
   private readonly blocks: ChangelogBlock[] = [];
   private readonly stack: OpenBlock[] = [];
   private fence: string | null = null;
 
+  constructor(private readonly isMath: (line: number) => boolean) {}
+
   line(line: string, i: number): void {
-    if (this.inFence(line)) return;
+    if (this.inFence(line) || this.isMath(i)) return;
     const open = CONTAINER_OPEN.exec(line);
     if (open) {
       const name = parseContainerInfo(open[3] + open[4])?.name ?? '';

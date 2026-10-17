@@ -153,9 +153,15 @@ function buildPage(source: SiteSource, outputs: Map<string, string>, linker: Lin
     text: source.text,
     headings: result.headings,
     html: rewritten.html,
-    theme: ['light', 'dark'].includes(String(data.theme)) ? String(data.theme) : 'auto',
+    theme: pageTheme(data.theme),
     lang: result.lang ?? 'en',
   };
+}
+
+/** Front matter `theme` (in any case), else auto. */
+function pageTheme(value: unknown): string {
+  const theme = String(value).toLowerCase();
+  return theme === 'light' || theme === 'dark' ? theme : 'auto';
 }
 
 /** Front matter `title`, else the first `#` heading, else the file name. */

@@ -1,3 +1,4 @@
+import { githubAliases, headingAlias } from './headingAliases';
 import { findLinks, splitTarget } from './links';
 import { HEADING_ATTRS, renderSmd } from './render';
 
@@ -54,7 +55,8 @@ export function linksToAnchor(text: string, id: string, isTarget: (path: string)
 /**
  * Rename the heading on `line` to `newText`. Returns the new line and every anchor that changes as a
  * result: the heading's own slug, and the numbered slugs of later headings with the same text.
- * Headings with an explicit `{#id}` keep their anchor, so they report no changes.
+ * Headings with an explicit `{#id}` keep their anchor, so they report no changes. A heading's GitHub id,
+ * when it is an alias of its id (headingAliases.ts), is an anchor too and is reported when it changes.
  */
 export function renameHeading(text: string, line: number, newText: string): { lineText: string; changes: Array<{ from: string; to: string }> } | undefined {
   const heading = headingAt(text, line);
@@ -72,6 +74,13 @@ export function renameHeading(text: string, line: number, newText: string): { li
   for (const h of before) {
     const to = next.get(h.line);
     if (to !== undefined && to !== h.slug) changes.push({ from: h.slug, to });
+  }
+  // Links written with a heading's GitHub id (`#foo_bar` for `#foobar`) move to its new GitHub id, or to its
+  // own id when the new GitHub id is no longer an alias.
+  const renamed = lines.join(eol);
+  for (const [alias, h] of githubAliases(text)) {
+    const to = headingAlias(renamed, h.line) ?? next.get(h.line);
+    if (to !== undefined && to !== alias) changes.push({ from: alias, to });
   }
   return { lineText, changes };
 }
