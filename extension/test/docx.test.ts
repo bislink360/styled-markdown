@@ -272,7 +272,7 @@ test('CLI: smd docx without Pandoc exits 2 with the install link and writes noth
       const noFile = run(['docx', join(dir, 'missing.smd')]);
       assert.equal(noFile.status, 2);
       assert.match(noFile.stderr, /Not found: /);
-      assert.match(run(['--help']).stdout, /smd docx <file\.smd> \[-o out\.docx\] \[--pandoc <path>\] \[--reference-doc <file\.docx>\] \[--html-only\] \[--lang <tag>\]/);
+      assert.match(run(['--help']).stdout, /\n {6}docx {8}\[--pandoc <path>\] \[--reference-doc <file\.docx>\] \[--html-only\]\n/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
