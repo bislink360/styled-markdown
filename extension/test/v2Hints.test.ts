@@ -85,6 +85,14 @@ test('container/title-conflict: title= and title text, with a fix that drops the
   assert.equal(renderSmd(after).html, renderSmd(text).html);
 });
 
+test('container/title-conflict: a fix for an unknown attribute never makes one (fuzz seed 20260928, case 2150)', () => {
+  // `ible` is close to `title`, but a bare `title` beside title text would be a title conflict, an error since 2.0.
+  const text = doc(':::warning{ible} Heads up\nx\n:::');
+  const [unknown] = only('attrs/unknown', text);
+  assert.equal(unknown.fix, undefined);
+  assert.equal(only('attrs/unknown', doc(':::warning{ible}\nx\n:::'))[0].fix?.replacement, 'title', 'without title text, title is still offered');
+});
+
 test('container/title-conflict: one title, comments and unknown containers are not reported', () => {
   for (const line of [':::note{title="A"}', ':::note Text', ':::note{.x} Text', ':::note{title="A"} <!-- a comment -->', ':::notte{title="A"} Text']) {
     assert.deepEqual(only('container/title-conflict', doc(`${line}\nx\n:::`)), [], line);

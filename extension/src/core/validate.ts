@@ -411,11 +411,13 @@ function dueDate(content: string): string | undefined {
  */
 function checkUnknownAttrs(info: ContainerInfo, allowed: Set<string>, line: number, nameStart: number, nameEnd: number, push: Push, raw: string): void {
   const keys = Object.keys(info.attrs.values);
+  // A container with title text is never offered `title`: both together are a container/title-conflict error.
+  const names = [...allowed, ...Object.keys(STYLE_KEYS)].filter((k) => k !== 'title' || !info.title);
   for (const key of keys) {
     if (allowed.has(key) || isStyleKey(key)) continue;
     if (info.name === 'agent' && key === 'priority' && removedAgentPriority(line, raw, nameEnd, push)) continue;
     push(line, nameStart, nameEnd, 'warning', 'attrs/unknown', `Unknown attribute "${key}" on ":::${info.name}".`,
-      attrKeyFix(line, raw, nameEnd, raw.length, key, [...allowed, ...Object.keys(STYLE_KEYS)], keys));
+      attrKeyFix(line, raw, nameEnd, raw.length, key, names, keys));
   }
 }
 
