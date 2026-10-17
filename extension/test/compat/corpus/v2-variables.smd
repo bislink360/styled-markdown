@@ -1,0 +1,37 @@
+---
+smd: 2
+title: Variables in spec v2
+summary: "Pins proposal 10: with smd: 2, {{key}} and the page header show front matter values as the YAML source spells them. In spec v1, version: 2.10 shows 2.1."
+status: draft
+version: 2.10
+updated: 2026-10-05
+owners: ["@platform"]
+tags: [release, 1.10]
+build: 007
+ratio: 1.50
+beta: True
+quoted: "3.10"
+release:
+  number: 4.0
+  codename: Juniper
+---
+
+## What's new in {{version}}
+
+Version {{version}} ("{{ release.codename }}", release {{release.number}}) is build {{build}}, updated {{updated}}.
+
+Ratio {{ratio}}, beta {{beta}}, quoted {{quoted}}, tags {{tags}}.
+
+:::note Upgrading to {{version}}
+Read the notes for :badge[v{{version}}]{color=indigo} before you upgrade.
+:::
+
+- [ ] Announce {{version}} @platform :due[2026-11-02]
+
+| Release     | Ratio     |
+| ----------- | --------- |
+| {{version}} | {{ratio}} |
+
+## Left as written
+
+Code keeps the braces: `{{version}}`, and so does an escape: \{{version}}.
