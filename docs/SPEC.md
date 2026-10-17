@@ -177,7 +177,9 @@ See [Pricing](shared/terms.smd#pricing) in the shared terms.
 ```
 
 - **`file`** is a path relative to the including document. The included document's body is used, without its front matter.
-- **`section`** picks one section: the heading whose id (`#pricing` or `pricing`) or text matches, as `smd agent --section` matches them (an exact id wins over text that only contains the words), with everything up to the next heading of the same or a higher level, subsections included. Name the heading by its id or its whole text: in spec v2 (`smd: 2`) `section` matches only those (the whole text in any case), and 1.10 reports a section found by a part of its heading's text as the info `include/section-match`, with a fix to the heading's id.
+- **`section`** picks one section: the heading whose id (`#pricing` or `pricing`) is the value, or whose whole text is the value in any case (`Pricing`, `PRICING`), with everything up to the next heading of the same or a higher level, subsections included. An id wins over text; among equals the first heading wins. A value that names no heading this way, such as a part of a heading's text (`section="refund"` for `## Refunds`), is a missing section: the include shows its fallback, and `smd validate` reports `include/missing-section` (a warning). The version of the *including* document decides, for nested includes too, whatever the included files say. `smd agent --section` still matches a part of a heading's text: it is an option for people typing, not document syntax.
+
+  **Spec v1 (documents without `smd: 2`):** `section` also matches a heading whose text *contains* the value, as `smd agent --section` does: an exact id wins, else the first heading that matches at all, so `section="deploy"` includes `## Rapid deployment`. Since 1.10 a section found only by a part of its heading's text is the info `include/section-match`, with a fix to the heading's id; `smd migrate --to 2` makes the same rewrite.
 - **`level=N`** moves the included headings so the top one (the section heading, or the document's highest heading) becomes level N; the others keep their distance from it (capped at 6). Without it, headings keep the levels they have in their own file. Use it to nest the included text under the current heading.
 - The block is closed with `:::` like every container. Its **body is fallback text**: renderers that include ignore it, and show it (under a short note with a link to the file) only when the file can't be included. A link to the file is a good body: renderers older than 1.6, which don't know `include`, show it as a plain box.
 - The included text is parsed with the same rules as the document, so nested includes and every block (and markdown-it plugins the host adds) work. Paths inside it (nested includes, links, images, code embeds) stay relative to the included file. Its tasks can't be checked off from the including document.
@@ -433,9 +435,9 @@ Retries are capped at five[^retries], as the SRE review asked[^SRE].
 
 ```text
 ---
-smd: 1
+smd: 2
 title: Release notes
-version: "2.10"
+version: 2.10
 release:
   date: 2026-10-20
 owners: ["@platform", "@docs"]
@@ -449,7 +451,9 @@ Version {{version}} ships on {{release.date}}. Questions: {{owners}}.
 renders *What's new in 2.10* and *Version 2.10 ships on 2026-10-20. Questions: @platform, @docs.* (since 1.6)
 
 - **Syntax:** `{{name}}`, with optional spaces inside the braces (`{{ version }}`). A name is a front matter key: letters, digits, `_` and `-`, starting with a letter or `_`. Dots reach into nested mappings (`{{release.date}}`) and lists (`{{owners.0}}`); a key that itself contains the dots wins over the nested path.
-- **Values:** strings, numbers and booleans as YAML reads them, and lists of those joined with `, `. A string on several lines becomes one line. The value is **text**: Markdown and HTML in it are shown as written, never rendered (HTML is escaped). YAML reads `version: 2.10` as the number 2.1, so quote version numbers: `version: "2.10"`.
+- **Values:** strings, numbers and booleans, and lists of those joined with `, `. A number or boolean written as a plain YAML scalar is shown **as written in the source**: `version: 2.10` shows `2.10`, `build: 007` shows `007`, `beta: True` shows `True`, `size: 1e3` shows `1e3`, in lists and nested mappings too. A quoted string shows its value as YAML reads it (`"2.10"` shows `2.10`), and so does a block scalar (`|`, `>`); dates such as `updated: 2026-10-05` are strings already. A string on several lines becomes one line. The value is **text**: Markdown and HTML in it are shown as written, never rendered (HTML is escaped). The page header shows `version`, `updated`, `owners` and `tags` with the same spelling, and the agent view's header (§8a) every value it lists.
+
+  **Spec v1 (documents without `smd: 2`):** numbers and booleans are shown as YAML reads them, so `version: 2.10` (the number 2.1) shows `2.1`, in `{{version}}` and in the header (`v2.1`); `007` shows `7`, `True` shows `true` and `1e3` shows `1000`. Quote a value to keep its spelling: `version: "2.10"`. `smd migrate --to 2` notes each value shown differently, and with `--quote-variables` quotes it, so every version shows it as written.
 - **Only defined names are replaced.** `{{name}}` for a key the front matter doesn't have, or whose value is a mapping or empty, stays exactly as written, so documents that show Handlebars, Jinja or Mustache syntax in prose render as before. The validator reports them (§7): `variable/undefined` as info, with the closest key as a fix, and `variable/not-text` as a warning.
 - **Escaping:** `\{{name}}` shows `{{name}}` (the backslash escapes the brace, as for any Markdown punctuation), and so does a code span. `{{{name}}}` (Handlebars' triple braces) is never a variable.
 - **Where values are shown:** text in paragraphs, headings, lists, tables, block quotes and footnotes, link text, image alt text, container titles (`:::note Upgrading to {{version}}`, also `title="…"`) and inline directive content (`:badge[v{{version}}]`, `:due[{{release.date}}]`; there the value becomes part of the content, so `:due` checks the date it names).
@@ -674,6 +678,8 @@ The value as YAML reads it decides, so `smd: 2.0`, the number 2, is spec v2, wit
 
 | Rule | Section | Spec v2 (`smd: 2`) | Spec v1 |
 |---|---|---|---|
+| `:::include` `section=` | §3.4 | An exact heading id, or the heading's whole text in any case; anything else is a missing section | Also the first heading whose text contains it (an exact id wins) |
+| Front matter values shown | §4.7 | `{{key}}` and the header show plain numbers and booleans as written in the YAML (`2.10`, `True`, `007`) | As YAML reads them (`2.1`, `true`, `7`) |
 | A heading's trailing `{}` or `{word}` (proposal 5) | §4.2.2 | Heading text, as GitHub shows it; the id is made from it (`## Returns {ok}` is `#returns-ok`) | Left out of the heading text (`{}` is empty, `{ok}` is `ok=true`) |
 | `\\` in a quoted attribute value (proposal 6) | §5 | One backslash; a value that ends in one backslash is written `\\`, and `"C:\docs\"` is malformed | Two backslashes; `"C:\docs\"` reads without escapes |
 | `:name[…]` with a name outside the vocabulary (proposal 7b) | §4.2 | A directive: its content in a `smd-directive smd-directive-<name>` span, and a `directive/unknown` warning | Text |
@@ -745,11 +751,11 @@ The steps run in this order. "v1" steps leave the document rendering as before w
 | Braces after headings | proposal 5 | v1 | An empty `{}` or a bare `{word}` after a heading is removed (`heading/attrs-text`); a bare `agent`, which v1 reads as `agent=true`, is written `agent=true` |
 | Backslashes in attribute values | proposal 6 | v2 | A quoted value that spec v2 would read differently is written with the escapes v2 needs to read the value v1 reads: `"\\server"` (two backslashes in v1) becomes `"\\\\server"`, and `"C:\docs\"` (a value ending in a backslash) becomes `"C:\docs\\"`. Only attribute lists that v1 reads (after a container's name, a heading, a styled span or a known directive) |
 | Unknown directives | proposals 7b, 11 | v2 | A literal `:name[…]` or `:name{…}` whose name isn't an inline directive as written (`:abbr[HTML]`, `:Badge[x]`, `:sep{.wide}`) gets its colon escaped (`\:abbr[HTML]`), so v2 doesn't read it as a directive. CommonMark shows `\:` as `:`. A mixed-case known name is escaped, not lower-cased: v1 shows it as text, and lower-casing it would make it a directive |
-| Include sections | proposal 9 | v1 | A `section=` that finds its heading only by a part of the heading's text is rewritten to the heading's id (`include/section-match`). Needs the included file |
+| Include sections | proposal 9 | v1 | A `section=` that finds its heading only by a part of the heading's text is rewritten to the heading's id (`include/section-match`), so v2 includes the same section v1 does. Needs the included file |
 | Enumerated values | proposal 11 | v2 | Container, directive and front matter values are written in the vocabulary's case: `status=Accepted` → `accepted`, `method=get` → `GET`, `theme: Dark` → `dark`. Directive content such as `:priority[High]` is shown as written, and is left alone |
 | Typography | proposal 8 | v2 | With `--keep-typography`, `typography: true` is added to the front matter of a document whose text the typographer changes (curly quotes, dashes, ellipses, `(c)` and other symbols), to keep them under v2; otherwise a note counts those places |
 | Bare domain links | proposal 8 | v2 | A note for each bare domain linked today (`example.com`), which v2 doesn't link; with `--link-domains`, it is written as `<https://example.com>` |
-| Front matter values | proposal 10 | v2 | A note for each value the page header or a `{{key}}` shows other than as written (`version: 2.10` shows `2.1` in v1 and `2.10` in v2); with `--quote-variables`, it is quoted, so every version shows `2.10` |
+| Front matter values | proposal 10 | v2 | A note for each value the page header, the agent view's header or a `{{key}}` shows other than as written (`version: 2.10` shows `2.1` in v1 and `2.10` in v2); with `--quote-variables`, a top-level plain value is quoted, so every version shows `2.10`. A value in a list or a nested mapping (`tags: [1.10]`) stays a note, to quote by hand |
 | Spec version | versioning rules | v1 | `smd: 1`, a missing key, a value that counts as 1 (`true`, `"1"`) or a missing front matter becomes `smd: 2`. Tools before 2.0 warn about `smd: 2` and read the document with the v1 rules |
 
 A document that already says `smd: 2` (or a newer version) needs nothing. Suppression comments don't stop a step: they silence reports, while the steps are about meaning. The plan of a migrated document has nothing more to change, apart from notes.

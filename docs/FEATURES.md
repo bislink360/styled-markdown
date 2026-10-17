@@ -196,7 +196,7 @@ release:
 Version {{version}} ships on {{release.date}}. :badge[v{{version}}]{color=indigo}
 ```
 
-`{{name}}` shows the value of a front matter key (since 1.6): *Version 2.10 ships on 2026-10-20*. Dots reach nested keys (`{{release.date}}`) and list items (`{{owners.0}}`); a whole list shows as `a, b`. Use it for the version, product name, dates or owners you'd otherwise repeat and forget to update. Quote versions (`version: "2.10"`), or YAML reads `2.10` as the number 2.1.
+`{{name}}` shows the value of a front matter key (since 1.6): *Version 2.10 ships on 2026-10-20*. Dots reach nested keys (`{{release.date}}`) and list items (`{{owners.0}}`); a whole list shows as `a, b`. Use it for the version, product name, dates or owners you'd otherwise repeat and forget to update. With `smd: 2` values show as written (`version: 2.10` shows `2.10`); in `smd: 1` documents YAML reads `2.10` as the number 2.1, so quote it there (`version: "2.10"`).
 
 - **Where:** text, headings, lists, tables, link text, image alt text, block titles and directive content (`:badge[v{{version}}]`, `:due[{{release.date}}]`). Code, math, URLs, raw HTML and attribute lists keep `{{…}}` as written, and so does the front matter (the header shows the title as written).
 - **Literal braces:** a name the front matter doesn't define stays as written, so Handlebars or Jinja examples render as before; `\{{name}}` or a code span keeps the braces even when it is defined. The validator notes undefined names (`variable/undefined`, info, with a fix for a near miss such as `{{verison}}`) and warns about a name that is a mapping (`variable/not-text`).
@@ -485,7 +485,7 @@ See [Pricing](shared/terms.smd#pricing) in the shared terms.
 | Attribute | Meaning |
 |---|---|
 | `file` | The document to include, relative to this one. Its body is included, without the front matter. |
-| `section` | Only this section (with its subsections): a heading's text or id, matched like `smd agent --section`. |
+| `section` | Only this section (with its subsections): a heading's id or its whole text, in any case. With `smd: 2` nothing else matches; `smd: 1` documents also match a part of a heading's text, like `smd agent --section`. |
 | `level` | The level its top heading becomes, here `###` under `## Pricing`; the other headings move with it. |
 
 - **The body is the fallback.** It shows only where the file can't be included (and in tools before 1.6, which render the block as a plain box), so a link to the file is a good body.
@@ -754,7 +754,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 |---|---|---|
 | `::::` closing `:::tab` | `container/colons` | → `:::` (the opener's count, as `smd fmt` writes it) |
 | `## Object {}`, `## Returns {ok}` | `heading/attrs-text` | removes the braces |
-| `section="deploy"` finding `## Rapid deployment` | `include/section-match` (info) | → `section="rapid-deployment"` |
+| `section="deploy"` finding `## Rapid deployment` (`smd: 1`; with `smd: 2` it finds nothing: `include/missing-section`) | `include/section-match` (info) | → `section="rapid-deployment"` |
 
 **Errors since 2.0, in every document.** Duplicate attributes, container title conflicts, an invalid figure `kind` and Mermaid syntax errors are errors, so `smd validate` fails on them. Rendering doesn't change: the last duplicate is used and `title=` wins. `smd validate --fix` and `smd migrate --to 2` fix the duplicates, the title conflicts and `priority` on `:::agent` (now an unknown attribute); a Mermaid error is fixed by hand. A rule setting or suppression comment that names a removed code (`figure/kind`, `deprecated/agent-priority`) gets a `rules/unknown` warning that names the code to use instead.
 

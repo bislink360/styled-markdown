@@ -6,7 +6,7 @@ import { validateSmd, type Diagnostic, type ValidateOptions } from './validate';
 import { inlineText, plainInlineText } from './agentView';
 import { specVersion, type SpecVersion } from './specVersion';
 import { scanTasks } from './taskLines';
-import { substituteLine } from './variables';
+import { shownValues, substituteLine } from './variables';
 import { priorityRank } from './util';
 
 export interface TaskInfo {
@@ -44,11 +44,13 @@ export interface SmdDocumentInfo {
 export function extractTasks(text: string, today?: string): TaskInfo[] {
   const fm = parseFrontMatter(text);
   const spec = specVersion(fm.data);
+  // `{{name}}` shows the values as the document shows them: spelled as written in spec v2.
+  const shown = shownValues(fm.data, text, spec) as Record<string, unknown>;
   const tasks: TaskInfo[] = [];
   let section: string | null = null;
   for (const item of scanTasks(text, fm.bodyStartLine, spec)) {
-    if (item.kind === 'heading') section = inlineText(item.text, undefined, false, undefined, fm.data);
-    else tasks.push(taskInfo(item, section, { data: fm.data, spec }, today));
+    if (item.kind === 'heading') section = plainInlineText(item.text, spec, shown);
+    else tasks.push(taskInfo(item, section, { data: shown, spec }, today));
   }
   return tasks;
 }

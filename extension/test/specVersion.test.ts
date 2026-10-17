@@ -118,7 +118,7 @@ test('renderSmd puts the version on the env before parsing and on the result; th
   assert.equal(parseSmdTokens(doc('smd: 2')).env.smdSpec, 2);
   assert.equal(parseSmdTokens(doc(undefined), { spec: 2 }).env.smdSpec, 2);
   assert.equal(parseSmdTokens(doc('smd: 2')).spec, 2);
-  // The option changes nothing else: no v2 rule exists yet.
+  // The option changes nothing else here: no v2 rule applies to this document.
   assert.equal(renderSmd(doc(undefined), { spec: 2, today }).html, renderSmd(doc(undefined), { today }).html);
 });
 
@@ -286,31 +286,47 @@ const READERS: Record<string, (text: string) => unknown> = {
 };
 
 /**
- * The documents that use a spec v2 rule, so that some reader shows them differently with smd: 2, and the rules:
- * headings ending in `{}` or `{word}` (proposal 5), `\\` or a final backslash in a quoted value (6), names outside the
- * vocabulary or not in lower case (7b, 11). Every other document reads the same with either version.
+ * Documents a v2 rule reads differently, by path (forward slashes), and the rule. Each rule's own tests pin the
+ * difference; here they only check that a document without `smd` reads as with `smd: 1`.
  */
-const USES_V2_RULES = new Set([
-  'attribute-escapes.smd', // `\\server` and a value ending in a backslash
-  'migrate.smd', // `## Object {}`, `:abbr[HTML]`, `\\server`
-  'unknown-directives.smd', 'v2-directives.smd', 'v2-escapes.smd', 'v2-headings.smd',
-  'v2-hints.smd', // `## Object {}` and `## Returns {ok}`
-]);
+const READ_DIFFERENTLY_IN_V2: Record<string, string> = {
+  'examples/showcase.smd': 'proposal 10: `version: 1.0` shows 1.0',
+  'extension/test/compat/corpus/attribute-escapes.smd': 'proposal 6: `\\\\server` is one backslash; a value ending in one does not parse',
+  'extension/test/compat/corpus/migrate.smd': 'proposal 10: `version: 2.10` shows 2.10; proposal 5: `## Object {}`; 6: `\\\\server`; 7b: `:abbr[HTML]`',
+  'extension/test/compat/corpus/unknown-directives.smd': 'proposals 7b and 11: `:abbr[HTML]` and `:Badge[x]` are directives',
+  'extension/test/compat/corpus/v2-directives.smd': 'proposals 7b and 11: unknown names and names in any case',
+  'extension/test/compat/corpus/v2-escapes.smd': 'proposal 6: `\\\\` in quoted values',
+  'extension/test/compat/corpus/v2-headings.smd': 'proposal 5: a heading\'s `{}` and `{word}` are text',
+  'extension/test/compat/corpus/v2-hints.smd': 'proposal 5: `## Object {}` and `## Returns {ok}`',
+  'extension/test/compat/corpus/v2-variables.smd': 'proposal 10: values keep their YAML spelling',
+};
+const posix = (file: string) => file.split(path.sep).join('/');
 
-test('smd: 1 and no smd key read the same; smd: 2 differs only in the documents that use a v2 rule (examples and the corpus)', () => {
+test('every reader gives the same output for smd: 1, no smd key and smd: 2, where no v2 rule applies (examples and the corpus)', () => {
   assert.ok(DOCUMENTS.length >= 20, `${DOCUMENTS.length} documents`);
   const differ = new Set<string>();
   for (const file of DOCUMENTS) {
     const text = fs.readFileSync(path.join(root, file), 'utf8').replaceAll('\r\n', '\n');
     const texts = Object.fromEntries(Object.entries(VARIANTS).map(([k, line]) => [k, withVersionLine(text, line)]));
     assert.deepEqual([specVersion(texts.v1), specVersion(texts.none), specVersion(texts.v2)], [1, 1, 2], file);
+    const differs = Object.hasOwn(READ_DIFFERENTLY_IN_V2, posix(file));
     for (const [name, read] of Object.entries(READERS)) {
       const v1 = stable(read(texts.v1));
       assert.equal(stable(read(texts.none)), v1, `${name}: ${file} without an smd key`);
-      if (stable(read(texts.v2)) !== v1) differ.add(path.basename(file));
+      const same = stable(read(texts.v2)) === v1;
+      if (!same) differ.add(posix(file));
+      if (!differs) assert.ok(same, `${name}: ${file} with smd: 2`);
     }
   }
-  assert.deepEqual([...differ].sort((a, b) => a.localeCompare(b)), [...USES_V2_RULES].sort((a, b) => a.localeCompare(b)));
+  // And every document listed does read differently, so the list stays exact.
+  assert.deepEqual([...differ].sort((a, b) => a.localeCompare(b)), Object.keys(READ_DIFFERENTLY_IN_V2).sort((a, b) => a.localeCompare(b)));
+});
+
+test('the documents a v2 rule reads differently do read differently with smd: 2', () => {
+  for (const file of Object.keys(READ_DIFFERENTLY_IN_V2)) {
+    const text = fs.readFileSync(path.join(root, file), 'utf8').replaceAll('\r\n', '\n');
+    assert.notEqual(stable(READERS.render(withVersionLine(text, VARIANTS.v2))), stable(READERS.render(withVersionLine(text, VARIANTS.v1))), file);
+  }
 });
 
 test('corpus/spec-v2.smd reads as the same document with smd: 1, apart from the version itself', () => {

@@ -7,7 +7,7 @@ import { blocksHtml, renderBlocks } from '../src/core/blocks';
 import { editInline, scanInline, SPAN, type InlineChange, type InlineItem } from '../src/core/inlineEdit';
 import { NAMED_COLORS } from '../src/core/spec';
 import { specVersion } from '../src/core/specVersion';
-import { substituteLine } from '../src/core/variables';
+import { shownValues, substituteLine } from '../src/core/variables';
 import { exampleDocuments, fuzzCase, prng, type Random } from './fuzz/generate';
 
 /**
@@ -88,7 +88,9 @@ test('the scan finds every inline directive and span rendering numbers, in order
       const rendered = block.inline ?? [];
       const marks = [...block.html.matchAll(MARK)].map((m) => Number(m[1]));
       assert.deepEqual(marks.slice().sort((a, b) => a - b), rendered.map((_, i) => i), `${doc.name}, line ${block.start + 1}: one mark per item`);
-      const problem = agree(scanInline(lines.slice(block.start, block.end), { spec: specVersion(doc.text) }), rendered, r.frontMatter);
+      // `{{name}}` shows the values as the document shows them: spelled as written in spec v2.
+      const spec = specVersion(r.frontMatter);
+      const problem = agree(scanInline(lines.slice(block.start, block.end), { spec }), rendered, shownValues(r.frontMatter, doc.text, spec));
       assert.equal(problem, undefined, `${doc.name}, lines ${block.start + 1}-${block.end}: ${problem}\n${lines.slice(block.start, block.end).join('\n')}`);
       total += rendered.length;
     }
