@@ -81,6 +81,16 @@ function splitFrontMatter(text: string, schema: Schema): FrontMatter {
   }
 }
 
+/**
+ * The lines of closed front matter that could not be read (its YAML does not parse, or is a list or a scalar), as
+ * written: rendering shows them in an error block and the agent view lists them, so nothing above the closing line
+ * is hidden. Undefined for any other document (front matter that is never closed is not front matter).
+ */
+export function unreadFrontMatter(text: string, fm: Pick<FrontMatter, 'bodyStartLine'> & Partial<Pick<FrontMatter, 'error'>>): string[] | undefined {
+  if (!fm.error || fm.bodyStartLine < 2) return undefined;
+  return text.split(/\r?\n/).slice(1, fm.bodyStartLine - 1);
+}
+
 export function asStringList(v: unknown): string[] {
   if (Array.isArray(v)) return v.map((x) => String(x));
   if (typeof v === 'string' && v.trim()) return v.split(',').map((s) => s.trim()).filter(Boolean);

@@ -3,7 +3,7 @@ import { attrsToStyle, emptyAttrs, escapeHtml, findAttrsEnd, parseAttrs, type At
 import { ContainerInfo, parseContainerInfo } from './containers';
 import { FigureCounter, figureTargets, type FigureNumber } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
-import { parseFrontMatter } from './frontmatter';
+import { parseFrontMatter, unreadFrontMatter } from './frontmatter';
 import { renderInlineDirective, withoutDueNotes } from './markdownItHtml';
 import { HEADING_ATTRS, slugify } from './sections';
 import { INLINE_DIRECTIVES } from './spec';
@@ -613,8 +613,9 @@ function footnoteItem(state: StateCore, content: Token[], use: { n: number; coun
 // ---------------------------------------------------------------------------
 
 /**
- * `---` YAML front matter on the first line, as one `smd_front_matter` token carrying the parsed data. In spec v2 its
- * content is the front matter's source, so the header can show values as written (see addFrontMatter).
+ * `---` YAML front matter on the first line, as one `smd_front_matter` token carrying the parsed data. Front matter
+ * that could not be read has its lines as written in `content`, which render in an error block. Otherwise, in spec v2
+ * its content is the front matter's source, so the header can show values as written (see addFrontMatter).
  */
 export function frontMatterBlock(state: StateBlock, startLine: number, _endLine: number, silent: boolean): boolean {
   if (startLine !== 0 || state.blkIndent !== 0 || lineText(state, 0).trimEnd() !== '---') return false;
@@ -625,7 +626,11 @@ export function frontMatterBlock(state: StateBlock, startLine: number, _endLine:
   token.block = true;
   token.map = [0, fm.bodyStartLine];
   token.meta = fm.data;
-  if (isV2(state.env)) token.content = state.src.slice(0, state.eMarks[fm.bodyStartLine - 1]);
+  const unread = unreadFrontMatter(state.src, fm);
+  if (unread) {
+    token.info = 'error';
+    token.content = unread.join('\n');
+  } else if (isV2(state.env)) token.content = state.src.slice(0, state.eMarks[fm.bodyStartLine - 1]);
   state.line = fm.bodyStartLine;
   return true;
 }

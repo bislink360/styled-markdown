@@ -180,16 +180,6 @@
           ],
           "description": "Every variable/… rule. Exact codes win."
         },
-        "deprecated/*": {
-          "enum": [
-            "off",
-            "error",
-            "warning",
-            "info",
-            "hint"
-          ],
-          "description": "Every deprecated/… rule. Exact codes win."
-        },
         "task/*": {
           "enum": [
             "off",
@@ -720,16 +710,6 @@
           ],
           "description": ":ref[id] names no :::figure in this document"
         },
-        "figure/kind": {
-          "enum": [
-            "off",
-            "error",
-            "warning",
-            "info",
-            "hint"
-          ],
-          "description": "Invalid kind on a :::figure (it counts as figure). Deprecated: Styled Markdown 2.0 reports it as attrs/value"
-        },
         "footnote/undefined": {
           "enum": [
             "off",
@@ -879,16 +859,6 @@
             "hint"
           ],
           "description": "{{name}} names a front matter mapping or empty value, which has no text"
-        },
-        "deprecated/agent-priority": {
-          "enum": [
-            "off",
-            "error",
-            "warning",
-            "info",
-            "hint"
-          ],
-          "description": "priority on :::agent is deprecated; no tool reads it, and Styled Markdown 2.0 removes it"
         },
         "task/overdue": {
           "enum": [

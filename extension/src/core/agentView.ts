@@ -7,7 +7,7 @@ import { CONTAINER_CLOSE, CONTAINER_OPEN, isKnownContainer, parseContainerInfo, 
 import { parseFenceInfo, sliceLines } from './fence';
 import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
 import { findFootnotes, type FootnoteDefinition } from './footnotes';
-import { parseFrontMatter, asStringList } from './frontmatter';
+import { parseFrontMatter, asStringList, unreadFrontMatter } from './frontmatter';
 import {
   includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
@@ -171,6 +171,8 @@ interface ViewScope {
   data: Record<string, unknown>;
   /** The front matter as the document shows it: spelled as written in spec v2 (shownValues). */
   shown: Variables;
+  /** The lines of front matter that could not be read, as written (see unreadFrontMatter). */
+  unread?: string[];
   bodyStart: number;
   lines: string[];
   sections: Section[];
@@ -192,7 +194,9 @@ function viewScope(text: string, options: AgentViewOptions): ViewScope {
     (!selected || selected.some((s) => line >= s.start && line <= s.end)) &&
     !skipped.some((s) => line >= s.start && line <= s.end && !(selected?.some((sel) => sel.heading === s.heading)));
   const shown = shownValues(fm.data, text, specVersion(fm.data));
-  return { data: fm.data, shown, bodyStart: fm.bodyStartLine, lines, sections, selected, skipped, missingSections, inScope };
+  return {
+    data: fm.data, shown, unread: unreadFrontMatter(text, fm), bodyStart: fm.bodyStartLine, lines, sections, selected, skipped, missingSections, inScope,
+  };
 }
 
 function selectSections(sections: Section[], queries: string[] | undefined): { selected: Section[] | null; missingSections: string[] } {
@@ -221,7 +225,8 @@ function viewHead(scope: ViewScope, options: AgentViewOptions): ViewHead {
     if (outside.trim()) external = `Document-wide agent instructions:\n${outside.trim()}\n\n`;
     footnotes = outsideFootnotes(scope, options);
   }
-  return { header: header(scope.data, scope.shown, selected ? selected.map((s) => s.heading.text) : null), external, footnotes };
+  const head = [header(scope.data, scope.shown, selected ? selected.map((s) => s.heading.text) : null), unreadBlock(scope.unread)].filter(Boolean).join('\n');
+  return { header: head, external, footnotes };
 }
 
 /**
@@ -340,6 +345,17 @@ function omitToFit(draft: Draft, scope: ViewScope, maxTokens: number): BudgetSec
     omitted = withOmitted(omitted, s);
   }
   return omitted;
+}
+
+/**
+ * Front matter that could not be read: a `[front matter could not be read]` line and its lines as written, in a
+ * fence longer than any backtick run in them, as the rendered document shows them in an error block.
+ */
+function unreadBlock(unread: string[] | undefined): string {
+  if (!unread) return '';
+  const longest = Math.max(2, ...unread.map((l) => Math.max(0, ...[...l.matchAll(/`+/g)].map((m) => m[0].length))));
+  const fence = '`'.repeat(longest + 1);
+  return ['[front matter could not be read]', `${fence}yaml`, ...unread, fence].join('\n');
 }
 
 /** The view's header. `data` decides which facts are shown, `shown` how they are spelled (as written in spec v2). */

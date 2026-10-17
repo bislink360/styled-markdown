@@ -21,12 +21,16 @@ The second tab.
 
 ## Duplicate attributes
 
-- Styled spans and directives with a key, an id or a class given twice, where the last one wins:
+- Styled spans and directives with a key, an id or a class given twice, where the last one wins. Each is an error since 2.0, which the comment silences so that this document keeps passing validation:
 
+    <!-- smd-disable-next-line attrs/duplicate -->
     [Blue text]{color=red color=blue}, :badge[Ready]{color=red color=green}, [an anchor]{#first #second} and [a note]{.note .note}.
 
 ## Conflicting titles
 
+An error since 2.0, silenced below:
+
+<!-- smd-disable-next-line container/title-conflict -->
 :::note{title="Attribute title"} Text title
 The title attribute is shown; the text after the attributes is not.
 :::
@@ -43,6 +47,9 @@ See [Refunds](include-terms.smd#refunds) in the shared terms.
 
 ## Agent priority
 
+Removed in 2.0: an unknown attribute, silenced below.
+
+<!-- smd-disable-next-line attrs/unknown -->
 :::agent{priority=high}
 Read the cases above before changing how attribute lists are parsed.
 :::
