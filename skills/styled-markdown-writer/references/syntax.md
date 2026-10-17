@@ -42,7 +42,7 @@ lang: de                     # optional: language of rendered labels (de es fr j
 ---
 ```
 
-`lang` changes only the words the renderer adds (callout titles, "Figure 2", "overdue", status names); the document's text, the agent view and `smd to-md` are unchanged. Set it when the document is written in that language.
+`lang` changes only the words the renderer adds (callout titles, "Figure 2", "overdue", status names); the document's text, the agent view and `smd export --to md` are unchanged. Set it when the document is written in that language.
 
 Unknown keys are allowed (reported as hints, except keys the text shows with `{{key}}`, see §8).
 
@@ -338,7 +338,7 @@ Version {{version}} ships on {{release.date}}. :badge[v{{version}}]{color=indigo
 - Only defined keys are replaced: anything else stays as written (`variable/undefined`, info, fixes near misses such as `{{verison}}`). A key holding a mapping is `variable/not-text`. `\{{name}}` or a code span keeps literal braces.
 - Quote versions: YAML reads `version: 2.10` as the number 2.1.
 - Heading ids use the heading as written (`#whats-new-in-version`), so they don't change with the value.
-- Agents and `smd to-md` see the values; tools before 1.6 and GitHub show `{{version}}` as written.
+- Agents and `smd export --to md` see the values; tools before 1.6 and GitHub show `{{version}}` as written.
 
 ## 9. Tasks
 
