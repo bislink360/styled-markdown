@@ -836,19 +836,28 @@ function cutAt(source: string, part: string): number {
   return trimmed.endsWith(part) ? trimmed.length - part.length : -1;
 }
 
-function collectIds(tokens: Token[], out: Set<string> | string[], skipHeadings = false, spec: SpecVersion = 1): void {
-  const add = (id: string) => (out instanceof Set ? out.add(id) : out.push(id));
+type IdSink = Set<string> | string[];
+
+const addId = (out: IdSink, id: string) => (out instanceof Set ? out.add(id) : out.push(id));
+
+/** A container's own `#id`, and the ids in its title when the container shows its title. */
+function containerIds(t: Token, out: IdSink, spec: SpecVersion): void {
+  const meta = t.meta as { name?: string; title?: string; attrs?: { id?: string } } | null;
+  if (meta?.attrs?.id) addId(out, meta.attrs.id);
+  if (meta?.title && rendersTitle(meta.name ?? '')) collectIds(titleParser().parseInline(meta.title, newEnv(0, [], {}, spec)), out, false, spec);
+}
+
+/** The `id` and `name` attributes written in raw HTML. */
+function htmlIds(t: Token, out: IdSink): void {
+  for (const m of t.content.matchAll(/\s(?:id|name)="([^"]*)"/g)) addId(out, unescapeHtml(m[1]));
+}
+
+function collectIds(tokens: Token[], out: IdSink, skipHeadings = false, spec: SpecVersion = 1): void {
   for (const t of tokens) {
     const id = t.attrGet('id');
-    if (id && !(skipHeadings && t.type === 'heading_open')) add(id);
-    const meta = t.meta as { name?: string; title?: string; attrs?: { id?: string } } | null;
-    if (t.type === 'container_smd_open') {
-      if (meta?.attrs?.id) add(meta.attrs.id);
-      if (meta?.title && rendersTitle(meta.name ?? '')) collectIds(titleParser().parseInline(meta.title, newEnv(0, [], {}, spec)), out, false, spec);
-    }
-    if (t.type === 'html_block' || t.type === 'html_inline') {
-      for (const m of t.content.matchAll(/\s(?:id|name)="([^"]*)"/g)) add(unescapeHtml(m[1]));
-    }
+    if (id && !(skipHeadings && t.type === 'heading_open')) addId(out, id);
+    if (t.type === 'container_smd_open') containerIds(t, out, spec);
+    if (t.type === 'html_block' || t.type === 'html_inline') htmlIds(t, out);
     if (t.children) collectIds(t.children, out, skipHeadings, spec);
   }
 }
