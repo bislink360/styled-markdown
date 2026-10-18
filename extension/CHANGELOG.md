@@ -11,6 +11,7 @@
 ### Deprecated
 
 ### Fixed
+- Documentation for 2.0: an "Upgrading to 2.0" section in the README and INSTALL.md; in FEATURES.md, a Block Editor (Preview) section, a spec versions overview (`smd: 1` and `smd: 2`, `typography`), the spec v2 closing fence rule, and notes on `$$` math in containers, `\"` escapes, value case, glossary quote matching and code and math in the agent view; the Marketplace page lists **Migrate to Spec v2**, **Preview Migration to Spec v2**, **Hide Completed Tasks** and `smd.markdownPreview.enabled`; the npm README documents `LATEST_SPEC`, `SpecVersion`, the Notion and export types, `NOTION_LIMITS`, `parseSmd(…).math`, markdown-it `token.meta` and the `smd migrate` flags; stale version pins (`validate@v2.0.0`, the language server's 2.0.0 tarball) and the spec v1 badge are updated. The agent skills describe the 2.0 errors, GitHub alerts and the spec v2 reading rules. No code changes; the CLI bundles are rebuilt for the version number.
 
 ## 2.0.0 — 2026-10-18
 
