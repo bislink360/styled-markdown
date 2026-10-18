@@ -12,7 +12,7 @@ One repository ships four artifacts that must stay in lockstep:
 | VS Code extension `bislink360.styled-markdown` | VS Code Marketplace, Open VSX + `.vsix` on GitHub Releases | `extension/package.json` |
 | npm package `styled-markdown` (library + `smd` CLI) | npmjs.com | `npm/package.json` (same version) |
 | Agent skills `styled-markdown-reader` / `-writer` | `skills/`, zips on GitHub Releases | bundle the CLI, so they follow the same version |
-| Format spec | `smd: 1` in documents | `SMD_VERSION` in `extension/src/core/spec.ts`; changes only for format-breaking releases |
+| Format spec | `smd: 2` in new documents (`smd: 1` documents keep the v1 rules) | `SMD_VERSION` in `extension/src/core/spec.ts`; changes only for format-breaking releases |
 
 Existing documents, CI pipelines (`smd validate`), library users and agents all depend on today's behaviour. **The primary goal of this process is that nothing breaks silently.** Every incompatible change is found by the checker, called out to the human, and shipped only as a major version.
 

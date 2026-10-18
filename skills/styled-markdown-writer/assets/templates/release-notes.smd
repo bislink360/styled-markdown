@@ -1,5 +1,5 @@
 ---
-smd: 1
+smd: 2
 title: "{{title}} release notes"
 summary: The headline change in one sentence, whether anything breaks, and who needs to act before upgrading.
 status: draft

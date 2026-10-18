@@ -31,7 +31,7 @@ import {
 } from './fixes';
 import {
   ALIGN_VALUES, FONT_VALUES, NAMED_COLORS, PRIORITY_VALUES, SIZE_VALUES, STYLE_KEYS, WEIGHT_VALUES,
-  CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION, type InlineDirectiveSpec,
+  CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, type InlineDirectiveSpec,
 } from './spec';
 import { FRONTMATTER_SCHEMA, frontMatterProperty } from './frontmatterSchema';
 import { languageTag, matchLanguage, SUPPORTED_LANGUAGES } from './i18n';
@@ -277,6 +277,12 @@ function unknownKey(key: string, l: number, lines: string[], push: Push): void {
 /** Status values whose documents are not expected to be kept up to date. */
 const RETIRED_STATUS = ['archived', 'deprecated'];
 
+/**
+ * The version a document without an `smd` key is read with, which the fix for the missing key writes, so that the
+ * fix (and `smd validate --fix`) never changes which rules read it. `smd migrate --to 2` moves a document to spec v2.
+ */
+const UNDECLARED_SPEC = 1;
+
 /** Front matter checks, driven by FRONTMATTER_SCHEMA. Keys outside the schema are custom metadata. */
 function checkFrontMatter(
   data: Record<string, unknown>, lines: string[], end: number, push: Push, options: ValidateOptions, isCode: (line: number) => boolean,
@@ -294,8 +300,8 @@ function checkFrontMatter(
   };
 
   if (data.smd === undefined) {
-    push(0, 0, 3, 'info', 'frontmatter/version', `Add "smd: ${SMD_VERSION}" to the front matter so tools know which Styled Markdown version this file targets.`,
-      { line: 1, column: 0, endColumn: 0, replacement: `smd: ${SMD_VERSION}\n`, title: `Add "smd: ${SMD_VERSION}"` });
+    push(0, 0, 3, 'info', 'frontmatter/version', `Add "smd: ${UNDECLARED_SPEC}" to the front matter so tools know which Styled Markdown version this file targets.`,
+      { line: 1, column: 0, endColumn: 0, replacement: `smd: ${UNDECLARED_SPEC}\n`, title: `Add "smd: ${UNDECLARED_SPEC}"` });
   } else {
     checkSmdVersion(data.smd, keyLine('smd'), lines, push);
   }

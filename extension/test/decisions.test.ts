@@ -65,7 +65,7 @@ test('decisionLogMarkdown: a formatted, valid ADR index', () => {
   const log = decisionLog(docs);
   const md = decisionLogMarkdown(log, { title: 'Architecture: decisions', link: (p) => p.replace(/^docs\//, '') });
   assert.equal(formatSmd(md), md);
-  assert.match(md, /^---\nsmd: 1\ntitle: "Architecture: decisions"\nsummary: "5 decisions from 2 documents, newest first."\n/);
+  assert.match(md, /^---\nsmd: 2\ntitle: "Architecture: decisions"\nsummary: "5 decisions from 2 documents, newest first."\n/);
   assert.match(md, /\| 2026-09-10 \| :badge\[accepted\]\{color=green\} +\| \[Launch in the EU first\]\(plan\.smd#eu-first\) +\| @maya, @li/);
   assert.match(md, /~~\[Price \\\| \\\$5 and \\\$10 \\\*now\\\*\]\(plan\.smd#later\)~~/);
   assert.match(md, /\[Use Postgres for orders\]\(adr\/0001-postgres\.smd\) +\| @data +\| \[ADR-0001: Use Postgres\]\(adr\/0001-postgres\.smd\)/);

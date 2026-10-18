@@ -1,5 +1,5 @@
 ---
-smd: 1
+smd: 2
 title: "{{title}} — {{today}}"
 summary: The outcome of the meeting in one sentence.
 status: approved

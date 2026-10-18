@@ -7,7 +7,7 @@
     "description": "Styled Markdown front matter",
     "body": [
       "---",
-      "smd: 1",
+      "smd: 2",
       "title: ${1:Document title}",
       "summary: ${2:One or two sentences agents and humans read first.}",
       "status: ${3|draft,review,approved,deprecated,archived|}",

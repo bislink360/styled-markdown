@@ -3,7 +3,7 @@ import { formatSmd } from './format';
 import { parseSmd } from './parse';
 import { parseSelector, querySmd, type QueryMatch } from './query';
 import type { Heading } from './render';
-import { DECISION_STATUS } from './spec';
+import { DECISION_STATUS, SMD_VERSION } from './spec';
 import { own } from './util';
 
 /**
@@ -163,7 +163,7 @@ export function decisionLogMarkdown(entries: DecisionEntry[], options: DecisionL
   const summary = plural(entries.length, 'decision') + ' from ' + plural(documents, 'document') + ', newest first.';
   const lines = [
     '---',
-    'smd: 1',
+    `smd: ${SMD_VERSION}`,
     `title: ${JSON.stringify(options.title?.trim() || 'Decision log')}`,
     `summary: ${JSON.stringify(summary)}`,
     'tags: [decisions]',

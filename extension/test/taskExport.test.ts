@@ -96,7 +96,7 @@ test('ganttDate accepts only real YYYY-MM-DD dates', () => {
 
 test('ganttDocument wraps the chart in a valid .smd document', () => {
   const smd = ganttDocument(tasksToGantt(rows()), 'Q4 "plan"');
-  assert.match(smd, /^---\ntitle: "Q4 \\"plan\\""\n---\n\n# Q4 "plan"\n\n```mermaid\ngantt\n[^]*\n```\n$/);
+  assert.match(smd, /^---\nsmd: 2\ntitle: "Q4 \\"plan\\""\n---\n\n# Q4 "plan"\n\n```mermaid\ngantt\n[^]*\n```\n$/);
   assert.deepEqual(validateSmd(smd).filter((d) => d.severity === 'error' || d.severity === 'warning'), []);
 });
 
@@ -161,7 +161,7 @@ test('CLI: smd tasks --csv, --gantt and --gantt --smd, to stdout or -o', { skip:
   const written = smd(examples, '--gantt', '--smd', '--title', 'Timeline', '-o', out);
   assert.equal(written.stdout, '');
   assert.match(written.stderr, /Wrote .*timeline\.smd/);
-  assert.match(fs.readFileSync(out, 'utf8'), /^---\ntitle: "Timeline"\n---\n\n# Timeline\n\n```mermaid\ngantt\n {2}title Timeline\n/);
+  assert.match(fs.readFileSync(out, 'utf8'), /^---\nsmd: 2\ntitle: "Timeline"\n---\n\n# Timeline\n\n```mermaid\ngantt\n {2}title Timeline\n/);
   const validate = spawnSync(process.execPath, [cli, 'validate', out], { encoding: 'utf8' });
   assert.equal(validate.status, 0, validate.stdout);
   assert.match(validate.stdout, /0 error\(s\), 0 warning\(s\)/);

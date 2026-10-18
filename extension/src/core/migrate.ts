@@ -17,10 +17,11 @@ import { findVariables, lookupVariable, variableText } from './variables';
 
 /**
  * The plan of `smd migrate --to 2`: what a document needs so that it means the same under spec v2 (`smd: 2`) as it
- * does today. Each step rewrites a few lines, or is a note when nothing is rewritten. 1.10 only reports the plan
- * (`--dry-run`); Styled Markdown 2.0 writes it.
+ * does today. Each step rewrites a few lines, or is a note when nothing is rewritten. 1.10 only reported the plan
+ * (`--dry-run`); Styled Markdown 2.0 writes it (migrateCommand.ts, and the editor's "Migrate to Spec v2"), then checks
+ * what it wrote (migrateCheck.ts).
  *
- * Internal: not exported from the npm package, since the plan's shape may still change before 2.0 makes it write.
+ * Internal: not exported from the npm package, so the plan's shape can still change in a minor release.
  * The steps reuse the validator's quick fixes (the spec v2 hints) and `applyFixes`, as `smd validate --fix` does.
  */
 
@@ -198,6 +199,20 @@ function planSteps(text: string, options: MigrationOptions, escapes: boolean): M
   // In the order the steps run, and by line within each (math is split bottom-up).
   w.steps.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.line - b.line);
   return { from, steps: w.steps, result: textOf(w) };
+}
+
+/**
+ * Markdown that spec v2 reads as spec v1 reads `text` (a document read with the v1 rules, such as a `.md` file), for
+ * `smd from-md`, which writes `smd: 2`: multi-line `$$` delimiters on lines of their own, and each literal `:name[…]`
+ * or `:name{…}` outside the vocabulary escaped (`\:abbr[HTML]`), so it stays text, as GitHub shows it. Only these two
+ * steps: the others keep v1 meaning that GitHub doesn't have (typography, bare domain links, a heading's `{}`).
+ */
+export function markdownForV2(text: string): string {
+  const lines = splitLines(text);
+  const w: Work = { lines, origin: lines.map((_, i) => i), eol: text.includes('\r\n') ? '\r\n' : '\n', steps: [], options: {} };
+  mathStep(w);
+  unknownDirectiveStep(w);
+  return w.steps.length ? textOf(w) : text;
 }
 
 /**
