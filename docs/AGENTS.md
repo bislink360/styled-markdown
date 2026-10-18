@@ -107,7 +107,7 @@ Then write normal Markdown, adding Styled Markdown only where it helps the reade
 | Numbered figure | `:::figure{#fig-flow} Caption` around an image, diagram, table (`kind=table`) or code (`kind=listing`) … `:::`; refer to it with `:ref[fig-flow]` ("Figure 2") |
 | Release history | `:::changelog` with `## 1.2.0 — 2026-03-01` headings (newest first) and their notes … `:::` |
 | Quote | `:::quote{author="Ada Lovelace" source="Notes" cite="https://…"}` quoted text `:::` |
-| Math | `$x^2$` inline, `$$ … $$` block |
+| Math | `$x^2$` inline; a block between `$$` lines of their own (or `$$ x^2 $$` on one line) |
 | Front matter value in text | `{{version}}` with `version: "2.10"` in the front matter (`{{owner.name}}` for nested keys; `\{{x}}` keeps the braces) |
 | Tabs | `::::tabs` / `:::tab Name` … `:::` / `::::` |
 | Columns | `::::columns` / `:::column` … `:::` / `::::` |

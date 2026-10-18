@@ -15,6 +15,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 - [Web playground](#web-playground)
 - [Obsidian plugin](#obsidian-plugin)
 - [Update or uninstall](#update-or-uninstall)
+- [Upgrading to 2.0](#upgrading-to-20)
 - [Build from source](#build-from-source)
 - [Troubleshooting](#troubleshooting)
 
@@ -35,13 +36,13 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 
 ### Option A — from the release file (recommended)
 
-1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-2.0.0.vsix`**.
+1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-2.0.1.vsix`**.
 2. Install it with **one** of these methods.
 
    **From the terminal:**
 
    ```bash
-   code --install-extension styled-markdown-2.0.0.vsix
+   code --install-extension styled-markdown-2.0.1.vsix
    ```
 
    **From VS Code:**
@@ -61,7 +62,7 @@ git clone https://github.com/bislink360/styled-markdown.git
 cd styled-markdown/extension
 npm install
 npm run package
-code --install-extension styled-markdown-2.0.0.vsix
+code --install-extension styled-markdown-2.0.1.vsix
 ```
 
 ## Verify the installation
@@ -81,6 +82,7 @@ Open **Settings** and search for `smd`:
 | `smd.preview.theme` | `auto` | `auto` follows VS Code; `light` or `dark` forces a theme |
 | `smd.preview.showAgentBlocks` | `collapsed` | How `:::agent` blocks appear in the preview: `collapsed`, `expanded` or `hidden` |
 | `smd.preview.allowHtml` | `true` | Render raw HTML in documents (scripts never run) |
+| `smd.markdownPreview.enabled` | `opt-in` | Which `.md` files get `.smd` syntax in VS Code's built-in Markdown preview: `opt-in` (those with an `smd:` front matter key), `always` or `never` |
 | `smd.validation.enabled` | `true` | Show problems as you type |
 | `smd.validation.checkLinks` | `true` | Warn about relative links, images and `related:` entries that point to missing files or headings |
 
@@ -93,7 +95,7 @@ Keyboard shortcuts:
 | Quick fix | `Ctrl+.` | `Cmd+.` |
 | Trigger suggestions | `Ctrl+Space` | `Ctrl+Space` |
 
-All commands are in the Command Palette under **Styled Markdown:**. They cover opening the preview, showing the (brief) agent view, copying the agent view or selected sections, exporting to HTML or Markdown, converting a Markdown file to `.smd`, and validating the whole workspace.
+All commands are in the Command Palette under **Styled Markdown:**. They cover opening the preview, opening the Block Editor (and **Reopen in Text Editor**), showing the (brief) agent view, copying the agent view or selected sections, exporting to HTML, Markdown, Confluence (storage format), Notion (JSON) or Word (.docx), converting a Markdown file to `.smd`, validating the whole workspace, **Migrate to Spec v2** and **Preview Migration to Spec v2**, **Set Document Status…**, setting up spell checking, and grouping, showing or hiding tasks in the SMD Tasks view.
 
 ## Install the `smd` CLI
 
@@ -102,11 +104,11 @@ The CLI is a **single self-contained file** with no dependencies. Pick one metho
 **From the release's npm package (recommended):** npm installs straight from the tarball attached to the release. The npm registry listing is coming soon.
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.0.0/styled-markdown-2.0.0.tgz
-smd --version       # smd 2.0.0 (Styled Markdown spec v2)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.0.1/styled-markdown-2.0.1.tgz
+smd --version       # smd 2.0.1 (Styled Markdown spec v2)
 ```
 
-The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.0.0/styled-markdown-2.0.0.tgz`); see [npm/README.md](../npm/README.md).
+The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.0.1/styled-markdown-2.0.1.tgz`); see [npm/README.md](../npm/README.md).
 
 **Use the copy bundled with the skills (no build needed):**
 
@@ -121,7 +123,7 @@ node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs --version
 cd styled-markdown/extension
 npm install && npm run build
 npm link            # now `smd` works everywhere
-smd --version       # smd 2.0.0 (Styled Markdown spec v2)
+smd --version       # smd 2.0.1 (Styled Markdown spec v2)
 ```
 
 **Without linking:** `node extension/dist/cli.js <command>`.
@@ -157,7 +159,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v2.0.0
+      - uses: bislink360/styled-markdown/validate@v2.0.1
         with:
           paths: |
             docs
@@ -183,7 +185,7 @@ Errors become `::error`, warnings `::warning` and info diagnostics `::notice` an
 ### Any CI
 
 ```bash
-curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.0.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.0.1/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs validate docs/ --strict
 ```
 
@@ -202,7 +204,7 @@ Check `.smd` files before they are committed. `smd validate` and `smd fmt` take 
 ```yaml
 repos:
   - repo: https://github.com/bislink360/styled-markdown
-    rev: v2.0.0
+    rev: v2.0.1
     hooks:
       - id: smd-fmt
       - id: smd-validate
@@ -226,7 +228,7 @@ The hooks use `language: node`: pre-commit installs this repository's root `pack
 For JavaScript projects. The `styled-markdown` package isn't on the npm registry yet, so install it from the release's `.tgz`, which also gives you the Mermaid parser:
 
 ```bash
-npm install --save-dev https://github.com/bislink360/styled-markdown/releases/download/v2.0.0/styled-markdown-2.0.0.tgz
+npm install --save-dev https://github.com/bislink360/styled-markdown/releases/download/v2.0.1/styled-markdown-2.0.1.tgz
 npm install --save-dev lint-staged husky
 npx husky init
 echo "npx lint-staged" > .husky/pre-commit
@@ -242,7 +244,7 @@ and in `package.json`:
 }
 ```
 
-lint-staged appends the staged files to each command, runs them in order and stages the formatting changes. Add `--strict` to `smd validate` to fail on warnings. To use the single-file CLI instead of the package, download it into the repository (`curl -sSLo tools/smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.0.0/skills/styled-markdown-reader/scripts/smd.cjs`) and use `"node tools/smd.cjs fmt"` and `"node tools/smd.cjs validate"`.
+lint-staged appends the staged files to each command, runs them in order and stages the formatting changes. Add `--strict` to `smd validate` to fail on warnings. To use the single-file CLI instead of the package, download it into the repository (`curl -sSLo tools/smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.0.1/skills/styled-markdown-reader/scripts/smd.cjs`) and use `"node tools/smd.cjs fmt"` and `"node tools/smd.cjs validate"`.
 
 ### With a plain Git hook
 
@@ -266,7 +268,7 @@ It checks the files as they are in the working tree and doesn't change them; `--
 Until it is on PyPI, install the wheel from the GitHub release (each release attaches `mkdocs_styled_markdown-X.Y.Z-py3-none-any.whl` and the `.tar.gz` source):
 
 ```bash
-pip install https://github.com/bislink360/styled-markdown/releases/download/v2.0.0/mkdocs_styled_markdown-2.0.0-py3-none-any.whl
+pip install https://github.com/bislink360/styled-markdown/releases/download/v2.0.1/mkdocs_styled_markdown-2.0.1-py3-none-any.whl
 ```
 
 Then add it to `mkdocs.yml`:
@@ -308,6 +310,30 @@ To update, replace the three files and reload the plugin. Settings, what renders
 - **Uninstall:** Extensions view → Styled Markdown → **Uninstall**, or `code --uninstall-extension bislink360.styled-markdown`.
 - **Check the installed version:** `code --list-extensions --show-versions | grep styled`.
 
+## Upgrading to 2.0
+
+2.0 brings spec v2. Your documents keep working; this is what changes when you update from 1.x. Every change, with its migration, is in the [CHANGELOG](../extension/CHANGELOG.md).
+
+- **Platform:** Node.js 22 or newer for the CLI, the npm package, the GitHub Action, the pre-commit hooks and the MkDocs plugin, and VS Code 1.97 or newer (or Cursor, VSCodium, Windsurf based on it) for the extension. Older editors keep the 1.x extension.
+- **Your documents keep their meaning.** A document without `smd: 2`, and every `.md` file, is read with the spec v1 rules, as in 1.x.
+- **Stricter checks, in every document.** Duplicate attributes (`[x]{color=red color=blue}`), a container titled both by `title=` and by text (`:::note{title="A"} B`), a Mermaid syntax error and an invalid figure `kind` are now errors, so `smd validate` fails on them. Front matter that can't be read is shown in a red "Front matter could not be read" block instead of hiding the text above it. `smd validate --fix` repairs the duplicates, the title conflicts and a misspelt `kind`; fix a Mermaid error, and front matter that can't be read (often a missing closing `---`), by hand.
+- **VS Code's `.md` preview is opt-in.** VS Code's built-in Markdown preview shows `.smd` syntax only in `.md` files whose front matter has an `smd:` key (`smd: 1` keeps the v1 rules). Set `smd.markdownPreview.enabled` to `always` for the 1.x behaviour, or `never`. `.smd` files and the Styled Markdown preview are unaffected.
+- **New documents are `smd: 2`:** `smd init`, `smd from-md`, **Convert Markdown File to .smd** and the other writers write it. Spec v2 differs from v1 in:
+  - text shown as written: straight quotes, `--`, `...` and `(c)` stay as typed unless the front matter says `typography: true`;
+  - links: only GFM autolinks (`https://…`, `www.…`, e-mail addresses); a bare `example.com` is text;
+  - `$$` display math opens and closes only on a line of its own (or `$$ x $$` on one line);
+  - a closing fence closes the container opened with as many colons (`::::` closes `::::tabs`);
+  - a heading's trailing `{}` or `{word}` is heading text (`## Returns {ok}`);
+  - `\\` in a quoted attribute value is one backslash;
+  - any `:name[…]` is a directive, its name in any case; write `\:name[…]` to keep the text;
+  - `:::include` `section=` matches a heading's id or its whole text, not a part of it;
+  - front matter values keep their YAML spelling (`version: 2.10` shows `2.10`).
+
+  The rules, side by side with v1: [SPEC.md §10](SPEC.md#10-versioning).
+- **Moving a document to spec v2:** `smd migrate docs --to 2 --dry-run` shows the plan, then `smd migrate docs --to 2` writes it (only `.smd` files, each checked after writing); in VS Code, **Migrate to Spec v2** (or **Preview Migration to Spec v2**). `--keep-typography` keeps curly quotes and dashes, and `--link-domains` keeps bare domains linked. In CI, `smd migrate docs --to 2 --check` fails while a document still needs migrating. The steps: [SPEC.md §10.1](SPEC.md#101-migrating-to-spec-v2).
+- **Command names:** `smd export <file> --to html|md|pdf|docx|confluence|notion` replaces `smd render`, `smd to-md`, `smd pdf` and `smd docx`, which still work with the same options and output.
+- **npm package:** `inlineText(line, options)` takes its options as one object; the vocabulary tables (`CONTAINERS`, `NAMED_COLORS`, …) are read-only, so copy one to extend it; and the markdown-it plugin's `preset: 'smd'` renders as `renderSmd` does. See [npm/README.md](../npm/README.md).
+
 ## Build from source
 
 ```bash
@@ -317,7 +343,7 @@ npm run build          # esbuild bundles dist/extension.js and dist/cli.js, copi
                        # and refreshes skills/*/scripts/smd.cjs and the MkDocs plugin's bridge.cjs
 npm test               # unit tests
 npm run test:vscode    # integration tests in a real VS Code (uses your installed VS Code, isolated profile)
-npm run package        # styled-markdown-2.0.0.vsix
+npm run package        # styled-markdown-2.0.1.vsix
 ```
 
 Press **F5** with the `extension/` folder open to start an Extension Development Host with the examples loaded.
