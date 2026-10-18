@@ -1,7 +1,7 @@
-import { findAttrsEnd, itemValue, lexAttrItems, parseAttrs, type Attrs } from './attrs';
+import { escapeQuoted, findAttrsEnd, itemValue, lexAttrItems, parseAttrs, type Attrs } from './attrs';
 import { closeContainers, closesDisplayMath, CONTAINER_CLOSE, CONTAINER_OPEN } from './containers';
 import { parseFrontMatter } from './frontmatter';
-import { HEADING_ATTRS } from './sections';
+import { HEADING_ATTRS, headingAttrList } from './sections';
 import { CONTAINERS, INLINE_DIRECTIVES, STYLE_KEYS } from './spec';
 import { specVersion, type SpecVersion } from './specVersion';
 import { own } from './util';
@@ -28,6 +28,7 @@ export function formatSmd(text: string): string {
   const bodyStart = fm.present && !(fm.error && fm.bodyStartLine === 0) ? fm.bodyStartLine : 0;
 
   const out: Line[] = lines.slice(0, bodyStart).map((t, i) => ({ text: t, kind: i === bodyStart - 1 ? 'fmEnd' : 'raw', indent: 0 }));
+  // Values are written with the escapes of the document's spec version, and a spec v2 heading's `{word}` is its text.
   out.push(...formatBody(lines.slice(bodyStart), specVersion(fm.data)));
   return spaceBlocks(out).map((l) => l.text).join(eol) + (out.some((l) => l.kind !== 'blank') ? eol : '');
 }
@@ -46,7 +47,7 @@ interface ContainerNode { open: number; close: number; colons: number; children:
 /** State shared by the block readers while the body is formatted. */
 interface Body {
   lines: string[];
-  /** The spec version the document is read with: display math and closing fences differ. */
+  /** The spec version the document is read with: display math, closing fences, heading braces and attribute escapes differ. */
   spec: SpecVersion;
   out: Line[];
   // Container tree, used to pick colon counts once every fence is known.
@@ -153,7 +154,7 @@ const readContainerFence: BlockReader = (b, i) => {
 const readTableBlock: BlockReader = (b, i) => {
   const table = prevKind(b) === 'text' ? null : readTable(b.lines, i);
   if (!table) return null;
-  const rows = formatTable(table.rows);
+  const rows = formatTable(table.rows, b.spec);
   rows.forEach((r, k) => {
     let kind: Kind = 'table';
     if (k === 0) kind = 'tableStart';
@@ -169,8 +170,8 @@ const readLine: BlockReader = (b, i) => {
   if (raw.trim() === '') push(b, '', 'blank');
   // Indented lines may be code blocks: leave them exactly as written.
   else if (indentOf(raw) >= 4) push(b, raw, 'text');
-  else if (/^\s{0,3}#{1,6}(\s|$)/.test(raw)) push(b, formatHeading(raw.trimEnd()), 'heading');
-  else push(b, formatInline(raw), 'text');
+  else if (/^\s{0,3}#{1,6}(\s|$)/.test(raw)) push(b, formatHeading(raw.trimEnd(), b.spec), 'heading');
+  else push(b, formatInline(raw, b.spec), 'text');
   return i;
 };
 
@@ -192,7 +193,7 @@ function applyFenceColons(b: Body): void {
 
   for (const [idx, o] of b.opens) {
     const count = colons.get(idx) ?? /^\s*(:+)/.exec(b.out[idx].text)![1].length;
-    b.out[idx].text = `${o.indent}${':'.repeat(count)}${o.name}${formatContainerRest(o.name, o.rest)}`;
+    b.out[idx].text = `${o.indent}${':'.repeat(count)}${o.name}${formatContainerRest(o.name, o.rest, b.spec)}`;
   }
   for (const [idx, indent] of b.closes) {
     const count = colons.get(idx);
@@ -201,25 +202,26 @@ function applyFenceColons(b: Body): void {
 }
 
 /** Everything after the container name: `{attrs} Title`. */
-function formatContainerRest(name: string, rest: string): string {
+function formatContainerRest(name: string, rest: string, spec: SpecVersion): string {
   let attrs = '';
   if (rest.startsWith('{')) {
-    const end = findAttrsEnd(rest, 0);
+    const end = findAttrsEnd(rest, 0, spec);
     if (end === -1) return rest.trimEnd();
-    const formatted = formatAttrs(rest.slice(1, end), own(CONTAINERS, name.toLowerCase())?.attrs ?? []);
+    const formatted = formatAttrs(rest.slice(1, end), own(CONTAINERS, name.toLowerCase())?.attrs ?? [], spec);
     if (formatted === null) return rest.trimEnd();
     attrs = `{${formatted}}`;
     rest = rest.slice(end + 1);
   }
-  const title = formatInline(rest.trim());
+  const title = formatInline(rest.trim(), spec);
   return `${attrs}${title ? ` ${title}` : ''}`;
 }
 
-function formatHeading(raw: string): string {
-  const m = HEADING_ATTRS.exec(raw);
-  const head = formatInline(m ? raw.slice(0, m.index) : raw);
+/** A heading with its inline attribute lists and its own trailing list formatted (in spec v2 only one that is a list). */
+function formatHeading(raw: string, spec: SpecVersion): string {
+  const m = spec >= 2 ? headingAttrList(raw, spec)?.match : HEADING_ATTRS.exec(raw);
+  const head = formatInline(m ? raw.slice(0, m.index) : raw, spec);
   if (!m) return head;
-  const attrs = formatAttrs(m[1], []);
+  const attrs = formatAttrs(m[1], [], spec);
   return attrs === null ? `${head}${m[0]}` : `${head} {${attrs}}`;
 }
 
@@ -235,8 +237,8 @@ const STYLE_ORDER = Object.keys(STYLE_KEYS);
  * malformed, or when a value can't be written back so that it reads the same, so the caller
  * keeps it as written.
  */
-export function formatAttrs(src: string, order: readonly string[]): string | null {
-  const items = lexAttrItems(src);
+export function formatAttrs(src: string, order: readonly string[], spec: SpecVersion = 1): string | null {
+  const items = lexAttrItems(src, spec);
   if (!items) return null;
   let id: string | undefined;
   const classes: string[] = [];
@@ -244,7 +246,7 @@ export function formatAttrs(src: string, order: readonly string[]): string | nul
   for (const { match: m } of items) {
     if (m[1] === '#') id = m[2];
     else if (m[1] === '.') { if (!classes.includes(m[2])) classes.push(m[2]); }
-    else entries.set(m[3], itemValue(m).value);
+    else entries.set(m[3], itemValue(m, spec).value);
   }
   const keys = [...entries.keys()];
   const rank = (k: string) => attrRank(k, order, keys);
@@ -254,10 +256,10 @@ export function formatAttrs(src: string, order: readonly string[]): string | nul
     ...classes.map((c) => `.${c}`),
     ...keys.map((k) => {
       const v = entries.get(k);
-      return v === undefined ? k : `${k}=${quote(k, v, order)}`;
+      return v === undefined ? k : `${k}=${quote(k, v, order, spec)}`;
     }),
   ].join(' ');
-  return sameValues(parseAttrs(src), parseAttrs(formatted)) ? formatted : null;
+  return sameValues(parseAttrs(src, spec), parseAttrs(formatted, spec)) ? formatted : null;
 }
 
 /** Whether two attribute lists hold the same values: formatting never changes what a list says. */
@@ -285,17 +287,27 @@ const OWN_TEXT_KEYS = ['author', 'source', 'cite'];
 
 /**
  * Keywords, numbers, dates, sizes and @owners stay bare (`status=accepted width=50%`); the rest is quoted: in double
- * quotes, in single quotes when the value has a `"`, and in double quotes with `\"` when it has both kinds.
+ * quotes, in single quotes when the value has a `"`, and in double quotes with `\"` when it has both kinds. In spec v2,
+ * where `\\` is an escape, a backslash that would go with the character after it is written `\\` (escapeQuoted): one
+ * before the closing quote or at the end (`"C:\docs\\"`), or one of several in a row.
  */
-export function quote(key: string, value: string, order: readonly string[]): string {
+export function quote(key: string, value: string, order: readonly string[], spec: SpecVersion = 1): string {
   const text = TEXT_KEYS.includes(key) || (OWN_TEXT_KEYS.includes(key) && order.includes(key));
   if (!text && /^[\w@][\w.%@-]*$/.test(value)) return value;
+  if (spec >= 2) {
+    const q = value.includes('"') && !value.includes("'") ? "'" : '"';
+    return `${q}${escapeQuoted(value, q)}${q}`;
+  }
   if (!value.includes('"')) return `"${value}"`;
   return value.includes("'") ? `"${value.replaceAll('"', String.raw`\"`)}"` : `'${value}'`;
 }
 
+/** A directive's name before an attribute list: lower case in spec v1, any case in spec v2 (RFC proposal 11). */
+const DIRECTIVE_BEFORE_V1 = /(?:^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[[^\]\n]*\])?$/;
+const DIRECTIVE_BEFORE_V2 = /(?:^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)(?:\[[^\]\n]*\])?$/;
+
 /** Normalize `[text]{…}` and `:name[…]{…}` attribute lists on one line, outside code and math. */
-function formatInline(line: string): string {
+function formatInline(line: string, spec: SpecVersion = 1): string {
   if (!line.includes('{')) return line;
   const masked = line
     .replace(/(`+)[\s\S]*?\1/g, (m) => '\0'.repeat(m.length))
@@ -303,11 +315,12 @@ function formatInline(line: string): string {
   const edits: Array<[number, number, string]> = [];
   for (let p = masked.indexOf('{'); p !== -1; p = masked.indexOf('{', p + 1)) {
     const before = masked.slice(0, p);
-    const directive = /(?:^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[[^\]\n]*\])?$/.exec(before);
+    const directive = (spec >= 2 ? DIRECTIVE_BEFORE_V2 : DIRECTIVE_BEFORE_V1).exec(before);
     if (!directive && !before.endsWith(']')) continue;
-    const end = findAttrsEnd(masked, p);
+    const end = findAttrsEnd(masked, p, spec);
     if (end === -1) continue;
-    const formatted = formatAttrs(line.slice(p + 1, end), directive ? own(INLINE_DIRECTIVES, directive[1])?.attrs ?? [] : []);
+    const order = directive ? own(INLINE_DIRECTIVES, directive[1].toLowerCase())?.attrs ?? [] : [];
+    const formatted = formatAttrs(line.slice(p + 1, end), order, spec);
     if (formatted !== null) edits.push([p, end + 1, `{${formatted}}`]);
     p = end;
   }
@@ -358,11 +371,11 @@ function splitRow(row: string): string[] {
  * A pipe table's lines (header, delimiter row, body rows) aligned as `smd fmt` writes them. Exported for the Block
  * Editor's "Align table" (tableEdit.ts); not part of the npm API.
  */
-export function formatTable(rows: string[]): string[] {
+export function formatTable(rows: string[], spec: SpecVersion = 1): string[] {
   // Pipes inside inline code are ambiguous between renderers: leave such tables alone.
   if (rows.some((r) => [...r.matchAll(/(`+)([\s\S]*?)\1/g)].some((m) => m[2].includes('|')))) return rows.map((r) => r.trimEnd());
   const indent = /^\s*/.exec(rows[0])![0];
-  const cells = rows.map((r, i) => splitRow(i === 1 ? r : formatInline(r)));
+  const cells = rows.map((r, i) => splitRow(i === 1 ? r : formatInline(r, spec)));
   const aligns = cells[1].map((c) => (c.startsWith(':') ? (c.endsWith(':') ? 'center' : 'left') : c.endsWith(':') ? 'right' : 'none'));
   const columns = aligns.length;
   const widths = aligns.map((_, c) => Math.max(3, ...cells.filter((_, i) => i !== 1).map((r) => textWidth(r[c] ?? ''))));

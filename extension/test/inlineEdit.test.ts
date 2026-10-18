@@ -107,7 +107,7 @@ test('every item of the examples and the corpus that is on one line is placed on
         if (item.content?.includes('\n')) { assert.equal(item.at, undefined); continue; }
         assert.ok(item.at, `${doc.name}, line ${block.start + 1}: ${item.name} is placed`);
         const text = blockLines[item.at.line].slice(item.at.start, item.at.end);
-        assert.ok(item.kind === SPAN ? text.startsWith('[') : text.startsWith(`:${item.name}`), `${doc.name}: ${text}`);
+        assert.ok(item.kind === SPAN ? text.startsWith('[') : text.toLowerCase().startsWith(`:${item.name}`), `${doc.name}: ${text}`);
         if (item.at.content) assert.equal(blockLines[item.at.line].slice(item.at.content.start, item.at.content.end), item.content);
         if (item.at.attrs) assert.match(blockLines[item.at.line].slice(item.at.attrs.start, item.at.attrs.end), /^\{.*\}$/);
       }

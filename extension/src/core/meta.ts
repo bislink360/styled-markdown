@@ -1,10 +1,10 @@
 import { closeContainers, closerColons, CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
-import { specVersion } from './specVersion';
 import { parseFrontMatter } from './frontmatter';
 import { parseSmd } from './parse';
 import { dueState } from './render';
 import { validateSmd, type Diagnostic, type ValidateOptions } from './validate';
-import { inlineText } from './agentView';
+import { inlineText, plainInlineText } from './agentView';
+import { specVersion, type SpecVersion } from './specVersion';
 import { scanTasks } from './taskLines';
 import { shownValues, substituteLine } from './variables';
 import { priorityRank } from './util';
@@ -43,30 +43,40 @@ export interface SmdDocumentInfo {
 /** Parse every task (open and done) with its owner, priority and due date. Fenced and indented code holds none (see scanTasks). */
 export function extractTasks(text: string, today?: string): TaskInfo[] {
   const fm = parseFrontMatter(text);
+  const spec = specVersion(fm.data);
   // `{{name}}` shows the values as the document shows them: spelled as written in spec v2.
-  const shown = shownValues(fm.data, text, specVersion(fm.data)) as Record<string, unknown>;
+  const shown = shownValues(fm.data, text, spec) as Record<string, unknown>;
   const tasks: TaskInfo[] = [];
   let section: string | null = null;
-  for (const item of scanTasks(text, fm.bodyStartLine)) {
-    if (item.kind === 'heading') section = inlineText(item.text, { variables: shown });
-    else tasks.push(taskInfo(item, section, shown, today));
+  for (const item of scanTasks(text, fm.bodyStartLine, spec)) {
+    if (item.kind === 'heading') section = plainInlineText(item.text, spec, shown);
+    else tasks.push(taskInfo(item, section, { data: shown, spec }, today));
   }
   return tasks;
 }
 
+/** A task's due date, priority and mentions; in spec v2 the directive names are read in any case (`:Due[…]`). */
+const TASK_FIELDS = {
+  1: { due: /:due\[([^\]]+)\]/, priority: /:priority\[([^\]]+)\]/, mention: /:mention\[([^\]]+)\]/g },
+  2: { due: /:due\[([^\]]+)\]/i, priority: /:priority\[([^\]]+)\]/i, mention: /:mention\[([^\]]+)\]/gi },
+} as const;
+
 /** One task line as a task, under the heading `section`. */
-function taskInfo(item: { line: number; mark: string; body: string }, section: string | null, data: Record<string, unknown>, today?: string): TaskInfo {
-  const body = substituteLine(item.body, data, specVersion(data));
-  const due = /:due\[([^\]]+)\]/.exec(body)?.[1]?.trim();
-  const priority = /:priority\[([^\]]+)\]/.exec(body)?.[1]?.trim();
+function taskInfo(
+  item: { line: number; mark: string; body: string }, section: string | null, { data, spec }: { data: Record<string, unknown>; spec: SpecVersion }, today?: string,
+): TaskInfo {
+  const body = substituteLine(item.body, data, spec);
+  const fields = TASK_FIELDS[spec];
+  const due = fields.due.exec(body)?.[1]?.trim();
+  const priority = fields.priority.exec(body)?.[1]?.trim();
   const assignees = [
-    ...[...body.matchAll(/:mention\[([^\]]+)\]/g)].map((x) => x[1].trim()),
+    ...[...body.matchAll(fields.mention)].map((x) => x[1].trim()),
     ...[...body.replace(/`[^`]*`/g, '').matchAll(/(?:^|\s)(@[\w.-]+)/g)].map((x) => x[1]),
   ];
   const done = item.mark !== ' ';
   return {
     // Owner, priority and due date live in their own fields, so strip them from the text.
-    text: inlineText(body)
+    text: plainInlineText(body, spec)
       .replace(/\s*\(due [^)]*\)/, '')
       .replace(/\s*\[(?:P\d|critical|high|medium|low)\]/i, '')
       .replace(/(^|\s)@[\w.-]+(?=\s|$)/g, '')
@@ -132,7 +142,7 @@ export function getDocumentInfo(text: string, options: ValidateOptions = {}): Sm
       continue;
     }
     const open = CONTAINER_OPEN.exec(line);
-    const info = open ? parseContainerInfo(open[3] + open[4]) : null;
+    const info = open ? parseContainerInfo(open[3] + open[4], rendered.spec) : null;
     if (open && info) {
       containers[info.name] = (containers[info.name] ?? 0) + 1;
       const v = info.attrs.values;

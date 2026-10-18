@@ -98,7 +98,8 @@ export function displayMath(lines: readonly string[], spec: SpecVersion = 1): (l
   };
 }
 
-export function parseContainerInfo(info: string): ContainerInfo | null {
+/** A container's opening line after its colons, its attribute values read with the rules of `spec` (escapes differ). */
+export function parseContainerInfo(info: string, spec: SpecVersion = 1): ContainerInfo | null {
   const m = /^\s*([a-zA-Z][\w-]*)(.*)$/.exec(info);
   if (!m) return null;
   const name = m[1].toLowerCase();
@@ -106,11 +107,11 @@ export function parseContainerInfo(info: string): ContainerInfo | null {
   let attrs = emptyAttrs();
   let attrsError: string | undefined;
   if (rest.startsWith('{')) {
-    const end = findAttrsEnd(rest, 0);
+    const end = findAttrsEnd(rest, 0, spec);
     if (end === -1) {
       attrsError = 'Attribute list is missing its closing "}".';
     } else {
-      const parsed = parseAttrs(rest.slice(1, end));
+      const parsed = parseAttrs(rest.slice(1, end), spec);
       if (parsed) attrs = parsed; else attrsError = 'Malformed attribute list.';
       rest = rest.slice(end + 1);
     }

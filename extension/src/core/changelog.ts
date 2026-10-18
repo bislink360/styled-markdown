@@ -1,5 +1,5 @@
 import { closeContainers, closerColons, CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
-import { HEADING_ATTRS } from './markdownItRules';
+import { withoutHeadingAttrs } from './sections';
 import type { SpecVersion } from './specVersion';
 
 /**
@@ -171,7 +171,7 @@ class ChangelogScanner {
     }
     const top = this.stack.at(-1);
     const heading = top?.block ? HEADING.exec(line) : null;
-    if (top && heading) top.headings.push(entryOf(heading, i));
+    if (top && heading) top.headings.push(entryOf(heading, i, this.spec));
   }
 
   finish(): ChangelogBlock[] {
@@ -198,7 +198,7 @@ class ChangelogScanner {
   }
 }
 
-function entryOf(heading: RegExpExecArray, line: number): ChangelogEntry {
-  const text = heading[3].replace(HEADING_ATTRS, '');
+function entryOf(heading: RegExpExecArray, line: number, spec: SpecVersion): ChangelogEntry {
+  const text = withoutHeadingAttrs(heading[3], spec);
   return { ...splitEntry(text), line, level: heading[2].length, column: heading[1].length };
 }

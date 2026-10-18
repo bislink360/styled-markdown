@@ -393,6 +393,18 @@ export function renderInlineDirective(
   return render ? render({ md, content, values, color, today, m, spec }) : escapeHtml(content);
 }
 
+/**
+ * A directive outside the vocabulary, which spec v2 reads as one (RFC proposal 7b): its content as inline Markdown
+ * in `<span class="smd-directive smd-directive-<name>">`, its attributes applied as on a styled span (`.class`,
+ * `#id` and the style keys; other keys are kept on the token for the tools that know the directive, and not shown).
+ */
+export function renderUnknownDirective(md: MarkdownIt, name: string, content: string, attrs: Attrs, spec: SpecEnv): string {
+  const classes = ['smd-directive', `smd-directive-${name}`, ...attrs.classes.map((c) => `smd-u-${c}`)];
+  const { style } = attrsToStyle(attrs);
+  const html = ` class="${escapeHtml(classes.join(' '))}"${style ? ` style="${escapeHtml(style)}"` : ''}${attrs.id ? ` id="${escapeHtml(attrs.id)}"` : ''}`;
+  return `<span${html}>${md.renderInline(content, { ...spec })}</span>`;
+}
+
 /** A directive's content as inline Markdown, read with the document's rules. */
 const inlineContent = ({ md, content, spec }: Directive): string => md.renderInline(content, { ...spec });
 

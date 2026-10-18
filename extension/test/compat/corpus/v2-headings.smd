@@ -1,0 +1,47 @@
+---
+smd: 2
+title: Heading attributes in spec v2
+summary: "Pins how spec v2 reads the braces that end a heading: a list is attributes only when it has items and each is #id, .class or key=value; an empty {} or a bare {word} is heading text, which the heading's id is made from. v2-hints.smd pins the same headings read with spec v1."
+status: draft
+updated: 2026-10-17
+---
+
+## Object {}
+
+An empty `{}` is text: the heading reads "Object {}" and its id is `object-`.
+
+## Returns {ok}
+
+A bare word is text: the heading reads "Returns {ok}" and its id is `returns-ok`.
+
+## Flags {agent}
+
+`agent` without a value is a bare word too, so this section is not hidden from agents.
+
+## Mixed {#mixed-id ok}
+
+One bare word makes the whole list text, the `#mixed-id` included.
+
+## Spaced { ok }
+
+Text keeps its spaces as written.
+
+## Setup {#setup-guide}
+
+An id, a class and `key=value` items are attributes, as in spec v1: this heading reads "Setup" with the id `setup-guide`.
+
+## Wide {.wide}
+
+## Internal notes {agent=skip}
+
+Hidden from the agent view.
+
+<!-- smd-disable-next-line attrs/syntax -->
+## Malformed {title="never closed}
+
+A list that doesn't parse is text in both versions, and still an `attrs/syntax` error.
+
+## Links
+
+- [Object {}](#object-), [Returns {ok}](#returns-ok), [Flags {agent}](#flags-agent), [Mixed](#mixed-mixed-id-ok) and [Spaced](#spaced-ok-)
+- [Setup](#setup-guide) and [Wide](#wide)

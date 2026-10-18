@@ -152,10 +152,11 @@ test('migrate: an empty {} or a bare {word} after a heading is removed', () => {
   assert.deepEqual(edits(p, 'heading-braces'), ['5:## Object {}→## Object', '7:## Returns {ok}→## Returns', '9:## Both {#id ok}→## Both {#id}']);
 });
 
-test('migrate: heading attributes v2 keeps, and {agent}, are not rewritten', () => {
-  const p = checkCase(doc('## Kept {#id .c}\n\n## Skipped {agent=skip}\n\n## Flag {agent}\n\n```\n## Code {}\n```'));
-  assert.deepEqual(changes(p, 'heading-braces'), []);
-  assert.deepEqual(notes(p, 'heading-braces').map((s) => s.line + 1), [9]);
+test('migrate: heading attributes v2 keeps are not rewritten, and {agent} is written agent=true', () => {
+  const p = checkCase(doc('## Kept {#id .c}\n\n## Skipped {agent=skip}\n\n## Flag {agent}\n\n## Both {agent ok}\n\n```\n## Code {}\n```'));
+  // v1 reads a bare `agent` as agent=true (data-agent="true"); written out, spec v2 reads the list as attributes too.
+  assert.deepEqual(edits(p, 'heading-braces'), ['9:## Flag {agent}→## Flag {agent=true}', '11:## Both {agent ok}→## Both {agent=true ok}', '11:## Both {agent=true ok}→## Both {agent=true}']);
+  assert.deepEqual(notes(p, 'heading-braces'), []);
 });
 
 // ---------------------------------------------------------------------------
@@ -400,12 +401,16 @@ test('migrate: corpus/migrate.smd has a case for every step', () => {
   assert.deepEqual(validateSmd(text, { readFile: corpusRead, today: TODAY }).filter((d) => d.severity === 'error' || d.severity === 'warning'), []);
   const p = plan(text, { readFile: corpusRead });
   assert.deepEqual(p.steps.map((s) => `${s.kind}:${s.line + 1}${s.note ? ' note' : ''}`), [
-    'closer:15', 'closer:19', 'duplicate-attrs:26', 'title-text:31', 'agent-priority:38', 'math-delimiters:44', 'heading-braces:47', 'unknown-directive:51',
+    'closer:15', 'closer:19', 'duplicate-attrs:26', 'title-text:31', 'agent-priority:38', 'math-delimiters:44', 'heading-braces:47', 'attr-escapes:78', 'unknown-directive:51', 'unknown-directive:79',
     'include-section:60', 'value-case:5', 'value-case:66', 'value-case:70', 'typography:74 note', 'fuzzy-link:74 note', 'variable-spelling:6 note', 'version:2',
   ]);
   assert.deepEqual(new Set(p.steps.map((s) => s.kind)), new Set(KIND_ORDER), 'every kind of step');
-  // Only the steps that keep the v2 meaning change the v1 rendering, and these don't show.
-  assert.equal(v1(p.result, { readFile: corpusRead }), v1(text, { readFile: corpusRead }));
+  // Only the steps that keep the v2 meaning change the v1 rendering, and of these only the backslash step shows: v1 reads
+  // the `\\\\` it writes as two backslashes (the title's inline Markdown shows one of each pair), v2 as one.
+  const unc = String.raw`<span class="smd-sr-only">Note: </span>\server\share`;
+  const v1Unc = String.raw`<span class="smd-sr-only">Note: </span>\\server\share`;
+  assert.equal(v1(p.result, { readFile: corpusRead }).replace(v1Unc, unc), v1(text, { readFile: corpusRead }));
+  assert.ok(asIs(p.result, { readFile: corpusRead }).includes(unc), 'v2 shows the title as v1 did');
   // Spec v2 shows the typography and the bare domain differently until --keep-typography and --link-domains keep them.
   assert.notEqual(asIs(p.result, { readFile: corpusRead }), v1(text, { readFile: corpusRead }));
   const kept = plan(text, { readFile: corpusRead, keepTypography: true, linkDomains: true });
@@ -487,11 +492,15 @@ test('migrate: a migrated document renders under spec v2 as the original renders
     if (p.from >= 2) continue;
     assert.match(p.result, /\nsmd: 2\n/, file);
     if (changes(p).some((s) => s.kind === 'closer' || s.kind === 'math-delimiters')) migrated.push(path.basename(file));
+    // A value the backslash step (proposal 6) wrote with `\\` reads as two backslashes with the v1 rules, as one with v2.
+    const escaped = changes(p, 'attr-escapes').length > 0;
     // `shown` reads with the v1 rules, `shownV2` with the migrated document's own, v2: they agree.
-    assert.equal(shownV2(p.result, reader), shown(p.result, options), `${file}: the migrated document, spec v2 and v1`);
+    if (!escaped) assert.equal(shownV2(p.result, reader), shown(p.result, options), `${file}: the migrated document, spec v2 and v1`);
     // Steps that keep the v2 meaning may change the v1 rendering (corpus/vocabulary-case.smd: proposal 11; quoted
-    // values: proposal 10); their v2 rules are not this comparison's.
-    if (shown(p.result, options) !== shown(text, options)) continue;
+    // values: proposal 10); their v2 rules are not this comparison's. The backslash step is meant to: v2 reads as v1 did
+    // (corpus/attribute-escapes.smd; corpus/migrate.smd quotes a value too, and v2InlineRules.test.ts compares it).
+    const quoted = changes(p, 'variable-spelling').length > 0;
+    if ((!escaped || quoted) && shown(p.result, options) !== shown(text, options)) continue;
     assert.equal(shownV2(p.result, reader), shown(text, options), `${file}: the migrated document under spec v2`);
   }
   // The documents whose closing fences or `$$` delimiters spec v2 reads differently until they are migrated.
@@ -566,4 +575,12 @@ test('spec version step: the version is read as every tool reads it, and the who
     assert.deepEqual(plan(p.result).steps, [], `${line}: the migrated document needs nothing more`);
   }
   assert.deepEqual(plan('---\nsmd: 2.0\n---\n\nText.\n').steps, [], 'smd: 2.0 reads as 2');
+});
+
+test('migrate: backslashes are not rewritten when the plan cannot write smd: 2', () => {
+  // The front matter is never closed (fuzz seed 99, case 2602): the document stays v1, so its values must read as v1 reads them.
+  const text = '---\n:::api{method=POST path="/v1/x\\" auth=token} Endpoint';
+  const p = plan(text);
+  assert.deepEqual(changes(p, 'attr-escapes'), []);
+  assert.deepEqual(changes(plan(p.result, { force: true })), []);
 });

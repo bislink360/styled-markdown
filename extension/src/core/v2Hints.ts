@@ -1,6 +1,6 @@
 import { findAttrsEnd, lexAttrItems } from './attrs';
 import { isKnownContainer, type ContainerInfo } from './containers';
-import { LATEST_SPEC, readSpec } from './specVersion';
+import { LATEST_SPEC, readSpec, type SpecVersion } from './specVersion';
 import type { Fix, Severity } from './validate';
 
 /**
@@ -36,8 +36,8 @@ interface AttrItem {
 }
 
 /** The items of the inside of `{…}` as parseAttrs reads them, or null when it is not a well-formed attribute list. */
-function attrItems(src: string): AttrItem[] | null {
-  return lexAttrItems(src)?.map(({ match, pos }) => itemOf(match, pos)) ?? null;
+function attrItems(src: string, spec: SpecVersion = 1): AttrItem[] | null {
+  return lexAttrItems(src, spec)?.map(({ match, pos }) => itemOf(match, pos)) ?? null;
 }
 
 function itemOf(m: RegExpExecArray, start: number): AttrItem {
@@ -63,9 +63,9 @@ const quoted = (labels: string[]) => labels.map((l) => `"${l}"`).join(', ');
  * used, where it first appears (as smd fmt does), so the attributes render in the same order. `text` is the line as
  * checked (inline code blanked out); the fix is offered only where it is the line as written.
  */
-export function checkDuplicateAttrs(line: number, raw: string, open: number, close: number, push: Push, text = raw): void {
+export function checkDuplicateAttrs(line: number, raw: string, open: number, close: number, push: Push, text = raw, spec: SpecVersion = 1): void {
   const src = text.slice(open + 1, close);
-  const items = attrItems(src);
+  const items = attrItems(src, spec);
   if (!items) return;
   const last = new Map<string, AttrItem>();
   for (const it of items) last.set(it.slot, it);
@@ -82,13 +82,15 @@ export function checkDuplicateAttrs(line: number, raw: string, open: number, clo
 /** Inline attribute lists on a line: `[text]{…}`, `:name[…]{…}` and `:name{…}`. */
 const SPAN_ATTRS = /\]\{[^{}\n]*\}/g;
 const DIRECTIVE_ATTRS = /(?:^|[\s([{>*_~"'-]):[a-z][a-z0-9-]*(\{[^{}\n]*\})/g;
+/** In spec v2 directive names are read in any case (RFC proposal 11). */
+const DIRECTIVE_ATTRS_V2 = /(?:^|[\s([{>*_~"'-]):[A-Za-z][A-Za-z0-9-]*(\{[^{}\n]*\})/g;
 
 /** Duplicates in the inline attribute lists of a line; `text` has its inline code blanked out. */
-export function checkInlineAttrLists(raw: string, text: string, line: number, push: Push): void {
-  for (const m of text.matchAll(SPAN_ATTRS)) checkDuplicateAttrs(line, raw, m.index + 1, m.index + m[0].length - 1, push, text);
-  for (const m of text.matchAll(DIRECTIVE_ATTRS)) {
+export function checkInlineAttrLists(raw: string, text: string, line: number, push: Push, spec: SpecVersion = 1): void {
+  for (const m of text.matchAll(SPAN_ATTRS)) checkDuplicateAttrs(line, raw, m.index + 1, m.index + m[0].length - 1, push, text, spec);
+  for (const m of text.matchAll(spec >= 2 ? DIRECTIVE_ATTRS_V2 : DIRECTIVE_ATTRS)) {
     const close = m.index + m[0].length - 1;
-    checkDuplicateAttrs(line, raw, close + 1 - m[1].length, close, push, text);
+    checkDuplicateAttrs(line, raw, close + 1 - m[1].length, close, push, text, spec);
   }
 }
 
@@ -109,10 +111,10 @@ export function checkCloser(line: number, indent: number, colons: number, open: 
 }
 
 /** The attribute list of a container's opening line, which starts at `nameEnd`. */
-export function checkContainerHints(info: ContainerInfo, line: number, raw: string, nameEnd: number, push: Push): void {
-  const close = raw[nameEnd] === '{' ? findAttrsEnd(raw, nameEnd) : -1;
+export function checkContainerHints(info: ContainerInfo, line: number, raw: string, nameEnd: number, push: Push, spec: SpecVersion = 1): void {
+  const close = raw[nameEnd] === '{' ? findAttrsEnd(raw, nameEnd, spec) : -1;
   if (close < 0 || info.attrsError) return;
-  checkDuplicateAttrs(line, raw, nameEnd, close, push);
+  checkDuplicateAttrs(line, raw, nameEnd, close, push, raw, spec);
   if (!isKnownContainer(info.name)) return;
   if (info.attrs.values.title !== undefined) titleConflict(line, raw, close, info.attrs.values.title, push);
 }
@@ -159,10 +161,12 @@ export function removedAgentPriority(line: number, raw: string, open: number, pu
 /**
  * The attribute list ending a heading: `start` is where the spaces before its `{` begin, `open` and `close` its braces.
  * Spec v2 reads a list as attributes only when it has items and each is `#id`, `.class` or `key=value`; otherwise it
- * is heading text. The fix removes the braces or the bare words, which is how the heading renders today.
+ * is heading text. The fix removes the braces or the bare words, which is how the heading renders today. A spec v2
+ * document already reads such a list as text, so it only gets the duplicate check.
  */
-export function checkHeadingHints(line: number, raw: string, start: number, open: number, close: number, push: Push): void {
-  checkDuplicateAttrs(line, raw, open, close, push);
+export function checkHeadingHints(line: number, raw: string, start: number, open: number, close: number, push: Push, spec: SpecVersion = 1): void {
+  checkDuplicateAttrs(line, raw, open, close, push, raw, spec);
+  if (spec >= 2) return;
   const src = raw.slice(open + 1, close);
   const items = attrItems(src);
   if (!items) return;

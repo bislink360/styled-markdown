@@ -68,7 +68,7 @@ function includedTokens(state: StateCore, open: Token, scope: IncludeScope, incl
   const src = include.lines.slice(include.start, include.end + 1).join('\n');
   const tokens: Token[] = [];
   state.md.block.parse(src, state.md, state.env, tokens);
-  annotateTokens(tokens, src);
+  annotateTokens(tokens, src, specOf(state.env));
   const from: IncludedFrom = { scope, slugs: new Map(), renames: new Map() };
   const line = open.map?.[0] ?? 0;
   for (const t of tokens) adopt(t, from, open.level + 1, line);
