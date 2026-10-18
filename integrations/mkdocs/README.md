@@ -5,7 +5,7 @@ An [MkDocs](https://www.mkdocs.org) plugin for [Styled Markdown](https://github.
 ## Requirements
 
 - Python 3.9+ and MkDocs 1.6+
-- **Node.js 18+** on `PATH`. The renderer is the Styled Markdown engine in JavaScript, shipped inside the package (`bridge.cjs`, no npm install). The plugin starts one `node` process per build. Without Node the build stops with a message saying so.
+- **Node.js 22+** on `PATH`. The renderer is the Styled Markdown engine in JavaScript, shipped inside the package (`bridge.cjs`, no npm install). The plugin starts one `node` process per build. Without Node the build stops with a message saying so.
 
 ## Install
 

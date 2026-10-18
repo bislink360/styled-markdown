@@ -5,7 +5,7 @@ export type { SpecVersion } from './specVersion';
 export { FRONTMATTER_SCHEMA, frontMatterValues } from './frontmatterSchema';
 export { renderSmd, renderStandaloneHtml, slugify } from './render';
 export { SUPPORTED_LANGUAGES, matchLanguage } from './i18n';
-export type { RenderOptions, RenderResult, Heading } from './render';
+export type { RenderOptions, RenderResult, Heading, ReadFile } from './render';
 export { parseSmd } from './parse';
 export type { ParseResult } from './parse';
 export type { Figure, FigureNumber } from './figures';
@@ -23,7 +23,7 @@ export { tasksToCsv, tasksToGantt, ganttDocument, ganttDate, TASK_CSV_COLUMNS } 
 export type { TaskExportRow, GanttOptions } from './taskExport';
 export { markdownToSmd, fillTemplate } from './fromMarkdown';
 export { agentView, outline, estimateTokens, inlineText } from './agentView';
-export type { AgentViewOptions, AgentViewResult } from './agentView';
+export type { AgentViewOptions, AgentViewResult, InlineTextOptions } from './agentView';
 export type { BudgetResult, OmittedSection, Tokenizer } from './budget';
 export { querySmd, parseSelector, SelectorError } from './query';
 export type { QueryMatch, QueryOptions, Selector, AttributeTest, QueryOperator } from './query';

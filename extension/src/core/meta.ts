@@ -146,7 +146,7 @@ export function getDocumentInfo(text: string, options: ValidateOptions = {}): Sm
     if (open && info) {
       containers[info.name] = (containers[info.name] ?? 0) + 1;
       const v = info.attrs.values;
-      const title = inlineText(info.title, undefined, false, undefined, fm.data);
+      const title = inlineText(info.title, { variables: fm.data });
       if (info.name === 'decision') decisions.push({ title, status: v.status ?? 'proposed', date: v.date, owner: v.owner, line: i });
       if (info.name === 'risk') risks.push({ title, impact: v.impact ?? 'medium', likelihood: v.likelihood, owner: v.owner, status: v.status, line: i });
       stack.push({ name: info.name, colons: open[2].length, line: i, title, body: [] });

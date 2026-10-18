@@ -657,11 +657,11 @@ An `:::agent` block inside a section marked `{agent=skip}` is omitted with the s
 | Theme | Follows VS Code light/dark/high contrast. Override with `smd.preview.theme` or front matter `theme:`. |
 | Security | A strict Content Security Policy: scripts in documents never run |
 
-**`.md` files in VS Code's built-in preview.** A `.md` file that uses `.smd` syntax renders in VS Code's own Markdown preview too (`Ctrl+Shift+V` on a `.md` file): containers, inline directives, attribute lists, `==marks==`, Mermaid diagrams (drawn in the preview's theme), and code titles, line highlights and `file="…"` embeds. Plain Markdown looks as before, and code blocks without `.smd` attributes keep VS Code's highlighting. Compared with the `.smd` preview:
+**`.md` files in VS Code's built-in preview.** A `.md` file that opts in with an `smd` front matter key (`smd: 1` or `smd: 2`) renders its `.smd` syntax in VS Code's own Markdown preview too (`Ctrl+Shift+V` on a `.md` file): containers, inline directives, attribute lists, `==marks==`, Mermaid diagrams (drawn in the preview's theme), and code titles, line highlights and `file="…"` embeds. Plain Markdown looks as before, and code blocks without `.smd` attributes keep VS Code's highlighting. Compared with the `.smd` preview:
 
 - math is VS Code's own while `markdown.math.enabled` is on (the default); with it off, the `.smd` math rules apply
 - task lists, the front matter header and the table of contents are left to VS Code, and tabs show one after another
-- `smd.markdownPreview.enabled` (default on) turns it off; settings apply after **Developer: Reload Window**
+- `smd.markdownPreview.enabled` says which `.md` files get it: `opt-in` (the default since 2.0: only files with an `smd` key), `always` (every `.md` file, as in 1.x; `true` still means this) or `never` (`false`); settings apply after **Developer: Reload Window**
 
 ## 13. VS Code: editing assistance
 
@@ -788,7 +788,7 @@ Everything else needs a decision only the author can make (which file was meant,
 
 ### In GitHub Actions
 
-`uses: bislink360/styled-markdown/validate@v1.5.0` validates on every pull request and shows each problem as an inline annotation on the changed lines, plus a job summary with counts per severity and the first 50 problems linked to their lines. It runs the bundled CLI with the runner's Node.js 18+, without installing anything; the inputs (`paths`, `fail-on: error|warning|never`, `strict`, `config`, `mermaid`, `stale-after`, `summary`, `cli`) are in [INSTALL.md](INSTALL.md#github-actions).
+`uses: bislink360/styled-markdown/validate@v1.5.0` validates on every pull request and shows each problem as an inline annotation on the changed lines, plus a job summary with counts per severity and the first 50 problems linked to their lines. It runs the bundled CLI with the runner's Node.js 22+, without installing anything; the inputs (`paths`, `fail-on: error|warning|never`, `strict`, `config`, `mermaid`, `stale-after`, `summary`, `cli`) are in [INSTALL.md](INSTALL.md#github-actions).
 
 Underneath it is `smd validate --format github`, which prints one [workflow command](https://docs.github.com/actions/reference/workflow-commands-for-github-actions) per problem:
 
@@ -930,7 +930,7 @@ Static site generators built on remark/rehype can render `.smd` content with the
 
 Configuration for Astro, Docusaurus and Next.js, and which hosts are tested: [npm package README](../npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs).
 
-**MkDocs.** The `mkdocs-styled-markdown` plugin builds the `.smd` files of an MkDocs site as pages in its theme: front matter `title` is the page title, the theme's table of contents comes from the document's headings and ids, links between `.smd` and `.md` pages point at the built pages, `smd.css` and the runtime are added, and `.smd` blocks follow the theme's light or dark mode. `:::include` and code embeds read only inside `docs_dir`. `validate: true` reports `smd validate`'s problems in the build log, with errors as MkDocs warnings so `mkdocs build --strict` fails on them; `md_syntax: true` renders `.smd` syntax in `.md` pages too. It needs Node.js 18+ on `PATH`. Install and options: [INSTALL.md](INSTALL.md#mkdocs-plugin) and the [plugin README](../integrations/mkdocs/README.md).
+**MkDocs.** The `mkdocs-styled-markdown` plugin builds the `.smd` files of an MkDocs site as pages in its theme: front matter `title` is the page title, the theme's table of contents comes from the document's headings and ids, links between `.smd` and `.md` pages point at the built pages, `smd.css` and the runtime are added, and `.smd` blocks follow the theme's light or dark mode. `:::include` and code embeds read only inside `docs_dir`. `validate: true` reports `smd validate`'s problems in the build log, with errors as MkDocs warnings so `mkdocs build --strict` fails on them; `md_syntax: true` renders `.smd` syntax in `.md` pages too. It needs Node.js 22+ on `PATH`. Install and options: [INSTALL.md](INSTALL.md#mkdocs-plugin) and the [plugin README](../integrations/mkdocs/README.md).
 
 **Obsidian.** The Styled Markdown plugin for Obsidian renders `.smd` syntax in notes with the same engine, bundled into the plugin. In reading view, `:::` containers are drawn from their full source although Obsidian splits them into several Markdown blocks, inline directives and `[text]{…}` spans are rendered inside Obsidian's own text, and `[[wikilinks]]`, math and Mermaid inside containers are Obsidian's. ```` ```smd ```` blocks render in reading view and Live Preview, `.smd` files open as notes, and `smd.css` follows the Obsidian theme in light and dark mode. Settings turn containers, inline directives and `:::agent` blocks (collapsed, expanded, hidden) on and off. A note's raw HTML is never rendered: the engine runs with raw HTML off and its output goes through Obsidian's sanitizer. Live Preview shows the rest of the syntax as source. Install and limitations: [INSTALL.md](INSTALL.md#obsidian-plugin) and the [plugin README](../integrations/obsidian/README.md).
 

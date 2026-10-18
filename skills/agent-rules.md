@@ -1,6 +1,6 @@
 ## Styled Markdown (.smd)
 
-`.smd` files are Styled Markdown: Markdown plus `:::` containers, `{…}` attributes and `:name[…]` directives. Work with them through the `smd` CLI, run from the repository root as `{{smd}} <command>` (Node.js 18+, no install), or as `smd` if it is on PATH.
+`.smd` files are Styled Markdown: Markdown plus `:::` containers, `{…}` attributes and `:name[…]` directives. Work with them through the `smd` CLI, run from the repository root as `{{smd}} <command>` (Node.js 22+, no install), or as `smd` if it is on PATH.
 
 ### Reading
 

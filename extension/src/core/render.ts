@@ -4,7 +4,7 @@ import hljs from 'highlight.js/lib/common';
 import { escapeHtml, resolveColor } from './attrs';
 import { type FrontMatter, parseFrontMatter, unreadFrontMatter } from './frontmatter';
 import { documentLanguage, EN, isEnglish, isEnglishMessages, messagesFor, runtimeLabels, type Messages } from './i18n';
-import { applySmd, smdFeatures, type SmdContext } from './markdownItSetup';
+import { addTableRules, applySmd, smdFeatures, type ReadFile, type SmdContext } from './markdownItSetup';
 import { renderFrontMatterError, renderHeader } from './markdownItHtml';
 import type { FigureEnv, VariableEnv } from './markdownItRules';
 import { documentRiskMatrixHtml } from './riskHtml';
@@ -13,6 +13,7 @@ import { typographyOf } from './typography';
 import { shownValues } from './variables';
 
 export { HEADING_ATTRS, slugify } from './markdownItRules';
+export type { ReadFile } from './markdownItSetup';
 export { dueState } from './markdownItHtml';
 
 export interface RenderOptions {
@@ -23,8 +24,9 @@ export interface RenderOptions {
   /**
    * Read a file relative to the document, for ```lang file="…"` embeds and `:::include` blocks (nested includes ask
    * for paths relative to this document too). Return undefined when not allowed/missing. Without it nothing is included.
+   * The markdown-it plugin's `readFile` is the same function: the second argument is the render's env (see ReadFile).
    */
-  readFile?: (relativePath: string) => string | undefined;
+  readFile?: ReadFile;
   /** "Today" as YYYY-MM-DD, for :due[] states. Defaults to the current date. */
   today?: string;
   /**
@@ -107,16 +109,8 @@ export function createMarkdownIt(options: RenderOptions = {}): MarkdownIt {
     },
   });
   applySmd(md, ALL_SYNTAX, SMD_CONTEXT);
-
-  // Make tables horizontally scrollable on narrow previews.
-  md.renderer.rules.table_open = (tokens, idx, opts, _env, self) =>
-    `<div class="smd-table-wrap">${self.renderToken(tokens, idx, opts)}`;
-  md.renderer.rules.table_close = (tokens, idx, opts, _env, self) => `${self.renderToken(tokens, idx, opts)}</div>`;
-  // Markdown tables have one header row: each header cell heads its column.
-  md.renderer.rules.th_open = (tokens, idx, opts, _env, self) => {
-    tokens[idx].attrSet('scope', 'col');
-    return self.renderToken(tokens, idx, opts);
-  };
+  // Tables scroll on narrow previews, and their header cells head their columns.
+  addTableRules(md);
   return md;
 }
 

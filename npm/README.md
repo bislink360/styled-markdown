@@ -11,7 +11,7 @@ This package provides the complete engine as a **library** and the **`smd` CLI**
 ![Rendered Styled Markdown](https://raw.githubusercontent.com/bislink360/styled-markdown/main/docs/images/01-overview.png)
 
 - 📦 One install gives you the render, validate, fix, convert, agent-view, outline and task-extraction tools
-- 🧩 CommonJS + ESM + TypeScript types; runs in Node 18+ and in bundlers/browsers (the library has no `fs` dependency)
+- 🧩 CommonJS + ESM + TypeScript types; runs in Node 22+ and in bundlers/browsers (the library has no `fs` dependency)
 - 🤖 Built for LLM pipelines: `agentView()` typically cuts **37–85%** of tokens while keeping meaning
 
 ## Install
@@ -72,7 +72,7 @@ import {
 // HTML fragment + front matter + headings + the spec version the document was read with
 const { html, frontMatter, headings, spec } = renderSmd(source, {
   agentBlocks: 'collapsed',                  // how :::agent blocks show to humans: collapsed | expanded | hidden
-  readFile: (path) => fs.readFileSync(path, 'utf8'), // enables ```ts file="…" embeds (sandbox it yourself)
+  readFile: (path) => fs.readFileSync(path, 'utf8'), // enables ```ts file="…" embeds and :::include (sandbox it yourself)
   lang: 'de',                                // labels ("Hinweis", "Abbildung 2") for documents without their own `lang:`
   spec: 2,                                   // spec version for documents without an `smd:` key (default 1); their own `smd:` wins
 });
@@ -103,6 +103,7 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 
 | Option | Default | What it adds |
 |---|---|---|
+| `preset` | none | `'smd'`: render as `renderSmd` does (since 2.0; see below). It turns on `codeFrames`, `headingIds`, `sourceLines` and `frontMatter` unless you pass them |
 | `containers` | `true` | `:::note`, `:::tabs`, `:::decision`, `:::risk`, `:::api`, numbered `:::figure`, `:::glossary`, `:::changelog`, `:::quote` and the other blocks |
 | `glossary` | `true` | `:::glossary` term lists as `<dl>`, and the first use of each term per section linked to its definition with a tooltip (needs `containers`) |
 | `directives` | `true` | `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:priority[…]`, `:metric[…]`, `:status[…]`, `:mention[…]`, `:ref[…]` |
@@ -112,18 +113,32 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 | `footnotes` | `true` | GitHub-style `[^1]` footnotes, collected in a numbered section at the end (since 1.6). If you use markdown-it-footnote, add it before this plugin (this option then steps aside) or set `footnotes: false` |
 | `tasks` | `true` | `- [ ]` / `- [x]` task lists as checkboxes |
 | `fences` | `true` | ```` ```mermaid ```` and ```` ```math ```` blocks, and `title="…"`, `file="…"` and `{2,5-7}` on code blocks; turn it off if your host has its own fence attributes |
-| `codeFrames` | `false` | Frame every code block with a language label, as the `.smd` preview does |
-| `headingIds` | `false` | Heading ids from their text (`#setup`, `#setup-1`), the same slugs as `renderSmd` |
-| `sourceLines` | `false` | `data-line` source line numbers on blocks |
-| `frontMatter` | `false` | Render `---` YAML front matter as the `.smd` document header (leave it off if your host handles front matter) |
+| `codeFrames` | `false` (`true` with `preset`) | Frame every code block with a language label, as the `.smd` preview does |
+| `headingIds` | `false` (`true` with `preset`) | Heading ids from their text (`#setup`, `#setup-1`), the same slugs as `renderSmd` |
+| `sourceLines` | `false` (`true` with `preset`) | `data-line` source line numbers on blocks |
+| `frontMatter` | `false` (`true` with `preset`) | Render `---` YAML front matter as the `.smd` document header (leave it off if your host handles front matter) |
 | `variables` | `true` | `{{version}}` in text shows the front matter value of `version` (`{{owner.name}}` for nested keys; since 1.6). Names the front matter doesn't define stay as written. The front matter is read from the source; if your host removes it first, pass its data as `env.smdVariables` |
 | `agentBlocks` | `'collapsed'` | How `:::agent` blocks show to humans: `collapsed`, `expanded` or `hidden` |
-| `readFile` | none | `(path, env) => string \| undefined` for ```` ```ts file="…" ```` embeds; `env` is what you passed to `md.render` (sandbox it yourself) |
+| `readFile` | none | `(path, env?) => string \| undefined` for ```` ```ts file="…" ```` embeds and `:::include`; `env` is what you passed to `md.render` (sandbox it yourself). The same `ReadFile` function as `renderSmd`'s (since 2.0) |
 | `today` | current date | `YYYY-MM-DD` for `:due[]` states |
 | `lang` | English | Language of the labels the plugin adds ("Note", "Figure 2", "overdue"…), a BCP 47 tag: `de`, `es`, `fr`, `ja`, `pt`, `zh` (`pt-BR` → `pt`; others are English). A render's `env.lang` overrides it, and with `frontMatter` the document's `lang:` overrides both (since 1.6) |
 | `spec` | `1` | The spec version (`1` or `2`) of documents that don't say, for hosts that remove the front matter (since 2.0). The document's own `smd:` wins: in the source's front matter, else in the front matter you pass as `env.smdVariables`. The plugin puts the version on the render's env as `smdSpec` |
 
 **Typography and links in spec v2.** Your `typographer` and `linkify` options apply to spec v1 documents as they always did. A spec v2 document (`smd: 2`, or `spec: 2`) gets no typographic quotes, dashes or ellipses unless its front matter says `typography: true`, and only GFM autolink literals become links (`https://…`, `www.…`, e-mail addresses; not `example.com`). The plugin only takes away: with your `typographer` or `linkify` off, they stay off. If your host removes the front matter, pass `typography` with the rest of it in `env.smdVariables`. See SPEC §4.8.
+
+**Render like `renderSmd`: `preset: 'smd'`** (since 2.0). The plugin's defaults leave out what a host usually has its own way of doing: heading ids, the front matter header, code frames and source lines are off, and typography and links follow your instance. The preset turns on what `renderSmd` does, so the same document gives the same HTML (inside `<article class="smd-doc">`):
+
+```ts
+import hljs from 'highlight.js/lib/common';
+const md = new MarkdownIt({
+  html: true,                                                    // renderSmd's default; the preset leaves raw HTML to you
+  highlight: (code, lang) => (hljs.getLanguage(lang) ? hljs.highlight(code, { language: lang }).value : ''),
+}).use(smd, { preset: 'smd', sourceLines: false });              // an option you pass wins over the preset's
+```
+
+It turns on `headingIds`, `frontMatter`, `codeFrames` and `sourceLines`, sets your instance's `typographer` and `linkify` to `true` (spec v2 documents still follow the rules above; `md.set({ typographer: false })` after `.use()` turns one back off), and wraps tables in `<div class="smd-table-wrap">` with `scope="col"` on header cells. Raw HTML (`html`) and code highlighting stay your instance's. Without `preset`, nothing changes.
+
+**`readFile` (since 2.0)** has one signature for `renderSmd` and the plugin, `ReadFile = (relativePath: string, env?: unknown) => string | undefined` (exported as a type). `env` is the render's markdown-it env, the same object for every file one render reads: the `env` you passed to `md.render`, or `renderSmd`'s own (opaque). A one-argument function works for both.
 
 Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Figures are numbered per `md.render` call, and `:ref[id]` resolves against the figures of that call (they are kept on the `env` as `smdFigures`). Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
 
@@ -330,6 +345,20 @@ checkTaskLine(line);                      // `- [ ]` → `- [x]`, nothing else c
 Also: `parseIssueRefs(line)` (every reference, code spans ignored), `taskIssueRef(line)` (the first), `issueKey(ref)` and `stripIssueRefs(text)`. Talking to GitHub (`gh`) and writing files is left to you.
 
 Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `ganttDate` and `TASK_CSV_COLUMNS` (task export), `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
+
+The vocabulary is read-only (since 2.0): every table is frozen, nested objects and arrays included, and typed `Readonly`. Copy one to extend it: `{ ...CONTAINERS, mine: { description: 'My block' } }`, `[...NAMED_COLORS, 'brand']`.
+
+`inlineText(line, options?)` is one line of `.smd` as the agent view writes it: styling removed, the words kept. Its options are one object (since 2.0; 1.x took them as positional arguments), all optional:
+
+```ts
+inlineText(':badge[v2] by :due[2026-10-01], see :ref[fig-a], for {{team}}', {
+  today: '2026-10-15',   // YYYY-MM-DD: a past :due[…] reads "(due …, OVERDUE)" on an open task
+  openTask: true,        // the line is an open task's (default false)
+  figures,               // the document's figures by id (ReadonlyMap): :ref[id] → "Figure 2 (id)"
+  variables: frontMatter, // {{name}} → the front matter value
+});
+// '[v2] by (due 2026-10-01, OVERDUE), see Figure 1 (fig-a), for Core'
+```
 
 ## A taste of the format
 

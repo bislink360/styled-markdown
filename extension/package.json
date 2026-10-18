@@ -23,7 +23,7 @@
     "url": "https://github.com/bislink360/styled-markdown/issues"
   },
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.97.0"
   },
   "categories": [
     "Programming Languages",
@@ -482,9 +482,19 @@
           "description": "Render raw HTML embedded in .smd files. Scripts never run in the preview."
         },
         "smd.markdownPreview.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Render Styled Markdown syntax (:::callouts, :badge[…] directives, {attribute} lists, ==marks==, Mermaid diagrams, code titles and embeds, and math when markdown.math.enabled is off) in VS Code's built-in Markdown preview for .md files. Plain Markdown renders as before. Applies after Developer: Reload Window."
+          "type": "string",
+          "enum": [
+            "opt-in",
+            "always",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Only .md files whose front matter has an smd key (smd: 1 or smd: 2).",
+            "Every .md file (as before 2.0).",
+            "No .md file."
+          ],
+          "default": "opt-in",
+          "markdownDescription": "Which `.md` files get Styled Markdown syntax (`:::callouts`, `:badge[…]` directives, `{attribute}` lists, `==marks==`, `{{variables}}`, Mermaid diagrams, code titles and embeds, and math when `markdown.math.enabled` is off) in VS Code's built-in Markdown preview. By default only files that opt in with an `smd` front matter key (`smd: 1` or `smd: 2`). Plain Markdown renders as before. The 1.x values still work: `true` is `always`, `false` is `never`. Applies after **Developer: Reload Window**."
         },
         "smd.validation.enabled": {
           "type": "boolean",
@@ -547,7 +557,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^20.14.0",
-    "@types/vscode": "^1.90.0",
+    "@types/vscode": "^1.97.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.2.0",
     "esbuild": "^0.25.0",

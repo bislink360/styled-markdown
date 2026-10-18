@@ -8,7 +8,7 @@
 //
 //   node .claude/skills/smd-release/scripts/release-check.mjs [--base v1.0.0] [--skip-vscode] [--skip-tests] [--out report.md]
 //
-// Requires: git, Node 18+, npm. The baseline is built once in a temporary git worktree and cached.
+// Requires: git, Node 22+, npm. The baseline is built once in a temporary git worktree and cached.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';

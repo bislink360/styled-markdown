@@ -293,7 +293,7 @@ function containerBlocks(lines: string[], from: number, sectionAt: (line: number
     }
     const info = openingOf(lines[i], spec);
     if (!info) continue;
-    const block: Block = { type: info.name, line: i, endLine: lines.length - 1, title: inlineText(info.title, undefined, false, undefined, variables), attrs: containerAttrs(info), section: sectionAt(i) };
+    const block: Block = { type: info.name, line: i, endLine: lines.length - 1, title: inlineText(info.title, { variables }), attrs: containerAttrs(info), section: sectionAt(i) };
     blocks.push(block);
     open.push({ block, colons: openerColons(lines[i]) });
   }

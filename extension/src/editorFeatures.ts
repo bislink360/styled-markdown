@@ -15,16 +15,12 @@ export function registerEditorFeatures(context: vscode.ExtensionContext): void {
       return editor ? onEnterKey(editor) : vscode.commands.executeCommand('type', { source: 'keyboard', text: '\n' });
     }),
     vscode.languages.registerDocumentDropEditProvider(selector, new ImageDropProvider()),
-    vscode.commands.registerCommand('smd.setupSpellCheck', setupSpellCheck),
-  );
-  // Image paste needs the paste edit API (VS Code 1.97+); older versions still get drop.
-  const languages = vscode.languages as Partial<typeof vscode.languages>;
-  if (languages.registerDocumentPasteEditProvider && typeof vscode.DocumentPasteEdit === 'function' && vscode.DocumentDropOrPasteEditKind) {
-    context.subscriptions.push(languages.registerDocumentPasteEditProvider(selector, new ImagePasteProvider(), {
+    vscode.languages.registerDocumentPasteEditProvider(selector, new ImagePasteProvider(), {
       providedPasteEditKinds: [ImagePasteProvider.kind],
       pasteMimeTypes: ['image/*'],
-    }));
-  }
+    }),
+    vscode.commands.registerCommand('smd.setupSpellCheck', setupSpellCheck),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +65,7 @@ export async function freeName(folder: string, base: string, ext: string, claime
   }
 }
 
-const kindOf = (id: string) => (vscode.DocumentDropOrPasteEditKind ? vscode.DocumentDropOrPasteEditKind.Empty.append('smd', id) : undefined);
+const kindOf = (id: string) => vscode.DocumentDropOrPasteEditKind.Empty.append('smd', id);
 
 class ImageDropProvider implements vscode.DocumentDropEditProvider {
   async provideDocumentDropEdits(document: vscode.TextDocument, _position: vscode.Position, data: vscode.DataTransfer): Promise<vscode.DocumentDropEdit | undefined> {
@@ -100,15 +96,14 @@ class ImageDropProvider implements vscode.DocumentDropEditProvider {
     }
     const edit = new vscode.DocumentDropEdit(links.join('\n\n'));
     edit.title = copied ? `Copy ${copied} image(s) to ${vscode.workspace.asRelativePath(folder)} and link them` : 'Link image(s)';
-    const kind = kindOf('image');
-    if (kind) edit.kind = kind;
+    edit.kind = kindOf('image');
     if (copied) edit.additionalEdit = extra;
     return edit;
   }
 }
 
 class ImagePasteProvider implements vscode.DocumentPasteEditProvider {
-  static readonly kind = vscode.DocumentDropOrPasteEditKind?.Empty.append('smd', 'image');
+  static readonly kind = kindOf('image');
 
   async provideDocumentPasteEdits(document: vscode.TextDocument, _ranges: readonly vscode.Range[], data: vscode.DataTransfer): Promise<vscode.DocumentPasteEdit[] | undefined> {
     if (document.uri.scheme !== 'file') return undefined;

@@ -121,6 +121,15 @@ export function resolveSpec(data: Readonly<Record<string, unknown>> | undefined,
   return isSpecVersion(option) ? option : 1;
 }
 
+/**
+ * Whether front matter declares a spec version: an `smd` key whose value is one (`smd: 1`, `smd: 2`, or a newer
+ * whole number). How a `.md` file opts in to the .smd rules, in VS Code's built-in Markdown preview.
+ */
+export function declaresSpec(data: Readonly<Record<string, unknown>> | undefined): boolean {
+  const { status } = readSpec(smdValue(data));
+  return status === 'valid' || status === 'newer';
+}
+
 /** The version of the render `env` belongs to (1 outside a render, or when nothing set it). */
 export function specOf(env: unknown): SpecVersion {
   const spec = (env as SpecEnv | null | undefined)?.smdSpec;

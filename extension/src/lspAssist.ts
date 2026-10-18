@@ -63,7 +63,7 @@ interface Cursor {
   prefix: string;
 }
 
-const ATTR_VALUES: Record<string, string[]> = {
+const ATTR_VALUES: Record<string, readonly string[]> = {
   color: [...NAMED_COLORS], bg: [...NAMED_COLORS], border: [...NAMED_COLORS], accent: [...NAMED_COLORS],
   size: Object.keys(SIZE_VALUES), weight: Object.keys(WEIGHT_VALUES), font: Object.keys(FONT_VALUES),
   align: ALIGN_VALUES, style: Object.keys(TEXT_STYLE_VALUES), collapsible: ['open'],
@@ -248,7 +248,7 @@ function attributeValueItems(key: string, container: string | undefined, directi
 }
 
 function attributeKeyItems(container: string | undefined, directive: string | undefined): AssistItem[] {
-  let keys = Object.keys(STYLE_KEYS);
+  let keys: readonly string[] = Object.keys(STYLE_KEYS);
   const containerSpec = container ? own(CONTAINERS, container) : undefined;
   const directiveSpec = directive ? own(INLINE_DIRECTIVES, directive) : undefined;
   if (containerSpec) keys = [...(containerSpec.attrs ?? []), ...keys];
