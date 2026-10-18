@@ -1,7 +1,7 @@
 ---
 smd: 1
 title: Unknown inline directives in spec v1
-summary: Pins how spec v1 reads the text that spec v2 reads as inline directives. Only the vocabulary's names, written in lower case, are directives; any other :name[content]{attrs} is text. v2-directives.smd pins the same text read with spec v2.
+summary: Pins how spec v1 reads the text that spec v2 reads as inline directives. Only the vocabulary's names, written in lower case, are directives; any other `:name[content]{attrs}` is text. v2-directives.smd pins the same text read with spec v2.
 status: draft
 updated: 2026-10-17
 ---

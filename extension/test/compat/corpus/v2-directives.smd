@@ -1,7 +1,7 @@
 ---
 smd: 2
 title: Inline directives in spec v2
-summary: Pins how spec v2 reads inline directives. Any :name[content]{attrs} after whitespace, opening punctuation or the line start is a directive, and a name outside the vocabulary renders its content in a plain span. Names are read in any case. unknown-directives.smd pins the same text read with spec v1.
+summary: Pins how spec v2 reads inline directives. Any `:name[content]{attrs}` after whitespace, opening punctuation or the line start is a directive, and a name outside the vocabulary renders its content in a plain span. Names are read in any case. unknown-directives.smd pins the same text read with spec v1.
 status: draft
 updated: 2026-10-17
 ---

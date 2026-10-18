@@ -22,8 +22,9 @@ import { own } from './util';
  * - **markdown-it rules** (renderSmd, the plugin, `parseSmd`, the Block Editor's segmenter and inline scanner,
  *   the exporters) call `isV2(state.env)` (or `specOf(env)`). renderSmd, `parseSmd` and `scanInline` put
  *   `smdSpec` on the env before parsing, and the plugin's `smd_spec` core rule does for hosts. An inline render
- *   inside a rule passes `{ smdSpec: specOf(env) }` (or the whole env) along. Included files are read with the
- *   including document's version: they are parsed into its tokens, with its env.
+ *   inside a rule passes `specEnv(env)` (or the whole env) along: the version, and the document's `typography: true`
+ *   (`smdTypography`, see typography.ts). Included files are read with the including document's version: they are
+ *   parsed into its tokens, with its env.
  * - **Tools that have the text** (agent view, `to-md`, `from-md`, tasks, query, meta, the validator, `fmt`) call
  *   `specVersion(text)`; with the front matter already parsed, `specVersion(fm.data)`, which reads one key and
  *   never parses again; with a `parseSmd(text)` at hand, its `spec`.
@@ -69,6 +70,11 @@ export interface SpecReading {
 /** What a render env says about the version: renderSmd and the plugin's `smd_spec` rule set it before parsing. */
 export interface SpecEnv {
   smdSpec?: SpecVersion;
+  /**
+   * The document's front matter says `typography: true`, which turns typographic replacements on in spec v2
+   * (typography.ts). Set beside `smdSpec`; v1 ignores it.
+   */
+  smdTypography?: boolean;
 }
 
 const DIGITS = /^\d+$/;
@@ -124,4 +130,14 @@ export function specOf(env: unknown): SpecVersion {
 /** Whether the render `env` belongs to reads with the spec v2 rules: the switch every v2 rule checks. */
 export function isV2(env: unknown): boolean {
   return specOf(env) === 2;
+}
+
+/**
+ * What an inline render inside a render passes along so it reads with the document's rules: the version and, when
+ * the document turns it on, typography (`{ smdSpec, smdTypography }`).
+ */
+export function specEnv(env: unknown): SpecEnv {
+  const spec: SpecEnv = { smdSpec: specOf(env) };
+  if ((env as SpecEnv | null | undefined)?.smdTypography === true) spec.smdTypography = true;
+  return spec;
 }

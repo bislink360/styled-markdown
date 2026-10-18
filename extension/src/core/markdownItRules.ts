@@ -7,7 +7,8 @@ import { parseFrontMatter, unreadFrontMatter } from './frontmatter';
 import { renderInlineDirective, renderUnknownDirective, withoutDueNotes } from './markdownItHtml';
 import { HEADING_ATTRS, headingAttrList, slugify } from './sections';
 import { INLINE_DIRECTIVES } from './spec';
-import { isSpecVersion, isV2, resolveSpec, specOf, type SpecEnv, type SpecVersion } from './specVersion';
+import { isSpecVersion, isV2, resolveSpec, specEnv, specOf, type SpecEnv, type SpecVersion } from './specVersion';
+import { typographyOf } from './typography';
 import type { IncludeResult, IncludeScope } from './include';
 import type { SmdContext } from './markdownItSetup';
 import type { Env, Heading } from './render';
@@ -334,7 +335,7 @@ function pushDirective(state: StateInline, name: string, content: string, attrs:
   }
   const text = ctx.variables ? substituteLine(content, envVariables(state.env)) : content;
   const token = state.push('html_inline', '', 0);
-  const spec = specOf(state.env);
+  const spec = specEnv(state.env);
   token.content = Object.hasOwn(INLINE_DIRECTIVES, name)
     ? renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today, ctx.messages(state.env), spec)
     : renderUnknownDirective(state.md, name, text, attrs, spec);
@@ -394,8 +395,8 @@ interface InnerEnv extends SpecEnv, VariableEnv {
  * `isV2(state.env)` (see specVersion.ts). The document's `smd` wins: in the source's front matter, else in
  * `env.smdVariables` (front matter the host removed and passed along), else the plugin's `spec` option, else 1. An
  * inline render inside a rule and the scan of an included file keep the version their env carries, their document's.
- * Each render works it out again, so an env used twice doesn't keep the last document's. renderSmd sets `smdSpec`
- * itself and doesn't add this rule.
+ * Each render works it out again, so an env used twice doesn't keep the last document's. The document's
+ * `typography: true` goes on the env beside it, as `smdTypography`. renderSmd sets both itself and doesn't add this rule.
  */
 export function hostSpec(option: SpecVersion | undefined): (state: StateCore) => void {
   return (state) => {
@@ -405,6 +406,9 @@ export function hostSpec(option: SpecVersion | undefined): (state: StateCore) =>
     const own = !state.inlineMode && state.src.startsWith('---') ? parseFrontMatter(state.src) : undefined;
     const data = own?.present && !own.error ? own.data : env.smdVariables;
     env.smdSpec = resolveSpec(data, option);
+    // Spec v2 reads the document's `typography: true` from the same front matter (typography.ts); only then is it on the env.
+    if (typographyOf(data)) env.smdTypography = true;
+    else delete env.smdTypography;
   };
 }
 

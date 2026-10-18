@@ -245,14 +245,21 @@ test('migrate: values in their case, values outside the vocabulary and code are 
 
 test('migrate: what the typographer changes is a note, or with keepTypography, typography: true', () => {
   const text = doc('"Quotes" -- dash... (c)\n\n`"code"` and $x--y$ stay.', 'smd: 1\ntitle: "It\'s here"');
-  const counted = checkCase(text);
+  // Without the key, spec v2 shows the text as written; tools before 2.0 still curl it.
+  const counted = checkCase(text, {}, false);
+  assert.match(asIs(counted.result), /<h1 class="smd-doc-title">It's here<\/h1>[^]*<p>&quot;Quotes&quot; -- dash\.\.\. \(c\)<\/p>/);
+  assert.equal(v1(counted.result), v1(text));
   assert.deepEqual(changes(counted, 'typography'), []);
   const [n] = notes(counted, 'typography');
   assert.match(n.reason, /changes 6 places today \(3 quotes, 1 dash, 1 ellipsis, 1 symbol\), on line\(s\) 3, 6\. Run with --keep-typography/);
-  const kept = checkCase(text, { keepTypography: true }, false);
+  // With it, spec v2 shows the document as v1 does.
+  const kept = checkCase(text, { keepTypography: true });
+  assert.equal(asIs(kept.result), v1(text));
+  assert.notEqual(asIs(counted.result), v1(text));
   assert.deepEqual(edits(kept, 'typography'), ['4:→typography: true']);
   assert.equal(changes(kept, 'typography')[0].keeps, 'v2');
   assert.match(kept.result, /^---\nsmd: 2\ntitle: "It's here"\ntypography: true\n---\n/);
+  assert.match(asIs(kept.result), /<h1 class="smd-doc-title">It’s here<\/h1>[^]*<p>“Quotes” – dash… ©<\/p>/);
 });
 
 test('migrate: no typography step without typographic text, or when the key is set', () => {
@@ -270,15 +277,50 @@ test('migrate: keepTypography adds front matter to a document without it', () =>
 // 10. Fuzzy links (proposal 8)
 // ---------------------------------------------------------------------------
 
-test('migrate: a bare domain linked today is a note, or with linkDomains, an autolink', () => {
-  const text = doc('Docs at example.com and docs.example.org/guide, not https://x.test, www.x.test, a@b.test or `c.test`.');
-  const noted = checkCase(text);
+test('migrate: a bare domain linked today is a note, or with linkDomains, a Markdown link to the same address', () => {
+  const text = doc('Docs at example.com and docs.example.org/guide, not https://x.test, www.example.org, a@b.test or `c.test`.');
+  // Without the rewrite, spec v2 shows the bare domains as text; tools before 2.0 still link them.
+  const noted = checkCase(text, {}, false);
+  assert.match(asIs(noted.result), /Docs at example\.com and docs\.example\.org\/guide, not <a href="https:\/\/x\.test">/);
+  assert.equal(v1(noted.result), v1(text));
   assert.deepEqual(notes(noted, 'fuzzy-link').map((s) => s.line + 1), [5]);
-  assert.match(notes(noted, 'fuzzy-link')[0].reason, /"example\.com", "docs\.example\.org\/guide" are linked today/);
-  const linked = checkCase(text, { linkDomains: true }, false);
+  assert.match(notes(noted, 'fuzzy-link')[0].reason, /"example\.com", "docs\.example\.org\/guide" are linked today\. Run with --link-domains to write them as Markdown links/);
+  // With it, both versions show the same links.
+  const linked = checkCase(text, { linkDomains: true });
+  assert.equal(asIs(linked.result), v1(text));
   assert.deepEqual(edits(linked, 'fuzzy-link').map((e) => e.split('→')[1]), [
-    'Docs at <https://example.com> and <https://docs.example.org/guide>, not https://x.test, www.x.test, a@b.test or `c.test`.',
+    'Docs at [example.com](http://example.com) and [docs.example.org/guide](http://docs.example.org/guide), not https://x.test, www.example.org, a@b.test or `c.test`.',
   ]);
+  assert.equal(changes(linked, 'fuzzy-link')[0].keeps, 'v1');
+  assert.equal(v1(linked.result), v1(text));
+});
+
+test('migrate: links spec v2 doesn\'t make are rewritten too (//host, WWW. in capitals); their text keeps --, ... and (c)', () => {
+  const text = doc('See //cdn.example.com, WWW.EXAMPLE.COM, my--site.com/a...b and example.com/(c)/x.');
+  const p = checkCase(text, { linkDomains: true, keepTypography: true });
+  assert.deepEqual(edits(p, 'fuzzy-link').map((e) => e.split('→')[1]), [
+    'See [//cdn.example.com](//cdn.example.com), [WWW.EXAMPLE.COM](http://WWW.EXAMPLE.COM), [my-\\-site.com/a.\\.\\.b](http://my--site.com/a...b) and [example.com/\\(c)/x](http://example.com/(c)/x).',
+  ]);
+  assert.match(asIs(p.result), /<a href="http:\/\/my--site\.com\/a\.\.\.b">my--site\.com\/a\.\.\.b<\/a>/);
+  assert.equal(asIs(p.result), v1(text));
+});
+
+test('migrate: www. text v1 doesn\'t link (an unknown top-level domain) is a note: spec v2 links it', () => {
+  const p = checkCase(doc('Staging is www.shop.test, not <a href="x">www.shop.test</a> or [www.shop.test](y).'), { linkDomains: true }, false);
+  assert.deepEqual(changes(p, 'fuzzy-link'), []);
+  const [n, ...more] = notes(p, 'fuzzy-link');
+  assert.deepEqual(more, []);
+  assert.match(n.reason, /"www\.shop\.test" is text today, and spec v2 links it \(a GFM autolink literal\); escape its first dot/);
+  assert.match(asIs(p.result), /Staging is <a href="http:\/\/www\.shop\.test">www\.shop\.test<\/a>, not <a href="x">www\.shop\.test<\/a>/);
+  assert.match(asIs(doc('Staging is www\\.shop.test.', 'smd: 2')), /Staging is www\.shop\.test\./, 'the escape the note suggests keeps it text');
+});
+
+test('migrate: a bare domain in the title or summary is a note: the header links it today', () => {
+  const p = checkCase(doc('Body.', 'smd: 1\nsummary: See example.com first.'), { linkDomains: true }, false);
+  assert.deepEqual(changes(p, 'fuzzy-link'), []);
+  const [n] = notes(p, 'fuzzy-link');
+  assert.equal(n.line + 1, 3);
+  assert.match(n.reason, /"example\.com" in "summary" is linked in the header today/);
 });
 
 // ---------------------------------------------------------------------------
@@ -366,12 +408,18 @@ test('migrate: corpus/migrate.smd has a case for every step', () => {
   // Only the steps that keep the v2 meaning change the v1 rendering, and of these only the backslash step shows: v1 reads
   // the `\\\\` it writes as two backslashes (the title's inline Markdown shows one of each pair), v2 as one.
   const unc = String.raw`<span class="smd-sr-only">Note: </span>\server\share`;
-  assert.equal(v1(p.result, { readFile: corpusRead }).replace(String.raw`<span class="smd-sr-only">Note: </span>\\server\share`, unc), v1(text, { readFile: corpusRead }));
+  const v1Unc = String.raw`<span class="smd-sr-only">Note: </span>\\server\share`;
+  assert.equal(v1(p.result, { readFile: corpusRead }).replace(v1Unc, unc), v1(text, { readFile: corpusRead }));
   assert.ok(asIs(p.result, { readFile: corpusRead }).includes(unc), 'v2 shows the title as v1 did');
+  // Spec v2 shows the typography and the bare domain differently until --keep-typography and --link-domains keep them.
+  assert.notEqual(asIs(p.result, { readFile: corpusRead }), v1(text, { readFile: corpusRead }));
+  const kept = plan(text, { readFile: corpusRead, keepTypography: true, linkDomains: true });
+  // Typography and links as v1 shows them; only `version: 2.10` shows as written (proposal 10, --quote-variables).
+  assert.equal(asIs(kept.result, { readFile: corpusRead }).replaceAll('2.10', '2.1'), v1(text, { readFile: corpusRead }));
   const all = plan(text, { readFile: corpusRead, keepTypography: true, linkDomains: true, quoteVariables: true });
   assert.deepEqual(all.steps.filter((s) => s.note), []);
   assert.match(all.result, /^---\nsmd: 2\n[^]*version: "2\.10"\n[^]*typography: true\n---\n/);
-  assert.match(all.result, /Docs live at <https:\/\/example\.com> and www\.example\.org\./);
+  assert.match(all.result, /Docs live at \[example\.com\]\(http:\/\/example\.com\) and www\.example\.org\./);
   assert.deepEqual(changes(plan(all.result, { readFile: corpusRead, force: true })), []);
 });
 
@@ -391,9 +439,13 @@ function repositoryDocuments(): string[] {
   return out.sort((a, b) => a.localeCompare(b));
 }
 
+/** Rendered HTML as `v1` compares it, without the task boxes' source lines either. */
+const shownV2 = (text: string, readFile?: MigrationOptions['readFile']) => asIs(text, { readFile }).replaceAll(/ data-task-line="\d+"/g, '');
+
 test('migrate: every .smd file in the repository gets a plan that settles and keeps its v1 rendering', () => {
   const documents = repositoryDocuments();
   assert.ok(documents.length > 30, `found ${documents.length} documents`);
+  let comparedV2 = 0;
   for (const file of documents) {
     const text = fs.readFileSync(file, 'utf8');
     const reader = (rel: string) => {
@@ -406,8 +458,17 @@ test('migrate: every .smd file in the repository gets a plan that settles and ke
     if (path.basename(file) === 'v2-validation.smd') assert.deepEqual(again.map((s) => s.kind), ['duplicate-attrs', 'title-text', 'agent-priority'], file);
     else if (path.basename(file) === 'v2-fences.smd') assert.deepEqual(again.map((s) => s.kind), ['closer'], file);
     else assert.deepEqual(again, [], file);
-    if (!changes(p).some((s) => s.keeps === 'v2')) assert.equal(v1(p.result, { readFile: reader }), v1(text, { readFile: reader }), file);
+    if (p.from < 2 && !changes(p).some((s) => s.keeps === 'v2')) assert.equal(v1(p.result, { readFile: reader }), v1(text, { readFile: reader }), file);
+    // Spec v2 shows it as v1 shows the original once --keep-typography and --link-domains keep its typography and links
+    // (task boxes' source lines move with the added front matter line).
+    const kept = plan(text, { readFile: reader, keepTypography: true, linkDomains: true });
+    // Proposal 10 (values shown as written) is not this comparison's.
+    if (p.from < 2 && !kept.steps.some((s) => (s.keeps === 'v2' && s.kind !== 'typography' && !s.note) || s.kind === 'variable-spelling')) {
+      assert.equal(shownV2(kept.result, reader), shownV2(text, reader), `${file} under spec v2`);
+      comparedV2++;
+    }
   }
+  assert.ok(comparedV2 >= 20, `${comparedV2} documents compared under spec v2`);
 });
 
 /** Rendered HTML as `v1` compares it, without the task boxes' source lines either (the version step may add a line). */
@@ -426,18 +487,24 @@ test('migrate: a migrated document renders under spec v2 as the original renders
       try { return fs.readFileSync(path.resolve(path.dirname(file), rel), 'utf8'); } catch { return undefined; }
     };
     const options = { readFile: reader };
-    const p = plan(text, options);
+    // Typography, links and values shown as written kept by the options (proposals 8 and 10).
+    const p = plan(text, { ...options, keepTypography: true, linkDomains: true, quoteVariables: true });
     if (p.from >= 2) continue;
     assert.match(p.result, /\nsmd: 2\n/, file);
-    // Steps that keep the v2 meaning may change the v1 rendering (corpus/vocabulary-case.smd: proposal 11); their v2
-    // rules are not this comparison's: corpus/migrate.smd's backslash step (proposal 6) is one, so its closers and `$$`
-    // are checked by "corpus/migrate.smd has a case for every step", and its v2 rendering in v2InlineRules.test.ts.
-    if (shown(p.result.replace('\nsmd: 2\n', '\nsmd: 1\n'), options) !== shown(text, options)) continue;
-    assert.equal(shown(p.result, options), shown(text, options), `${file}: the migrated document under spec v2`);
     if (changes(p).some((s) => s.kind === 'closer' || s.kind === 'math-delimiters')) migrated.push(path.basename(file));
+    // A value the backslash step (proposal 6) wrote with `\\` reads as two backslashes with the v1 rules, as one with v2.
+    const escaped = changes(p, 'attr-escapes').length > 0;
+    // `shown` reads with the v1 rules, `shownV2` with the migrated document's own, v2: they agree.
+    if (!escaped) assert.equal(shownV2(p.result, reader), shown(p.result, options), `${file}: the migrated document, spec v2 and v1`);
+    // Steps that keep the v2 meaning may change the v1 rendering (corpus/vocabulary-case.smd: proposal 11; quoted
+    // values: proposal 10); their v2 rules are not this comparison's. The backslash step is meant to: v2 reads as v1 did
+    // (corpus/attribute-escapes.smd; corpus/migrate.smd quotes a value too, and v2InlineRules.test.ts compares it).
+    const quoted = changes(p, 'variable-spelling').length > 0;
+    if ((!escaped || quoted) && shown(p.result, options) !== shown(text, options)) continue;
+    assert.equal(shownV2(p.result, reader), shown(text, options), `${file}: the migrated document under spec v2`);
   }
   // The documents whose closing fences or `$$` delimiters spec v2 reads differently until they are migrated.
-  assert.deepEqual(migrated.sort((a, b) => a.localeCompare(b)), ['v2-fences.smd (smd: 1)', 'v2-hints.smd', 'v2-math.smd (smd: 1)']);
+  assert.deepEqual(migrated.sort((a, b) => a.localeCompare(b)), ['migrate.smd', 'v2-fences.smd (smd: 1)', 'v2-hints.smd', 'v2-math.smd (smd: 1)']);
 });
 
 test('migrate: the report groups steps by kind, with 1-based lines and short diffs', () => {

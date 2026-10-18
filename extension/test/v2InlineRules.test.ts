@@ -230,8 +230,11 @@ test('directives: the markdown-it plugin reads the document\'s version, or the s
  * twice, which migrating's duplicate step leaves out), as in migrate.test.ts.
  */
 const rendered = (text: string, readFile?: (p: string) => string | undefined) =>
-  renderSmd(text, { today: TODAY, readFile }).html.replace(/<header[^]*?<\/header>/, '').replaceAll(/ data-line="\d+"/g, '').replaceAll(/ data-include="[^"]*"/g, '')
+  renderSmd(text, { today: TODAY, readFile }).html.replace(/<header[^]*?<\/header>/, '').replaceAll(/ data-(?:task-)?line="\d+"/g, '').replaceAll(/ data-include="[^"]*"/g, '')
     .replaceAll(/ class="([^"]*)"/g, (_, names: string) => ` class="${[...new Set(names.split(' '))].join(' ')}"`);
+
+/** Typography and bare-domain links are proposal 8's, kept by their options. */
+const KEEP = { keepTypography: true, linkDomains: true };
 
 test('migrate: a migrated document renders under spec v2 as the original does under spec v1', () => {
   const cases = [
@@ -241,7 +244,7 @@ test('migrate: a migrated document renders under spec v2 as the original does un
   ];
   for (const body of cases) {
     const original = doc(body, 1);
-    const migrated = migrationPlan(original).result;
+    const migrated = migrationPlan(original, KEEP).result;
     assert.match(migrated, /smd: 2/);
     assert.equal(rendered(migrated), rendered(original), body);
   }
@@ -250,7 +253,7 @@ test('migrate: a migrated document renders under spec v2 as the original does un
   for (const name of ['unknown-directives.smd', 'attribute-escapes.smd', 'v2-hints.smd', 'migrate.smd']) {
     const original = corpus(name);
     const readFile = (p: string) => { try { return corpus(p); } catch { return undefined; } };
-    const v2 = rendered(migrationPlan(original, { readFile }).result, readFile).replace('This is version 2.10.', 'This is version 2.1.');
+    const v2 = rendered(migrationPlan(original, { readFile, ...KEEP }).result, readFile).replace('This is version 2.10.', 'This is version 2.1.');
     assert.equal(v2, rendered(original, readFile), name);
   }
 });
