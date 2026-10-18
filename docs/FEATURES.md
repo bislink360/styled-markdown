@@ -36,7 +36,7 @@ Every Styled Markdown feature, with its syntax, what it renders, what an AI agen
 
 ```yaml
 ---
-smd: 1
+smd: 2
 title: Saved Searches
 summary: Let users save a search with its filters and get notified when new results match.
 status: review            # draft | review | approved | deprecated | archived
@@ -678,7 +678,7 @@ An `:::agent` block inside a section marked `{agent=skip}` is omitted with the s
 | Rename heading | `F2` on a heading renames it and updates every `#anchor` and `other.smd#anchor` link to it across the workspace, including the numbered anchors of later headings with the same text. Headings with an explicit `{#id}` keep their anchor, so links are left alone. Links by the heading's GitHub id (`#max_tokens`) follow it too |
 | Refactorings | `Ctrl+.` with a selection wraps it in `:::note`, `:::tip`, `:::warning`, `:::danger`, `:::card`, `:::details`, `:::agent` or `:::human` (a selection that splits a code block or container isn't offered). On a callout's opening line: convert it to another callout type. In a blockquote that starts with `[!NOTE]`-style alerts or a bold label (`**Warning:**`, `**Tip**:`…): convert it to the matching callout |
 | SMD Tasks view | In the Explorer of any workspace with `.smd` files: the open tasks of every `.smd` file. **Group Tasks By…** in the view's title bar switches between owner (Unassigned last), due date (Overdue, Today, This week, Later, No due date) and document, and is remembered per workspace. Inside each group: overdue first, then priority, then due date. Each task shows its priority, due date and owners; hover for its section and file. Click to open it at its line; tick the checkbox to check it off in the file (saved unless it had unsaved changes). The eye button shows completed tasks too; the badge counts overdue tasks. Updates as you type, save, and create or delete files |
-| Document status | The status bar shows the front matter `status` of the active `.smd` file (`Draft`, `Review`, `Approved`, `Deprecated`, `Archived`, each with its icon), **No status** when there is none, and a warning for a value outside the five. Its tooltip says **Styled Markdown spec v2** for a document with `smd: 2`. Click it, or run **Set Document Status…**, to pick a status: the usual next step (draft → review → approved → deprecated → archived) comes first, the current one is marked, and each says what it means to readers. Only the front matter changes, as one undoable edit that is not saved: the `status:` value is replaced in place (quotes and comments kept), or a `status:` line is added after `summary:` (else `title:`, else at the end); a file without front matter gets `smd: 1` and `status:`. An existing `updated:` is set to today (`smd.status.updateDate`). Front matter that does not parse is left alone |
+| Document status | The status bar shows the front matter `status` of the active `.smd` file (`Draft`, `Review`, `Approved`, `Deprecated`, `Archived`, each with its icon), **No status** when there is none, and a warning for a value outside the five. Its tooltip says **Styled Markdown spec v2** for a document with `smd: 2`. Click it, or run **Set Document Status…**, to pick a status: the usual next step (draft → review → approved → deprecated → archived) comes first, the current one is marked, and each says what it means to readers. Only the front matter changes, as one undoable edit that is not saved: the `status:` value is replaced in place (quotes and comments kept), or a `status:` line is added after `summary:` (else `title:`, else at the end); a file without front matter gets `smd: 2` and `status:` (since 2.0; `smd: 1` when spec v2 would show it differently, e.g. it has quotes the typographer curls, so its rules never change). An existing `updated:` is set to today (`smd.status.updateDate`). Front matter that does not parse is left alone |
 | Workspace symbols | `Ctrl+T` searches every `.smd` in the workspace: headings, `:::decision` and `:::risk` titles, and `:::api` endpoints by method and path (`post orders` finds `POST /v1/orders — Create an order`) |
 | Hover previews | Hover a link's text or target: `#anchor` and `other.smd#anchor` show the start of that section, `other.smd` shows its title, status, summary and sections. Hover a ```` ```ts file="…" lines="…" ```` line to see the embedded code |
 | Lists on Enter | Enter on `- [x] Ship it @maya` starts `- [ ] ` with the cursor before ` @maya`. Bullets repeat, numbers count up, Enter on an empty item ends the list, and code blocks are left alone (`smd.editor.continueLists`) |
@@ -847,7 +847,7 @@ Every export of a document is one command, **`smd export <file> --to <format> [-
 | **Export to Plain Markdown** / `smd export --to md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Export to Confluence (Storage Format)** / `smd export --to confluence` | A Confluence page body: callouts, code, expands, task lists and statuses as Confluence's own macros (below) |
 | **Export to Notion (JSON)** / `smd export --to notion` | Notion API blocks, cut into the request bodies the API takes (below) |
-| **Convert Markdown File to .smd** / `smd from-md` | Adds front matter and turns GitHub alerts into callouts |
+| **Convert Markdown File to .smd** / `smd from-md` | Adds front matter (`smd: 2` since 2.0) and turns GitHub alerts into callouts |
 | `smd build <dir> --out site` | A static docs site: every document as a page, with navigation, search, backlinks and a dashboard |
 
 **Older names.** The commands before 2.0 still work, with the same options, output and exit codes: `smd render` is `smd export --to html`, `smd to-md` is `--to md`, `smd pdf` is `--to pdf` and `smd docx` is `--to docx`. They are deprecated and may be removed in 3.0 (SPEC.md §11). `smd build` stays its own command: it writes a folder from many documents, not one file.
@@ -1026,8 +1026,8 @@ smd report <files|dirs> --since <date|git-ref> [-o report.smd] [--title "…"] [
 smd validate <files|dirs> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
 smd validate <files|dirs> --format github [--summary <file>] [...]   GitHub annotations (section 15); --summary appends a job summary
 smd fmt <files|dirs> [--check] [--stdout]           format in place; --check exits 1 on unformatted files
-smd migrate <files|dirs> --to 2 --dry-run [--json] [--keep-typography] [--link-domains] [--quote-variables]
-                 what migrating to spec v2 would change (below); exit 0 nothing to do, 1 changes, 2 usage error
+smd migrate <files|dirs> --to 2 [--dry-run | --check] [--json] [--no-verify] [--keep-typography] [--link-domains] [--quote-variables]
+                 migrate to spec v2 (below); --dry-run reports the plan, --check exits 1 when something needs it
 smd export <file> --to <format> [-o <file>] [--lang <tag>]   one export command (section 16); -o's extension
                  (.html, .md, .pdf, .docx) picks the format when --to is missing
 smd export <file> --to html [-o out.html]           standalone page, with a print stylesheet
@@ -1052,7 +1052,7 @@ smd --version
 
 ### Migrating to spec v2: `smd migrate`
 
-`smd migrate <files|dirs> --to 2 --dry-run` reports what each document needs so that it means the same under spec v2 (`smd: 2`, Styled Markdown 2.0) as it does today: closing fences with their container's colon count, duplicate attributes collapsed, hidden container title text removed, `$$` delimiters on their own lines, `{}` and bare `{word}` after headings removed, quoted attribute values written with spec v2's `\\` escapes, literal unknown `:name[…]` escaped, include sections by the heading's id, enumerated values in the vocabulary's case, and `smd: 2`. The steps, and which RFC proposal each follows, are in [SPEC.md §10.1](SPEC.md#101-migrating-to-spec-v2). Unlike `smd fmt`, it changes text, so it is a command of its own.
+`smd migrate <files|dirs> --to 2` migrates each document so that it means the same under spec v2 (`smd: 2`, Styled Markdown 2.0) as it does today, and `--dry-run` reports what it would change: closing fences with their container's colon count, duplicate attributes collapsed, hidden container title text removed, `$$` delimiters on their own lines, `{}` and bare `{word}` after headings removed, quoted attribute values written with spec v2's `\\` escapes, literal unknown `:name[…]` escaped, include sections by the heading's id, enumerated values in the vocabulary's case, and `smd: 2`. The steps, and which RFC proposal each follows, are in [SPEC.md §10.1](SPEC.md#101-migrating-to-spec-v2). Unlike `smd fmt`, it changes text, so it is a command of its own.
 
 ```text
 docs/plan.smd: 2 changes and 1 note to migrate from smd: 1 to spec v2
@@ -1067,11 +1067,29 @@ docs/plan.smd: 2 changes and 1 note to migrate from smd: 1 to spec v2
     line 23, note: … The typographer changes 4 places today (4 quotes), on line(s) 23. Run with --keep-typography …
 ```
 
-- 1.10 only reports, so `--dry-run` is required; Styled Markdown 2.0 applies the migration. Nothing is written.
-- `--json` prints the plan: per file, each step's `kind`, `proposal`, `keeps` (`v1`: v1 rendering unchanged; `v2`: the v2 meaning kept), 0-based `line` and `endLine`, `before`, `after`, `reason` and `note`, and the migrated text as `result`.
+Without `--dry-run` it writes (since 2.0; 1.10 only reported), carefully:
+
+- Only `.smd` files, and only those whose plan changes something: a document that already says `smd: 2` has nothing to migrate, so running it again changes nothing. A file argument that isn't `.smd` stops the command before anything is written.
+- Each file whole or not at all: the migrated text goes to a temporary file in the same folder, which is renamed over the file. Line endings, and a missing newline at the end, stay as they are. A file that can't be written is left as it was and named on stderr.
+- Never through a symbolic link that leads outside the files and folders given (a link inside them writes the file it leads to, once).
+- It prints each file it writes, with the notes the plan leaves to you (typography left off, a link in the title, a value shown as written …), then a summary:
+
+```text
+docs/plan.smd: migrated to spec v2 (2 changes, 1 note)
+  line 23, note: Typography: Spec v2 turns the typographer off … Run with --keep-typography …
+
+3 files checked: 1 migrated to spec v2 (2 changes).
+1 note to follow up: see them under each file.
+Verified: nothing is left to migrate, and spec v2 renders each file as v1 rendered it, apart from what the notes and v2-meaning steps say (typography).
+Review the changes (git diff) before you commit them.
+```
+
+- Then it checks each file it wrote (`--no-verify` skips it): it reads the file back, plans it again (nothing may be left), and renders it with the v2 rules to compare with the original rendered with the v1 rules. A difference that no note or v2-meaning step explains is a warning on stderr, not a failure: for example text that an `:::include` brings in, which is read with the including document's rules.
+- `--check` writes nothing; it lists the files that need migrating and exits 1 if there are any, as `smd fmt --check` does, for CI. `--dry-run` reports the plan and writes nothing.
+- `--json` (with `--dry-run` or `--check`) prints the plan: per file, each step's `kind`, `proposal`, `keeps` (`v1`: v1 rendering unchanged; `v2`: the v2 meaning kept), 0-based `line` and `endLine`, `before`, `after`, `reason` and `note`, and the migrated text as `result`.
 - `--keep-typography` adds `typography: true` where the typographer changes text, to keep curly quotes and dashes under v2, which turns them off; `--link-domains` writes bare domains linked today as Markdown links to the same address (`[example.com](http://example.com)`), so spec v2, which links only GFM autolink literals, shows them as v1 does; `--quote-variables` quotes front matter values shown other than as written (`version: 2.10`). Without them, each is a note.
-- Exit code 0 when nothing needs migrating, 1 when something does (a CI step can watch for documents that still need it), 2 on a usage error (no `--dry-run`, `--to` other than 2, an unknown option or no files).
-- In VS Code, **Styled Markdown: Preview Migration to Spec v2** shows the report for the current file in an output panel.
+- Exit codes: writing, 0 when done or nothing needs migrating, 1 when a file could not be written (or a link leads outside the paths given); `--dry-run` and `--check`, 0 when nothing needs migrating and 1 when something does; 2 on a usage error (`--to` other than 2, an unknown option, `--json` without `--dry-run` or `--check`, a file that isn't `.smd`, or no files).
+- In VS Code, **Styled Markdown: Preview Migration to Spec v2** shows the report for the current file in an output panel, with an **Apply** button; **Styled Markdown: Migrate to Spec v2** applies the plan to the open document as one edit, which Undo reverts, saves nothing, and shows the notes in the output panel.
 
 ### Document catalog: `smd index`
 
@@ -1217,7 +1235,7 @@ These are OpenAI encodings. There is no public tokenizer for current Claude mode
 
 ## 18. Templates
 
-`smd init docs/x.smd --template <name> --title "…"`. The writer skill starts from the same templates.
+`smd init docs/x.smd --template <name> --title "…"`. The writer skill starts from the same templates. Since 2.0 they say `smd: 2`: text shows as written (straight quotes; add `typography: true` for curly ones), and only `https://`, `www.` and e-mail addresses are links.
 
 | Template | Sections |
 |---|---|
