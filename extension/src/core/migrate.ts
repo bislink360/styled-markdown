@@ -1,5 +1,5 @@
 import type { Token } from 'markdown-it';
-import { parseAttrs } from './attrs';
+import { escapeQuoted, findAttrsEnd, isFlagItem, itemValue, lexAttrItems, parseAttrs, type Attrs } from './attrs';
 import { CONTAINER_OPEN, isKnownContainer, parseContainerInfo } from './containers';
 import { attrValueFix, frontMatterValueFix } from './fixes';
 import { AGENT_HEADER_HIDDEN } from './agentView';
@@ -7,7 +7,7 @@ import { parseFrontMatter, sourceSpelledData, type FrontMatter } from './frontma
 import { FRONTMATTER_SCHEMA } from './frontmatterSchema';
 import { EN } from './i18n';
 import { codeLines, inlineMathLines, literalLines, mathOnLine, type InlineMathLines } from './parse';
-import { createMarkdownIt, type Env } from './render';
+import { createMarkdownIt, HEADING_ATTRS, type Env } from './render';
 import { CONTAINERS, INLINE_DIRECTIVES } from './spec';
 import { readSpec, specVersion } from './specVersion';
 import { gfmLinkify } from './typography';
@@ -26,7 +26,7 @@ import { findVariables, lookupVariable, variableText } from './variables';
 
 /** What a step rewrites, in the order the steps run. */
 export type MigrationKind =
-  | 'closer' | 'duplicate-attrs' | 'title-text' | 'agent-priority' | 'math-delimiters' | 'heading-braces' | 'unknown-directive'
+  | 'closer' | 'duplicate-attrs' | 'title-text' | 'agent-priority' | 'math-delimiters' | 'heading-braces' | 'attr-escapes' | 'unknown-directive'
   | 'include-section' | 'value-case' | 'typography' | 'fuzzy-link' | 'variable-spelling' | 'version';
 
 export interface MigrationStep {
@@ -95,9 +95,13 @@ const KINDS: Record<MigrationKind, { proposal: string; keeps: 'v1' | 'v2'; reaso
     proposal: '5', keeps: 'v1',
     reason: 'Spec v2 reads an empty "{}" or a bare "{word}" after a heading as heading text (proposal 5). It is removed, which is how v1 shows the heading.',
   },
+  'attr-escapes': {
+    proposal: '6', keeps: 'v2',
+    reason: 'Spec v2 reads "\\\\" in a quoted attribute value as one backslash, and a value can no longer end in a single backslash (proposal 6). The value is written with the escapes v2 needs to read it as v1 does ("\\\\\\\\server" for \\\\server, "C:\\docs\\\\" for C:\\docs\\); v1 reads those as more backslashes.',
+  },
   'unknown-directive': {
     proposal: '7b', keeps: 'v2',
-    reason: 'Spec v2 reads any ":name[…]" as a directive and shows only its content (proposal 7b). A name outside the vocabulary is text today, so its colon is escaped to keep it text; v1 shows "\\:" as ":".',
+    reason: 'Spec v2 reads any ":name[…]" or ":name{…}" as a directive, its name in any case, and shows only its content (proposals 7b and 11). A name outside the vocabulary, or not in lower case, is text today, so its colon is escaped to keep it text; v1 shows "\\:" as ":".',
   },
   'include-section': {
     proposal: '9', keeps: 'v1',
@@ -128,6 +132,7 @@ const KINDS: Record<MigrationKind, { proposal: string; keeps: 'v1' | 'v2'; reaso
 /** Every kind, in the order the steps run. */
 export const KIND_ORDER = Object.keys(KINDS) as MigrationKind[];
 
+const ATTR_ESCAPES: MigrationKind = 'attr-escapes';
 const FUZZY_LINK: MigrationKind = 'fuzzy-link';
 const VARIABLE_SPELLING: MigrationKind = 'variable-spelling';
 const VERSION: MigrationKind = 'version';
@@ -156,6 +161,14 @@ const splitLines = (text: string) => text.split(/\r?\n/);
 
 /** The plan that migrates `text` to spec v2. Pure: nothing is read but through `options.readFile`. */
 export function migrationPlan(text: string, options: MigrationOptions = {}): MigrationPlan {
+  const plan = planSteps(text, options, true);
+  // Spec v2's escapes only mean what v1 meant once the document says smd: 2. When the plan can't write it (front matter
+  // that doesn't parse, an `smd` value it can't rewrite), the values stay as v1 reads them.
+  const escaped = plan.steps.some((s) => s.kind === ATTR_ESCAPES && !s.note);
+  return escaped && specVersion(plan.result) < TARGET ? planSteps(text, options, false) : plan;
+}
+
+function planSteps(text: string, options: MigrationOptions, escapes: boolean): MigrationPlan {
   const fm = parseFrontMatter(text);
   const from = declaredVersion(fm);
   const lines = splitLines(text);
@@ -169,8 +182,13 @@ export function migrationPlan(text: string, options: MigrationOptions = {}): Mig
   fixStep(w, 'container/title-conflict', 'title-text');
   fixStep(w, 'attrs/unknown', 'agent-priority', (d) => d.message === AGENT_PRIORITY_REMOVED);
   mathStep(w);
+  if (from < TARGET) headingAgentStep(w);
   fixStep(w, 'heading/attrs-text', 'heading-braces');
-  unknownDirectiveStep(w);
+  // A document that already says smd: 2 (with force) is read with the v2 rules: its escapes and directives are meant.
+  if (from < TARGET) {
+    if (escapes) attrEscapeStep(w);
+    unknownDirectiveStep(w);
+  }
   if (options.readFile) fixStep(w, 'include/section-match', 'include-section');
   valueCaseStep(w);
   typographyStep(w);
@@ -351,11 +369,24 @@ const isKnownDirective = (name: string): boolean => Object.hasOwn(INLINE_DIRECTI
 
 /** `:name[` that is text today: the name is not a known directive as written, and a `]` closes it later on the line. */
 const DIRECTIVE_START = /(?<=^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)\[/g;
+/** `:name{` (its attribute list blanked out by textOnly): spec v2 reads it as a directive when the list is one. */
+const DIRECTIVE_BRACES = /(?<=^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)(?=\0)/g;
 
-function unknownDirectiveColumns(text: string): number[] {
-  return [...text.matchAll(DIRECTIVE_START)]
-    .filter((m) => !isKnownDirective(m[1]) && text.includes(']', m.index + m[0].length))
-    .map((m) => m.index);
+/** Whether a spec v2 attribute list starts at `open` in `raw`. */
+function v2ListAt(raw: string, open: number): boolean {
+  const close = raw[open] === '{' ? findAttrsEnd(raw, open, TARGET) : -1;
+  return close >= 0 && parseAttrs(raw.slice(open + 1, close), TARGET) !== null;
+}
+
+/**
+ * The columns of the `:` of each `:name[…]` and `:name{…}` that v1 reads as text and v2 as a directive. Content may
+ * run over a line break, as link text may: `continued` says whether a `]` comes on the lines after this one.
+ */
+function unknownDirectiveColumns(text: string, raw: string, continued: () => boolean): number[] {
+  const closes = (from: number) => text.includes(']', from) || continued();
+  const brackets = [...text.matchAll(DIRECTIVE_START)].filter((m) => !isKnownDirective(m[1]) && closes(m.index + m[0].length));
+  const braces = [...text.matchAll(DIRECTIVE_BRACES)].filter((m) => !isKnownDirective(m[1]) && v2ListAt(raw, m.index + m[0].length));
+  return [...brackets, ...braces].map((m) => m.index).sort((a, b) => a - b);
 }
 
 /** Body lines outside code, math and raw HTML, with what is code or math on them. */
@@ -372,17 +403,112 @@ function* textLines(w: Work): Generator<{ i: number; raw: string; math: Readonly
   }
 }
 
+/** Whether a `]` comes on one of the lines from `from` up to the next blank line (the rest of the paragraph). */
+function closesInParagraph(lines: readonly string[], from: number): boolean {
+  for (let l = from; l < lines.length && lines[l].trim(); l++) if (lines[l].includes(']')) return true;
+  return false;
+}
+
 function unknownDirectiveStep(w: Work): void {
   const edits: Array<{ i: number; next: string }> = [];
   for (const { i, raw, math } of textLines(w)) {
     if (!raw.includes(':')) continue;
-    const columns = unknownDirectiveColumns(textOnly(raw, math, true));
+    const columns = unknownDirectiveColumns(textOnly(raw, math, true), raw, () => closesInParagraph(w.lines, i + 1));
     if (!columns.length) continue;
     let next = raw;
     for (const c of columns.reverse()) next = `${next.slice(0, c)}\\${next.slice(c)}`;
     edits.push({ i, next });
   }
   for (const { i, next } of edits) change(w, i, 1, [next], 'unknown-directive');
+}
+
+// ---------------------------------------------------------------------------
+// `{agent}` after a heading (proposal 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * A bare `agent` in a heading's attribute list, which v1 reads as `agent=true` (rendered as `data-agent="true"`), is
+ * written `agent=true`, so the list stays attributes in spec v2 and renders the same. The validator's fix for the
+ * other bare words (heading/attrs-text) runs after it.
+ */
+function headingAgentStep(w: Work): void {
+  const edits: Array<{ i: number; next: string }> = [];
+  for (const { i, raw } of textLines(w)) {
+    const m = /^\s{0,3}#{1,6}\s/.test(raw) ? HEADING_ATTRS.exec(raw) : null;
+    const items = m ? lexAttrItems(m[1], 1) : null;
+    if (!m || !items?.some(({ match }) => isFlagItem(match) && match[3] === 'agent')) continue;
+    const open = m.index + m[0].indexOf('{') + 1;
+    const last = items.at(-1)!;
+    const inner = items.map(({ match }) => (isFlagItem(match) && match[3] === 'agent' ? match[0].replace('agent', 'agent=true') : match[0])).join('');
+    edits.push({ i, next: `${raw.slice(0, open)}${inner}${raw.slice(open + last.pos + last.match[0].length)}` });
+  }
+  for (const { i, next } of edits) change(w, i, 1, [next], 'heading-braces');
+}
+
+// ---------------------------------------------------------------------------
+// Backslashes in quoted attribute values (proposal 6)
+// ---------------------------------------------------------------------------
+
+/** A known directive's name (as v1 reads it) right before an attribute list. */
+const KNOWN_DIRECTIVE_BEFORE = /(?:^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[[^\]\n]*\])?$/;
+
+/**
+ * Where v1 reads an attribute list on a line (the columns of its `{`): after a container's name, at the end of a
+ * heading, and inline after a styled span's `]` or a known directive. `masked` is the line with code and math blanked.
+ */
+function listStarts(raw: string, masked: string): number[] {
+  const starts = new Set<number>();
+  const open = CONTAINER_OPEN.exec(raw);
+  if (open && raw[raw.length - open[4].length] === '{') starts.add(raw.length - open[4].length);
+  const heading = /^\s{0,3}#{1,6}\s/.test(raw) ? HEADING_ATTRS.exec(raw) : null;
+  if (heading) starts.add(heading.index + heading[0].indexOf('{'));
+  for (let p = masked.indexOf('{'); p !== -1; p = masked.indexOf('{', p + 1)) {
+    const before = masked.slice(0, p);
+    const directive = KNOWN_DIRECTIVE_BEFORE.exec(before);
+    if (before.endsWith(']') || (directive && isKnownDirective(directive[1]))) starts.add(p);
+  }
+  return [...starts].sort((a, b) => a - b);
+}
+
+const sameAttrs = (a: Attrs | null, b: Attrs | null) => !!a && !!b && JSON.stringify(a) === JSON.stringify(b);
+
+/** A quoted item written so that spec v2 reads the value v1 reads; other items as they are. */
+function requoted(m: RegExpExecArray): string {
+  const { value, quote } = itemValue(m, 1);
+  if (!quote || value === undefined) return m[0];
+  const written = `${quote}${quote === '"' ? m[4] : m[5]}${quote}`;
+  const at = m[0].lastIndexOf(written);
+  return `${m[0].slice(0, at)}${quote}${escapeQuoted(value, quote)}${quote}${m[0].slice(at + written.length)}`;
+}
+
+/**
+ * The inside of the attribute list that opens at `open`, rewritten so that spec v2 reads the values v1 reads, when the
+ * two readings differ (`\\` in a quoted value, or a value that ends in a single backslash); undefined when they don't,
+ * or when no rewrite reads the same.
+ */
+function v2List(raw: string, open: number): { close: number; inner: string } | undefined {
+  const close = findAttrsEnd(raw, open, 1);
+  const inner = close < 0 ? '' : raw.slice(open + 1, close);
+  const v1 = close < 0 ? null : parseAttrs(inner, 1);
+  if (!v1 || (findAttrsEnd(raw, open, TARGET) === close && sameAttrs(v1, parseAttrs(inner, TARGET)))) return undefined;
+  const items = lexAttrItems(inner, 1) ?? [];
+  const last = items.at(-1);
+  const rewritten = items.map(({ match }) => requoted(match)).join('') + inner.slice(last ? last.pos + last.match[0].length : 0);
+  return sameAttrs(v1, parseAttrs(rewritten, TARGET)) ? { close, inner: rewritten } : undefined;
+}
+
+function attrEscapeStep(w: Work): void {
+  const edits: Array<{ i: number; next: string }> = [];
+  for (const { i, raw, math } of textLines(w)) {
+    if (!raw.includes('\\') || !raw.includes('{')) continue;
+    let next = raw;
+    for (const open of listStarts(raw, textOnly(raw, math, false)).reverse()) {
+      const list = v2List(next, open);
+      if (list) next = `${next.slice(0, open + 1)}${list.inner}${next.slice(list.close)}`;
+    }
+    if (next !== raw) edits.push({ i, next });
+  }
+  for (const { i, next } of edits) change(w, i, 1, [next], 'attr-escapes');
 }
 
 // ---------------------------------------------------------------------------

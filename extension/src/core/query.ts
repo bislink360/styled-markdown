@@ -7,9 +7,9 @@ import { extractTasks } from './meta';
 import { parseSmd } from './parse';
 import type { Heading } from './render';
 import { CALLOUT_TYPES, CONTAINERS, RISK_LEVELS, STYLE_KEYS } from './spec';
-import { specVersion } from './specVersion';
 import { own, suggest } from './util';
 import { documentVariables } from './variables';
+import { specVersion, type SpecVersion } from './specVersion';
 
 /**
  * Block queries: select decisions, risks, API endpoints, callouts, tasks and headings by type and
@@ -291,7 +291,7 @@ function containerBlocks(lines: string[], from: number, sectionAt: (line: number
       done.forEach((o, k) => { o.block.endLine = k === done.length - 1 ? i : i - 1; });
       continue;
     }
-    const info = openingOf(lines[i]);
+    const info = openingOf(lines[i], spec);
     if (!info) continue;
     const block: Block = { type: info.name, line: i, endLine: lines.length - 1, title: inlineText(info.title, undefined, false, undefined, variables), attrs: containerAttrs(info), section: sectionAt(i) };
     blocks.push(block);
@@ -310,9 +310,9 @@ function fenceStep(line: string, fence: Fence): { fence: Fence; code: boolean } 
   return { fence: closes ? null : fence, code: true };
 }
 
-function openingOf(line: string): ContainerInfo | null {
+function openingOf(line: string, spec: SpecVersion): ContainerInfo | null {
   const open = CONTAINER_OPEN.exec(line);
-  return open ? parseContainerInfo(open[3] + open[4]) : null;
+  return open ? parseContainerInfo(open[3] + open[4], spec) : null;
 }
 
 /** Attributes as written plus the spec's defaults; the title is a field of its own. */

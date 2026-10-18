@@ -166,6 +166,9 @@ Named colors are theme tokens tuned for light and dark mode. Only whitelisted va
 | `:kbd[Ctrl+S]` | key caps | `Ctrl+S` | `<kbd>Ctrl</kbd>+<kbd>S</kbd>` |
 | `:mention[@x]` | highlighted mention | `@x` | `@x` |
 | `:ref[fig-id]` | the figure's number as a link (see [§9](#figures-and-numbered-references)) | `Figure 2 (fig-id)` | `[Figure 2](#fig-id)` |
+| `:abbr[x]{.class color}`, any other name (`smd: 2` only) | `x` in a plain `smd-directive smd-directive-abbr` span, styled as `[x]{…}` is; a `directive/unknown` warning | `x` | `x` |
+
+**Spec v2 (`smd: 2`).** Any `:name[…]` is a directive, so a directive a later release adds shows its content in older 2.x tools, and names are read in any case (`:Badge[x]` is a badge). In documents without `smd: 2`, only the names above, in lower case, are directives; anything else is text. Write `\:abbr[HTML]` to keep a colon as text in either.
 
 ### Footnotes
 
@@ -745,7 +748,7 @@ Problems appear as you type in the Problems panel and from `smd validate` in CI.
 | overdue open task | `task/overdue` | — |
 | a pipe inside a code span in a table cell (`grep a`, pipe, `wc -l`) | `table/pipe-in-code` (info): the pipe still splits the cell, as on GitHub | puts a backslash before the pipe |
 
-**Spec v2.** These hints (and one info) point at what spec v2 (`smd: 2`) reads differently. They never fail a check, `--strict` included, and each fix keeps how the document renders today:
+**Spec v2.** These hints (and one info) point at what spec v2 (`smd: 2`) reads differently. `heading/attrs-text` is reported only in documents without `smd: 2`, since a spec v2 document already reads `## Returns {ok}` as heading text. They never fail a check, `--strict` included, and each fix keeps how the document renders today:
 
 | Examples | Rule | Quick fix |
 |---|---|---|
@@ -1049,7 +1052,7 @@ smd --version
 
 ### Migrating to spec v2: `smd migrate`
 
-`smd migrate <files|dirs> --to 2 --dry-run` reports what each document needs so that it means the same under spec v2 (`smd: 2`, Styled Markdown 2.0) as it does today: closing fences with their container's colon count, duplicate attributes collapsed, hidden container title text removed, `$$` delimiters on their own lines, `{}` and bare `{word}` after headings removed, literal unknown `:name[…]` escaped, include sections by the heading's id, enumerated values in the vocabulary's case, and `smd: 2`. The steps, and which RFC proposal each follows, are in [SPEC.md §10.1](SPEC.md#101-migrating-to-spec-v2). Unlike `smd fmt`, it changes text, so it is a command of its own.
+`smd migrate <files|dirs> --to 2 --dry-run` reports what each document needs so that it means the same under spec v2 (`smd: 2`, Styled Markdown 2.0) as it does today: closing fences with their container's colon count, duplicate attributes collapsed, hidden container title text removed, `$$` delimiters on their own lines, `{}` and bare `{word}` after headings removed, quoted attribute values written with spec v2's `\\` escapes, literal unknown `:name[…]` escaped, include sections by the heading's id, enumerated values in the vocabulary's case, and `smd: 2`. The steps, and which RFC proposal each follows, are in [SPEC.md §10.1](SPEC.md#101-migrating-to-spec-v2). Unlike `smd fmt`, it changes text, so it is a command of its own.
 
 ```text
 docs/plan.smd: 2 changes and 1 note to migrate from smd: 1 to spec v2

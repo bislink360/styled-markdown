@@ -1,0 +1,44 @@
+---
+smd: 2
+title: Backslashes in attribute values in spec v2
+summary: "Pins how spec v2 reads quoted attribute values: a backslash before the value's own quote escapes it as in 1.10, two backslashes are one, and every other backslash stays as written. attribute-escapes.smd pins the same cases read with spec v1."
+status: draft
+updated: 2026-10-17
+---
+
+## Escaped quotes
+
+:::note{title="It's \"done\""}
+A title with both kinds of quote, written as `smd fmt` writes it.
+:::
+
+Activation :metric[42%]{label="The \"active\" users' share" trend=up} this week.
+
+## Escaped backslashes
+
+:::note{title="C:\docs\\"}
+A value that ends in a backslash: the last one is written `\\`, the one before an ordinary letter is not.
+:::
+
+:::note{title="\\\\server\share"}
+Two backslashes in a row are written `\\\\`: the title is a UNC path with two leading backslashes.
+:::
+
+Saved to :metric[3]{label="C:\temp\\" trend=up} today.
+
+## Backslashes that are not escapes
+
+:::note{title="C:\Users\docs\plan.smd"}
+A Windows path keeps its backslashes.
+:::
+
+:::note{title='say \"hi\"'}
+Inside single quotes `\"` is two characters, as in spec v1.
+:::
+
+## A value that ends in one backslash
+
+Valid in spec v1, which reads it without escapes; in spec v2 the list doesn't parse, so the line is text.
+
+<!-- smd-disable-next-line attrs/syntax -->
+Saved to :metric[3]{label="C:\temp\" trend=up} today.

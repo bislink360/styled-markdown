@@ -73,6 +73,12 @@ Priority :priority[High], trend :metric[3%]{label="Rate" trend=Up}.
 
 "Quotes" -- dashes... (c) are curled today. Docs live at example.com and www.example.org. This is version {{version}}.
 
+## Backslashes in attribute values
+
+:::note{title="\\server\share"}
+Two backslashes are two in v1 and one in v2, and v2 reads an empty :abbr{.wide} as a directive.
+:::
+
 ## A stray closer
 
 The closing fence below has nothing to close. It keeps `smd fmt` from rewriting the mismatched closers above, so this document stays formatted as written.

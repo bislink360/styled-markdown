@@ -296,12 +296,17 @@ const READERS: Record<string, (text: string) => unknown> = {
  */
 const READ_DIFFERENTLY_IN_V2: Record<string, string> = {
   'examples/showcase.smd': 'proposal 10: `version: 1.0` shows 1.0',
+  'extension/test/compat/corpus/attribute-escapes.smd': 'proposal 6: `\\\\server` is one backslash; a value ending in one does not parse',
   'extension/test/compat/corpus/glossary.smd': 'proposal 8: API.md, a bare domain, is not a link',
-  'extension/test/compat/corpus/migrate.smd': 'proposal 10: `version: 2.10` shows 2.10; proposal 8: a bare domain is not a link',
-  'extension/test/compat/corpus/v2-typography.smd': 'proposal 8: bare domains and //host are not links',
+  'extension/test/compat/corpus/migrate.smd': 'proposal 10: `version: 2.10` shows 2.10; 8: a bare domain is not a link; 5: `## Object {}`; 6: `\\\\server`; 7b: `:abbr[HTML]`',
+  'extension/test/compat/corpus/unknown-directives.smd': 'proposals 7b and 11: `:abbr[HTML]` and `:Badge[x]` are directives',
+  'extension/test/compat/corpus/v2-directives.smd': 'proposals 7b and 11: unknown names and names in any case',
+  'extension/test/compat/corpus/v2-escapes.smd': 'proposal 6: `\\\\` in quoted values',
+  'extension/test/compat/corpus/v2-headings.smd': 'proposal 5: a heading\'s `{}` and `{word}` are text',
+  'extension/test/compat/corpus/v2-hints.smd': 'proposal 3: closing fences with other colon counts; proposal 5: `## Object {}` and `## Returns {ok}`',
   'extension/test/compat/corpus/v2-typography-on.smd': 'proposal 8: bare domains and //host are not links',
+  'extension/test/compat/corpus/v2-typography.smd': 'proposal 8: bare domains and //host are not links',
   'extension/test/compat/corpus/v2-variables.smd': 'proposal 10: values keep their YAML spelling',
-  'extension/test/compat/corpus/v2-hints.smd': 'proposal 3: closing fences with other colon counts',
   'extension/test/compat/corpus/v2-math.smd': 'proposal 2: $ delimiters',
   'extension/test/compat/corpus/v2-fences.smd': 'proposal 3: closing fences',
 };
@@ -309,6 +314,7 @@ const posix = (file: string) => file.split(path.sep).join('/');
 
 test('every reader gives the same output for smd: 1, no smd key and smd: 2, where no v2 rule applies (examples and the corpus)', () => {
   assert.ok(DOCUMENTS.length >= 20, `${DOCUMENTS.length} documents`);
+  const differ = new Set<string>();
   for (const file of DOCUMENTS) {
     const text = fs.readFileSync(path.join(root, file), 'utf8').replaceAll('\r\n', '\n');
     const texts = Object.fromEntries(Object.entries(VARIANTS).map(([k, line]) => [k, withVersionLine(text, line)]));
@@ -317,9 +323,13 @@ test('every reader gives the same output for smd: 1, no smd key and smd: 2, wher
     for (const [name, read] of Object.entries(READERS)) {
       const v1 = stable(read(texts.v1));
       assert.equal(stable(read(texts.none)), v1, `${name}: ${file} without an smd key`);
-      if (!differs) assert.equal(stable(read(texts.v2)), v1, `${name}: ${file} with smd: 2`);
+      const same = stable(read(texts.v2)) === v1;
+      if (!same) differ.add(posix(file));
+      if (!differs) assert.ok(same, `${name}: ${file} with smd: 2`);
     }
   }
+  // And every document listed does read differently, so the list stays exact.
+  assert.deepEqual([...differ].sort((a, b) => a.localeCompare(b)), Object.keys(READ_DIFFERENTLY_IN_V2).sort((a, b) => a.localeCompare(b)));
 });
 
 test('the documents a v2 rule reads differently do read differently with smd: 2', () => {
