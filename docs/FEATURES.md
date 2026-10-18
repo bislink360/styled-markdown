@@ -654,11 +654,11 @@ An `:::agent` block inside a section marked `{agent=skip}` is omitted with the s
 | Theme | Follows VS Code light/dark/high contrast. Override with `smd.preview.theme` or front matter `theme:`. |
 | Security | A strict Content Security Policy: scripts in documents never run |
 
-**`.md` files in VS Code's built-in preview.** A `.md` file that uses `.smd` syntax renders in VS Code's own Markdown preview too (`Ctrl+Shift+V` on a `.md` file): containers, inline directives, attribute lists, `==marks==`, Mermaid diagrams (drawn in the preview's theme), and code titles, line highlights and `file="…"` embeds. Plain Markdown looks as before, and code blocks without `.smd` attributes keep VS Code's highlighting. Compared with the `.smd` preview:
+**`.md` files in VS Code's built-in preview.** A `.md` file that opts in with an `smd` front matter key (`smd: 1` or `smd: 2`) renders its `.smd` syntax in VS Code's own Markdown preview too (`Ctrl+Shift+V` on a `.md` file): containers, inline directives, attribute lists, `==marks==`, Mermaid diagrams (drawn in the preview's theme), and code titles, line highlights and `file="…"` embeds. Plain Markdown looks as before, and code blocks without `.smd` attributes keep VS Code's highlighting. Compared with the `.smd` preview:
 
 - math is VS Code's own while `markdown.math.enabled` is on (the default); with it off, the `.smd` math rules apply
 - task lists, the front matter header and the table of contents are left to VS Code, and tabs show one after another
-- `smd.markdownPreview.enabled` (default on) turns it off; settings apply after **Developer: Reload Window**
+- `smd.markdownPreview.enabled` says which `.md` files get it: `opt-in` (the default since 2.0: only files with an `smd` key), `always` (every `.md` file, as in 1.x; `true` still means this) or `never` (`false`); settings apply after **Developer: Reload Window**
 
 ## 13. VS Code: editing assistance
 

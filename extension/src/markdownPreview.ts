@@ -4,17 +4,29 @@ import type { MarkdownItSmdOptions } from './core/markdownIt';
 import { applySmd, hostContext, smdFeatures } from './core/markdownItSetup';
 import { documentRiskMatrixHtml } from './core/riskHtml';
 import { readerForUri } from './files';
+import { applyWhen, previewApplies, previewMode } from './markdownPreviewGate';
+
+/** The instances extendMarkdownIt has added the rules to. */
+const extended = new WeakSet<MarkdownIt>();
 
 /**
  * Styled Markdown syntax in VS Code's built-in Markdown preview, for .md files. VS Code calls this
  * (`markdown.markdownItPlugins` in package.json) when it builds its markdown-it instance; the settings
  * are read then, so a change applies after Developer: Reload Window. Plain Markdown is unchanged:
  * .smd rules only match text it would show literally, and other code blocks stay VS Code's.
+ *
+ * `smd.markdownPreview.enabled` says which files get the syntax (see markdownPreviewGate.ts): since 2.0 only those
+ * whose front matter has an `smd` key, unless it is `always`. The rules are on the instance either way, and each
+ * parse decides from its source whether they run.
  */
 export function extendMarkdownIt(md: MarkdownIt): MarkdownIt {
-  if (!vscode.workspace.getConfiguration('smd.markdownPreview').get<boolean>('enabled', true)) return md;
+  const mode = previewMode(vscode.workspace.getConfiguration('smd.markdownPreview').inspect('enabled'));
+  if (mode === 'never' || extended.has(md)) return md;
+  extended.add(md);
   const options = markdownPreviewOptions();
-  applySmd(md, smdFeatures(options), { ...hostContext(md, options), riskMatrix: documentRiskMatrixHtml });
+  const add = (target: MarkdownIt) => applySmd(target, smdFeatures(options), { ...hostContext(md, options), riskMatrix: documentRiskMatrixHtml });
+  if (mode === 'always') add(md);
+  else applyWhen(md, (source) => previewApplies(mode, source), add);
   return md;
 }
 

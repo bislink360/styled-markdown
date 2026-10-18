@@ -566,7 +566,7 @@ const checks = {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
 
-  async 'the built-in Markdown preview renders .smd syntax in .md files'() {
+  async 'the built-in Markdown preview renders .smd syntax in .md files that opt in with smd'() {
     const ext = vscode.extensions.getExtension('bislink360.styled-markdown');
     const contributes = ext.packageJSON.contributes;
     assert.equal(contributes['markdown.markdownItPlugins'], true);
@@ -574,23 +574,32 @@ const checks = {
       assert.ok(fs.existsSync(path.join(ext.extensionPath, file)), `${file} is built`);
     }
 
-    // What VS Code calls with its markdown-it instance.
+    // What VS Code calls with its markdown-it instance. Since 2.0 (smd.markdownPreview.enabled is opt-in by
+    // default) only .md files whose front matter has an smd key get the syntax.
     const api = await ext.activate();
     assert.equal(typeof api.extendMarkdownIt, 'function');
     const MarkdownIt = require(path.join(ext.extensionPath, 'node_modules', 'markdown-it'));
     const md = api.extendMarkdownIt(new MarkdownIt());
-    const html = md.render(':::note Heads up\nUse :badge[smd] syntax in **.md** files.\n:::\n\n```mermaid\ngraph TD; A-->B\n```\n\n```js\nplain();\n```\n');
+    const body = ':::note Heads up\nUse :badge[smd] syntax in **.md** files.\n:::\n\n```mermaid\ngraph TD; A-->B\n```\n\n```js\nplain();\n```\n';
+    const html = md.render(`---\nsmd: 1\n---\n\n${body}`);
     assert.match(html, /<div class="smd-callout smd-callout-note"/);
     assert.match(html, /<span class="smd-badge">smd<\/span>/);
     assert.match(html, /<pre class="smd-mermaid">/);
     assert.match(html, /<pre><code class="language-js">plain\(\);/, 'plain code blocks stay the host’s');
+    assert.equal(md.render(body), new MarkdownIt().render(body), 'a .md file without smd is plain Markdown');
 
     // The preview's own renderer, when this VS Code exposes it.
     if ((await vscode.commands.getCommands(true)).includes('markdown.api.render')) {
-      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: '# Plain\n\n:::tip\nShown as a callout.\n:::\n' });
-      const rendered = await vscode.commands.executeCommand('markdown.api.render', doc);
-      assert.match(String(rendered), /smd-callout-tip/);
-      assert.match(String(rendered), /<h1[^>]*>Plain<\/h1>/);
+      const content = '# Plain\n\n:::tip\nShown as a callout.\n:::\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: `---\nsmd: 2\n---\n\n${content}` });
+      const rendered = String(await vscode.commands.executeCommand('markdown.api.render', doc));
+      assert.match(rendered, /smd-callout-tip/);
+      assert.match(rendered, /<h1[^>]*>Plain<\/h1>/);
+      const plainDoc = await vscode.workspace.openTextDocument({ language: 'markdown', content });
+      const plain = String(await vscode.commands.executeCommand('markdown.api.render', plainDoc));
+      assert.doesNotMatch(plain, /smd-callout/, 'without smd in the front matter, no .smd syntax');
+      assert.match(plain, /<h1[^>]*>Plain<\/h1>/);
+      assert.match(plain, /:::tip/);
     } else {
       console.log('    (markdown.api.render is not available in this VS Code: checked extendMarkdownIt only)');
     }
