@@ -14,6 +14,7 @@ import { quoteCite } from './quote';
 import { parseSmdTokens, type ParsedTokens } from './render';
 import { riskMatrix, riskRegister } from './risks';
 import { CALLOUT_TYPES } from './spec';
+import { specEnv } from './specVersion';
 
 /**
  * The document tree the exporters (confluence.ts, notion.ts) write. It is built from the very tokens renderSmd
@@ -214,8 +215,8 @@ class TreeBuilder {
 
   /** Inline Markdown in a title or an attribute, parsed as renderSmd parses container titles. */
   inlineMarkdown(source: string): Inline[] {
-    const { smdVariables, smdFigures, smdSpec } = this.parsed.env;
-    const tokens = this.parsed.md.parseInline(source, { smdVariables, smdFigures, smdSpec, messages: this.m });
+    const { smdVariables, smdFigures } = this.parsed.env;
+    const tokens = this.parsed.md.parseInline(source, { smdVariables, smdFigures, ...specEnv(this.parsed.env), messages: this.m });
     return this.inline(tokens[0]);
   }
 

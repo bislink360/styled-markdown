@@ -10,6 +10,7 @@ import { codeLines, inlineMathLines, literalLines, mathOnLine, type InlineMathLi
 import { createMarkdownIt, type Env } from './render';
 import { CONTAINERS, INLINE_DIRECTIVES } from './spec';
 import { readSpec, specVersion } from './specVersion';
+import { gfmLinkify } from './typography';
 import { AGENT_PRIORITY_REMOVED } from './v2Hints';
 import { applyFixes, validateSmd, type Diagnostic, type Fix } from './validate';
 import { findVariables, lookupVariable, variableText } from './variables';
@@ -51,7 +52,7 @@ export interface MigrationStep {
 export interface MigrationOptions {
   /** Add `typography: true` where the typographer changes text today, to keep curly quotes and dashes (proposal 8). */
   keepTypography?: boolean;
-  /** Write fuzzy-linked bare domains (`example.com`) as `<https://example.com>`, which stay links (proposal 8). */
+  /** Write fuzzy-linked bare domains (`example.com`) as Markdown links to the address v1 links (`[example.com](http://example.com)`), which render the same in v2 (proposal 8). */
   linkDomains?: boolean;
   /** Quote front matter values that are shown differently from how they are written (`version: 2.10`, proposal 10). */
   quoteVariables?: boolean;
@@ -111,7 +112,7 @@ const KINDS: Record<MigrationKind, { proposal: string; keeps: 'v1' | 'v2'; reaso
     reason: 'Spec v2 turns the typographer off unless the front matter sets "typography: true" (proposal 8).',
   },
   'fuzzy-link': {
-    proposal: '8', keeps: 'v2',
+    proposal: '8', keeps: 'v1',
     reason: 'Spec v2 links only GFM autolink literals (http://, https://, www. and e-mail addresses), so a bare domain is no longer a link (proposal 8).',
   },
   'variable-spelling': {
@@ -468,6 +469,9 @@ const TYPOGRAPHY: ReadonlyArray<[string, string, RegExp]> = [
   ['symbol', 'symbols', /[©®™±§]/g],
 ];
 
+/** The front matter keys the header shows as inline Markdown. */
+const HEADER_TEXT = ['title', 'summary'];
+
 /** Typographic characters per line: in the body's text, in container titles and in the front matter title and summary. */
 function typographyByLine(text: string, typographer: boolean): Map<number, number[]> {
   const { tokens, md, env, fm } = bodyTokens(text, typographer);
@@ -480,7 +484,7 @@ function typographyByLine(text: string, typographer: boolean): Map<number, numbe
   const inline = (s: string, line: number) => {
     for (const t of md.parseInline(s, { ...env, headings: [], slugs: new Map() })) addText(t.children ?? [], line, add);
   };
-  for (const key of ['title', 'summary']) {
+  for (const key of HEADER_TEXT) {
     const value = fm.data[key];
     if (typeof value === 'string') inline(value, Math.max(0, keyLine(splitLines(text), fm, key)));
   }
@@ -551,26 +555,71 @@ function addFrontMatterKey(w: Work, line: string, kind: MigrationKind, reason: s
 // Fuzzy links (proposal 8)
 // ---------------------------------------------------------------------------
 
-/** Links that GFM makes from text too: a scheme, `www.`, or an e-mail address. */
-const GFM_AUTOLINK = /^(?:[a-z][a-z0-9+.-]*:\/\/|mailto:|www\.)|@/i;
+interface FuzzyLink {
+  label: string;
+  /** Where v1 points the link (`http://example.com`). */
+  href: string;
+  first: number;
+  last: number;
+  /** In the front matter's title or summary, which the header shows: only a note. */
+  key?: string;
+  /** Text today that spec v2 links: only a note. */
+  gained?: true;
+}
 
-interface FuzzyLink { label: string; first: number; last: number }
+const HTML_LINK_OPEN = /^<a[\s>]/i;
+const HTML_LINK_CLOSE = /^<\/a\s*>/i;
 
-/** Bare domains linkify links today, with the lines of the text they are in. */
+/** Whether spec v2 links `label` the same way: GFM's autolink literals match all of it. */
+function gfmLinks(gfm: ReturnType<typeof gfmLinkify>, label: string): boolean {
+  const [match] = gfm.match(label) ?? [];
+  return match?.index === 0 && match.lastIndex === label.length;
+}
+
+/**
+ * The links linkify makes in `children` that spec v2 doesn't make (`example.com`, `//host`, `WWW.HOST`), and the
+ * other way round, text that spec v2 links (`www.host.test`, whose top-level domain v1 doesn't know), on lines
+ * [first, last].
+ */
+function fuzzyIn(children: Token[], gfm: ReturnType<typeof gfmLinkify>, place: Omit<FuzzyLink, 'label' | 'href'>): FuzzyLink[] {
+  let inLink = 0;
+  return children.flatMap((c, k): FuzzyLink[] => {
+    if (c.type === 'link_open' || (c.type === 'html_inline' && HTML_LINK_OPEN.test(c.content))) inLink++;
+    if (c.type === 'link_close' || (c.type === 'html_inline' && HTML_LINK_CLOSE.test(c.content))) inLink--;
+    if (c.type === 'text' && inLink <= 0) {
+      return (gfm.match(c.content) ?? []).filter((m) => m.schema === 'www.').map((m) => ({ label: m.raw, href: '', ...place, gained: true }));
+    }
+    const label = children[k + 1]?.content ?? '';
+    if (c.type !== 'link_open' || c.markup !== 'linkify' || !label || gfmLinks(gfm, label)) return [];
+    return [{ label, href: c.attrGet('href') ?? '', ...place }];
+  });
+}
+
+/** Bare domains linkify links today, with the lines of the text they are in: the body's, then the header's. */
 function fuzzyLinks(text: string): FuzzyLink[] {
-  const { tokens, fm } = bodyTokens(text);
+  const { tokens, fm, md, env } = bodyTokens(text);
+  const gfm = gfmLinkify(md.linkify);
   const found: FuzzyLink[] = [];
   let range: [number, number] = [fm.bodyStartLine, fm.bodyStartLine];
   for (const t of tokens) {
     if (t.map) range = [t.map[0] + fm.bodyStartLine, t.map[1] - 1 + fm.bodyStartLine];
-    const children = t.children ?? [];
-    children.forEach((c, k) => {
-      const label = children[k + 1]?.content ?? '';
-      if (c.type === 'link_open' && c.markup === 'linkify' && label && !GFM_AUTOLINK.test(label)) found.push({ label, first: range[0], last: range[1] });
-    });
+    found.push(...fuzzyIn(t.children ?? [], gfm, { first: range[0], last: range[1] }));
+  }
+  for (const key of HEADER_TEXT) {
+    const value = fm.data[key];
+    if (typeof value !== 'string') continue;
+    const line = Math.max(0, keyLine(splitLines(text), fm, key));
+    for (const t of md.parseInline(value, { ...env, headings: [], slugs: new Map() })) found.push(...fuzzyIn(t.children ?? [], gfm, { first: line, last: line, key }));
   }
   return found;
 }
+
+/**
+ * `label` as link text that reads as written with typography on too: the second character of `--`, `..`, `+-`, `,,`,
+ * `??` and `!!`, and the `(` of `(c)`, `(r)` and `(tm)`, escaped (linkify's text is never typographic).
+ */
+const literalLabel = (label: string) =>
+  label.replaceAll(/(?<=[-+.,?!])[-.,?!]/g, '\\$&').replaceAll(/\((?=(?:c|r|tm)\))/gi, '\\(');
 
 const DOMAIN_EDGE = /[\w.@/:-]/;
 
@@ -589,20 +638,28 @@ function locate(w: Work, link: FuzzyLink, from: { line: number; column: number }
   return undefined;
 }
 
-type DomainEdits = Map<number, Array<{ column: number; label: string }>>;
+type DomainEdits = Map<number, Array<{ column: number; label: string; href: string }>>;
 
-/** The source place of each fuzzy link, by line; a link this tool can't place becomes a note. */
+/** The source place of each fuzzy link, by line; a link this tool can't place, or in the header's text, becomes a note. */
 function placeFuzzyLinks(w: Work): DomainEdits {
   const edits: DomainEdits = new Map();
   let from = { line: 0, column: 0 };
   for (const link of fuzzyLinks(textOf(w))) {
+    if (link.gained) {
+      note(w, link.first, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} "${link.label}" is text today, and spec v2 links it (a GFM autolink literal); escape its first dot (www\\.) to keep it text.`);
+      continue;
+    }
+    if (link.key) {
+      note(w, link.first, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} "${link.label}" in "${link.key}" is linked in the header today; write it as a Markdown link there to keep the link.`);
+      continue;
+    }
     const at = locate(w, link, from);
     if (!at) {
       note(w, link.first, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} "${link.label}" is linked today, from text this tool can't rewrite.`);
       continue;
     }
     from = { line: at.line, column: at.column + link.label.length };
-    edits.set(at.line, [...(edits.get(at.line) ?? []), { column: at.column, label: link.label }]);
+    edits.set(at.line, [...(edits.get(at.line) ?? []), { column: at.column, label: link.label, href: link.href }]);
   }
   return edits;
 }
@@ -614,12 +671,12 @@ function fuzzyLinkStep(w: Work): void {
     const labels = links.map((l) => `"${l.label}"`).join(', ');
     const are = several(links.length, 'is', 'are');
     if (!w.options.linkDomains) {
-      note(w, line, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} linked today. Run with --link-domains to write ${several(links.length, 'it', 'them')} as <https://…>.`);
+      note(w, line, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} linked today. Run with --link-domains to write ${several(links.length, 'it as a Markdown link', 'them as Markdown links')} to the address linked today.`);
       continue;
     }
     let next = w.lines[line];
-    for (const l of [...links].reverse()) next = `${next.slice(0, l.column)}<https://${l.label}>${next.slice(l.column + l.label.length)}`;
-    change(w, line, 1, [next], FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} written as an autolink, which stays a link.`);
+    for (const l of [...links].reverse()) next = `${next.slice(0, l.column)}[${literalLabel(l.label)}](${l.href})${next.slice(l.column + l.label.length)}`;
+    change(w, line, 1, [next], FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} written as a Markdown link to the address v1 links, which shows the same.`);
   }
 }
 

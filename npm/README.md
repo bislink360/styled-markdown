@@ -124,6 +124,8 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 | `lang` | English | Language of the labels the plugin adds ("Note", "Figure 2", "overdue"…), a BCP 47 tag: `de`, `es`, `fr`, `ja`, `pt`, `zh` (`pt-BR` → `pt`; others are English). A render's `env.lang` overrides it, and with `frontMatter` the document's `lang:` overrides both (since 1.6) |
 | `spec` | `1` | The spec version (`1` or `2`) of documents that don't say, for hosts that remove the front matter (since 2.0). The document's own `smd:` wins: in the source's front matter, else in the front matter you pass as `env.smdVariables`. The plugin puts the version on the render's env as `smdSpec` |
 
+**Typography and links in spec v2.** Your `typographer` and `linkify` options apply to spec v1 documents as they always did. A spec v2 document (`smd: 2`, or `spec: 2`) gets no typographic quotes, dashes or ellipses unless its front matter says `typography: true`, and only GFM autolink literals become links (`https://…`, `www.…`, e-mail addresses; not `example.com`). The plugin only takes away: with your `typographer` or `linkify` off, they stay off. If your host removes the front matter, pass `typography` with the rest of it in `env.smdVariables`. See SPEC §4.8.
+
 **Render like `renderSmd`: `preset: 'smd'`** (since 2.0). The plugin's defaults leave out what a host usually has its own way of doing: heading ids, the front matter header, code frames and source lines are off, and typography and links follow your instance. The preset turns on what `renderSmd` does, so the same document gives the same HTML (inside `<article class="smd-doc">`):
 
 ```ts
@@ -134,7 +136,7 @@ const md = new MarkdownIt({
 }).use(smd, { preset: 'smd', sourceLines: false });              // an option you pass wins over the preset's
 ```
 
-It turns on `headingIds`, `frontMatter`, `codeFrames` and `sourceLines`, sets your instance's `typographer` and `linkify` to `true` (`md.set({ typographer: false })` after `.use()` turns one back off), and wraps tables in `<div class="smd-table-wrap">` with `scope="col"` on header cells. Raw HTML (`html`) and code highlighting stay your instance's. Without `preset`, nothing changes.
+It turns on `headingIds`, `frontMatter`, `codeFrames` and `sourceLines`, sets your instance's `typographer` and `linkify` to `true` (spec v2 documents still follow the rules above; `md.set({ typographer: false })` after `.use()` turns one back off), and wraps tables in `<div class="smd-table-wrap">` with `scope="col"` on header cells. Raw HTML (`html`) and code highlighting stay your instance's. Without `preset`, nothing changes.
 
 **`readFile` (since 2.0)** has one signature for `renderSmd` and the plugin, `ReadFile = (relativePath: string, env?: unknown) => string | undefined` (exported as a type). `env` is the render's markdown-it env, the same object for every file one render reads: the `env` you passed to `md.render`, or `renderSmd`'s own (opaque). A one-argument function works for both.
 

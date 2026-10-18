@@ -234,7 +234,8 @@ test('validate: a v2 document with plain numbers is valid, and the variable code
 test('corpus/v2-variables.smd: shows its values as written; with smd: 1 as YAML reads them', () => {
   const text = read('v2-variables.smd');
   const v2 = renderSmd(text, { today }).html;
-  assert.match(v2, /Version 2\.10 \(“Juniper”, release 4\.0\) is build 007, updated 2026-10-05\./);
+  // Spec v2 without `typography: true` keeps the straight quotes (proposal 8).
+  assert.match(v2, /Version 2\.10 \(&quot;Juniper&quot;, release 4\.0\) is build 007, updated 2026-10-05\./);
   assert.match(v2, /Ratio 1\.50, beta True, quoted 3\.10, tags release, 1\.10\./);
   assert.match(v2, /<span>v2\.10<\/span>/);
   const v1 = renderSmd(asV1(text), { today }).html;

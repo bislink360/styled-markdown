@@ -1,0 +1,27 @@
+---
+smd: 2
+title: "Typography in spec v2: \"as written\" -- by default"
+summary: "Pins spec v2's text rules (proposal 8): no typographic replacements unless the front matter says \"typography: true\", and only GFM autolink literals. Quotes, dashes, ellipses and (c) stay as written, and example.com is text."
+status: draft
+owners: ["@docs"]
+updated: 2026-10-17
+---
+
+## Quotes and dashes
+
+"Double quotes", 'single quotes' and the builder's apostrophe stay straight. Dashes stay as typed: pages 10--20, and a pause --- like this. Ellipses too... and so do (c) 2026, (tm), (r) and +-5.
+
+:::note "Quoted" titles -- as written
+A container's title and :badge["quoted" -- badge] content follow the same rule as the text around them.
+:::
+
+| Source     | Shown as |
+| ---------- | -------- |
+| "a" -- 'b' | the same |
+| wait...    | the same |
+
+## Links
+
+GFM autolink literals are links: www.example.com/docs, https://example.org/guide, ftp://files.example.net and the address team@example.com. Bare domains are text: example.com, docs.example.org/guide and README.md. So is //cdn.example.com, and so is WWW.EXAMPLE.COM in capitals.
+
+An explicit link, [the guide](https://example.org/guide), and an autolink, <https://example.com>, are links in every version.
