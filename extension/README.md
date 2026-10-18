@@ -61,7 +61,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 
 ````markdown
 ---
-smd: 1
+smd: 2
 title: Saved Searches
 summary: Let users save a search and get notified about new results.
 status: review

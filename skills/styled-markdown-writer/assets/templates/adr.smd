@@ -1,5 +1,5 @@
 ---
-smd: 1
+smd: 2
 title: "ADR-NNNN: {{title}}"
 summary: The decision in one sentence, and the main reason.
 status: review

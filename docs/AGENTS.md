@@ -78,7 +78,7 @@ Start from a template when one fits: `smd init docs/x.smd --template prd|adr|rfc
 
 ```yaml
 ---
-smd: 1
+smd: 2
 title: Short title
 summary: One or two sentences — what and why.
 status: draft
@@ -86,6 +86,8 @@ owners: ["@team"]
 updated: 2026-09-26
 ---
 ```
+
+`smd: 2` (spec v2) shows text as written: straight quotes stay straight (type `—` or `’`, or add `typography: true`), only `https://…`, `www.…` and e-mail addresses become links, a heading's trailing `{word}` is heading text, and any `:name[…]` is a directive (`\:name[…]` keeps it text). When you edit an existing document, keep its `smd` value: `smd: 1` or no key keeps the v1 rules, and `smd migrate <file> --to 2` moves it to spec v2 without changing what it shows.
 
 Then write normal Markdown, adding Styled Markdown only where it helps the reader:
 

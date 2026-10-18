@@ -100,7 +100,7 @@ test('statusReport: a formatted, valid draft in the shape of the status-report t
     today, since: 'HEAD~1', revision: 'abc1234', title: 'Checkout', link: (p) => p.replace(/^docs\//, ''),
   });
   assert.equal(formatSmd(md), md);
-  assert.match(md, /^---\nsmd: 1\ntitle: "Checkout — status 2026-09-30"\nsummary: "Draft: 2 tasks done and 3 added since HEAD~1; 4 open tasks, 1 overdue\. /);
+  assert.match(md, /^---\nsmd: 2\ntitle: "Checkout — status 2026-09-30"\nsummary: "Draft: 2 tasks done and 3 added since HEAD~1; 4 open tasks, 1 overdue\. /);
   assert.match(md, /\nstatus: draft\ntags: \[status\]\nupdated: 2026-09-30\nrelated: \["plan\.smd"\]\n---\n/);
   assert.match(md, /compared with their version at HEAD\\~1 \(abc1234\)/);
   assert.match(md, /\*\*Overall:\*\* :status\[At risk\]\{color=orange\} · \*\*Progress:\*\* :progress\{value=43\}/);

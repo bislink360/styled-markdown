@@ -1,8 +1,13 @@
 import { alertCallout } from './alerts';
+import { markdownForV2 } from './migrate';
 import { parseSmd } from './parse';
 import { SMD_VERSION } from './spec';
 
-/** Upgrade plain Markdown: add front matter and turn GitHub alerts into callouts. */
+/**
+ * Upgrade plain Markdown: add front matter with `smd: 2` (SMD_VERSION) and turn GitHub alerts into callouts. Spec v2
+ * shows text as GitHub does (no typographic replacements, only GFM autolinks, a heading's `{word}` as text); the few
+ * places where it would read the Markdown otherwise than v1 (and GitHub) do are rewritten (markdownForV2).
+ */
 export function markdownToSmd(md: string, fallbackTitle: string): string {
   const lines = md.split(/\r?\n/);
   const out: string[] = [];
@@ -16,8 +21,12 @@ export function markdownToSmd(md: string, fallbackTitle: string): string {
   }
   let body = out.join('\n');
   if (/^---\r?\n/.test(body)) {
-    return withoutHeadingAnchors(/^smd\s*:/m.test(body.split(/\r?\n---/)[0]) ? body : body.replace(/^---\r?\n/, `---\nsmd: ${SMD_VERSION}\n`));
+    // Front matter that already says which version reads it keeps it, and its text stays as written.
+    if (/^smd\s*:/m.test(body.split(/\r?\n---/)[0])) return withoutHeadingAnchors(body);
+    return withoutHeadingAnchors(markdownForV2(body).replace(/^---\r?\n/, `---\nsmd: ${SMD_VERSION}\n`));
   }
+  // The Markdown is read with the v1 rules until it says smd: 2: keep that reading (see markdownForV2).
+  body = markdownForV2(body);
   const h1 = /^#\s+(.+)$/m.exec(body);
   const title = h1 ? h1[1].trim() : fallbackTitle;
   if (h1) body = body.replace(h1[0] + '\n', '').replace(/^\s*\n/, '');

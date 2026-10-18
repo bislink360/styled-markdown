@@ -699,6 +699,8 @@ The front matter key `smd` is the document's **spec version**: it selects the ru
 
 The value as YAML reads it decides, so `smd: 2.0`, the number 2, is spec v2, with a warning that asks for `smd: 2`. A missing key means spec v1 throughout 2.x, which covers every existing document and every `.md` file; 2.x tools keep a complete v1 mode, and the default is revisited in 3.0. Tools before 2.0 warn about `smd: 2` and read the document with the v1 rules.
 
+**New documents are spec v2.** Since Styled Markdown 2.0, tools that write a new document write `smd: 2`: `smd init` (its templates), `smd from-md`, `smd decisions --md`, `smd report`, `smd tasks --gantt --smd` and the editor's front matter snippet. A tool that adds front matter to an existing document never changes the rules it is read with: the `frontmatter/version` fix writes `smd: 1`, and VS Code's Set Document Status writes `smd: 2` only when spec v2 reads the document as v1 does. Write `smd: 1` to keep the v1 rules in a new document; `smd migrate --to 2` (§10.1) moves an existing one.
+
 **Hosts that can't see the front matter.** `renderSmd`, the markdown-it plugin and the remark and rehype plugins take a `spec: 1 | 2` option for documents that don't say. **The document's front matter wins:** when it has an `smd` key, the key decides, even when its value is invalid (then it is v1); the option only decides for a document without one. The markdown-it plugin reads the front matter from the source, or from `env.smdVariables` when the host removed it and passes it along, and puts the version on the render's env as `smdSpec`. An included file (§3.4) is read with the version of the document that includes it.
 
 **Rules that differ by version.** This specification describes spec v2. Where a v2 rule differs from v1, the section that defines it gives the v2 rule, followed by a paragraph that starts **Spec v1 (documents without `smd: 2`):** with the rule those documents keep. Each such rule is listed here:
@@ -767,7 +769,39 @@ Localized labels (§2.2) degrade to English: tools before 1.6 don't know `lang`,
 
 ### 10.1 Migrating to spec v2
 
-Spec v2 (`smd: 2`, Styled Markdown 2.0) reads a few things differently; the accepted changes are in the spec v2 RFC (`docs/SPEC-V2-PROPOSALS.smd` on the 2.0 branch). A document opts in by saying `smd: 2`. `smd migrate --to 2` plans what a document needs so that it means the same under v2 as it does today. It is a command of its own, because it changes text that `smd fmt`, which only changes layout, never touches. 1.10 only reports the plan (`--dry-run`); 2.0 applies it.
+Spec v2 (`smd: 2`, Styled Markdown 2.0) reads a few things differently; the accepted changes are in the spec v2 RFC (`docs/SPEC-V2-PROPOSALS.smd` on the 2.0 branch). A document opts in by saying `smd: 2`. `smd migrate --to 2` plans what a document needs so that it means the same under v2 as it does today. It is a command of its own, because it changes text that `smd fmt`, which only changes layout, never touches. 1.10 only reported the plan (`--dry-run`); since 2.0, `smd migrate <files|dirs> --to 2` writes it, and VS Code's **Migrate to Spec v2** applies it to the open document as one undoable edit.
+
+For example, this v1 document:
+
+```markdown
+---
+smd: 1
+title: Plan
+---
+
+::::tabs
+:::tab Overview
+See :abbr[HTML].
+::::
+:::
+```
+
+is written as:
+
+```markdown
+---
+smd: 2
+title: Plan
+---
+
+::::tabs
+:::tab Overview
+See \:abbr[HTML].
+:::
+::::
+```
+
+`smd migrate` writes only `.smd` files whose plan changes something, each whole or not at all (a temporary file in the same folder, renamed over it), with its line endings and final newline as they were, and never through a symbolic link that leads outside the paths given. It prints each file it writes and the plan's notes, which are left to the author (typography without `--keep-typography`, a link in the title or summary, a value to quote by hand). It then reads each file back and checks it: a new plan has nothing left to change, and the v2 rendering of the written file equals the v1 rendering of the original, apart from what the notes and "v2" steps say; any other difference is a warning (`--no-verify` skips the check). `--check` writes nothing and exits 1 when a file needs migrating, for CI; `--dry-run` reports the plan. Exit codes when writing: 0 done or nothing to do, 1 a file could not be written (or a link leads outside the paths given), 2 a usage error, which includes a file argument that isn't `.smd`.
 
 The steps run in this order. "v1" steps leave the document rendering as before with v1 tools; "v2" steps keep what the document means when it is read with the v2 rules, and its v1 rendering may change slightly. Text in code, math and raw HTML is never rewritten.
 
@@ -788,7 +822,9 @@ The steps run in this order. "v1" steps leave the document rendering as before w
 | Front matter values | proposal 10 | v2 | A note for each value the page header, the agent view's header or a `{{key}}` shows other than as written (`version: 2.10` shows `2.1` in v1 and `2.10` in v2); with `--quote-variables`, a top-level plain value is quoted, so every version shows `2.10`. A value in a list or a nested mapping (`tags: [1.10]`) stays a note, to quote by hand |
 | Spec version | versioning rules | v1 | `smd: 1`, a missing key, a value that counts as 1 (`true`, `"1"`) or a missing front matter becomes `smd: 2`. Tools before 2.0 warn about `smd: 2` and read the document with the v1 rules |
 
-After the closing fence and `$$` steps, every closing fence has its container's colon count and every multi-line math delimiter is on a line of its own, so spec v2 pairs the fences and reads the math as v1 did (§3, §4.4). A document that already says `smd: 2` (or a newer version) needs nothing. Suppression comments don't stop a step: they silence reports, while the steps are about meaning. The plan of a migrated document has nothing more to change, apart from notes.
+After the closing fence and `$$` steps, every closing fence has its container's colon count and every multi-line math delimiter is on a line of its own, so spec v2 pairs the fences and reads the math as v1 did (§3, §4.4). A document that already says `smd: 2` (or a newer version) needs nothing, so migrating twice changes nothing. Suppression comments don't stop a step: they silence reports, while the steps are about meaning. The plan of a migrated document has nothing more to change, apart from notes.
+
+An included file (§3.4) is read with the version of the document that includes it, so text that an `:::include` brings in is read with the v2 rules once the including document says `smd: 2`; the plan of the including document doesn't rewrite it. When that changes what it shows (typographic quotes in the included text, say), the check after writing warns. The included file's own `smd` value doesn't change that: write the characters themselves in it, or add `typography: true` to the including document.
 
 ## 11. Deprecated
 

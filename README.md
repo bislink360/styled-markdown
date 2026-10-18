@@ -62,7 +62,7 @@ Markdown is the lingua franca of engineering docs, but teams keep stretching it.
 
 ````markdown
 ---
-smd: 1
+smd: 2
 title: Saved Searches
 summary: Let users save a search and get notified when new results match.
 status: review
@@ -155,8 +155,8 @@ History and research. People see it; agents skip it.
 | `smd diff <paths> --since <git-ref>` / `smd diff <old> <new>` | Only the sections that changed, in the agent view: catch up on a doc without rereading it |
 | `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->`; `--format github` for pull request annotations ([GitHub Action](#github-action)) |
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
-| `smd migrate <paths> --to 2 --dry-run [--json]` | Report what migrating to spec v2 (`smd: 2`) would change so each doc keeps its meaning; exit 0 when nothing needs it, 1 when something does, 2 on a usage error. 1.10 only reports; 2.0 applies it ([steps](docs/SPEC.md#101-migrating-to-spec-v2)) |
-| `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them) |
+| `smd migrate <paths> --to 2 [--dry-run \| --check]` | Migrate docs to spec v2 (`smd: 2`) so each keeps its meaning: only `.smd` files that need it, each written whole or not at all, then checked; the notes it prints are left to you. `--dry-run` reports the plan, `--check` fails CI when a doc still needs it ([steps](docs/SPEC.md#101-migrating-to-spec-v2)); also **Migrate to Spec v2** in VS Code |
+| `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them), with `smd: 2` |
 | `smd export <file> --to <format> [-o out]` | Every export in one command. Without `--to`, the extension of `-o` picks the format (`.html`, `.md`, `.pdf`, `.docx`). The older names `smd render`, `to-md`, `pdf` and `docx` still work |
 | `… --to html` · `md` | A standalone page with a print stylesheet (Print → Save as PDF), or plain GitHub Markdown |
 | `… --to pdf [--format A4\|Letter] [--landscape]` | PDF with diagrams as vectors, if you have installed Playwright or Puppeteer (smd bundles no browser) |

@@ -28,6 +28,7 @@ npx styled-markdown --help         # run without installing
 smd validate docs/ --fix              # check files, auto-fix typos; exit code 1 on errors (CI-friendly)
 smd validate docs/ --format github    # GitHub Actions annotations (--summary "$GITHUB_STEP_SUMMARY" adds a job summary)
 smd fmt docs/ --check                 # formatting check for CI; without --check it formats in place
+smd migrate docs/ --to 2              # move documents to spec v2 (smd: 2), keeping their meaning (--dry-run: the plan)
 smd outline docs/spec.smd             # sections, line ranges and token cost per section
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
@@ -44,7 +45,7 @@ smd export docs/spec.smd -o spec.md   # plain GitHub Markdown (callouts → GitH
 smd export docs/spec.smd --to confluence -o spec.xml  # Confluence storage format (built-in macros)
 smd export docs/spec.smd --to notion -o spec.json     # Notion API blocks, as request bodies
 smd build docs/ --out site            # static docs site: navigation, search, backlinks, task/decision/risk dashboard
-smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)
+smd init docs/plan.smd --template prd # new document (smd: 2) from one of 13 templates (smd templates lists them)
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
 smd mcp                               # MCP server (stdio) with outline, section, agent, tasks, validate, query
 smd lsp --stdio                       # language server for Neovim, Helix, Zed… (also installed as smd-language-server)
@@ -364,7 +365,7 @@ inlineText(':badge[v2] by :due[2026-10-01], see :ref[fig-a], for {{team}}', {
 
 ````markdown
 ---
-smd: 1
+smd: 2
 title: Saved Searches
 summary: Let users save a search and get notified about new results.
 status: review

@@ -1,5 +1,5 @@
 ---
-smd: 1
+smd: 2
 title: "Runbook: {{title}}"
 summary: What this runbook fixes, the symptoms that point here, and the expected time to mitigate.
 status: approved

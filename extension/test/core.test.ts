@@ -127,7 +127,7 @@ test('conversion to plain Markdown keeps meaning', () => {
 
 test('conversion from Markdown adds front matter and callouts', () => {
   const smd = markdownToSmd('# Title\n\n> [!NOTE]\n> hello\n', 'fallback');
-  assert.match(smd, /^---\nsmd: 1\ntitle: "Title"/);
+  assert.match(smd, /^---\nsmd: 2\ntitle: "Title"/);
   assert.match(smd, /:::note\nhello\n:::/);
   assert.deepEqual(validateSmd(smd).filter((d) => d.severity === 'error'), []);
 });

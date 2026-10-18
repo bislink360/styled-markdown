@@ -8,10 +8,13 @@
  */
 
 /**
- * The spec version new documents are written with: `smd: 1` from `smd from-md` and the fix for a missing `smd`
- * key. Writers move to 2 once every v2 rule exists. The newest version tools read is LATEST_SPEC (specVersion.ts).
+ * The spec version new documents are written with (since 2.0, `smd: 2`): by `smd init`'s templates, `smd from-md`,
+ * `smd decisions --md`, `smd report`, `smd tasks --gantt --smd` and the snippets. A writer that adds front matter to
+ * an existing document keeps the rules it is read with unless spec v2 reads it the same (Set Document Status), and
+ * the validator's fix for a missing `smd` key writes `smd: 1`, the version such a document is read with. The newest
+ * version tools read is LATEST_SPEC (specVersion.ts).
  */
-export const SMD_VERSION = 1;
+export const SMD_VERSION = 2;
 
 /** Named colors. They map to CSS variables that adapt to light/dark themes. */
 export const NAMED_COLORS = [

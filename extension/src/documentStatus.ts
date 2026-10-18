@@ -1,5 +1,7 @@
 import { parseFrontMatter, specVersion, STATUS_VALUES, type SpecVersion } from './core';
 import type { FrontMatter } from './core/frontmatter';
+import { migrationPlan } from './core/migrate';
+import { SMD_VERSION } from './core/spec';
 
 /**
  * The document status workflow (front matter `status`) without VS Code dependencies, so it can be
@@ -149,7 +151,8 @@ export type StatusEditResult =
  *
  * - `status:` present: its value is replaced, keeping its quotes and any trailing comment.
  * - `status:` missing: a line is inserted after `summary:`, else after `title:`, else at the end of the front matter.
- * - No front matter: a minimal one (`smd: 1`, `status: …`) is added at the top.
+ * - No front matter: a minimal one (`smd: 2`, `status: …`) is added at the top; `smd: 1` when spec v2 would read the
+ *   document differently (its migration plan has more than the `smd` line), so its rules don't change.
  * - `updated:` present and `today` given: its value becomes `today`.
  *
  * Front matter that can't be read (unclosed, invalid YAML) is refused, and so is any edit whose result
@@ -172,10 +175,19 @@ export function setStatusEdits(text: string, status: string, options: StatusEdit
   return { ok: false, reason: 'The status line could not be changed safely. Edit the front matter by hand.' };
 }
 
-/** `---`, `smd: 1`, `status: …`, `---` at the top, and a blank line before the body. */
+/** `---`, `smd: …`, `status: …`, `---` at the top, and a blank line before the body. */
 function newFrontMatter(text: string, status: string, eol: string): TextEdit {
   const blank = text.split(/\r?\n/, 1)[0].trim() ? eol : '';
-  return { line: 0, start: 0, end: 0, text: ['---', 'smd: 1', `status: ${status}`, '---', ''].join(eol) + blank };
+  return { line: 0, start: 0, end: 0, text: ['---', `smd: ${newFrontMatterSpec(text)}`, `status: ${status}`, '---', ''].join(eol) + blank };
+}
+
+/**
+ * The version of front matter added to a document without one: the version new documents get (SMD_VERSION) when spec
+ * v2 reads the document as it is read today (its migration plan has only the `smd` line, and no note); else 1, the
+ * version it is read with, so that setting a status never changes how a document renders.
+ */
+function newFrontMatterSpec(text: string): number {
+  return migrationPlan(text).steps.every((s) => s.kind === 'version' && !s.note) ? SMD_VERSION : 1;
 }
 
 /** Where `status` can go, best first: replace its value, or a new line after summary, title or the last key. */

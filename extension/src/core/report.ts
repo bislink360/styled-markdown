@@ -7,7 +7,7 @@ import { extractTasks, type TaskInfo } from './meta';
 import { parseSmd } from './parse';
 import { parseSelector, querySmd, type QueryMatch } from './query';
 import type { Heading } from './render';
-import { PRIORITY_VALUES } from './spec';
+import { PRIORITY_VALUES, SMD_VERSION } from './spec';
 import { priorityRank } from './util';
 
 /**
@@ -266,7 +266,7 @@ function frontMatter(changes: StatusChanges, options: StatusReportOptions, link:
   const related = changes.documents.map((d) => JSON.stringify(link(d.path)));
   return [
     '---',
-    'smd: 1',
+    `smd: ${SMD_VERSION}`,
     `title: ${JSON.stringify(title)}`,
     `summary: ${JSON.stringify(summary)}`,
     'status: draft',

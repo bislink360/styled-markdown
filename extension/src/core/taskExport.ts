@@ -1,4 +1,5 @@
 import type { TaskInfo } from './meta';
+import { SMD_VERSION } from './spec';
 
 /**
  * Task export: CSV for spreadsheets and a Mermaid Gantt chart of tasks with due dates, from the
@@ -58,7 +59,7 @@ export function tasksToGantt(rows: TaskExportRow[], options: GanttOptions = {}):
 export function ganttDocument(chart: string, title = 'Tasks'): string {
   const name = title.replace(/\s+/g, ' ').trim() || 'Tasks';
   const quoted = JSON.stringify(name);
-  return `---\ntitle: ${quoted}\n---\n\n# ${name}\n\n\`\`\`mermaid\n${chart.trimEnd()}\n\`\`\`\n`;
+  return `---\nsmd: ${SMD_VERSION}\ntitle: ${quoted}\n---\n\n# ${name}\n\n\`\`\`mermaid\n${chart.trimEnd()}\n\`\`\`\n`;
 }
 
 /** The due date when it is a real calendar date in YYYY-MM-DD form, as the Gantt chart needs. */

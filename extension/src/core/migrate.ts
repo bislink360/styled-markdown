@@ -17,10 +17,11 @@ import { findVariables, lookupVariable, variableText } from './variables';
 
 /**
  * The plan of `smd migrate --to 2`: what a document needs so that it means the same under spec v2 (`smd: 2`) as it
- * does today. Each step rewrites a few lines, or is a note when nothing is rewritten. 1.10 only reports the plan
- * (`--dry-run`); Styled Markdown 2.0 writes it.
+ * does today. Each step rewrites a few lines, or is a note when nothing is rewritten. 1.10 only reported the plan
+ * (`--dry-run`); Styled Markdown 2.0 writes it (migrateCommand.ts, and the editor's "Migrate to Spec v2"), then checks
+ * what it wrote (migrateCheck.ts).
  *
- * Internal: not exported from the npm package, since the plan's shape may still change before 2.0 makes it write.
+ * Internal: not exported from the npm package, so the plan's shape can still change in a minor release.
  * The steps reuse the validator's quick fixes (the spec v2 hints) and `applyFixes`, as `smd validate --fix` does.
  */
 
@@ -195,9 +196,28 @@ function planSteps(text: string, options: MigrationOptions, escapes: boolean): M
   fuzzyLinkStep(w);
   variableStep(w);
   versionStep(w);
+  // Once it says smd: 2, its fences pair as spec v2 reads them. Math that v1 closes on a line with text beside the `$$`,
+  // which the `$$` step leaves alone where splitting it would change the math, opens nothing in v2 (as a `$$` that
+  // nothing closes does in both versions), so the fences after it that v1 reads as math are fences: their colon counts
+  // are written as v2 pairs them, which changes nothing that v2 shows.
+  if (from < TARGET && specVersion(textOf(w)) === TARGET) fixStep(w, 'container/colons', 'closer');
   // In the order the steps run, and by line within each (math is split bottom-up).
   w.steps.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.line - b.line);
   return { from, steps: w.steps, result: textOf(w) };
+}
+
+/**
+ * Markdown that spec v2 reads as spec v1 reads `text` (a document read with the v1 rules, such as a `.md` file), for
+ * `smd from-md`, which writes `smd: 2`: multi-line `$$` delimiters on lines of their own, and each literal `:name[…]`
+ * or `:name{…}` outside the vocabulary escaped (`\:abbr[HTML]`), so it stays text, as GitHub shows it. Only these two
+ * steps: the others keep v1 meaning that GitHub doesn't have (typography, bare domain links, a heading's `{}`).
+ */
+export function markdownForV2(text: string): string {
+  const lines = splitLines(text);
+  const w: Work = { lines, origin: lines.map((_, i) => i), eol: text.includes('\r\n') ? '\r\n' : '\n', steps: [], options: {} };
+  mathStep(w);
+  unknownDirectiveStep(w);
+  return w.steps.length ? textOf(w) : text;
 }
 
 /**

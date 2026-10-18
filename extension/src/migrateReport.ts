@@ -51,8 +51,11 @@ function kindReport(kind: MigrationKind, steps: MigrationStep[]): string {
   return `\n  ${TITLES[kind]} (${source}; ${kept}):${changes}\n${steps.map(stepReport).join('')}`;
 }
 
+/** `line 3` or `lines 3-5`, 1-based. */
+const linesOf = (step: MigrationStep) => (step.endLine > step.line ? `lines ${step.line + 1}-${step.endLine + 1}` : `line ${step.line + 1}`);
+
 function stepReport(step: MigrationStep): string {
-  const lines = step.endLine > step.line ? `lines ${step.line + 1}-${step.endLine + 1}` : `line ${step.line + 1}`;
+  const lines = linesOf(step);
   if (step.note) return `    ${lines}, note: ${step.reason}\n`;
   const reason = step.reason === migrationKind(step.kind).reason ? '' : `: ${step.reason}`;
   const removed = step.before ? step.before.split('\n').map((l) => `      - ${cut(l)}\n`).join('') : '';
@@ -60,12 +63,45 @@ function stepReport(step: MigrationStep): string {
   return `    ${lines}${step.before ? '' : ' (inserted before it)'}${reason}\n${removed}${added}`;
 }
 
-/** The last lines: how many files need migrating, and that nothing was written. */
-export function migrationSummary(plans: MigrationPlan[]): string {
+/** What `smd migrate --to 2 --dry-run` says after its summary: how to apply the plan. */
+export const DRY_RUN_NEXT = 'Dry run: nothing was written. Run it without --dry-run to migrate.';
+
+/** The last lines: how many files need migrating, and that nothing was written (`next`: how to apply the plan). */
+export function migrationSummary(plans: MigrationPlan[], next = DRY_RUN_NEXT): string {
   const counts = plans.map(planCounts);
   const need = counts.filter((c) => c.changes > 0).length;
   const changes = counts.reduce((n, c) => n + c.changes, 0);
   const notes = counts.reduce((n, c) => n + c.notes, 0);
-  return `\n${plural(plans.length, 'file')} checked: ${need} to migrate to spec v2 (${plural(changes, 'change')}, ${plural(notes, 'note')}).\n`
-    + 'Dry run: nothing was written. Styled Markdown 2.0 applies the migration.\n';
+  return `\n${plural(plans.length, 'file')} checked: ${need} to migrate to spec v2 (${plural(changes, 'change')}, ${plural(notes, 'note')}).\n${next}\n`;
+}
+
+/** The plan's notes, which a migration leaves to the author, one per line with its 1-based lines ("" without any). */
+export function migrationNotes(plan: MigrationPlan): string {
+  return plan.steps.filter((s) => s.note).map((s) => `  ${linesOf(s)}, note: ${TITLES[s.kind]}: ${s.reason}\n`).join('');
+}
+
+/** One replacement that turns a document into its migrated text: offsets into the document, and the new text. */
+export interface MigrationEdit {
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
+ * The edit that applies `plan` to `text` (the text it was planned from), for an editor: the lines from the first that
+ * changes to the last, so that undoing it is one step and the rest of the document, and the cursor there, stay put.
+ * Undefined when the plan changes nothing. The edit starts and ends at line boundaries, so it never splits a CRLF.
+ */
+export function migrationEdit(text: string, plan: MigrationPlan): MigrationEdit | undefined {
+  const next = plan.result;
+  if (next === text || !planCounts(plan).changes) return undefined;
+  const shorter = Math.min(text.length, next.length);
+  let start = 0;
+  while (start < shorter && text[start] === next[start]) start++;
+  if (start > 0) start = text.lastIndexOf('\n', start - 1) + 1;
+  let tail = 0;
+  while (tail < shorter - start && text[text.length - 1 - tail] === next[next.length - 1 - tail]) tail++;
+  // The kept end starts a line in both texts: after a "\n", or at the end.
+  while (tail > 0 && (text[text.length - tail - 1] !== '\n' || next[next.length - tail - 1] !== '\n')) tail--;
+  return { start, end: text.length - tail, text: next.slice(start, next.length - tail) };
 }

@@ -126,6 +126,8 @@ smd --version       # smd 2.0.0 (Styled Markdown spec v2)
 
 **Without linking:** `node extension/dist/cli.js <command>`.
 
+**First document:** `smd init docs/plan.smd --template prd` writes a new document from a template (`smd templates` lists the 13). New documents, from `smd init`, `smd from-md` and the other writers, say `smd: 2` since 2.0; existing documents keep their rules until you run `smd migrate <files> --to 2` (SPEC.md §10.1).
+
 ### Optional: Pandoc for Word export
 
 `smd export --to docx` and the extension's **Export to Word (.docx)** hand the document to [Pandoc](https://pandoc.org/installing.html), which smd does not bundle (the CLI and the npm package keep zero dependencies). Install Pandoc 3.0 or newer only if you want `.docx` files:
@@ -186,6 +188,8 @@ node smd.cjs validate docs/ --strict
 ```
 
 `validate` exits with code **1** on errors (and on warnings with `--strict`). Use `--json` for machine-readable output, or `--format github` for GitHub workflow commands; `--summary <file>` also appends a Markdown summary to a file (e.g. `"$GITHUB_STEP_SUMMARY"`).
+
+Once your documents are on spec v2, `node smd.cjs migrate docs/ --to 2 --check` keeps them there: it writes nothing, lists each document that still needs migrating (a new one written with `smd: 1`, say) and then exits with code **1**.
 
 ## Pre-commit hooks
 

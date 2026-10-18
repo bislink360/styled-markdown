@@ -30,9 +30,21 @@ const checks = {
 
   async 'all commands are registered'() {
     const all = await vscode.commands.getCommands(true);
-    for (const c of ['smd.openPreview', 'smd.openPreviewToSide', 'smd.exportHtml', 'smd.exportMarkdown', 'smd.exportConfluence', 'smd.exportNotion', 'smd.exportDocx', 'smd.convertFromMarkdown', 'smd.validateWorkspace']) {
+    for (const c of ['smd.openPreview', 'smd.openPreviewToSide', 'smd.exportHtml', 'smd.exportMarkdown', 'smd.exportConfluence', 'smd.exportNotion', 'smd.exportDocx', 'smd.convertFromMarkdown', 'smd.validateWorkspace', 'smd.previewMigration', 'smd.migrateToV2']) {
       assert.ok(all.includes(c), `missing command ${c}`);
     }
+  },
+
+  async 'Migrate to Spec v2 applies the plan as one undoable edit and saves nothing'() {
+    const content = '---\nsmd: 1\n---\n\n::::note\nx\n:::\n\nSee :abbr[HTML].\n';
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content });
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('smd.migrateToV2');
+    await waitFor(() => doc.getText() !== content, 'the migration edit');
+    assert.equal(doc.getText(), '---\nsmd: 2\n---\n\n::::note\nx\n::::\n\nSee \\:abbr[HTML].\n');
+    assert.ok(doc.isDirty, 'not saved');
+    await vscode.commands.executeCommand('undo');
+    await waitFor(() => doc.getText() === content, 'one undo reverts it');
   },
 
   async 'valid examples produce no problems'() {
@@ -555,7 +567,8 @@ const checks = {
     await vscode.window.showTextDocument(plain);
     await until((s) => s.visible && s.text === '$(circle-large-outline) No status', 'no status in the status bar');
     assert.equal(await vscode.commands.executeCommand('smd.setStatus', 'approved', plain.uri), true);
-    assert.equal(plain.getText(), '---\nsmd: 1\nstatus: approved\n---\n\n# Notes\n');
+    // A new front matter says smd: 2 since 2.0, as this document reads the same under spec v2 (documentStatus.ts).
+    assert.equal(plain.getText(), '---\nsmd: 2\nstatus: approved\n---\n\n# Notes\n');
     await until((s) => s.text === '$(verified) Approved', 'the approved status in the status bar');
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
 

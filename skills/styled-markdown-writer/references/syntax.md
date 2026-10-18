@@ -1,4 +1,4 @@
-# Styled Markdown syntax reference (spec v1)
+# Styled Markdown syntax reference (spec v2)
 
 Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists every `.smd` addition with all attributes and allowed values.
 
@@ -24,7 +24,7 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 
 ```yaml
 ---
-smd: 1                       # required in practice (validator suggests it)
+smd: 2                       # the spec version: 2 for new documents; 1 (or no key) keeps the v1 rules
 title: Saved Searches        # rendered as the page title; don't repeat as "# H1"
 summary: One or two sentences. Agents read this first.
 status: draft                # draft | review | approved | deprecated | archived
@@ -46,6 +46,8 @@ typography: true             # optional, smd: 2 only: curly quotes, dashes, elli
 `lang` changes only the words the renderer adds (callout titles, "Figure 2", "overdue", status names); the document's text, the agent view and `smd export --to md` are unchanged. Set it when the document is written in that language.
 
 Unknown keys are allowed (reported as hints, except keys the text shows with `{{key}}`, see §8).
+
+`smd` selects the rules a document is read with. Write `smd: 2` in a new document. It shows text as written: no curly quotes or dashes unless `typography: true`, and only `https://…`, `www.…` and e-mail addresses become links (a bare `example.com` is text). A heading's trailing `{word}` is heading text, any `:name[…]` is a directive, and `\\` in a quoted attribute value is one backslash. A document with `smd: 1` or no `smd` key keeps the v1 rules, so keep an existing document's value when you edit it; `smd migrate <file> --to 2` moves it to spec v2 and keeps what it shows (`--dry-run` reports the plan first).
 
 ## 2. Block containers — general rules
 
