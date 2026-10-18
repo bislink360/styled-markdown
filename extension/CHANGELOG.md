@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.1 — 2026-10-18
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 2.0.0 — 2026-10-18
 
 **Spec v2**, the first major release. It implements the accepted spec v2 RFC (`docs/SPEC-V2-PROPOSALS.smd`); 1.10 already shipped its non-breaking parts and warned about the rest.
