@@ -235,14 +235,18 @@ const root = path.join(__dirname, '..', '..');
 const smdFiles = (dir: string) => fs.readdirSync(path.join(root, dir)).filter((f) => f.endsWith('.smd')).map((f) => path.join(dir, f));
 const DOCUMENTS = [...smdFiles('examples'), ...smdFiles(path.join('extension', 'test', 'compat', 'corpus'))];
 
-/** The document with its `smd` line written as `line` (one line, so every other line keeps its number). */
+/**
+ * The document with its `smd` line written as `line`, and `typography: true` after it unless it has the key, so spec
+ * v2 keeps v1's typography (proposal 8; typography.test.ts compares it). Every variant gets the same lines.
+ */
 function withVersionLine(text: string, line: string): string {
   const fm = parseFrontMatter(text);
-  if (!fm.present || fm.error) return `---\n${line}\n---\n${text}`;
+  const lineAndTypography = Object.hasOwn(fm.data, 'typography') ? [line] : [line, 'typography: true'];
+  if (!fm.present || fm.error) return `---\n${lineAndTypography.join('\n')}\n---\n${text}`;
   const lines = text.split('\n');
   const at = lines.findIndex((l, i) => i > 0 && i < fm.bodyStartLine && /^smd\s*:/.test(l));
-  if (at > 0) lines[at] = line;
-  else lines.splice(1, 0, line);
+  if (at > 0) lines.splice(at, 1, ...lineAndTypography);
+  else lines.splice(1, 0, ...lineAndTypography);
   return lines.join('\n');
 }
 
@@ -287,11 +291,15 @@ const READERS: Record<string, (text: string) => unknown> = {
 
 /**
  * Documents a v2 rule reads differently, by path (forward slashes), and the rule. Each rule's own tests pin the
- * difference; here they only check that a document without `smd` reads as with `smd: 1`.
+ * difference; here they only check that a document without `smd` reads as with `smd: 1`. Every variant has
+ * `typography: true` (withVersionLine), so proposal 8 differs only in links.
  */
 const READ_DIFFERENTLY_IN_V2: Record<string, string> = {
   'examples/showcase.smd': 'proposal 10: `version: 1.0` shows 1.0',
-  'extension/test/compat/corpus/migrate.smd': 'proposal 10: `version: 2.10` shows 2.10',
+  'extension/test/compat/corpus/glossary.smd': 'proposal 8: API.md, a bare domain, is not a link',
+  'extension/test/compat/corpus/migrate.smd': 'proposal 10: `version: 2.10` shows 2.10; proposal 8: a bare domain is not a link',
+  'extension/test/compat/corpus/v2-typography.smd': 'proposal 8: bare domains and //host are not links',
+  'extension/test/compat/corpus/v2-typography-on.smd': 'proposal 8: bare domains and //host are not links',
   'extension/test/compat/corpus/v2-variables.smd': 'proposal 10: values keep their YAML spelling',
   'extension/test/compat/corpus/v2-hints.smd': 'proposal 3: closing fences with other colon counts',
   'extension/test/compat/corpus/v2-math.smd': 'proposal 2: $ delimiters',

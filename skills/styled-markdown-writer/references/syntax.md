@@ -39,6 +39,7 @@ accent: indigo               # named color or #hex for headings/links
 toc: true                    # table of contents after the header
 related: [docs/other.smd]    # list of paths/URLs
 lang: de                     # optional: language of rendered labels (de es fr ja pt zh; default English)
+typography: true             # optional, smd: 2 only: curly quotes, dashes, ellipses (v1 always has them)
 ---
 ```
 

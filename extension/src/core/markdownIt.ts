@@ -82,6 +82,10 @@ export interface MarkdownItSmdOptions {
    * own `smd` wins: in the source's `---` front matter, else in `env.smdVariables` (front matter a host removed and
    * passes along per render). Default 1. The plugin puts the version on the render's env as `smdSpec` before
    * parsing, where the rules read it.
+   *
+   * Spec v2 documents get spec v2's typography and links (SPEC §4.8, typography.ts): no typographic replacements
+   * unless the front matter says `typography: true`, and only GFM autolink literals. Those rules only take away from
+   * the host's `typographer` and `linkify` options; spec v1 documents follow them as before.
    */
   spec?: 1 | 2;
 }

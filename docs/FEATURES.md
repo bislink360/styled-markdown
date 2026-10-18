@@ -1066,7 +1066,7 @@ docs/plan.smd: 2 changes and 1 note to migrate from smd: 1 to spec v2
 
 - 1.10 only reports, so `--dry-run` is required; Styled Markdown 2.0 applies the migration. Nothing is written.
 - `--json` prints the plan: per file, each step's `kind`, `proposal`, `keeps` (`v1`: v1 rendering unchanged; `v2`: the v2 meaning kept), 0-based `line` and `endLine`, `before`, `after`, `reason` and `note`, and the migrated text as `result`.
-- `--keep-typography` adds `typography: true` where the typographer changes text, to keep curly quotes and dashes under v2, which turns them off; `--link-domains` writes bare domains linked today as `<https://…>`; `--quote-variables` quotes front matter values shown other than as written (`version: 2.10`). Without them, each is a note.
+- `--keep-typography` adds `typography: true` where the typographer changes text, to keep curly quotes and dashes under v2, which turns them off; `--link-domains` writes bare domains linked today as Markdown links to the same address (`[example.com](http://example.com)`), so spec v2, which links only GFM autolink literals, shows them as v1 does; `--quote-variables` quotes front matter values shown other than as written (`version: 2.10`). Without them, each is a note.
 - Exit code 0 when nothing needs migrating, 1 when something does (a CI step can watch for documents that still need it), 2 on a usage error (no `--dry-run`, `--to` other than 2, an unknown option or no files).
 - In VS Code, **Styled Markdown: Preview Migration to Spec v2** shows the report for the current file in an output panel.
 

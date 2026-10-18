@@ -17,6 +17,7 @@ import { glossaryTerms } from './markdownItGlossary';
 import { documentLanguage, languageTag, messagesFor, type Messages } from './i18n';
 import type { MarkdownItSmdOptions } from './markdownIt';
 import { specOf } from './specVersion';
+import { addTextRules } from './typography';
 import { shownValues } from './variables';
 
 /** Registers the .smd rules on a markdown-it instance, for renderSmd and for markdown-it hosts. */
@@ -107,6 +108,8 @@ export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext)
   applied.add(md);
   // First of all, so every rule after it can read the spec version from the env.
   if (ctx.spec) md.core.ruler.after('normalize', 'smd_spec', ctx.spec);
+  // Spec v2's typography and autolink literals, around the core linkify and typographer rules.
+  addTextRules(md);
   if (features.frontMatter) addFrontMatter(md, ctx);
   if (features.containers) addContainers(md, ctx);
   if (features.math) addMath(md);

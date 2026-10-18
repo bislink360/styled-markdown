@@ -144,7 +144,7 @@ Checking and converting:
                          and the migrated text
       --keep-typography  add "typography: true" where the typographer changes text, to keep curly quotes
                          and dashes (v2 turns it off); without it, a note counts the places
-      --link-domains     write bare domains linked today (example.com) as <https://example.com>
+      --link-domains     write bare domains linked today (example.com) as [example.com](http://example.com)
       --quote-variables  quote front matter values shown differently from how they are written (2.10)
 ${EXPORT_HELP}
   smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD] [--lang <tag>]

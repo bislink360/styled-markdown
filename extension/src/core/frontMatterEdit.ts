@@ -405,7 +405,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const LIST_KEYS = new Set(['owners', 'tags', 'related']);
 const DATE_KEYS = new Set(['updated', 'created']);
 /** The known keys, in the form's order. */
-export const FRONT_MATTER_FIELDS = ['title', 'summary', 'status', 'owners', 'audience', 'tags', 'version', 'updated', 'created', 'theme', 'accent', 'toc', 'related', 'lang', 'smd'];
+export const FRONT_MATTER_FIELDS = ['title', 'summary', 'status', 'owners', 'audience', 'tags', 'version', 'updated', 'created', 'theme', 'accent', 'toc', 'related', 'lang', 'typography', 'smd'];
 
 /** A value as the form shows it. */
 function shown(value: unknown): string {

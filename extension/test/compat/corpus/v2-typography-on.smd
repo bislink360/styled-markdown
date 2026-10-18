@@ -1,0 +1,28 @@
+---
+smd: 2
+typography: true
+title: "Typography in spec v2: \"turned on\" -- by the front matter"
+summary: "Pins spec v2 with \"typography: true\" (proposal 8): quotes curl, dashes join and (c) becomes a symbol, as in spec v1. Links still follow GFM autolink literals, so example.com is text."
+status: draft
+owners: ["@docs"]
+updated: 2026-10-17
+---
+
+## Quotes and dashes
+
+"Double quotes", 'single quotes' and the builder's apostrophe curl. Dashes join: pages 10--20, and a pause --- like this. Ellipses too... and so do (c) 2026, (tm), (r) and +-5.
+
+:::note "Quoted" titles -- typographic
+A container's title and :badge["quoted" -- badge] content follow the same rule as the text around them.
+:::
+
+| Source     | Shown as    |
+| ---------- | ----------- |
+| "a" -- 'b' | curled      |
+| wait...    | an ellipsis |
+
+## Links
+
+GFM autolink literals are links: www.example.com/docs, https://example.org/guide, ftp://files.example.net and the address team@example.com. Bare domains are text: example.com, docs.example.org/guide and README.md. So is //cdn.example.com, and so is WWW.EXAMPLE.COM in capitals.
+
+An explicit link, [the guide](https://example.org/guide), and an autolink, <https://example.com>, are links in every version.
