@@ -42,7 +42,7 @@ The server is part of the `smd` command, from version 1.5.0. Install the npm pac
 ```bash
 npm install -g styled-markdown
 # or
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.0.0/styled-markdown-2.0.0.tgz
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.0.1/styled-markdown-2.0.1.tgz
 ```
 
 This puts two commands on your `PATH`:
@@ -58,7 +58,7 @@ Check it starts (it waits for a client on stdin; press Ctrl+C to stop):
 
 ```bash
 smd-language-server --stdio
-# [smd lsp] smd-language-server 2.0.0 over stdio
+# [smd lsp] smd-language-server 2.0.1 over stdio
 ```
 
 ## Neovim
