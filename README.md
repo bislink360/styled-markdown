@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/bislink360/styled-markdown/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/bislink360/styled-markdown?label=release&color=4f46e5"></a>
-  <img alt="Spec" src="https://img.shields.io/badge/spec-smd%20v1-7c3aed">
+  <img alt="Spec" src="https://img.shields.io/badge/spec-smd%20v2-7c3aed">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22c55e"></a>
 </p>
 
@@ -102,7 +102,7 @@ History and research. People see it; agents skip it.
 | Area | Features |
 |---|---|
 | **Foundation** | 100% CommonMark + GFM (tables, task lists, autolinks) · YAML front matter with a status header, owners, tags, TOC and accent color |
-| **Callouts** | `note` `info` `tip` `success` `warning` `danger` `question`, optionally collapsible · `details` |
+| **Callouts** | `note` `info` `tip` `success` `warning` `danger` `question`, optionally collapsible · `details` · GitHub alerts (`> [!NOTE]`, `> [!WARNING]`…) render as callouts |
 | **Styling** | 14 theme-aware named colors · `[text]{color bg border size weight font style}` · `==highlight==` |
 | **Inline** | `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention` · inline and display math (KaTeX) · front matter values in text with `{{version}}` |
 | **Layout** | `tabs` · `columns` · `card` · `box` · `steps` · `timeline` (nest to any depth) |
@@ -131,7 +131,7 @@ History and research. People see it; agents skip it.
 - **Editing comfort:** Enter continues task lists (unchecked, keeping `@owner`), bullets and numbered lists; paste or drop images to save them in `docs/images/` with a relative link; **Set Up Spell Checking** teaches cSpell to skip directives, attributes and code
 - **Outline, folding** and **41 snippets** (`prd`-style blocks, `decision`, `risk`, `api`, `figure`, `glossary`, `changelog`, `quote`, `mermaid`, `gantt`, `task`, `embed`, `transclude`…)
 - **Agent view** (🤖 button), **brief agent view**, **copy for an agent** (whole doc or picked sections), and a **status-bar token counter**
-- **Export** to standalone HTML or plain GitHub Markdown · **Convert** `.md` → `.smd` · **Validate workspace**
+- **Export** to standalone HTML, plain GitHub Markdown, Confluence, Notion or Word (.docx) · **Convert** `.md` → `.smd` · **Validate workspace** · **Migrate to Spec v2** (and **Preview Migration to Spec v2**)
 - **Built-in Markdown preview:** `.md` files that opt in with `smd: 1` in their front matter render `.smd` syntax (callouts, directives, attribute lists, Mermaid, code titles) in VS Code's own preview too; `smd.markdownPreview.enabled` set to `always` does it for every `.md` file, `never` for none
 
 </details>
@@ -197,6 +197,19 @@ History and research. People see it; agents skip it.
 3. Open any `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS).
 
 > Listings on the VS Code Marketplace, [Open VSX](https://open-vsx.org) (for VSCodium, Cursor, Windsurf and Gitpod) and npm are coming once published. Until they are live, every release on GitHub has the `.vsix`, the npm package and the skills.
+
+### Upgrading to 2.0
+
+2.0 brings spec v2. Your documents keep working; this is what changes when you update from 1.x. Every change, with its migration, is in the [CHANGELOG](extension/CHANGELOG.md).
+
+- **Platform:** Node.js 22 or newer (the CLI, the npm package, the GitHub Action, the pre-commit hooks, the MkDocs plugin) and VS Code 1.97 or newer (or Cursor, VSCodium, Windsurf based on it).
+- **Your documents keep their meaning.** A document without `smd: 2`, and every `.md` file, is read with the spec v1 rules, as in 1.x.
+- **Stricter checks, in every document.** Duplicate attributes (`{color=red color=blue}`), a container titled both by `title=` and by text, a Mermaid syntax error and an invalid figure `kind` are now errors, so `smd validate` fails on them. Front matter that can't be read is shown in a red block instead of hiding the text above it. `smd validate --fix` repairs the duplicates, the title conflicts and a misspelt `kind`; fix a Mermaid error, and front matter that can't be read (often a missing closing `---`), by hand.
+- **VS Code's `.md` preview is opt-in.** VS Code's built-in Markdown preview shows `.smd` syntax only in `.md` files with an `smd:` key in their front matter (`smd: 1` keeps the v1 rules). Set `smd.markdownPreview.enabled` to `always` for the 1.x behaviour. `.smd` files are unaffected.
+- **New documents are `smd: 2`** (`smd init`, `smd from-md` and the other writers). Spec v2 shows text as written (straight quotes, `--` and `...` unless `typography: true`) and links only GFM autolinks (`https://…`, `www.…`, e-mail; not `example.com`). `$$` math opens and closes on lines of their own, a closing fence closes the container with its colon count, a heading's trailing `{word}` is heading text, `\\` in a quoted value is one backslash, any `:name[…]` is a directive (write `\:name[…]` for text), `section=` matches a heading's id or whole text exactly, and front matter values keep their YAML spelling (`2.10`). All of it: [SPEC.md §10](docs/SPEC.md#10-versioning).
+- **Moving a document to spec v2:** `smd migrate docs --to 2 --dry-run` shows the plan and `smd migrate docs --to 2` writes it, or run **Migrate to Spec v2** in VS Code. `--keep-typography` keeps curly quotes and dashes, `--link-domains` keeps bare domains linked, and `smd migrate docs --to 2 --check` in CI fails while a document still needs it.
+- **Command names:** `smd export <file> --to <format>` replaces `smd render`, `to-md`, `pdf` and `docx`, which still work.
+- **npm:** `inlineText(line, options)` takes one options object, the vocabulary tables are read-only (copy one to extend it), and the markdown-it plugin's `preset: 'smd'` renders as `renderSmd` does. See the [package README](npm/README.md).
 
 ### Block Editor (Preview)
 
@@ -368,7 +381,7 @@ Each has a rendered `.html` version next to it that you can open in a browser. M
 | [docs/SKILLS.md](docs/SKILLS.md) | Importing the agent skills into Claude Code, Claude.ai, the API/Agent SDK and other agents |
 | [docs/EDITORS.md](docs/EDITORS.md) | Using `.smd` in Neovim, Helix, Zed and other editors with the language server and Tree-sitter highlighting |
 | [docs/AGENTS.md](docs/AGENTS.md) | One-page guide to paste into any agent's instructions |
-| [docs/SPEC.md](docs/SPEC.md) | The formal specification (v1) and validation rules |
+| [docs/SPEC.md](docs/SPEC.md) | The formal specification (v2, with the v1 rules it keeps) and validation rules |
 
 ## Repository layout
 
