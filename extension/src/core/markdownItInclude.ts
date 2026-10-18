@@ -26,9 +26,9 @@ const isScan = (env: unknown) => (env as Partial<ScanEnv> | undefined)?.smdInclu
 
 export function expandIncludes(state: StateCore, ctx: SmdContext): void {
   if (isScan(state.env)) return;
-  // One scope (and so one budget) per document, made when it first includes.
+  // One scope (and so one budget) per document, made when it first includes. Its sections match by the render's version.
   let root: IncludeScope | undefined;
-  const rootOf = () => (root ??= rootScope((state.env as Env | undefined)?.source ?? state.src));
+  const rootOf = () => (root ??= rootScope((state.env as Env | undefined)?.source ?? state.src, specOf(state.env)));
   // Spliced tokens are visited too, so nested includes expand in turn.
   for (let i = 0; i < state.tokens.length; i++) {
     const t = state.tokens[i];

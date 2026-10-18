@@ -355,22 +355,25 @@ class TreeBuilder {
 
   /** The front matter facts renderSmd shows in its header, but the title (the page's own). */
   header(): Block[] {
-    const data = this.parsed.data;
+    // `data` decides what is shown, `shown` how it is spelled (as written in spec v2), as in renderHeader.
+    const { data, shown } = this.parsed;
     const m = this.m;
     const status = typeof data.status === 'string' ? data.status.toLowerCase() : '';
     const facts = joinFacts([
       status ? [{ kind: 'status', text: term(m, 'docStatus', status), color: DOC_STATUS_COLORS.get(status) ?? 'gray' }] : [],
-      data.version === undefined ? [] : [text(label(m, 'header.version', { version: String(data.version) }))],
-      data.updated === undefined ? [] : [text(label(m, 'header.updated', { date: String(data.updated) }))],
+      data.version === undefined ? [] : [text(label(m, 'header.version', { version: String(shown.version) }))],
+      data.updated === undefined ? [] : [text(label(m, 'header.updated', { date: String(shown.updated) }))],
     ]);
-    const lists = joinFacts([listFact(m['header.owners'], data.owners), listFact(m['header.tags'], data.tags)]);
+    const lists = joinFacts([listFact(m['header.owners'], data.owners, shown.owners), listFact(m['header.tags'], data.tags, shown.tags)]);
     const summary = typeof data.summary === 'string' ? this.inlineMarkdown(data.summary) : [];
     return [facts, summary, lists].filter((c) => c.length).map(paragraph);
   }
 }
 
-function listFact(name: string, value: unknown): Inline[] {
-  const items = (Array.isArray(value) ? value : [value]).filter((v) => typeof v === 'string' || typeof v === 'number').map(String);
+/** A list of the header: the items of `value` that are text or numbers, spelled as in `shown`. */
+function listFact(name: string, value: unknown, shown: unknown): Inline[] {
+  const spelled: unknown[] = Array.isArray(shown) ? shown : [shown];
+  const items = (Array.isArray(value) ? value : [value]).flatMap((v, i) => (typeof v === 'string' || typeof v === 'number' ? [String(spelled[i])] : []));
   return items.length ? [text(`${name}: `, { bold: true }), text(items.join(', '))] : [];
 }
 
