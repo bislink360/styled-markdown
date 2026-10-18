@@ -1,6 +1,17 @@
 # Changelog
 
-## 2.0.0 — 2026-10-15
+## 2.0.0 — 2026-10-17
+
+**Spec v2**, the first major release. It implements the accepted spec v2 RFC (`docs/SPEC-V2-PROPOSALS.smd`); 1.10 already shipped its non-breaking parts and warned about the rest.
+
+**Upgrading:**
+
+1. **Your documents keep their meaning.** A document without `smd: 2` (and every `.md` file) is read with the spec v1 rules, as in 1.x, apart from the few changes marked *in every document* below. Those make `smd validate` stricter: duplicate attributes, a container titled both ways, a Mermaid syntax error and an invalid figure `kind` are now errors, and front matter that cannot be read is shown instead of hiding the text above it. `smd validate --fix` fixes all of them but Mermaid errors.
+2. **Move a document to spec v2 when you are ready:** `smd migrate --to 2 --dry-run` shows what changes, and `smd migrate --to 2` rewrites it (or **Styled Markdown: Migrate to Spec v2** in VS Code) so that it reads under spec v2 as it did under v1. `--keep-typography` keeps the curly quotes and dashes, `--link-domains` keeps bare domains linked. `smd migrate --to 2 --check` fails CI while something is left.
+3. **New documents are spec v2:** `smd init`, `smd from-md` and the other writers write `smd: 2`.
+4. **Platform and API:** Node.js 22 or newer, VS Code 1.97 or newer; in the npm package `inlineText(line, options)` takes one object, the vocabulary tables are read-only, and VS Code's built-in Markdown preview applies `.smd` syntax only to `.md` files that opt in with an `smd:` key.
+
+Also new: `smd export --to html|md|pdf|docx|confluence|notion` (the old command names still work), the markdown-it plugin's `preset: 'smd'`, and a `spec` option for hosts that cannot see front matter.
 
 ### ⚠️ Breaking changes
 - **Front matter that can't be read is shown, not hidden** (SPEC.md §2.1; spec v2 RFC, proposal 1), in every document whatever its `smd` value. When the lines from the opening `---` to the closing `---` (or `...`) are not a YAML mapping, usually because the closing `---` was forgotten and a later `---` rule closed the front matter, everything above that rule used to disappear from the render and the agent view. Now the preview, `smd export --to html`, the Block Editor, the exports and the markdown-it plugin (with `frontMatter: true`) show those lines as written, escaped, in a red "Front matter could not be read" block (`<div class="smd-frontmatter-error" role="note">`, label localized); the agent view shows a `[front matter could not be read]` line and the lines in a fence; `smd export --to md` keeps them as written. The body after the closer renders as before. *Migration:* only documents that already fail `smd validate` with `frontmatter/invalid` change: fix the front matter (often by adding the missing `---`).
@@ -47,7 +58,6 @@
   ---
   ```
   or set `"smd.markdownPreview.enabled": "always"` to keep the 1.x behaviour for every `.md` file.
-
 ### Added
 - The markdown-it plugin's `preset: 'smd'` renders as `renderSmd` does: `md.use(smd, { preset: 'smd' })` turns on `headingIds`, `frontMatter`, `codeFrames` and `sourceLines`, sets the instance's `typographer` and `linkify`, and wraps tables in `<div class="smd-table-wrap">` with `scope="col"` header cells. An option you pass wins over the preset's (`{ preset: 'smd', sourceLines: false }`). Raw HTML and code highlighting stay your instance's: give it `html: true` and a `highlight` function for those, as `renderSmd` has. Without a preset nothing changes. (Spec v2 RFC, "Tool and API changes".)
 - npm: the `ReadFile` type, `(relativePath: string, env?: unknown) => string | undefined`, for `renderSmd`'s and the markdown-it plugin's `readFile`, and the `InlineTextOptions` type.
@@ -67,7 +77,6 @@
 - **`smd migrate <files|dirs> --to 2` writes the migration** (SPEC.md §10.1; spec v2 RFC, "Rollout and migration"); 1.10 only reported it with `--dry-run`, which stays as it is. It writes only `.smd` files whose plan changes something, so a file that already says `smd: 2` is left alone and running it twice changes nothing; a file argument that isn't `.smd` stops it before anything is written (exit 2). Each file is written whole or not at all, through a temporary file in the same folder renamed over it, with its line endings and final newline as the plan has them, and never through a symbolic link that leads outside the paths given. It prints each file it writes with the notes the plan leaves to you (typography, links in the title or summary, values to quote by hand), then a summary. Then it reads each file back and checks it: a new plan finds nothing left to change, and the file rendered with the v2 rules equals the original rendered with the v1 rules, apart from what the notes and v2-meaning steps say; any other difference (such as text an `:::include` brings in) is a warning on stderr. `--no-verify` skips the check. Exit codes: 0 done or nothing to do, 1 a file could not be written (it is left as it was) or a link leads outside the paths given, 2 a usage error.
 - `smd migrate --to 2 --check` writes nothing, lists the files that still need migrating and exits 1 if there are any, for CI (as `smd fmt --check`). `--json` reports the plan with `--dry-run` or `--check`.
 - VS Code: **Styled Markdown: Migrate to Spec v2** applies the plan of `smd migrate --to 2` to the open document as one edit, which Undo reverts, saves nothing, and shows the report with its notes in the output panel. **Preview Migration to Spec v2** offers **Apply**, which does the same.
-
 ### Changed
 - npm: `renderSmd`'s and the markdown-it plugin's `readFile` have one signature, `(relativePath, env?) => string | undefined` (the `ReadFile` type; spec v2 RFC, "Tool and API changes"). `renderSmd` already called it with the render's env as a second argument, which its type left out; in the plugin's type `env` is now optional. The calls are the same, so a one-argument function, and a plugin function that reads `env`, work as before.
 - `smd migrate --to 2 --link-domains` writes a bare domain linked today as a Markdown link to the address 1.x links, `[example.com](http://example.com)` (it wrote `<https://example.com>`, which shows the address with `https://`), so the document looks the same in both versions; a `--`, `...` or `(c)` in the link text is escaped, so `typography: true` leaves it alone. The step also covers `//host` and `WWW.` in capitals, which spec v2 doesn't link, and notes a link in the front matter's `title` or `summary` and `www.` text that spec v2 links but 1.x doesn't (`www.shop.test`). With `--keep-typography --link-domains`, a migrated document renders under spec v2 exactly as the original does under v1, apart from what those notes name (SPEC.md §10.1).
@@ -78,13 +87,10 @@
 - `smd migrate --to 2 --dry-run` reads the version as every other tool does: a list such as `smd: [2]` is version 1 (it counted as 2 before), so it is migrated and its `smd` line rewritten.
 - `smd migrate --to 2` keeps the meaning of the spec v2 inline rules (SPEC.md §10.1): a new "Backslashes in attribute values" step (proposal 6) rewrites quoted values that spec v2 reads differently (`"\\server"` → `"\\\\server"`, `"C:\docs\"` → `"C:\docs\\"`); "Braces after headings" writes a bare `{agent}` as `{agent=true}` instead of only noting it; and "Unknown inline directives" also escapes `:name{…}` with an attribute list and a `:name[…]` whose content runs onto the next line. A migrated document renders with the v2 rules as the original does with the v1 rules. A document that already says `smd: 2` keeps its escapes and directives.
 - `smd migrate --to 2 --dry-run` ends with "Dry run: nothing was written. Run it without --dry-run to migrate." (it said that 2.0 would apply the migration), and `smd --help` describes the writing, `--check`, `--no-verify` and the exit codes.
-
 ### Deprecated
 - The CLI's export command names, in favour of `smd export`: `smd render` (use `smd export <file> --to html`), `smd to-md` (`--to md`), `smd pdf` (`--to pdf`) and `smd docx` (`--to docx`). They keep working as aliases, with the same options, output and exit codes, and print no warning, so scripts that read stderr are unaffected. They may be removed in 3.0 (SPEC.md §11.1). `smd export --to confluence|notion` is unchanged; only its usage message, which now lists every format, is new.
-
 ### Removed
 - What 1.10 deprecated (SPEC.md §11.2): `priority` on `:::agent`, and the diagnostic codes `deprecated/agent-priority` and `figure/kind` (see Breaking changes). They are gone from the config JSON schema too.
-
 ### Fixed
 - `smd validate` reads a `$$` that nothing closes as rendering does, in every document: it opens nothing, so the lines after it are checked as usual (containers, headings, inline syntax), and the `$$` line still gets its `math/unclosed` error, as does each later `$$` that nothing closes. It used to read every line after it as math, so it missed problems there, and `smd migrate --to 2`, whose steps use the validator's fixes, left the closing fences after such a line unmigrated (the check after writing warned). Likewise, when v1 closes math on a line with text beside the `$$` that the `$$` step can't split without changing the math, `smd migrate --to 2` now writes the fences after it with the colon counts spec v2 pairs them by, since v2 reads that `$$` as text. Only documents that already have a `math/unclosed` error validate differently; none in this repository does.
 - A task's checkbox label (`aria-label`) keeps a character written with a backslash escape: `- [ ] Pay \$5` is labelled "Pay $5", not "Pay 5". Only the label changes, in documents with such a task.
