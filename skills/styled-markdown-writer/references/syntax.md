@@ -56,7 +56,7 @@ content (any Markdown, including other blocks)
 ```
 
 - Open with 3+ colons, the name, optional `{attrs}` **immediately** after the name, then an optional title (inline Markdown allowed).
-- Close with a line of 3+ colons and nothing else. It closes the **innermost** open block.
+- Close with a line of 3+ colons and nothing else. It closes the **innermost** open block. In a document with `smd: 2` it closes the innermost block opened with **as many colons**, so write every closing fence with its opener's colons (as `smd fmt` does).
 - Nesting works at any depth. Writing outer blocks with more colons (`::::tabs`) is a readability convention.
 - A `:::` inside a code fence never closes a block.
 - Every block also accepts the style attributes from §12.
@@ -302,7 +302,7 @@ Context for people only. Agents skip it.
 | `:kbd[Ctrl+Shift+P]` | Keyboard keys |
 | `:mention[@team]` | Mention |
 | `:ref[fig-checkout]` | "Figure 2", linked to the `:::figure{#fig-checkout}` (see §4) |
-| `$E=mc^2$` / `$$ … $$` | Math (KaTeX). No space just inside the `$`; `$5 and $10` is not math. |
+| `$E=mc^2$` / `$$ … $$` | Math (KaTeX). No space just inside the `$`; `$5 and $10` is not math. Put a block's `$$` delimiters on lines of their own (in an `smd: 2` document only such lines open and close it). |
 
 A directive's `:` must follow whitespace or opening punctuation, so `10:30` is safe.
 

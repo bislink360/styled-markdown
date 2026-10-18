@@ -1,5 +1,6 @@
 import { CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
-import { containerEnd, outsideCode } from './include';
+import { containerEnd, outsideCode, pairedClose } from './include';
+import type { SpecVersion } from './specVersion';
 
 /**
  * Quotations: `:::quote{author="Ada Lovelace" source="Notes" cite="https://…"}` with the quoted text as its body.
@@ -21,16 +22,25 @@ export interface QuoteBlock {
   empty: boolean;
 }
 
-/** Every `:::quote` from line `from` on, outside code. */
-export function findQuotes(lines: string[], from = 0): QuoteBlock[] {
+/** Every `:::quote` from line `from` on, outside code; closing fences pair as spec version `spec` reads them. */
+export function findQuotes(lines: string[], from = 0, spec: SpecVersion = 1): QuoteBlock[] {
   const found: QuoteBlock[] = [];
   for (const [i, fence] of outsideCode(lines, from, lines.length - 1)) {
     const open = fence ? null : CONTAINER_OPEN.exec(lines[i]);
     const info = open ? parseContainerInfo(open[3] + open[4]) : null;
     if (info?.name !== 'quote') continue;
-    const end = containerEnd(lines, i);
-    const body = lines.slice(i + 1, end === lines.length - 1 && !/^\s{0,3}:{3,}\s*$/.test(lines[end]) ? end + 1 : end);
+    const body = lines.slice(i + 1, bodyEnd(lines, i, spec, from));
     found.push({ line: i, info, empty: body.every((l) => !l.trim()) });
   }
   return found;
+}
+
+/** The line after the body of the container opened on line `open`: its closing fence, or the line after its last. */
+function bodyEnd(lines: string[], open: number, spec: SpecVersion, from: number): number {
+  if (spec === 2) {
+    const close = pairedClose(lines, open, from);
+    return close.own ? close.end : close.end + 1;
+  }
+  const end = containerEnd(lines, open);
+  return end === lines.length - 1 && !/^\s{0,3}:{3,}\s*$/.test(lines[end]) ? end + 1 : end;
 }

@@ -301,6 +301,9 @@ const READ_DIFFERENTLY_IN_V2: Record<string, string> = {
   'extension/test/compat/corpus/v2-typography.smd': 'proposal 8: bare domains and //host are not links',
   'extension/test/compat/corpus/v2-typography-on.smd': 'proposal 8: bare domains and //host are not links',
   'extension/test/compat/corpus/v2-variables.smd': 'proposal 10: values keep their YAML spelling',
+  'extension/test/compat/corpus/v2-hints.smd': 'proposal 3: closing fences with other colon counts',
+  'extension/test/compat/corpus/v2-math.smd': 'proposal 2: $ delimiters',
+  'extension/test/compat/corpus/v2-fences.smd': 'proposal 3: closing fences',
 };
 const posix = (file: string) => file.split(path.sep).join('/');
 
