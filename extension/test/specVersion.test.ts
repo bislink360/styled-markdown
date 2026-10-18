@@ -297,8 +297,10 @@ const READ_DIFFERENTLY_IN_V2: Record<string, string> = {
   'extension/test/compat/corpus/v2-directives.smd': 'proposals 7b and 11: unknown names and names in any case',
   'extension/test/compat/corpus/v2-escapes.smd': 'proposal 6: `\\\\` in quoted values',
   'extension/test/compat/corpus/v2-headings.smd': 'proposal 5: a heading\'s `{}` and `{word}` are text',
-  'extension/test/compat/corpus/v2-hints.smd': 'proposal 5: `## Object {}` and `## Returns {ok}`',
+  'extension/test/compat/corpus/v2-hints.smd': 'proposal 3: closing fences with other colon counts; proposal 5: `## Object {}` and `## Returns {ok}`',
   'extension/test/compat/corpus/v2-variables.smd': 'proposal 10: values keep their YAML spelling',
+  'extension/test/compat/corpus/v2-math.smd': 'proposal 2: $ delimiters',
+  'extension/test/compat/corpus/v2-fences.smd': 'proposal 3: closing fences',
 };
 const posix = (file: string) => file.split(path.sep).join('/');
 

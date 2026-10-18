@@ -1,4 +1,4 @@
-import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
+import { closeContainers, closerColons, CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
 import { withoutHeadingAttrs } from './sections';
 import type { SpecVersion } from './specVersion';
 
@@ -131,10 +131,13 @@ export interface ChangelogBlock {
 const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
 const HEADING = /^(\s{0,3}(#{1,6})\s+)(.*?)\s*#*\s*$/;
 
-/** Every `:::changelog` from line `from` on, with its entries; nested changelogs are blocks of their own. */
+/**
+ * Every `:::changelog` from line `from` on, with its entries; nested changelogs are blocks of their own. `spec` is the
+ * version the document is read with (display math, closing fences).
+ */
 export function findChangelogs(lines: string[], from = 0, spec: SpecVersion = 1): ChangelogBlock[] {
   if (!lines.some((l) => /^\s{0,3}:{3,}\s*changelog\b/i.test(l))) return [];
-  const scanner = new ChangelogScanner(displayMath(lines), spec);
+  const scanner = new ChangelogScanner(displayMath(lines, spec), spec);
   for (let i = from; i < lines.length; i++) scanner.line(lines[i], i);
   return scanner.finish();
 }
@@ -144,7 +147,7 @@ export function changelogEntries(lines: string[], from = 0, spec: SpecVersion = 
   return new Map(findChangelogs(lines, from, spec).flatMap((b) => b.entries.map((e) => [e.line, e] as const)));
 }
 
-interface OpenBlock { name: string; block?: ChangelogBlock; headings: ChangelogEntry[] }
+interface OpenBlock { name: string; colons: number; block?: ChangelogBlock; headings: ChangelogEntry[] }
 
 /** Follows code fences, display math and container nesting line by line, and collects the headings directly inside changelogs. */
 class ChangelogScanner {
@@ -159,12 +162,11 @@ class ChangelogScanner {
     const open = CONTAINER_OPEN.exec(line);
     if (open) {
       const name = parseContainerInfo(open[3] + open[4])?.name ?? '';
-      this.stack.push({ name, headings: [], ...(name === 'changelog' ? { block: { line: i, entries: [] } } : {}) });
+      this.stack.push({ name, colons: open[2].length, headings: [], ...(name === 'changelog' ? { block: { line: i, entries: [] } } : {}) });
       return;
     }
     if (CONTAINER_CLOSE.test(line)) {
-      const closed = this.stack.pop();
-      if (closed) this.end(closed);
+      for (const closed of closeContainers(this.stack, closerColons(line), this.spec, (o) => o.colons)) this.end(closed);
       return;
     }
     const top = this.stack.at(-1);

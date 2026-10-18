@@ -1,4 +1,5 @@
 import { parseFrontMatter } from './frontmatter';
+import { specVersion, type SpecVersion } from './specVersion';
 import { findIncludes } from './include';
 import { parseSmd } from './parse';
 
@@ -58,7 +59,7 @@ export function findLinks(text: string): DocumentLinks {
   };
 
   if (fm.present && !fm.error) addRelated(fm.data.related, lines, fm.bodyStartLine, add);
-  addIncludes(lines, fm.bodyStartLine, add);
+  addIncludes(lines, fm.bodyStartLine, add, specVersion(fm.data));
 
   let fence: { char: string; len: number } | null = null;
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
@@ -97,9 +98,9 @@ export function findLinks(text: string): DocumentLinks {
 /** The `file="…"` of every `:::include` (outside code), at the column it starts. */
 function addIncludes(
   lines: string[], from: number,
-  add: (target: string, line: number, column: number, kind: LinkTarget['kind']) => unknown,
+  add: (target: string, line: number, column: number, kind: LinkTarget['kind']) => unknown, spec: SpecVersion,
 ): void {
-  for (const { line, info } of findIncludes(lines, from)) {
+  for (const { line, info } of findIncludes(lines, from, undefined, spec)) {
     const file = info.attrs.values.file;
     const column = file ? lines[line].indexOf(file, lines[line].indexOf('file')) : -1;
     if (file && column >= 0) add(file, line, column, 'include');

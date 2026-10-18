@@ -1,4 +1,4 @@
-import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
+import { closeContainers, closerColons, CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo } from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { parseSmd } from './parse';
 import { dueState } from './render';
@@ -65,7 +65,7 @@ const TASK_FIELDS = {
 function taskInfo(
   item: { line: number; mark: string; body: string }, section: string | null, { data, spec }: { data: Record<string, unknown>; spec: SpecVersion }, today?: string,
 ): TaskInfo {
-  const body = substituteLine(item.body, data);
+  const body = substituteLine(item.body, data, spec);
   const fields = TASK_FIELDS[spec];
   const due = fields.due.exec(body)?.[1]?.trim();
   const priority = fields.priority.exec(body)?.[1]?.trim();
@@ -97,6 +97,16 @@ export function compareTasks(a: TaskInfo & { file: string }, b: TaskInfo & { fil
     || (a.due ?? '9999').localeCompare(b.due ?? '9999') || a.file.localeCompare(b.file) || a.line - b.line;
 }
 
+/** A container getDocumentInfo has open: an `agent` block collects its body lines. */
+interface OpenBlock { name: string; colons: number; line: number; title: string; body: string[] }
+
+/** A container closes; an `agent` block's body, without the closing fence's line, is one of the document's agent blocks. */
+function closeBlock(done: OpenBlock, agentBlocks: SmdDocumentInfo['agentBlocks']): void {
+  if (done.name !== 'agent') return;
+  done.body.pop(); // the closing fence itself (or, for one closed with a container around it, that one's fence)
+  agentBlocks.push({ title: done.title, line: done.line, content: done.body.join('\n').trim() });
+}
+
 export function getDocumentInfo(text: string, options: ValidateOptions = {}): SmdDocumentInfo {
   const fm = parseFrontMatter(text);
   const rendered = parseSmd(text);
@@ -107,9 +117,9 @@ export function getDocumentInfo(text: string, options: ValidateOptions = {}): Sm
   const containers: Record<string, number> = {};
   const diagrams: SmdDocumentInfo['diagrams'] = [];
 
-  const stack: Array<{ name: string; line: number; title: string; body: string[] }> = [];
+  const stack: OpenBlock[] = [];
   let fence: string | null = null;
-  const inMath = displayMath(lines);
+  const inMath = displayMath(lines, rendered.spec);
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
     const line = lines[i];
     for (const s of stack) if (s.name === 'agent') s.body.push(line);
@@ -128,11 +138,7 @@ export function getDocumentInfo(text: string, options: ValidateOptions = {}): Sm
     }
     if (inMath(i)) continue;
     if (CONTAINER_CLOSE.test(line) && stack.length) {
-      const done = stack.pop()!;
-      if (done.name === 'agent') {
-        done.body.pop(); // the closing fence itself
-        agentBlocks.push({ title: done.title, line: done.line, content: done.body.join('\n').trim() });
-      }
+      for (const done of closeContainers(stack, closerColons(line), rendered.spec, (s) => s.colons)) closeBlock(done, agentBlocks);
       continue;
     }
     const open = CONTAINER_OPEN.exec(line);
@@ -143,7 +149,7 @@ export function getDocumentInfo(text: string, options: ValidateOptions = {}): Sm
       const title = inlineText(info.title, undefined, false, undefined, fm.data);
       if (info.name === 'decision') decisions.push({ title, status: v.status ?? 'proposed', date: v.date, owner: v.owner, line: i });
       if (info.name === 'risk') risks.push({ title, impact: v.impact ?? 'medium', likelihood: v.likelihood, owner: v.owner, status: v.status, line: i });
-      stack.push({ name: info.name, line: i, title, body: [] });
+      stack.push({ name: info.name, colons: open[2].length, line: i, title, body: [] });
     }
   }
 

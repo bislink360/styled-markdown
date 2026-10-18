@@ -401,11 +401,43 @@ test('migrate: every .smd file in the repository gets a plan that settles and ke
     };
     const p = plan(text, { readFile: reader });
     const again = changes(plan(p.result, { readFile: reader, force: true }));
-    // corpus/v2-validation.smd says smd: 2 and pins, silenced, the errors of every document that the plan removes.
+    // corpus/v2-validation.smd says smd: 2 and pins, silenced, the errors of every document that the plan removes;
+    // corpus/v2-fences.smd says smd: 2 and pins a closing fence that matches no container, which the plan fixes.
     if (path.basename(file) === 'v2-validation.smd') assert.deepEqual(again.map((s) => s.kind), ['duplicate-attrs', 'title-text', 'agent-priority'], file);
+    else if (path.basename(file) === 'v2-fences.smd') assert.deepEqual(again.map((s) => s.kind), ['closer'], file);
     else assert.deepEqual(again, [], file);
     if (!changes(p).some((s) => s.keeps === 'v2')) assert.equal(v1(p.result, { readFile: reader }), v1(text, { readFile: reader }), file);
   }
+});
+
+/** Rendered HTML as `v1` compares it, without the task boxes' source lines either (the version step may add a line). */
+const shown = (text: string, options: MigrationOptions = {}) => v1(text, options).replaceAll(/ data-task-line="\d+"/g, '');
+
+test('migrate: a migrated document renders under spec v2 as the original renders under v1 (corpus and examples)', () => {
+  const corpusDir = path.join(__dirname, 'compat', 'corpus');
+  const dirs = [corpusDir, path.join(__dirname, '..', '..', 'examples')];
+  const files = dirs.flatMap((dir) => fs.readdirSync(dir).filter((f) => f.endsWith('.smd')).map((f) => path.join(dir, f)));
+  // The spec v2 corpus documents, read as v1 documents: their twins, which v1 reads differently, migrate too.
+  const twins = ['v2-math.smd', 'v2-fences.smd'].map((f) => ({ file: `${f} (smd: 1)`, text: fs.readFileSync(path.join(corpusDir, f), 'utf8').replace('\nsmd: 2\n', '\nsmd: 1\n') }));
+  const documents = [...files.map((file) => ({ file, text: fs.readFileSync(file, 'utf8') })), ...twins];
+  const migrated: string[] = [];
+  for (const { file, text } of documents) {
+    const reader = (rel: string) => {
+      try { return fs.readFileSync(path.resolve(path.dirname(file), rel), 'utf8'); } catch { return undefined; }
+    };
+    const options = { readFile: reader };
+    const p = plan(text, options);
+    if (p.from >= 2) continue;
+    assert.match(p.result, /\nsmd: 2\n/, file);
+    // Steps that keep the v2 meaning may change the v1 rendering (corpus/vocabulary-case.smd: proposal 11); their v2
+    // rules are not this comparison's: corpus/migrate.smd's backslash step (proposal 6) is one, so its closers and `$$`
+    // are checked by "corpus/migrate.smd has a case for every step", and its v2 rendering in v2InlineRules.test.ts.
+    if (shown(p.result.replace('\nsmd: 2\n', '\nsmd: 1\n'), options) !== shown(text, options)) continue;
+    assert.equal(shown(p.result, options), shown(text, options), `${file}: the migrated document under spec v2`);
+    if (changes(p).some((s) => s.kind === 'closer' || s.kind === 'math-delimiters')) migrated.push(path.basename(file));
+  }
+  // The documents whose closing fences or `$$` delimiters spec v2 reads differently until they are migrated.
+  assert.deepEqual(migrated.sort((a, b) => a.localeCompare(b)), ['v2-fences.smd (smd: 1)', 'v2-hints.smd', 'v2-math.smd (smd: 1)']);
 });
 
 test('migrate: the report groups steps by kind, with 1-based lines and short diffs', () => {

@@ -2,11 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { renderSmd, type RenderOptions } from '../src/core';
+import { renderSmd, specVersion, type RenderOptions } from '../src/core';
 import { blocksHtml, renderBlocks } from '../src/core/blocks';
 import { editInline, scanInline, SPAN, type InlineChange, type InlineItem } from '../src/core/inlineEdit';
 import { NAMED_COLORS } from '../src/core/spec';
-import { specVersion } from '../src/core/specVersion';
 import { shownValues, substituteLine } from '../src/core/variables';
 import { exampleDocuments, fuzzCase, prng, type Random } from './fuzz/generate';
 
@@ -88,9 +87,8 @@ test('the scan finds every inline directive and span rendering numbers, in order
       const rendered = block.inline ?? [];
       const marks = [...block.html.matchAll(MARK)].map((m) => Number(m[1]));
       assert.deepEqual(marks.slice().sort((a, b) => a - b), rendered.map((_, i) => i), `${doc.name}, line ${block.start + 1}: one mark per item`);
-      // `{{name}}` shows the values as the document shows them: spelled as written in spec v2.
-      const spec = specVersion(r.frontMatter);
-      const problem = agree(scanInline(lines.slice(block.start, block.end), { spec }), rendered, shownValues(r.frontMatter, doc.text, spec));
+      // Read with the document's version, as the Block Editor scans it; `{{name}}` shows the values as the document shows them.
+      const problem = agree(scanInline(lines.slice(block.start, block.end), { spec: specVersion(r.frontMatter) }), rendered, shownValues(r.frontMatter, doc.text, specVersion(r.frontMatter)));
       assert.equal(problem, undefined, `${doc.name}, lines ${block.start + 1}-${block.end}: ${problem}\n${lines.slice(block.start, block.end).join('\n')}`);
       total += rendered.length;
     }
@@ -101,9 +99,10 @@ test('the scan finds every inline directive and span rendering numbers, in order
 test('every item of the examples and the corpus that is on one line is placed on it', () => {
   for (const doc of documents) {
     const lines = doc.text.split(LINE_BREAK);
-    for (const block of renderBlocks(doc.text, { ...doc.options, inlineIndex: true }).blocks) {
+    const r = renderBlocks(doc.text, { ...doc.options, inlineIndex: true });
+    for (const block of r.blocks) {
       const blockLines = lines.slice(block.start, block.end);
-      for (const item of scanInline(blockLines, { spec: specVersion(doc.text) })) {
+      for (const item of scanInline(blockLines, { spec: specVersion(r.frontMatter) })) {
         // An item whose text runs over a line break (corpus/inline-line-breaks.smd) has no one line to be placed on.
         if (item.content?.includes('\n')) { assert.equal(item.at, undefined); continue; }
         assert.ok(item.at, `${doc.name}, line ${block.start + 1}: ${item.name} is placed`);

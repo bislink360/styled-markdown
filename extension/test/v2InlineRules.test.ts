@@ -245,10 +245,13 @@ test('migrate: a migrated document renders under spec v2 as the original does un
     assert.match(migrated, /smd: 2/);
     assert.equal(rendered(migrated), rendered(original), body);
   }
-  for (const name of ['unknown-directives.smd', 'attribute-escapes.smd', 'v2-hints.smd']) {
+  // migrate.smd has a case for every step. Its one difference is proposal 10's, by design: v2 shows `version: 2.10` as
+  // written, which the plan only notes.
+  for (const name of ['unknown-directives.smd', 'attribute-escapes.smd', 'v2-hints.smd', 'migrate.smd']) {
     const original = corpus(name);
     const readFile = (p: string) => { try { return corpus(p); } catch { return undefined; } };
-    assert.equal(rendered(migrationPlan(original, { readFile }).result, readFile), rendered(original, readFile), name);
+    const v2 = rendered(migrationPlan(original, { readFile }).result, readFile).replace('This is version 2.10.', 'This is version 2.1.');
+    assert.equal(v2, rendered(original, readFile), name);
   }
 });
 

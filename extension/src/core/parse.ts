@@ -1,7 +1,7 @@
 import type MarkdownIt from 'markdown-it';
 import type { StateInline, Token } from 'markdown-it';
 import { alertOf } from './alerts';
-import { isKnownContainer } from './containers';
+import { closesDisplayMath, displayMathOpener, isKnownContainer } from './containers';
 import { FigureCounter, figureTargets, type Figure } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
@@ -532,13 +532,14 @@ function incremental(old: State, lines: string[], prefix: number, suffix: number
   // Restart at the last block that starts before the changed line (the edit may extend or end it), or
   // earlier when a `$$` above is closed by a line at or after the edit (or not at all): adding or removing
   // that closing line decides whether the opener starts math.
-  // An opener is closed by the next line ending with `$$`, so only openers from the last such line
-  // before the edit onward can depend on it.
+  // An opener is closed by the next line ending with `$$` (spec v2: the next line that is only `$$`, which closes any
+  // math that reaches it), so only openers from the last such line before the edit onward can depend on it.
+  const spec = old.vars.spec;
   let limit = prefix;
   let lastClose = prefix - 1;
-  while (lastClose >= 0 && !lines[lastClose].trimEnd().endsWith('$$')) lastClose--;
+  while (lastClose >= 0 && !closesDisplayMath(lines[lastClose], spec)) lastClose--;
   for (let p = Math.max(0, lastClose); p < prefix; p++) {
-    if (isMathOpener(lines[p])) { limit = p + 1; break; }
+    if (isMathOpener(lines[p], spec)) { limit = p + 1; break; }
   }
   let k = -1;
   for (let i = 0; i < old.blocks.length && old.blocks[i].start < limit; i++) k = i;
@@ -573,11 +574,23 @@ function incremental(old: State, lines: string[], prefix: number, suffix: number
  * A line that may open multi-line display math (see mathBlock in render.ts). Any indentation or quote
  * prefix counts, since math can open inside lists and quotes: a false positive only widens a window.
  */
-function isMathOpener(line: string): boolean {
-  const text = line.replace(/^[\s>]*/, '');
-  if (!text.startsWith('$$')) return false;
-  const rest = text.slice(2);
-  return !(rest.trimEnd().endsWith('$$') && rest.trim().length > 2);
+function isMathOpener(line: string, spec: SpecVersion): boolean {
+  return displayMathOpener(line.replace(/^[\s>]*/, ''), spec) === 'block';
+}
+
+/**
+ * The line that closes display math opening on line `p`, or lines.length when none does, for the window to reach.
+ * Spec v1: the next line ending with `$$`. Spec v2: math closes on a line that is only `$$` once its indentation and
+ * quote markers are left out, so any such line may be the one; the last is taken, which only widens the window.
+ */
+function mathCloseAfter(lines: string[], p: number, spec: SpecVersion): number {
+  if (spec === 1) {
+    let close = p + 1;
+    while (close < lines.length && !lines[close].trimEnd().endsWith('$$')) close++;
+    return close;
+  }
+  for (let close = lines.length - 1; close > p; close--) if (closesDisplayMath(lines[close].replace(/^[\s>]*/, ''), spec)) return close;
+  return lines.length;
 }
 
 function shift(block: Block, delta: number): Block {
@@ -622,9 +635,8 @@ function parseRange(
       .filter((t) => t.map && ['smd_math_block', 'fence', 'code_block', 'html_block'].includes(t.type))
       .map((t) => [from + t.map![0], from + t.map![1]]);
     for (let p = from; p < to; p++) {
-      if (!isMathOpener(lines[p]) || skip.some(([a, b]) => p >= a && p < b)) continue;
-      let close = p + 1;
-      while (close < lines.length && !lines[close].trimEnd().endsWith('$$')) close++;
+      if (!isMathOpener(lines[p], scope.spec) || skip.some(([a, b]) => p >= a && p < b)) continue;
+      const close = mathCloseAfter(lines, p, scope.spec);
       if (close >= to && close < lines.length) mathHorizon = Math.max(mathHorizon, close + 1);
     }
   }

@@ -103,7 +103,10 @@ Any Markdown content, including other containers.
 
 - An opening fence is **three or more colons**, then a name (`[a-zA-Z][\w-]*`), then an optional attribute list `{…}` directly after the name, then an optional title.
 - A closing fence is a line with **three or more colons and nothing else**.
-- **Nesting**: a closing fence always closes the *innermost* open container. Colon count is cosmetic — authors may use more colons on outer containers (`::::tabs`) for readability, but it's not required. Write each closing fence with as many colons as its opener, as `smd fmt` does: in spec v2 (`smd: 2`) a closing fence closes the innermost container opened with the same count, and 1.10 reports a mismatch as the hint `container/colons`.
+- **Nesting**: a closing fence with N colons closes the innermost open container that was **opened with exactly N colons**. Containers opened inside that one close with it: they have no closing fence of their own, and the validator reports each (`container/unclosed`, a warning). When no open container was opened with N colons, the fence closes the innermost open container, as in spec v1, and the validator warns `container/colons`. Outer containers usually have more colons than the ones inside them (`::::tabs` around `:::tab`); write each closing fence with as many colons as its opener, as `smd fmt` does, so every fence closes its own container.
+- A closing fence inside a list item or a block quote can only close a container opened in that item or quote.
+
+  **Spec v1 (documents without `smd: 2`):** a closing fence always closes the *innermost* open container, whatever its colon count; colon counts are cosmetic. 1.10 and later report a fence whose count differs from its container's as the hint `container/colons`.
 - Fenced code blocks and `$$` display math (§4.4) inside a container are opaque; a `:::` inside a code block or a math block never closes the container (nor opens one).
 - An unclosed container extends to the end of its parent (and is a validation error).
 - Titles support inline Markdown.
@@ -387,7 +390,9 @@ The rendered HTML is unchanged: it has the heading's own id only.
 ### 4.4 Math
 
 - Inline: `$E = mc^2$` — no whitespace just inside the `$`, and the closing `$` must not be followed by a digit (so `$5 and $10` is plain text).
-- Display: a `$$ … $$` block, or a fenced block with language `math`. A line starting with `$$` (indented less than four spaces) opens display math that ends on the same line when it also ends with `$$` (`$$ E = mc^2 $$`), else on the next line ending with `$$`; when no later line ends with `$$`, the line opens nothing and is text. Display math may interrupt a paragraph.
+- Display: a `$$ … $$` block, or a fenced block with language `math`. Display math opens on a line (indented less than four spaces) that is **only `$$`**, and closes on the next line that is only `$$`; or it is `$$ E = mc^2 $$` on one line, a line that starts and ends with `$$` with math between. When no later line is only `$$`, the opening line opens nothing and is text. A line that starts or ends with `$$` and has other text beside it (`$$5 per seat`, `costs $$`) is text: it neither opens nor closes math. Display math may interrupt a paragraph, since its delimiters are on lines of their own, as a code fence may.
+
+  **Spec v1 (documents without `smd: 2`):** a line starting with `$$` opens display math that ends on the same line when it also ends with `$$` (`$$ E = mc^2 $$`), else on the next line *ending* with `$$`; when no later line ends with `$$`, the line opens nothing and is text. So `Pricing:` followed by `$$5 per seat` opens math that runs to the next line ending in `$$`. `smd migrate --to 2` moves delimiters onto lines of their own, which v1 reads the same way.
 - Display math is opaque, as code is: nothing inside it is SMD syntax, and a `:::` line inside it neither closes nor opens a container (§3).
 - Syntax: LaTeX as supported by KaTeX.
 
@@ -531,9 +536,9 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `frontmatter/stale` | info | `updated` is older than the stale threshold and the document is not archived or deprecated |
 | `frontmatter/lang` | info | `lang` is not a language tag, or names a language without labels (they render in English); lists the supported languages |
 | `container/unknown` | warning | Unknown container name (fix: closest name) |
-| `container/unclosed` | error | Missing closing `:::` (fix: add it at the end of the document, for an unindented container) |
+| `container/unclosed` | error / warning | Missing closing `:::` (error; fix: add it at the end of the document, for an unindented container). Spec v2: a warning for a container that a closing fence of a container around it closes (§3), since it ends where the document shows it ending (fix: add its own closing fence before that one, for an unindented container) |
 | `container/stray-close` | warning | `:::` with nothing open |
-| `container/colons` | hint | A closing fence has another colon count than the container it closes (`::::` closing `:::tab`). It closes the innermost container today; in spec v2 it closes the innermost one opened with as many colons (fix: the opener's count, as `smd fmt` writes it) |
+| `container/colons` | hint / warning | Spec v1: a hint for a closing fence with another colon count than the container it closes (`::::` closing `:::tab`), which spec v2 pairs differently. Spec v2: a warning for a closing fence whose colon count no open container has, which closes the innermost one (§3). Fix: the count of the container it closes, as `smd fmt` writes it |
 | `container/title-conflict` | error | A container has both `title=` and title text after its attributes; the attribute wins and the text is not shown. A hint in 1.10, an error in every document since 2.0 (fix: remove the text) |
 | `container/parent` | warning | `tab` outside `tabs`, `column` outside `columns` |
 | `container/agent-in-skip` | warning | An `agent` block inside a section whose heading has `{agent=skip}`: the agent view leaves the section out, so agents never read the instructions |
@@ -578,7 +583,7 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `table/pipe-in-code` | info | A pipe inside a code span in a table row. GFM splits a row into cells at every pipe without a backslash before it, code spans included, so the code span never forms, as on GitHub (fix: put a backslash before the pipe; the cell shows the pipe without it) |
 | `rules/unknown` | warning | A suppression comment or a rule setting names an unknown rule code (fix: closest code). For a code removed in 2.0 (`figure/kind`, `deprecated/agent-priority`) the message names the code that reports those problems now, and the fix changes to it |
 
-The hints `container/colons` and `heading/attrs-text` and the info `include/section-match` (1.10) warn early about what spec v2 reads differently. They never make a document that passed fail, `--strict` included, and each fix keeps how the document renders today. Since 2.0, in every document, the 1.10 hints `attrs/duplicate` and `container/title-conflict` are errors and the 1.10 info form of `frontmatter/version` is a warning.
+The hints `container/colons` and `heading/attrs-text` and the info `include/section-match` (1.10) warn early, in documents without `smd: 2`, about what spec v2 reads differently. In a document with `smd: 2`, `container/colons` is the warning described above instead. They never make a document that passed fail, `--strict` included, and each fix keeps how the document renders today. Since 2.0, in every document, the 1.10 hints `attrs/duplicate` and `container/title-conflict` are errors and the 1.10 info form of `frontmatter/version` is a warning.
 
 Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.smdrc.json` file in the document's folder or a parent folder has `{"rules": {"<code>" | "<category>/*" | "*": "off" | "error" | "warning" | "info" | "hint"}}`. The nearest file applies, the search stops at the repository root, and the most specific key wins. Inside a document, the comments `<!-- smd-disable-next-line [codes] -->`, `<!-- smd-disable-line [codes] -->` and `<!-- smd-disable [codes] -->` … `<!-- smd-enable [codes] -->` silence rules. No codes means every rule. Codes are separated by spaces or commas and may be `category/*`.
 
@@ -678,6 +683,8 @@ The value as YAML reads it decides, so `smd: 2.0`, the number 2, is spec v2, wit
 
 | Rule | Section | Spec v2 (`smd: 2`) | Spec v1 |
 |---|---|---|---|
+| `$$` display math delimiters (RFC proposal 2) | §4.4 | Math opens on a line that is only `$$` (or `$$…$$` on one line) and closes on a line that is only `$$`; a line with text beside `$$` is text | A line starting with `$$` opens math, and the next line ending with `$$` closes it |
+| Closing fences (RFC proposal 3) | §3, §7 | A closing fence closes the innermost container opened with as many colons, and the ones inside it with it (`container/unclosed`, a warning); one that matches none closes the innermost (`container/colons`, a warning) | A closing fence closes the innermost container; colon counts are cosmetic (`container/colons`, a hint) |
 | `:::include` `section=` | §3.4 | An exact heading id, or the heading's whole text in any case; anything else is a missing section | Also the first heading whose text contains it (an exact id wins) |
 | Front matter values shown | §4.7 | `{{key}}` and the header show plain numbers and booleans as written in the YAML (`2.10`, `True`, `007`) | As YAML reads them (`2.1`, `true`, `7`) |
 | A heading's trailing `{}` or `{word}` (proposal 5) | §4.2.2 | Heading text, as GitHub shows it; the id is made from it (`## Returns {ok}` is `#returns-ok`) | Left out of the heading text (`{}` is empty, `{ok}` is `ok=true`) |
@@ -758,7 +765,7 @@ The steps run in this order. "v1" steps leave the document rendering as before w
 | Front matter values | proposal 10 | v2 | A note for each value the page header, the agent view's header or a `{{key}}` shows other than as written (`version: 2.10` shows `2.1` in v1 and `2.10` in v2); with `--quote-variables`, a top-level plain value is quoted, so every version shows `2.10`. A value in a list or a nested mapping (`tags: [1.10]`) stays a note, to quote by hand |
 | Spec version | versioning rules | v1 | `smd: 1`, a missing key, a value that counts as 1 (`true`, `"1"`) or a missing front matter becomes `smd: 2`. Tools before 2.0 warn about `smd: 2` and read the document with the v1 rules |
 
-A document that already says `smd: 2` (or a newer version) needs nothing. Suppression comments don't stop a step: they silence reports, while the steps are about meaning. The plan of a migrated document has nothing more to change, apart from notes.
+After the closing fence and `$$` steps, every closing fence has its container's colon count and every multi-line math delimiter is on a line of its own, so spec v2 pairs the fences and reads the math as v1 did (§3, §4.4). A document that already says `smd: 2` (or a newer version) needs nothing. Suppression comments don't stop a step: they silence reports, while the steps are about meaning. The plan of a migrated document has nothing more to change, apart from notes.
 
 ## 11. Deprecated
 

@@ -1,7 +1,10 @@
 import katex from 'katex';
 import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules';
 import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem, type Attrs } from './attrs';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo, type ContainerInfo } from './containers';
+import {
+  closeContainers, closesDisplayMath, CONTAINER_CLOSE, CONTAINER_OPEN, displayMathOpener, parseContainerInfo, type ContainerInfo,
+} from './containers';
+import { specVersion, type SpecVersion } from './specVersion';
 import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
@@ -17,11 +20,12 @@ import { codeLines, inlineItemLines, inlineMathLines, lazyLineSet, literalLines,
 import { openTaskLines } from './taskLines';
 import { checkTablePipes } from './tableCheck';
 import { headingAttrList, sectionsOf, withoutHeadingAttrs, type Section } from './sections';
-import { specVersion, type SpecVersion } from './specVersion';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
 import { own, suggest } from './util';
-import { checkCloser, checkContainerHints, checkHeadingHints, checkInlineAttrLists, checkSmdVersion, removedAgentPriority } from './v2Hints';
+import {
+  checkCloser, checkContainerHints, checkHeadingHints, checkInlineAttrLists, checkSmdVersion, removedAgentPriority, type OpenContainer,
+} from './v2Hints';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
 } from './fixes';
@@ -93,12 +97,11 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, options, inCode);
   // For the checks of text: nothing in code or math is syntax, so what they find there is not reported.
   const pushText = outsideLiteral(push, literalText(text, lines, fm.bodyStartLine));
-  // The rules the body is read with (headings, directives and attribute escapes differ in spec v2).
+  // The rules the body is read with: display math, closing fences, headings, directives and attribute escapes differ in spec v2.
   const spec = specVersion(fm.data);
 
   // --- Body ---------------------------------------------------------------
-  interface Open { name: string; len: number; line: number }
-  const stack: Open[] = [];
+  const stack: OpenContainer[] = [];
   let fence: { char: string; len: number; lang: string; info: string; line: number; content: string[] } | null = null;
   let mathStart = -1;
   let mathLines: string[] = [];
@@ -131,7 +134,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
     // Display math $$ … $$
     if (mathStart >= 0) {
-      if (raw.trimEnd().endsWith('$$')) {
+      if (closesDisplayMath(raw, spec)) {
         mathLines.push(raw.trimEnd().slice(0, -2));
         checkMath(mathLines.join('\n'), mathStart, wholeLine);
         mathStart = -1;
@@ -143,23 +146,21 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     }
     const trimmed = raw.trim();
     // A `$$` in indented code is code: it opens no math (its text checks are dropped as literal).
-    if (trimmed.startsWith('$$') && !inCode(i)) {
-      const rest = trimmed.slice(2);
-      if (rest.endsWith('$$') && rest.length > 2) checkMath(rest.slice(0, -2), i, wholeLine);
-      else { mathStart = i; mathLines = [rest]; }
+    const math = trimmed.startsWith('$$') && !inCode(i) ? mathOpener(trimmed, spec) : null;
+    if (math === 'line') {
+      checkMath(trimmed.slice(2, -2), i, wholeLine);
+      continue;
+    }
+    if (math === 'block') {
+      mathStart = i;
+      mathLines = [trimmed.slice(2)];
       continue;
     }
 
     // Containers
     const close = CONTAINER_CLOSE.exec(raw);
     if (close) {
-      // A bare ::: always closes the innermost open container.
-      const closed = stack.pop();
-      if (!closed) {
-        wholeLine(i, 'warning', 'container/stray-close', `Closing "${close[2]}" has no matching opening container.`);
-      } else {
-        checkCloser(i, close[1].length, close[2].length, closed, push);
-      }
+      closeContainer(stack, { line: i, indent: close[1].length, colons: close[2].length }, spec, { lines, push });
       continue;
     }
     const open = CONTAINER_OPEN.exec(raw);
@@ -215,11 +216,11 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   checkFigures(text, lines, fm.bodyStartLine, pushText, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, pushText);
   // Release headings and glossary terms are read with their `{{name}}` values in, as they render.
-  const expanded = lines.map((l) => substituteLine(l, fm.data));
-  const terms = checkGlossary({ lines, expanded }, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
+  const expanded = lines.map((l) => substituteLine(l, fm.data, spec));
+  const terms = checkGlossary({ lines, expanded, spec }, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
   checkTermIds(terms, text, lines, fm.bodyStartLine, push);
   for (const block of findChangelogs(expanded, fm.bodyStartLine, spec)) checkChangelog(block.entries, lines, push);
-  for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
+  for (const quote of findQuotes(lines, fm.bodyStartLine, spec)) checkQuote(quote, lines[quote.line], push);
   checkVariables(lines, fm.bodyStartLine, fm.data, pushText, inCode);
   checkAgentInSkipped(text, lines, fm.bodyStartLine, push);
 
@@ -300,7 +301,7 @@ function checkFrontMatter(
   }
 
   // Custom keys the body shows with `{{key}}` are meant: no unknown-key hint for them.
-  const shown = new Set(findVariables(lines, end, isCode).map((v) => v.name.split('.')[0]));
+  const shown = new Set(findVariables(lines, end, isCode, specVersion(data)).map((v) => v.name.split('.')[0]));
   for (const [key, value] of Object.entries(data)) {
     const prop = frontMatterProperty(key);
     if (!prop) {
@@ -361,6 +362,50 @@ function checkLanguage(value: unknown, markKey: MarkKey): void {
  */
 function containerCloseFix(lines: string[], line: number, len: number, fence: object | null, mathStart: number): Fix | undefined {
   return fence || mathStart >= 0 ? undefined : closeAtEndFix(lines, line, ':'.repeat(len));
+}
+
+/**
+ * How a `$$` line outside code opens display math, given its trimmed text (see displayMathOpener). Spec v1 as the
+ * validator always read it: `$$…$$` on one line, else math that a line ending with `$$` closes.
+ */
+function mathOpener(trimmed: string, spec: SpecVersion): 'line' | 'block' | null {
+  if (spec === 2) return displayMathOpener(trimmed, spec);
+  const rest = trimmed.slice(2);
+  return rest.endsWith('$$') && rest.length > 2 ? 'line' : 'block';
+}
+
+/** A closing fence: its zero-based line, its indentation and its colon count. */
+interface Closer { line: number; indent: number; colons: number }
+
+/**
+ * A closing fence closes the open containers closedBy gives (containers.ts). Spec v1: the innermost, with the
+ * `container/colons` hint when its colon count differs. Spec v2: the innermost with as many colons, reporting the
+ * containers it closes with it (`container/unclosed`, a warning: they end where the document shows them end), or,
+ * when no open container has as many, the innermost, with a `container/colons` warning.
+ */
+function closeContainer(stack: OpenContainer[], closer: Closer, spec: SpecVersion, at: { lines: string[]; push: Push }): void {
+  const { line, indent, colons } = closer;
+  const closed = closeContainers(stack, colons, spec, (o) => o.len);
+  const own = closed.at(-1);
+  if (!own) {
+    at.push(line, 0, at.lines[line]?.length ?? 1, 'warning', 'container/stray-close', `Closing "${':'.repeat(colons)}" has no matching opening container.`);
+    return;
+  }
+  if (spec === 1) {
+    checkCloser(line, indent, colons, own, at.push);
+    return;
+  }
+  for (const inner of closed.slice(0, -1)) {
+    const fence = ':'.repeat(inner.len);
+    at.push(inner.line, 0, at.lines[inner.line].length, 'warning', 'container/unclosed',
+      `"${fence}${inner.name}" has no closing fence of its own: the "${':'.repeat(colons)}" on line ${line + 1} closes "${':'.repeat(own.len)}${own.name}" on line ${own.line + 1}, and this container with it. Add a line with ${fence} where its content ends.`,
+      /^\s/.test(at.lines[inner.line]) ? undefined : { line, column: 0, endColumn: 0, replacement: `${fence}\n`, title: `Add "${fence}" before line ${line + 1}` });
+  }
+  if (own.len === colons) return;
+  const fence = ':'.repeat(own.len);
+  at.push(line, indent, indent + colons, 'warning', 'container/colons',
+    `This closing fence has ${colons} colons, and no open container has as many, so it closes the innermost one, "${fence}${own.name}" on line ${own.line + 1}, which has ${own.len}. Write it with ${own.len} colons.`,
+    { line, column: indent, endColumn: indent + colons, replacement: fence, title: `Change to "${fence}"` });
 }
 
 /** Builds the fix for a front matter value on line `line`, if one is unambiguous. */
@@ -786,7 +831,7 @@ function checkFigures(text: string, lines: string[], bodyStart: number, push: Pu
  * 1.6, `{{…}}` was plain text (templates, Handlebars or Jinja examples), so it must not start failing checks.
  */
 function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push, isCode: (line: number) => boolean): void {
-  const uses = findVariables(lines, bodyStart, isCode);
+  const uses = findVariables(lines, bodyStart, isCode, specVersion(data));
   if (!uses.length) return;
   const names = [...new Set([...Object.keys(data), ...variableNames(data).map((v) => v.name)])];
   for (const use of uses) {
@@ -833,9 +878,9 @@ function unknownRef(ref: FigureRef, ids: string[], push: Push): void {
  * `included` gives the terms used in included text (rendering it only when a term is not used otherwise). A use in
  * a `{{name}}` value counts, as rendering marks it: uses are found in the lines as written and with the values in.
  */
-function checkGlossary(text: { lines: string[]; expanded: string[] }, bodyStart: number, push: Push, included: () => Set<string>): GlossaryEntry[] {
-  const { lines, expanded } = text;
-  const glossary = findGlossary(lines, bodyStart);
+function checkGlossary(text: { lines: string[]; expanded: string[]; spec: SpecVersion }, bodyStart: number, push: Push, included: () => Set<string>): GlossaryEntry[] {
+  const { lines, expanded, spec } = text;
+  const glossary = findGlossary(lines, bodyStart, spec);
   for (const problem of glossary.problems) glossaryProblem(problem, push);
   const first = new Map<string, GlossaryEntry>();
   for (const entry of glossary.entries) {
@@ -848,9 +893,9 @@ function checkGlossary(text: { lines: string[]; expanded: string[] }, bodyStart:
     }
   }
   if (!first.size) return [];
-  const used = new Set(findTermUses(lines, bodyStart, glossary).map((u) => u.entry.id));
+  const used = new Set(findTermUses(lines, bodyStart, glossary, spec).map((u) => u.entry.id));
   if (expanded.some((l, i) => l !== lines[i])) {
-    for (const use of findTermUses(expanded, bodyStart, glossary)) used.add(use.entry.id);
+    for (const use of findTermUses(expanded, bodyStart, glossary, spec)) used.add(use.entry.id);
   }
   const unused = [...first.values()].filter((e) => !used.has(e.id));
   const usedInIncludes = unused.length ? included() : new Set<string>();
