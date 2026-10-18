@@ -567,7 +567,8 @@ const checks = {
     await vscode.window.showTextDocument(plain);
     await until((s) => s.visible && s.text === '$(circle-large-outline) No status', 'no status in the status bar');
     assert.equal(await vscode.commands.executeCommand('smd.setStatus', 'approved', plain.uri), true);
-    assert.equal(plain.getText(), '---\nsmd: 1\nstatus: approved\n---\n\n# Notes\n');
+    // A new front matter says smd: 2 since 2.0, as this document reads the same under spec v2 (documentStatus.ts).
+    assert.equal(plain.getText(), '---\nsmd: 2\nstatus: approved\n---\n\n# Notes\n');
     await until((s) => s.text === '$(verified) Approved', 'the approved status in the status bar');
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
 
