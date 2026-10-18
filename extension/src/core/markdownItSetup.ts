@@ -21,11 +21,20 @@ import { shownValues } from './variables';
 
 /** Registers the .smd rules on a markdown-it instance, for renderSmd and for markdown-it hosts. */
 
+/**
+ * Reads a file for embeds (`file="…"` on a code block) and `:::include` blocks, for renderSmd and the markdown-it
+ * plugin alike (one signature since 2.0). `relativePath` is relative to the document being rendered; nested
+ * includes ask for paths relative to that document too. `env` is the render's markdown-it env, the same object for
+ * every file one render reads: the `env` a host passes to `md.render`, or renderSmd's own (opaque). It returns the
+ * file's text, or undefined when the file is missing or not allowed.
+ */
+export type ReadFile = (relativePath: string, env?: unknown) => string | undefined;
+
 /** Options read while rendering. */
 export interface SmdRenderOptions {
   agentBlocks?: 'collapsed' | 'expanded' | 'hidden';
   today?: string;
-  readFile?: (relativePath: string, env?: unknown) => string | undefined;
+  readFile?: ReadFile;
 }
 
 /** What the rules read at render time; renderSmd and markdown-it hosts fill it differently. */
@@ -100,6 +109,29 @@ function hostLanguage(env: unknown, fallback: string | undefined): string {
 
 const ALT = { alt: ['paragraph', 'reference', 'blockquote', 'list'] };
 const applied = new WeakSet<MarkdownIt>();
+
+/** Whether the .smd rules are on `md` already. */
+export function hasSmd(md: MarkdownIt): boolean {
+  return applied.has(md);
+}
+
+/**
+ * renderSmd's tables (and `preset: 'smd'`'s): each in a `<div class="smd-table-wrap">`, so a wide one scrolls on a
+ * narrow page, and `scope="col"` on header cells, since a Markdown table's one header row heads its columns.
+ */
+export function addTableRules(md: MarkdownIt): void {
+  const rules = md.renderer.rules;
+  const own: RenderRule = (tokens, idx, opts, _env, self) => self.renderToken(tokens, idx, opts);
+  const open = rules.table_open ?? own;
+  const close = rules.table_close ?? own;
+  const header = rules.th_open ?? own;
+  rules.table_open = (tokens, idx, opts, env, self) => `<div class="smd-table-wrap">${open(tokens, idx, opts, env, self)}`;
+  rules.table_close = (tokens, idx, opts, env, self) => `${close(tokens, idx, opts, env, self)}</div>`;
+  rules.th_open = (tokens, idx, opts, env, self) => {
+    tokens[idx].attrSet('scope', 'col');
+    return header(tokens, idx, opts, env, self);
+  };
+}
 
 /** Register the rules for `features` on `md`. Rule order matches renderSmd's, whatever is left out. */
 export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext): void {
