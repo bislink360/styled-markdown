@@ -29,6 +29,10 @@ smd validate docs/ --fix              # check files, auto-fix typos; exit code 1
 smd validate docs/ --format github    # GitHub Actions annotations (--summary "$GITHUB_STEP_SUMMARY" adds a job summary)
 smd fmt docs/ --check                 # formatting check for CI; without --check it formats in place
 smd migrate docs/ --to 2              # move documents to spec v2 (smd: 2), keeping their meaning (--dry-run: the plan)
+smd migrate docs/ --to 2 --check      # CI: list the documents that still need migrating, exit 1 if any
+                                      # --keep-typography: add typography: true to keep curly quotes and dashes
+                                      # --link-domains: write bare domains (example.com) as links; --quote-variables:
+                                      # quote values such as version: 2.10; --no-verify: skip the check after writing
 smd outline docs/spec.smd             # sections, line ranges and token cost per section
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
@@ -59,8 +63,8 @@ The package also installs **`smd-language-server`**, the same as `smd lsp`: poin
 
 ```ts
 import {
-  renderSmd, renderPage, specVersion, validateSmd, applyFixes, agentView, outline,
-  smdToMarkdown, smdToConfluence, smdToNotion, notionRequests, markdownToSmd, getDocumentInfo, extractTasks,
+  renderSmd, renderPage, specVersion, LATEST_SPEC, validateSmd, applyFixes, agentView, outline,
+  smdToMarkdown, smdToConfluence, smdToNotion, notionRequests, smdToPandocHtml, markdownToSmd, getDocumentInfo, extractTasks,
   querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
   decisionLog, decisionLogMarkdown, statusChanges, statusReportMarkdown, statusReport,
   riskRegister, riskRegisterText, renderRiskPage, buildSite,
@@ -79,6 +83,8 @@ const { html, frontMatter, headings, spec } = renderSmd(source, {
 });
 
 specVersion(source);                         // 1 or 2: which rules read the document (its `smd:`; see SPEC.md §10)
+specVersion(frontMatter);                    // the same from front matter you already parsed
+LATEST_SPEC;                                 // 2: the newest spec version this release reads; type SpecVersion = 1 | 2
 
 // Complete standalone page (styles + runtime for tabs, Mermaid, theme switching)
 const page = renderPage(source);
@@ -138,6 +144,8 @@ const md = new MarkdownIt({
 ```
 
 It turns on `headingIds`, `frontMatter`, `codeFrames` and `sourceLines`, sets your instance's `typographer` and `linkify` to `true` (spec v2 documents still follow the rules above; `md.set({ typographer: false })` after `.use()` turns one back off), and wraps tables in `<div class="smd-table-wrap">` with `scope="col"` on header cells. Raw HTML (`html`) and code highlighting stay your instance's. Without `preset`, nothing changes.
+
+**Tokens keep their source (since 1.7).** For hosts that walk the token stream instead of using the HTML: an inline directive is an `html_inline` token with `token.meta = { directive, content, values }` (the name, the content with `{{variables}}` replaced, and the attributes), a `[text]{…}` span opens with an `smd_span_open` token whose `meta` is `{ values }`, `:ref[id]` is an `smd_ref` token with `meta: { id }`, and a task's checkbox is an `html_inline` token with `meta: { taskBox: true, checked }`. The Confluence and Notion exporters read these.
 
 **`readFile` (since 2.0)** has one signature for `renderSmd` and the plugin, `ReadFile = (relativePath: string, env?: unknown) => string | undefined` (exported as a type). `env` is the render's markdown-it env, the same object for every file one render reads: the `env` you passed to `md.render`, or `renderSmd`'s own (opaque). A one-argument function works for both.
 
@@ -297,6 +305,10 @@ markdownToSmd(markdown, 'Fallback title'); // add front matter, GitHub alerts �
 smdToPandocHtml(source);                  // HTML for `pandoc -f html -t docx` (what `smd export --to docx` converts; no docx writer here)
 formatSmd(source);                        // the `smd fmt` layout: fence colons, attribute order, tables, blank lines
 
+const { math, inlineMath, code, spec } = parseSmd(source); // no rendering: headings, ids, figures and where code and math are
+// math: [first, end) zero-based lines of $$ display math; inlineMath: Map<line, [start, end) columns> of $…$ in text
+// that runs over several lines; code: the lines of code blocks. Text there is never substituted or styled.
+
 const info = getDocumentInfo(source);     // front matter, outline, tasks, decisions, risks, agent blocks, diagnostics
 const open = extractTasks(source).filter((t) => !t.done);
 // [{ text: 'Idempotent order creation', priority: 'P0', assignees: ['@api-team'], due: '2026-10-03', overdue: false, line: 61, section: 'Requirements' }]
@@ -347,9 +359,11 @@ Also: `parseIssueRefs(line)` (every reference, code spans ignored), `taskIssueRe
 
 Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `ganttDate` and `TASK_CSV_COLUMNS` (task export), `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
 
+Types for the exports: `SpecVersion` (`1 | 2`) and `LATEST_SPEC`; `InlineTextOptions` (below); `ExportOptions` for `smdToConfluence` and `smdToNotion` (`readFile`, `agentBlocks`, `lang`, `header`); `PandocHtmlOptions` for `smdToPandocHtml` (the options of `renderSmd`); and the Notion shapes `NotionBlock`, `NotionRequest` (`{ children: NotionBlock[] }`, one request body), `NotionRichText` and `NotionAnnotations`. `NOTION_LIMITS` holds the limits the Notion export keeps within: `text` (2000 characters a rich text object), `equation` (1000), `richText` (100 objects a block), `children` (100), `depth` (2 levels of nesting), `requestBlocks` (1000) and `requestChars` (450,000 characters of JSON, under the 500 KB payload limit).
+
 The vocabulary is read-only (since 2.0): every table is frozen, nested objects and arrays included, and typed `Readonly`. Copy one to extend it: `{ ...CONTAINERS, mine: { description: 'My block' } }`, `[...NAMED_COLORS, 'brand']`.
 
-`inlineText(line, options?)` is one line of `.smd` as the agent view writes it: styling removed, the words kept. Its options are one object (since 2.0; 1.x took them as positional arguments), all optional:
+`inlineText(line, options?)` is one line of `.smd` as the agent view writes it: styling removed, the words kept. Its options are one object, typed `InlineTextOptions` (since 2.0; 1.x took them as positional arguments), all optional:
 
 ```ts
 inlineText(':badge[v2] by :due[2026-10-01], see :ref[fig-a], for {{team}}', {
@@ -390,7 +404,7 @@ People read this; agents skip it.
 
 ## More
 
-- **VS Code extension:** live preview, validation, IntelliSense and agent view. Search for "Styled Markdown" in the Extensions view, or see the [install guide](https://github.com/bislink360/styled-markdown/blob/main/docs/INSTALL.md).
+- **VS Code extension:** live preview, Block Editor, validation, IntelliSense and agent view. Install `styled-markdown-X.Y.Z.vsix` from the [latest GitHub release](https://github.com/bislink360/styled-markdown/releases/latest) (Marketplace and Open VSX listings are coming once published); see the [install guide](https://github.com/bislink360/styled-markdown/blob/main/docs/INSTALL.md).
 - **AI agent skills** for Claude and other agents: [skills guide](https://github.com/bislink360/styled-markdown/blob/main/docs/SKILLS.md)
 - [Feature guide](https://github.com/bislink360/styled-markdown/blob/main/docs/FEATURES.md) · [Specification](https://github.com/bislink360/styled-markdown/blob/main/docs/SPEC.md) · [Examples](https://github.com/bislink360/styled-markdown/tree/main/examples)
 
