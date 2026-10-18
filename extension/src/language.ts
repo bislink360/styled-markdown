@@ -206,7 +206,7 @@ class RefactorProvider implements vscode.CodeActionProvider {
 // Completion
 // ---------------------------------------------------------------------------
 
-const ATTR_VALUES: Record<string, string[]> = {
+const ATTR_VALUES: Record<string, readonly string[]> = {
   color: [...NAMED_COLORS],
   bg: [...NAMED_COLORS],
   border: [...NAMED_COLORS],
@@ -401,7 +401,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
       }
       const container = /^\s*:{3,}\s*([\w-]+)\{/.exec(prefix);
       const directive = /:([a-z][\w-]*)(?:\[[^\]]*\])?\{[^}]*$/.exec(prefix);
-      let keys: string[] = Object.keys(STYLE_KEYS);
+      let keys: readonly string[] = Object.keys(STYLE_KEYS);
       const containerSpec = container ? own(CONTAINERS, container[1]) : undefined;
       const directiveSpec = directive ? own(INLINE_DIRECTIVES, directive[1]) : undefined;
       if (containerSpec) keys = [...(containerSpec.attrs ?? []), ...keys];
