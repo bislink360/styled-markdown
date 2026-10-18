@@ -105,6 +105,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   let fence: { char: string; len: number; lang: string; info: string; line: number; content: string[] } | null = null;
   let mathStart = -1;
   let mathLines: string[] = [];
+  const unclosedMath = unclosedMathLines(lines, fm.bodyStartLine, spec, inCode);
   let firstH1: { text: string; line: number } | null = null;
   const isOpenTask = lazyLineSet(() => new Set(openTaskLines(text)));
   // Directives whose text runs over several lines are checked whole, at the line their attributes end on.
@@ -126,7 +127,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       }
       continue;
     }
-    const fenceOpen = /^(\s{0,3})(`{3,}|~{3,})\s*([^\s`]*)/.exec(raw);
+    const fenceOpen = FENCE_OPEN.exec(raw);
     if (fenceOpen) {
       fence = { char: fenceOpen[2][0], len: fenceOpen[2].length, lang: fenceOpen[3].toLowerCase(), info: raw.slice(fenceOpen[1].length + fenceOpen[2].length), line: i, content: [] };
       continue;
@@ -152,6 +153,8 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       continue;
     }
     if (math === 'block') {
+      // Math that nothing closes opens nothing, as rendering reads it: the lines after it are checked as usual.
+      if (unclosedMath.has(i)) continue;
       mathStart = i;
       mathLines = [trimmed.slice(2)];
       continue;
@@ -198,7 +201,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     push(fence.line, 0, lines[fence.line].length, 'error', 'fence/unclosed', `Code block opened here is never closed with ${fence.char.repeat(fence.len)}.`,
       closeAtEndFix(lines, fence.line, fence.char.repeat(fence.len)));
   }
-  if (mathStart >= 0) wholeLine(mathStart, 'error', 'math/unclosed', 'Display math "$$" is never closed.');
+  for (const line of unclosedMath) wholeLine(line, 'error', 'math/unclosed', 'Display math "$$" is never closed.');
   for (const o of stack) {
     push(o.line, 0, lines[o.line].length, 'error', 'container/unclosed', `":::${o.name}" is never closed. Add a line with ${':'.repeat(o.len)} after its content.`,
       containerCloseFix(lines, o.line, o.len, fence, mathStart));
@@ -366,6 +369,52 @@ function checkLanguage(value: unknown, markKey: MarkKey): void {
  * Close an unclosed container at the end of the document, unless a code block or `$$` math is still open there:
  * it would swallow the closing line, so that one is fixed first.
  */
+const FENCE_OPEN = /^(\s{0,3})(`{3,}|~{3,})\s*([^\s`]*)/;
+const fenceCloser = (fence: string) => new RegExp(`^\\s{0,3}${fence[0] === '`' ? '`' : '~'}{${fence.length},}\\s*$`);
+
+/**
+ * The `$$` lines that open multi-line display math that no later line closes (since 2.0, in both versions). Rendering
+ * reads such a line as text that opens nothing, so the lines after it are not math: the body checks read them as
+ * usual (containers, headings, inline syntax), and the `$$` line gets `math/unclosed`. Code fences are skipped as
+ * the body checks skip them, also inside math, so a fence is a fence whether math is open or not. Hence once one
+ * opener is never closed, no line after it closes math, and every later multi-line opener is unclosed too.
+ */
+function unclosedMathLines(lines: readonly string[], start: number, spec: SpecVersion, inCode: (line: number) => boolean): Set<number> {
+  const opensBlock = (i: number) => {
+    const trimmed = lines[i].trim();
+    return trimmed.startsWith('$$') && !inCode(i) && mathOpener(trimmed, spec) === 'block';
+  };
+  const unclosed = new Set<number>();
+  let open = -1;
+  outsideFences(lines, start, (i) => {
+    if (open < 0) {
+      if (opensBlock(i)) open = i;
+    } else if (closesDisplayMath(lines[i], spec)) {
+      open = -1;
+    }
+  });
+  if (open < 0) return unclosed;
+  unclosed.add(open);
+  outsideFences(lines, open + 1, (i) => {
+    if (opensBlock(i)) unclosed.add(i);
+  });
+  return unclosed;
+}
+
+/** Visit each line from `start` that is not in a code fence or a fence line itself, as the body checks find fences. */
+function outsideFences(lines: readonly string[], start: number, visit: (line: number) => void): void {
+  let fence: RegExp | null = null;
+  for (let i = start; i < lines.length; i++) {
+    if (fence) {
+      if (fence.test(lines[i])) fence = null;
+      continue;
+    }
+    const open = FENCE_OPEN.exec(lines[i]);
+    if (open) fence = fenceCloser(open[2]);
+    else visit(i);
+  }
+}
+
 function containerCloseFix(lines: string[], line: number, len: number, fence: object | null, mathStart: number): Fix | undefined {
   return fence || mathStart >= 0 ? undefined : closeAtEndFix(lines, line, ':'.repeat(len));
 }

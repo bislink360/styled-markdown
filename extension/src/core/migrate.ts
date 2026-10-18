@@ -196,6 +196,11 @@ function planSteps(text: string, options: MigrationOptions, escapes: boolean): M
   fuzzyLinkStep(w);
   variableStep(w);
   versionStep(w);
+  // Once it says smd: 2, its fences pair as spec v2 reads them. Math that v1 closes on a line with text beside the `$$`,
+  // which the `$$` step leaves alone where splitting it would change the math, opens nothing in v2 (as a `$$` that
+  // nothing closes does in both versions), so the fences after it that v1 reads as math are fences: their colon counts
+  // are written as v2 pairs them, which changes nothing that v2 shows.
+  if (from < TARGET && specVersion(textOf(w)) === TARGET) fixStep(w, 'container/colons', 'closer');
   // In the order the steps run, and by line within each (math is split bottom-up).
   w.steps.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.line - b.line);
   return { from, steps: w.steps, result: textOf(w) };

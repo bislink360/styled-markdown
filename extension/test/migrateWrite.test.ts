@@ -279,6 +279,49 @@ test('CLI: the check after writing warns when spec v2 renders a file differently
   }
 });
 
+/** A `$$` that never closes, which rendering reads as text that opens nothing, before fences the plan must rewrite. */
+const UNCLOSED_MATH = '---\nsmd: 1\ntitle: X\n---\n\nPricing:\n$$5 per seat\n\n::::tabs\n:::tab A\nOne.\n::::\n:::\n';
+
+test('validate: a $$ that nothing closes opens nothing; the lines after it are checked (both versions)', () => {
+  const codes = (text: string) => validateSmd(text).map((d) => `${d.line + 1} ${d.code}`);
+  assert.deepEqual(codes(UNCLOSED_MATH), ['7 math/unclosed', '12 container/colons', '13 container/colons']);
+  assert.deepEqual(codes('---\nsmd: 2\n---\n\n$$\nx\n\n:::warnign\ny\n:::\n'), ['5 math/unclosed', '8 container/unknown']);
+  // Each opener that nothing closes is reported; none hides the lines after it.
+  assert.deepEqual(codes('---\nsmd: 1\n---\n\n$$a\n\n:::warnign\nz\n:::\n\n$$b\n'), ['5 math/unclosed', '7 container/unknown', '11 math/unclosed']);
+  // Math that a later line closes is still math: nothing inside it is checked.
+  assert.deepEqual(codes('---\nsmd: 1\n---\n\n$$\n:::warnign\n$$\n'), []);
+  // A fence inside unclosed math is still a fence, and a $$ in it closes nothing.
+  assert.deepEqual(codes('---\nsmd: 1\n---\n\n$$ x\n```\ny $$\n```\n\n:::warnign\nz\n:::\n'), ['5 math/unclosed', '10 container/unknown']);
+});
+
+test('migrate: fences after math that v1 closes and v2 does not are written as v2 pairs them (found by fuzzing)', () => {
+  // v1 closes the math on the last line ($$$$$$, $$E = mc^2$$); the $$ step leaves it alone, since splitting it would
+  // change the math, so spec v2 reads the $$ as text and the :::: as a fence.
+  for (const text of ['$$\n:::human Why\n::::\n$$$$$$', '<div>\n:::agent Rules\n</div>\n$$\n::::\n$$E = mc^2$$']) {
+    const plan = migrationPlan(text);
+    assert.ok(plan.steps.some((s) => s.kind === 'closer'), text);
+    assert.deepEqual(migrationPlan(plan.result, { force: true }).steps.filter((s) => !s.note), [], `${text}: the plan settles`);
+  }
+});
+
+test('CLI: a $$ that never closes doesn\'t hide the closing fences after it from the plan', { skip: noCli }, () => {
+  const plan = migrationPlan(UNCLOSED_MATH);
+  assert.deepEqual(plan.steps.map((s) => s.kind), ['closer', 'closer', 'version']);
+  assert.equal(shown(plan.result), shown(UNCLOSED_MATH), 'spec v2 renders the migrated document as v1 renders the original');
+  const dir = tempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'pricing.smd'), UNCLOSED_MATH);
+    const r = run(dir, 'pricing.smd', '--to', '2');
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '', 'no warning from the check after writing');
+    assert.match(r.stdout, /pricing\.smd: migrated to spec v2 \(3 changes\)/);
+    assert.equal(fs.readFileSync(path.join(dir, 'pricing.smd'), 'utf8'), plan.result);
+    assert.match(plan.result, /\nOne\.\n:::\n::::\n$/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Every tracked document, migrated on disk
 // ---------------------------------------------------------------------------

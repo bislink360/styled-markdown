@@ -86,6 +86,7 @@
 - What 1.10 deprecated (SPEC.md §11.2): `priority` on `:::agent`, and the diagnostic codes `deprecated/agent-priority` and `figure/kind` (see Breaking changes). They are gone from the config JSON schema too.
 
 ### Fixed
+- `smd validate` reads a `$$` that nothing closes as rendering does, in every document: it opens nothing, so the lines after it are checked as usual (containers, headings, inline syntax), and the `$$` line still gets its `math/unclosed` error, as does each later `$$` that nothing closes. It used to read every line after it as math, so it missed problems there, and `smd migrate --to 2`, whose steps use the validator's fixes, left the closing fences after such a line unmigrated (the check after writing warned). Likewise, when v1 closes math on a line with text beside the `$$` that the `$$` step can't split without changing the math, `smd migrate --to 2` now writes the fences after it with the colon counts spec v2 pairs them by, since v2 reads that `$$` as text. Only documents that already have a `math/unclosed` error validate differently; none in this repository does.
 - A task's checkbox label (`aria-label`) keeps a character written with a backslash escape: `- [ ] Pay \$5` is labelled "Pay $5", not "Pay 5". Only the label changes, in documents with such a task.
 
 ## 1.10.0 — 2026-10-16
