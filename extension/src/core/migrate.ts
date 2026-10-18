@@ -131,6 +131,7 @@ const KINDS: Record<MigrationKind, { proposal: string; keeps: 'v1' | 'v2'; reaso
 /** Every kind, in the order the steps run. */
 export const KIND_ORDER = Object.keys(KINDS) as MigrationKind[];
 
+const ATTR_ESCAPES: MigrationKind = 'attr-escapes';
 const FUZZY_LINK: MigrationKind = 'fuzzy-link';
 const VARIABLE_SPELLING: MigrationKind = 'variable-spelling';
 const VERSION: MigrationKind = 'version';
@@ -159,6 +160,14 @@ const splitLines = (text: string) => text.split(/\r?\n/);
 
 /** The plan that migrates `text` to spec v2. Pure: nothing is read but through `options.readFile`. */
 export function migrationPlan(text: string, options: MigrationOptions = {}): MigrationPlan {
+  const plan = planSteps(text, options, true);
+  // Spec v2's escapes only mean what v1 meant once the document says smd: 2. When the plan can't write it (front matter
+  // that doesn't parse, an `smd` value it can't rewrite), the values stay as v1 reads them.
+  const escaped = plan.steps.some((s) => s.kind === ATTR_ESCAPES && !s.note);
+  return escaped && specVersion(plan.result) < TARGET ? planSteps(text, options, false) : plan;
+}
+
+function planSteps(text: string, options: MigrationOptions, escapes: boolean): MigrationPlan {
   const fm = parseFrontMatter(text);
   const from = declaredVersion(fm);
   const lines = splitLines(text);
@@ -176,7 +185,7 @@ export function migrationPlan(text: string, options: MigrationOptions = {}): Mig
   fixStep(w, 'heading/attrs-text', 'heading-braces');
   // A document that already says smd: 2 (with force) is read with the v2 rules: its escapes and directives are meant.
   if (from < TARGET) {
-    attrEscapeStep(w);
+    if (escapes) attrEscapeStep(w);
     unknownDirectiveStep(w);
   }
   if (options.readFile) fixStep(w, 'include/section-match', 'include-section');

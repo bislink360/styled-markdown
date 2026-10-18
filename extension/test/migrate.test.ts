@@ -509,3 +509,11 @@ test('spec version step: the version is read as every tool reads it, and the who
   }
   assert.deepEqual(plan('---\nsmd: 2.0\n---\n\nText.\n').steps, [], 'smd: 2.0 reads as 2');
 });
+
+test('migrate: backslashes are not rewritten when the plan cannot write smd: 2', () => {
+  // The front matter is never closed (fuzz seed 99, case 2602): the document stays v1, so its values must read as v1 reads them.
+  const text = '---\n:::api{method=POST path="/v1/x\\" auth=token} Endpoint';
+  const p = plan(text);
+  assert.deepEqual(changes(p, 'attr-escapes'), []);
+  assert.deepEqual(changes(plan(p.result, { force: true })), []);
+});
