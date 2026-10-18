@@ -20,7 +20,7 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 | 4 | **Semantic before presentational** | Prefer `:::warning` over red text. Colors are *named tokens* (`red`, `green`, `accent`) that adapt to light/dark themes instead of hard-coded hex. |
 | 5 | **Validated** | Every extension has a schema. Tools can report precise, line-level errors with stable rule codes and machine-applicable fixes. |
 | 6 | **Safe** | No scripts. Style attributes are whitelisted keys with whitelisted values, so documents cannot inject CSS or JavaScript. |
-| 7 | **Graceful degradation** | Every `.smd` feature has a defined plain-Markdown fallback (`smd to-md`), e.g. callouts → GitHub alerts. |
+| 7 | **Graceful degradation** | Every `.smd` feature has a defined plain-Markdown fallback (`smd export --to md`, also `smd to-md`), e.g. callouts → GitHub alerts. |
 | 8 | **Agent-addressable** | Front matter gives agents a summary and status up front; `:::agent` blocks carry instructions without cluttering the human view. |
 
 ---
@@ -30,7 +30,7 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 ```text
 ┌─────────────────────────────┐
 │ ---                         │  Optional YAML front matter
-│ smd: 1                      │  (recommended)
+│ smd: 2                      │  (recommended)
 │ title: …                    │
 │ ---                         │
 ├─────────────────────────────┤
@@ -769,7 +769,7 @@ Localized labels (§2.2) degrade to English: tools before 1.6 don't know `lang`,
 
 ### 10.1 Migrating to spec v2
 
-Spec v2 (`smd: 2`, Styled Markdown 2.0) reads a few things differently; the accepted changes are in the spec v2 RFC (`docs/SPEC-V2-PROPOSALS.smd` on the 2.0 branch). A document opts in by saying `smd: 2`. `smd migrate --to 2` plans what a document needs so that it means the same under v2 as it does today. It is a command of its own, because it changes text that `smd fmt`, which only changes layout, never touches. 1.10 only reported the plan (`--dry-run`); since 2.0, `smd migrate <files|dirs> --to 2` writes it, and VS Code's **Migrate to Spec v2** applies it to the open document as one undoable edit.
+Spec v2 (`smd: 2`, Styled Markdown 2.0) reads a few things differently; the accepted changes are in the spec v2 RFC, [SPEC-V2-PROPOSALS.smd](SPEC-V2-PROPOSALS.smd). A document opts in by saying `smd: 2`. `smd migrate --to 2` plans what a document needs so that it means the same under v2 as it does today. It is a command of its own, because it changes text that `smd fmt`, which only changes layout, never touches. 1.10 only reported the plan (`--dry-run`); since 2.0, `smd migrate <files|dirs> --to 2` writes it, and VS Code's **Migrate to Spec v2** applies it to the open document as one undoable edit.
 
 For example, this v1 document:
 
