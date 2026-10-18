@@ -6,6 +6,7 @@ Every Styled Markdown feature, with its syntax, what it renders, what an AI agen
 
 **Format**
 1. [Documents and front matter](#1-documents-and-front-matter)
+   - [Spec versions: `smd: 1` and `smd: 2`](#spec-versions-smd-1-and-smd-2)
 2. [Callouts and collapsibles](#2-callouts-and-collapsibles)
 3. [Text styling and colors](#3-text-styling-and-colors)
 4. [Inline directives](#4-inline-directives)
@@ -21,6 +22,7 @@ Every Styled Markdown feature, with its syntax, what it renders, what an AI agen
 
 12. [VS Code: preview](#12-vs-code-preview)
 13. [VS Code: editing assistance](#13-vs-code-editing-assistance)
+    - [Block Editor (Preview)](#block-editor-preview)
 14. [VS Code: agent view and token counter](#14-vs-code-agent-view-and-token-counter)
 15. [Validation and quick fixes](#15-validation-and-quick-fixes)
 16. [Export and conversion](#16-export-and-conversion)
@@ -48,6 +50,7 @@ accent: indigo            # accent color for headings, links, mentions
 toc: true                 # table of contents
 theme: auto               # auto | light | dark
 lang: de                  # language of the rendered labels (optional, default English)
+typography: true          # smd: 2 only: curly quotes, dashes and ellipses (optional; v1 always has them)
 ---
 ```
 
@@ -60,6 +63,27 @@ lang: de                  # language of the rendered labels (optional, default E
 - **Broken front matter stays visible (2.0):** front matter that doesn't parse, often because the closing `---` was forgotten and a later `---` rule closed it, shows as written in a red "Front matter could not be read" block in the preview, the Block Editor and the exports, and as a `[front matter could not be read]` line with the lines in the agent view, instead of hiding everything above that `---`. `smd validate` reports it as `frontmatter/invalid`. `...` also closes front matter.
 - **Staleness:** a live document whose `updated` date is more than 180 days old gets a `frontmatter/stale` hint. Bump `updated` after a review, or set `status: archived`. The threshold is set with `smd.validation.staleAfterDays` or `smd validate --stale-after <days>`, where `0` turns it off.
 - **Language:** `lang` sets the language of the labels the renderer adds; see [Localized labels](#localized-labels).
+
+### Spec versions: `smd: 1` and `smd: 2`
+
+The `smd` key is the document's spec version: it picks the rules every tool reads the document with (rendering, the agent view, exports, the validator, `smd fmt`, the Block Editor).
+
+- **`smd: 2`** (or `"2"`) is spec v2. Since 2.0, `smd init`, `smd from-md` and the other writers put it in new documents.
+- **`smd: 1`, or no `smd` key,** is spec v1, read as in 1.x; so is every `.md` file. A value that isn't a whole number (`smd: true`, `smd: 1.5`) is read as v1 with a `frontmatter/version` warning, and a newer version (`smd: 3`) with the v2 rules and a warning.
+- **`typography: true`** turns typographic quotes, dashes and ellipses on in a spec v2 document. A v1 document always has them and ignores the key.
+
+What readers see differently in a spec v2 document:
+
+| Source | Spec v1 | Spec v2 |
+|---|---|---|
+| `"quotes"`, `--`, `...`, `(c)` | Curly quotes, dashes, `…`, `©` | As typed, unless `typography: true` |
+| `example.com`, `README.md` in text | Links | Text; `https://…`, `www.…` and e-mail addresses are still links |
+| `## Returns {ok}` | "Returns" (`#returns`) | "Returns {ok}" (`#returns-ok`) |
+| `:abbr[HTML]`, `:Badge[x]` | Text | Directives: `HTML` in a plain span, and a badge (write `\:abbr[HTML]` to keep the text) |
+| `version: 2.10`, shown by `{{version}}` and the header | `2.1` | `2.10` |
+| `:::include{section="refund"}` with a `## Refunds` heading | Includes it (a part of the heading's text matches) | A missing section (only the id or the whole text match) |
+
+What writers must watch: in spec v2, `$$` display math opens and closes only on a line of its own, a closing fence closes the container opened with as many colons, and `\\` in a quoted attribute value is one backslash. The stricter checks of 2.0 (duplicate attributes, title conflicts, Mermaid syntax, figure `kind`, front matter that can't be read) apply to both versions. Every rule, side by side: [SPEC.md §10](SPEC.md#10-versioning). To move a document: [`smd migrate`](#migrating-to-spec-v2-smd-migrate).
 
 ### Localized labels
 
@@ -147,6 +171,9 @@ The callout shows its type as its title (alerts have none of their own). `smd ex
 | `align` (blocks) | `left` `center` `right` |
 
 Named colors are theme tokens tuned for light and dark mode. Only whitelisted values are rendered, so documents can't inject CSS. **Agent view:** plain text. **GitHub:** plain text (bold/italic/strike kept).
+
+- **Quotes in values:** a quoted value can hold its own quote with a backslash, `title="It's \"done\""` or `label='The team\'s share'` (since 1.10). Other backslashes are kept as written (`file="C:\docs\plan.smd"`), except that `\\` is one backslash in an `smd: 2` document.
+- **Case:** the values a block or directive takes from a list, and the front matter `status`, `audience` and `theme`, match in any case (`:::decision{status=Accepted}`, `:metric{trend=Up}`, `theme: Dark`) and render as the lower-case value. Style values and named colors match only as written: `color=Red` is an error, with a fix to `red`.
 
 ## 4. Inline directives
 
@@ -530,7 +557,7 @@ Any styled block.
 :::
 ```
 
-A bare `:::` closes the innermost block, so nesting works at any depth. Outer colons (`::::`) are optional but readable. Columns stack on narrow screens. **Agent view:** layout wrappers disappear and tab labels become `Tab "npm":`.
+Nesting works at any depth. Write each closing fence with as many colons as its opener, as `smd fmt` does: in an `smd: 2` document a closing fence closes the innermost block opened with that many colons (and any block left open inside it), so a missing `:::` inside `::::tabs` no longer swallows the rest of the document; a fence whose count no open block has closes the innermost one (`container/colons`). In spec v1 any closing fence closes the innermost block, so the extra colons on outer blocks are only for readability. A `:::` inside a code block or `$$` display math never closes a block. Columns stack on narrow screens. **Agent view:** layout wrappers disappear and tab labels become `Tab "npm":`.
 
 **Unknown containers** (a misspelt name, or a container from a newer version) render as a box with their content and keep their title: `:::frobnicate Release notes` shows **Release notes** as a card-style title in the box, a `Release notes:` line in the agent view and a `**Release notes**` paragraph in `smd export --to md`, and the validator warns `container/unknown` with the closest known name. Before 1.10 the title was dropped. A `:::box` takes no title, as before.
 
@@ -551,8 +578,8 @@ $$
 ````
 
 - **Mermaid:** every type is supported, colored from the document palette, and follows light/dark mode. The validator catches unknown diagram types (`flowchat` → `flowchart`).
-- **Math:** KaTeX, inline and display, with syntax errors reported. `$5 and $10` stays plain text.
-- **Agent view:** diagrams are kept (they're compact); `--brief` turns them into `[diagram: sequenceDiagram, 4 lines — see L10-L15]`.
+- **Math:** KaTeX, inline and display, with syntax errors reported. `$5 and $10` stays plain text. Put a display block's `$$` delimiters on lines of their own (or `$$ x $$` on one line): in an `smd: 2` document only such lines open and close it, so `$$5 per seat` is text. Display math is opaque, like code: a `:::` line inside it never closes the container around it.
+- **Agent view:** diagrams are kept (they're compact); `--brief` turns them into `[diagram: sequenceDiagram, 4 lines — see L10-L15]`. Code (fenced and indented) and math (`$…$` and `$$` blocks) stay exactly as written in the agent view and `smd export --to md`: no directive, styled span or `{{variable}}` inside them is converted.
 
 ### Figures and numbered references
 
@@ -593,7 +620,7 @@ Every API call counts against the SLO. When the error budget is spent, deploys s
 
 - **`:::glossary`** renders its `- **Term**: definition` list as a definition list, each term with its own anchor (`#term-api`, `#term-error-budget`).
 - **Hover definitions:** the first use of each term in every section (between two headings) gets a dotted underline, shows its definition on hover and links to it, so keyboard and screen-reader users reach it too. Abbreviations are `<abbr title="…">`. Later uses in the same section stay plain, so paragraphs don't fill with underlines.
-- **Matching:** whole words only. An abbreviation (capitals, no lower-case letters: `API`, `SLO`, `P99`) matches exactly as written; other terms also match with a small or capital first letter (`Error budget`, `error budget`). Headings (their ids never change), code, math, links, URLs and attribute values are left alone, and so are `API-first` and `API.md`.
+- **Matching:** whole words only. An abbreviation (capitals, no lower-case letters: `API`, `SLO`, `P99`) matches exactly as written; other terms also match with a small or capital first letter (`Error budget`, `error budget`). Headings (their ids never change), code, math, links, URLs and attribute values are left alone, and so are `API-first` and `API.md`. Straight and typographic quotes and dashes are the same for matching, so `Builder's rule` is found whether the text shows `Builder's` or `Builder’s`, with typography on or off.
 - The validator warns about list items in a glossary that aren't `**Term**: definition` (`glossary/entry`: that list then renders as a plain list) about terms defined twice (`glossary/duplicate`) and about a term whose id `term-…` a heading or another element also has (`glossary/duplicate-id`), and notes terms never used (`glossary/unused`, info).
 - **Agent view:** `<glossary title="Glossary">` with the entries as written, once; uses in the text are not expanded, so they cost no extra tokens. **GitHub** (`smd export --to md`): a bold title and the list as it is.
 - **Includes and footnotes:** included text counts as part of the document both ways: `:::include` a shared glossary to use its terms, and the document's terms are marked in included text too. Footnotes are never marked.
@@ -685,6 +712,27 @@ An `:::agent` block inside a section marked `{agent=skip}` is omitted with the s
 | Images | Paste an image, or drop image files, to save them in `docs/images/` (`smd.images.folder`) and insert `![alt](relative/path.png)`. Images already in the workspace are linked where they are; name clashes get `-1`, `-2`… |
 | Spell checking | **Set Up Spell Checking (cSpell)** adds an `smd` entry to cSpell's `languageSettings`, so container and directive names, attribute lists, `@mentions`, link targets, front matter and code aren't flagged; titles and link text still are |
 | Snippets (41) | `frontmatter` `callout` `details` `card` `tabs` `columns` `steps` `agent` `human` `decision` `risk` `risk-matrix` `api` `timeline` `figure` `ref` `glossary` `changelog` `quote` `task` `priority` `due` `metric` `badge` `status` `progress` `kbd` `mermaid` `sequence` `gantt` `pie` `math` `code` `embed` `skip` `table` `tasks`… |
+
+### Block Editor (Preview)
+
+An optional editor for `.smd` files (since 1.8): the document as the preview renders it, edited one block at a time. It works on the same document as the text editor, so save, undo, the unsaved-changes dot, Git diffs and Problems work as usual, and only the lines of the block you edit change: nothing is reformatted. It is a preview, so its look and keys may change in minor releases. On macOS, use `Cmd` where this says `Ctrl`.
+
+| Task | How |
+|---|---|
+| Open and close | Right-click a `.smd` file or its tab → **Open With…** → **Styled Markdown Block Editor (Preview)**, or run **Styled Markdown: Open Block Editor**. **Styled Markdown: Reopen in Text Editor** (also an icon in the title bar) goes back. It is never the default editor |
+| Edit a block | Click it, or press `Enter` (or `F2`), to edit its Markdown source in place. What you type goes into the document when you pause, leave the block, press `Ctrl+Enter` (done) or save; `Escape` puts the block back as it was when you started. If a text editor changes the block meanwhile, your text is kept and you choose which version stays |
+| Undo | In a block's text box (and the form's text fields), `Ctrl+Z` and `Ctrl+Y` undo and redo your typing there. Elsewhere `Ctrl+Z` undoes the document, as in the text editor: each written edit, insert, move, delete or fix is a step. **Edit → Undo** always undoes the document |
+| Move around | `↑` `↓` go from block to block, into callouts, tabs and other containers too; `Home` `End` go to the first and last |
+| Toolbar | **Insert…** (`Ctrl+/`: the snippet templates, inserted after the current block), **Move up** and **Move down** (`Alt+↑` `Alt+↓`), **Delete**, **Properties**, **Problems…**, **Edit in text editor** and, for a document without one, **Add front matter** |
+| Container attributes | With a container selected, **Properties** sets its title and attributes in a form, such as a risk's impact or a callout's color |
+| Tasks | Task checkboxes tick as in the preview |
+| Problems and quick fixes | Each block shows a badge with its problem count, blocks inside containers too: a problem counts on the innermost block that holds its line, and a container's badge counts its fences and the lines in it that render nothing. Click the badge, press `Ctrl+.` or choose **Problems…** to list them with the quick fixes VS Code has for them; choose one to apply it as the light bulb would. A fix that also changes other lines or files asks first, and `Ctrl+Z` undoes it |
+| Inline items | Click a `:badge`, `:status`, `:priority`, `:progress`, `:due`, `:metric`, `:kbd` or `:mention`, or a styled `[text]{…}` span (from the keyboard, `Tab` from the block to the item and `Enter`), to change it in a small form: its text, a date picker for `:due`, a list for values with fixed choices such as `:priority`, and the named colors (`color`, plus `bg` and `border` on spans). In an `smd: 2` document a directive outside the vocabulary (`:abbr[HTML]`) gets a generic form: its text, color, background and border. `Enter` applies and `Escape` cancels. Only that item's own text changes; an item the form can't change safely (one over two lines, say) opens the block's source instead |
+| Tables | Press `Enter` on a table, click a cell or choose **Edit as grid** to edit it cell by cell, also inside a container. Arrow keys and `Tab` move between cells, `Enter` writes the cell and goes down, `Escape` undoes the cell or closes the grid. The grid's toolbar adds a row above or below and a column left or right, deletes a row or column, sets a column's alignment and has **Align table** (`smd fmt`'s table layout, for that table only). Only the cell you edit changes, nothing is realigned unless you ask, and a pipe you type is written escaped. `F2` and **Edit** edit the table's source; a table whose rows have more or fewer cells than the header opens there |
+| Front matter | Select it and choose **Properties**: text fields for `title`, `summary`, `version` and `lang`, lists of choices for `status`, `audience`, `theme`, `accent`, `toc`, `typography` and `smd`, date pickers for `updated` and `created`, and comma-separated `owners`, `tags` and `related`. Only that key's value changes; comments, key order and quoting stay, a new key goes at the end, and emptying a field removes the key. Front matter the form can't edit safely (anchors, aliases, flow mappings, a block scalar on the key you change) opens with **Edit YAML**; `Enter` always edits the YAML |
+| Drag and drop | A handle appears left of the block under the mouse: drag it to move the block among its siblings (the top-level blocks, or the blocks of the same container), as `Alt+↑` `Alt+↓` do. A block never moves into or out of a container |
+| Images | Paste an image (`Ctrl+V`) to add it after the current block, or drop image files from your file manager onto a block. They are saved where image paste in the text editor saves them (`smd.images.folder`, `docs/images` by default, never over an existing file) and linked as `![name](relative/path.png)`. PNG, JPEG, GIF, WebP, BMP, AVIF and SVG, up to 10 MB each. Files dragged from VS Code's Explorer can't be dropped here (a webview gets a dropped file's contents, not its location); if VS Code opens a dropped file instead, hold `Shift` while dropping |
+| Not yet | Formatted (WYSIWYG) text editing, dragging a block into or out of a container, and selecting several blocks. Link and footnote definitions show as small source boxes; lines inside a container that render nothing are edited with the container |
 
 ## 14. VS Code: agent view and token counter
 
@@ -788,7 +836,7 @@ Everything else needs a decision only the author can make (which file was meant,
 
 ### In GitHub Actions
 
-`uses: bislink360/styled-markdown/validate@v1.5.0` validates on every pull request and shows each problem as an inline annotation on the changed lines, plus a job summary with counts per severity and the first 50 problems linked to their lines. It runs the bundled CLI with the runner's Node.js 22+, without installing anything; the inputs (`paths`, `fail-on: error|warning|never`, `strict`, `config`, `mermaid`, `stale-after`, `summary`, `cli`) are in [INSTALL.md](INSTALL.md#github-actions).
+`uses: bislink360/styled-markdown/validate@v2.0.0` validates on every pull request and shows each problem as an inline annotation on the changed lines, plus a job summary with counts per severity and the first 50 problems linked to their lines. It runs the bundled CLI with the runner's Node.js 22+, without installing anything; the inputs (`paths`, `fail-on: error|warning|never`, `strict`, `config`, `mermaid`, `stale-after`, `summary`, `cli`) are in [INSTALL.md](INSTALL.md#github-actions).
 
 Underneath it is `smd validate --format github`, which prints one [workflow command](https://docs.github.com/actions/reference/workflow-commands-for-github-actions) per problem:
 
@@ -1099,11 +1147,12 @@ Review the changes (git diff) before you commit them.
 {
   "format": "smd-index",
   "version": 1,
-  "smd": 1,
-  "generator": "smd 1.3.0",
+  "smd": 2,
+  "generator": "smd 2.0.1",
   "documents": [
     {
       "path": "docs/api-orders.smd",
+      "smd": 1,
       "title": "Orders API",
       "summary": "Create, fetch and cancel orders. …",
       "status": "approved",
@@ -1126,6 +1175,7 @@ Review the changes (git diff) before you commit them.
 ```
 
 - `path` is relative to the working directory, with `/` separators. Documents are sorted by path.
+- Each entry's `smd` is its document's spec version (1 or 2); the catalog's own `smd` is the newest spec version the tool knows (2 since 2.0), and `generator` the tool's version.
 - `title` comes from front matter, else the first `#` heading, else the file name. Missing metadata is `null` or `[]`.
 - `tokens.file` is the raw file, `tokens.agent` the full `smd agent` view. Each section's `tokens` is what `smd outline` shows for it (subsections included). `line` and `endLine` are zero-based, as in `smd meta` and `smd query --json`. A section marked `{agent=skip}` has `"agent": "skip"`.
 - `counts.decisions` groups decisions by status. `openRisks` counts risks whose status is not `mitigated` or `closed`. `agentInstructions` counts `:::agent` blocks.

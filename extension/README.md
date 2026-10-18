@@ -6,20 +6,24 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 
 ![Styled Markdown preview](https://raw.githubusercontent.com/bislink360/styled-markdown/main/docs/images/01-overview.png)
 
+**New in 2.0:** spec v2 (`smd: 2`, which new documents get) shows text as written and reads a few things more strictly; existing documents keep the v1 rules until you run **Migrate to Spec v2** (or **Preview Migration to Spec v2** first). VS Code's built-in `.md` preview applies `.smd` syntax only to `.md` files that opt in with an `smd:` front matter key (`smd.markdownPreview.enabled`). Needs VS Code 1.97 or newer. [What changed](https://github.com/bislink360/styled-markdown/blob/main/docs/INSTALL.md#upgrading-to-20).
+
 ## Highlights
 
 - **Live preview** (`Ctrl+K V`): themed to match VS Code, scroll sync, double-click to jump to source, clickable tasks, Mermaid diagrams, KaTeX math, tabs and columns. Edits keep your scroll position, diagrams, selected tabs and open collapsibles.
-- **Block Editor (Preview):** open a `.smd` file with **Open With… → Styled Markdown Block Editor (Preview)** to see it as the preview renders it and edit one block's source at a time, in place: insert blocks from templates (`Ctrl+/`), move them (`Alt+↑` `Alt+↓`, or drag them), set a container's title and attributes or the front matter in a form, apply quick fixes from a block's problems (`Ctrl+.`) and paste or drop images. Only the lines of the block you edit change; save, undo and diffs work as in the text editor. Its UI may change in minor releases. [More](https://github.com/bislink360/styled-markdown#block-editor-preview).
+- **Block Editor (Preview):** open a `.smd` file with **Open With… → Styled Markdown Block Editor (Preview)** to see it as the preview renders it and edit one block's source at a time, in place: insert blocks from templates (`Ctrl+/`), move them (`Alt+↑` `Alt+↓`, or drag them), set a container's title and attributes or the front matter in a form, change a badge, status, due date or styled span in a small inline form, edit tables cell by cell in a grid, tick tasks, apply quick fixes from a block's problems (`Ctrl+.`) and paste or drop images. Only the lines of the block you edit change; save, undo (`Ctrl+Z` in a text box undoes your typing, elsewhere the document) and diffs work as in the text editor. Its UI may change in minor releases. [More](https://github.com/bislink360/styled-markdown#block-editor-preview).
 - **Project blocks:** `:::decision`, `:::risk`, `:::timeline`, KPI tiles (`:metric`), priorities, and due dates that turn red when overdue. Tasks carry owners.
 - **SMD Tasks view** in the Explorer: open tasks from every `.smd` file in the workspace, grouped by owner, due date (Overdue, Today, This week, Later) or document, overdue first, then by priority. Tick a checkbox to check the task off in its file, click a task to open it, and see the overdue count as a badge.
 - **Document status workflow:** the status bar shows the front matter `status` of the active document (or **No status**, or a warning for an unknown value). Click it to pick the next step, `draft` → `review` → `approved`, or `deprecated` / `archived`: only the `status:` value changes (quotes and comments kept), `updated:` is set to today, and Undo takes it back.
 - **Developer blocks:** `:::api` endpoint cards, code line highlights `{2,5-7}`, and live source embeds `file="…" lines="…"` so docs never drift from code. `:::include{file="shared/terms.smd" section="Pricing"}` includes text shared by several documents.
+- **GitHub alerts** (`> [!NOTE]`, `> [!WARNING]`…) render as callouts, so README-style documents look the same in the preview and on GitHub.
 - **Refactorings** (`Ctrl+.`): wrap the selection in a callout, card, `:::details`, `:::agent` or `:::human` block; change a callout's type; turn a `> **Warning:**` or `> [!WARNING]` blockquote into a `:::warning` callout.
 - **Validation with quick fixes** as you type (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`), including Mermaid syntax errors on the exact line before the diagram renders. Turn rules off or change their severity in `smd.config.json` / `.smdrc`, which get completion from a schema, or silence one line with `<!-- smd-disable-next-line rule/code -->`.
 - **Formatter:** Format Document (`Shift+Alt+F`) and `"editor.formatOnSave"` tidy container fences, attribute lists, table columns and blank lines, with the same rules as `smd fmt` in CI.
 - **IntelliSense:** completion for blocks, directives, attributes and allowed values, and for paths and `#anchors` in links, `related:` entries, `file="…"` embeds and `:::include` files, and front matter names after `{{`; hover docs and `{{variable}}` values; color picker; go to definition for anchors, linked files and reference links; find references and rename for headings, which updates every link to them across the workspace; `Ctrl+T` search across every heading, decision, risk and API endpoint in the workspace; hover previews of linked sections, documents and embedded code, and definitions of glossary terms; outline; folding; 41 snippets.
 - **Agent view:** 🤖 shows exactly what an AI agent reads, with styling, layout and human-only sections stripped and meaning kept (typically 37–85% fewer tokens). Copy the whole view or selected sections to any chat tool. A status-bar token counter shows the size.
-- **Export** to standalone HTML or GitHub Markdown, and convert `.md` → `.smd`.
+- **Export** to standalone HTML, GitHub Markdown, Confluence (storage format), Notion (JSON) or Word (.docx, with [Pandoc](https://pandoc.org/installing.html)), and convert `.md` → `.smd`.
+- **Spec v2 migration:** **Preview Migration to Spec v2** shows what moving a document to `smd: 2` changes so it keeps its meaning; **Migrate to Spec v2** applies it as one edit that Undo reverts.
 
 ![Project management blocks](https://raw.githubusercontent.com/bislink360/styled-markdown/main/docs/images/02-project-management.png)
 
@@ -37,9 +41,10 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | Styled Markdown: Export to Word (.docx) (needs [Pandoc](https://pandoc.org/installing.html)) | — |
 | Styled Markdown: Convert Markdown File to .smd | Explorer context menu |
 | Styled Markdown: Validate All .smd Files in Workspace | — |
+| Styled Markdown: Preview Migration to Spec v2 / Migrate to Spec v2 | — |
 | Styled Markdown: Set Up Spell Checking (cSpell) | — |
 | Styled Markdown: Set Document Status… | Click the status in the status bar |
-| Styled Markdown: Group Tasks By… / Show Completed Tasks / Refresh Tasks | SMD Tasks view title bar |
+| Styled Markdown: Group Tasks By… / Show Completed Tasks / Hide Completed Tasks / Refresh Tasks | SMD Tasks view title bar |
 
 ## Settings
 
@@ -48,6 +53,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | `smd.preview.theme` | `auto` | `auto` follows VS Code; or force `light` / `dark` |
 | `smd.preview.showAgentBlocks` | `collapsed` | How `:::agent` blocks appear to humans: `collapsed`, `expanded`, `hidden` |
 | `smd.preview.allowHtml` | `true` | Render raw HTML (scripts never run) |
+| `smd.markdownPreview.enabled` | `opt-in` | Which `.md` files get `.smd` syntax in VS Code's built-in Markdown preview: `opt-in` (only those whose front matter has an `smd:` key), `always` or `never` |
 | `smd.validation.enabled` | `true` | Report problems |
 | `smd.validation.checkLinks` | `true` | Warn about relative links, images and `related:` entries that point to missing files or headings |
 | `smd.validation.mermaid` | `true` | Parse Mermaid diagrams and report syntax errors before they render |

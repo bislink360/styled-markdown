@@ -17,6 +17,8 @@ The bundled CLI strips the first two and lets you pull only the sections you nee
 node <this-skill-dir>/scripts/smd.cjs <command> …    # or `smd` if on PATH; Node 22+, no install
 ```
 
+A document with `smd: 2` in its front matter follows the spec v2 rules (no `smd`, or `smd: 1`, keeps v1); the CLI reads each document with its own rules, so you don't need to.
+
 ## Workflow
 
 1. **`smd outline FILE`** (≈100–300 tokens) shows the title, status, summary, and every section with its line range and token cost. It also flags open tasks, decisions, risks, APIs and `AGENT INSTRUCTIONS`. The summary alone often answers the question.
@@ -66,7 +68,10 @@ Catching up on a changed document:
 | `[include: shared/terms.smd § Pricing — …]` | An include that wasn't expanded (`--no-includes`, or it can't be read). Run `smd agent shared/terms.smd --section "Pricing"` if you need it. |
 | `[diagram: …]`, `[details: … omitted]` | Condensed by `--brief`. Read the given lines if you need them. |
 | `[section omitted: ## X, L90-L128, ≈231 tokens — smd agent …]` | Left out by `--max-tokens`. Run the given command if the question needs that section. |
+| `[front matter could not be read]` and a `yaml` fence | The front matter is broken (often a missing closing `---`); the fence holds its raw lines, so title, status and the other keys are unknown |
+| Plain words where the source has `:abbr[HTML]` | In `smd: 2`, a directive the tools don't know shows only its content (`HTML`); `\:abbr[…]` is literal text |
+| `<note>`, `<warning>`… from a `> [!WARNING]` blockquote | A GitHub alert: the same callout as `:::warning` |
 
-**No Node.js available?** Read the front matter and headings first (for example the first 20 lines, then search for `^## `), then read only the relevant line ranges. Skip `:::human` blocks and sections whose heading ends in `{agent=skip}`, and always read the `:::agent` block.
+**No Node.js available?** Read the front matter and headings first (for example the first 20 lines, then search for `^## `), then read only the relevant line ranges. Skip `:::human` blocks and sections whose heading ends in `{agent=skip}`, and always read the `:::agent` block. In an `smd: 2` document: `$$` math opens and closes only on a line of its own (`$$5 per seat` is text); a closing fence closes the container opened with as many colons; a heading's trailing `{word}` is part of its text (`{#id}`, `{.class}`, `{key=value}` are attributes); and any `:name[…]` is a directive whose content is the text (`\:name[…]` is literal).
 
 `:::human` blocks and `## … {agent=skip}` sections are left out on purpose. Use `--include-human` only when the task is specifically about that content (e.g. proofreading the background section).
