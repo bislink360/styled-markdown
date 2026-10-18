@@ -515,7 +515,8 @@ test('migrate: the report groups steps by kind, with 1-based lines and short dif
   assert.match(report, /Unknown inline directives \(proposal 7b; v2 meaning kept\)/);
   assert.match(report, /Spec version \(RFC versioning rules; v1 rendering kept\)/);
   assert.equal(migrationReport('b.smd', plan(doc('x', 'smd: 2'))), 'b.smd: already spec v2 (smd: 2)\n');
-  assert.match(migrationSummary([p, plan(doc('x', 'smd: 2'))]), /^\n2 files checked: 1 to migrate to spec v2 \(3 changes, 0 notes\)\.\nDry run: nothing was written\. Styled Markdown 2\.0 applies the migration\.\n$/);
+  assert.match(migrationSummary([p, plan(doc('x', 'smd: 2'))]), /^\n2 files checked: 1 to migrate to spec v2 \(3 changes, 0 notes\)\.\nDry run: nothing was written\. Run it without --dry-run to migrate\.\n$/);
+  assert.match(migrationSummary([p], 'Next.'), /\.\nNext\.\n$/, 'the editor says how it applies the plan');
 });
 
 // ---------------------------------------------------------------------------
@@ -555,12 +556,13 @@ test('CLI: smd migrate --to 2 --dry-run, its options and exit codes', { skip: !f
       assert.equal(r.status, 2, args.join(' '));
       assert.match(r.stderr, message);
     };
-    usage(['old.smd', '--to', '2'], /^1\.10 can only report: run with --dry-run\. Styled Markdown 2\.0 applies the migration\.\n$/);
     usage(['old.smd', '--dry-run'], /migrate needs --to 2\./);
     usage(['old.smd', '--to', '3', '--dry-run'], /Cannot migrate to "3": the only target is spec v2/);
     usage(['old.smd', '--to', '2', '--dry-run', '--keep-typo'], /Unknown option "--keep-typo" for migrate/);
+    usage(['old.smd', '--to', '2', '--json'], /--json reports the plan: use it with --dry-run or --check/);
     usage(['missing.smd', '--to', '2', '--dry-run'], /No \.smd files found/);
-    assert.match(spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' }).stdout, /smd migrate <files\|dirs\.\.\.> --to 2 --dry-run/);
+    assert.equal(fs.readFileSync(path.join(dir, 'old.smd'), 'utf8'), doc('"Quoted" text.\n\n::::note\nx\n:::'), 'a usage error writes nothing');
+    assert.match(spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' }).stdout, /smd migrate <files\|dirs\.\.\.> --to 2 \[--dry-run \| --check\]/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

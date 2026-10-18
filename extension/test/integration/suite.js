@@ -30,9 +30,21 @@ const checks = {
 
   async 'all commands are registered'() {
     const all = await vscode.commands.getCommands(true);
-    for (const c of ['smd.openPreview', 'smd.openPreviewToSide', 'smd.exportHtml', 'smd.exportMarkdown', 'smd.exportConfluence', 'smd.exportNotion', 'smd.exportDocx', 'smd.convertFromMarkdown', 'smd.validateWorkspace']) {
+    for (const c of ['smd.openPreview', 'smd.openPreviewToSide', 'smd.exportHtml', 'smd.exportMarkdown', 'smd.exportConfluence', 'smd.exportNotion', 'smd.exportDocx', 'smd.convertFromMarkdown', 'smd.validateWorkspace', 'smd.previewMigration', 'smd.migrateToV2']) {
       assert.ok(all.includes(c), `missing command ${c}`);
     }
+  },
+
+  async 'Migrate to Spec v2 applies the plan as one undoable edit and saves nothing'() {
+    const content = '---\nsmd: 1\n---\n\n::::note\nx\n:::\n\nSee :abbr[HTML].\n';
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content });
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('smd.migrateToV2');
+    await waitFor(() => doc.getText() !== content, 'the migration edit');
+    assert.equal(doc.getText(), '---\nsmd: 2\n---\n\n::::note\nx\n::::\n\nSee \\:abbr[HTML].\n');
+    assert.ok(doc.isDirty, 'not saved');
+    await vscode.commands.executeCommand('undo');
+    await waitFor(() => doc.getText() === content, 'one undo reverts it');
   },
 
   async 'valid examples produce no problems'() {

@@ -9,8 +9,7 @@ import {
   statusChanges, statusReportMarkdown, suggest, tasksToCsv, tasksToGantt, type AgentViewOptions, type AgentViewResult,
   type BudgetResult, type Diagnostic, type DiffResult, type ReportDocument, type Selector, type Tokenizer,
 } from './core';
-import { migrationPlan } from './core/migrate';
-import { migrationReport, migrationSummary, planCounts } from './migrateReport';
+import { MIGRATE_HELP, runMigrate } from './migrateCommand';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { EXPORT_HELP, runExport } from './exportCommand';
@@ -134,19 +133,7 @@ Checking and converting:
       --stdout  print the formatted file instead of writing it (one file)
       validate and fmt take any number of files: use them as a pre-commit hook (see docs/INSTALL.md).
       After --, every argument is a file, even one that starts with "-".
-  smd migrate <files|dirs...> --to 2 --dry-run [--json] [--keep-typography] [--link-domains] [--quote-variables]
-      Report what migrating to spec v2 (smd: 2) would change, so each document keeps its meaning: closing
-      fences, duplicate attributes, title text, $$ delimiters, heading braces, unknown :name[…] escaped,
-      include sections, value case, and smd: 2. Unlike fmt, it changes meaning, so it is its own command.
-      1.10 only reports (--dry-run is required); Styled Markdown 2.0 applies the migration.
-      Exit code 0 when nothing needs migrating, 1 when something does (for CI), 2 on a usage error.
-      --json             the plan: per file, each step's kind, lines (0-based), before, after and reason,
-                         and the migrated text
-      --keep-typography  add "typography: true" where the typographer changes text, to keep curly quotes
-                         and dashes (v2 turns it off); without it, a note counts the places
-      --link-domains     write bare domains linked today (example.com) as [example.com](http://example.com)
-      --quote-variables  quote front matter values shown differently from how they are written (2.10)
-${EXPORT_HELP}
+${MIGRATE_HELP}${EXPORT_HELP}
   smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD] [--lang <tag>]
       Static docs site: a page per .smd file in the same folders (links between documents rewritten,
       linked images copied), a sidebar, breadcrumbs, previous/next, backlinks, client-side search and
@@ -264,7 +251,7 @@ function main(argv: string[]): number | Promise<number> {
     case 'fmt':
       return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
     case 'migrate':
-      return migrate(positional.length ? positional : ['.'], args);
+      return runMigrate(positional.length ? positional : ['.'], args);
     case 'build':
       return build(positional, args);
     // smd export, and the older names of its formats, kept as aliases (exportCommand.ts).
@@ -453,39 +440,6 @@ function fmt(targets: string[], check: boolean, stdout: boolean): number {
   console.log(`
 ${files.length} file(s) checked: ${changed.length} ${check ? 'need formatting' : 'formatted'}.`);
   return check && changed.length ? 1 : 0;
-}
-
-const MIGRATE_USAGE = 'Usage: smd migrate <files|dirs...> --to 2 --dry-run [--json] [--keep-typography] [--link-domains] [--quote-variables]';
-const MIGRATE_FLAGS = new Set(['--dry-run', '--json', '--keep-typography', '--link-domains', '--quote-variables']);
-
-/** `smd migrate --to 2 --dry-run`: the plan that migrates each file to spec v2. Exit 1 when one needs changes. */
-function migrate(targets: string[], args: Args): number {
-  const to = args.values.get('--to')?.[0];
-  if (to !== '2') {
-    const problem = to === undefined ? 'migrate needs --to 2.' : `Cannot migrate to "${to}": the only target is spec v2 (--to 2).`;
-    return fail(`${problem}\n${MIGRATE_USAGE}`);
-  }
-  const unknown = [...args.flags].find((f) => !MIGRATE_FLAGS.has(f));
-  if (unknown) return fail(`Unknown option "${unknown}" for migrate.\n${MIGRATE_USAGE}`);
-  if (!args.flags.has('--dry-run')) return fail('1.10 can only report: run with --dry-run. Styled Markdown 2.0 applies the migration.');
-  const files = targets.flatMap((t) => collect(t));
-  if (!files.length) return fail('No .smd files found.');
-  const options = {
-    keepTypography: args.flags.has('--keep-typography'), linkDomains: args.flags.has('--link-domains'), quoteVariables: args.flags.has('--quote-variables'),
-  };
-  const plans = files.map((file) => ({ file, plan: migrationPlan(read(file), { ...options, readFile: readerFor(file) }) }));
-  const counts = plans.map(({ plan }) => planCounts(plan));
-  if (args.flags.has('--json')) {
-    const json = {
-      files: plans.map(({ file, plan }) => ({ file, from: plan.from, steps: plan.steps, result: plan.result })),
-      changes: counts.reduce((n, c) => n + c.changes, 0),
-      notes: counts.reduce((n, c) => n + c.notes, 0),
-    };
-    process.stdout.write(JSON.stringify(json, null, 2) + '\n');
-  } else {
-    process.stdout.write(plans.map(({ file, plan }) => migrationReport(file, plan)).join('\n') + migrationSummary(plans.map((p) => p.plan)));
-  }
-  return counts.some((c) => c.changes > 0) ? 1 : 0;
 }
 
 const TASK_FORMATS = ['--json', '--csv', '--gantt'];
