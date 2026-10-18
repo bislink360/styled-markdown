@@ -1,4 +1,4 @@
-# Styled Markdown (`.smd`) — Specification v1
+# Styled Markdown (`.smd`) — Specification v2
 
 Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown**. It adds a small, validated vocabulary for styling, layout, diagrams, math and audience-aware content, so a single file works well for developers, product managers and AI agents.
 
@@ -6,7 +6,7 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 - Author: Roshan Alwis
 - Media type (suggested): `text/x-styled-markdown`
 - Encoding: UTF-8
-- Spec version: `1` (declared in front matter as `smd: 1`)
+- Spec version: `2` (declared in front matter as `smd: 2`). A document without `smd: 2` follows spec v1, which Styled Markdown 2.x keeps in full. Where the two differ, a rule says so: see §10
 
 ---
 
@@ -14,7 +14,7 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 
 | # | Principle | What it means in practice |
 |---|-----------|---------------------------|
-| 1 | **Superset, never fork** | Every valid `.md` file is a valid `.smd` file with identical meaning. Rename `.md` → `.smd` and nothing breaks. |
+| 1 | **Superset, never fork** | Every valid `.md` file is a valid `.smd` file with identical meaning. Rename `.md` → `.smd` and nothing breaks. Spec v2 also shows text as GitHub does: no typographic quotes or dashes unless the document asks for them, and only GFM autolink literals become links (§4.8). |
 | 2 | **Readable as plain text** | The raw source must still read well in a terminal, a diff, a code review or an LLM context window. No HTML soup, no opaque IDs. |
 | 3 | **Borrow proven syntax** | Containers follow the *generic directives* proposal used by remark-directive, MyST and Docusaurus; attribute lists follow Pandoc; alerts map to GitHub alerts. Nothing is invented where a convention already exists. |
 | 4 | **Semantic before presentational** | Prefer `:::warning` over red text. Colors are *named tokens* (`red`, `green`, `accent`) that adapt to light/dark themes instead of hard-coded hex. |
@@ -45,9 +45,12 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 
 A YAML mapping between `---` lines at the very start of the file. It is parsed with the YAML *core* schema, so `2026-09-26` stays a string.
 
+- **Opening and closing:** the first line is `---`. The front matter ends at the next line that is `---` or `...` (YAML's document end marker), trailing spaces allowed. Front matter that is never closed is not front matter: the `---` is a thematic break and the lines after it are the body.
+- **Front matter that can't be read** *(all documents, since 2.0; spec v2 RFC, proposal 1)*: when the lines up to the closer are not a YAML mapping (the YAML doesn't parse, or is a list or a scalar), renderers show them as written, escaped, in a visible error block where the header goes (`<div class="smd-frontmatter-error" role="note">` with the label "Front matter could not be read" and the lines in `<pre><code>`). The body after the closer renders as usual, and the document has no front matter values. The usual cause is a forgotten closing `---`, which makes a later thematic break the closer. The agent view shows a `[front matter could not be read]` line and the lines in a fenced block, `smd export --to md` keeps them as written, and `smd validate` reports `frontmatter/invalid` (an error). Before 2.0 those lines were hidden.
+
 | Key | Type | Meaning |
 |-----|------|---------|
-| `smd` | integer | Spec version. **Recommended.** Currently `1`. A whole number; a string of digits (`"1"`) is tolerated. Other values that read as 1 (`true`, `[1]`, `1.0`, `"1.0"`) are reported as `frontmatter/version` (info in 1.10, a warning in 2.0). `smd: 2` (spec v2) is not supported until Styled Markdown 2.0: tools before it warn and read the document with the version 1 rules. |
+| `smd` | integer | Spec version: `1` or `2`. **Recommended.** It selects the rules the document is read with (§10): `smd: 2` is spec v2; `smd: 1`, or no `smd` key, is spec v1. A whole number; a string of digits (`"2"`) is tolerated. Other values (`true`, `[2]`, `1.5`, `"v2"`) are read as version 1 and reported as a `frontmatter/version` warning (an info in 1.10); a newer version (`smd: 3`) is read with the newest rules the tool has, with a warning. Tools before 2.0 warn about `smd: 2` and read the document with the version 1 rules. |
 | `title` | string | Document title. Rendered as the page heading — don't repeat it as `# H1`. |
 | `summary` | string | 1–2 sentences. Agents should read this first. Inline Markdown allowed. |
 | `status` | enum | `draft` · `review` · `approved` · `deprecated` · `archived` |
@@ -61,6 +64,7 @@ A YAML mapping between `---` lines at the very start of the file. It is parsed w
 | `toc` | boolean | `true` renders a table of contents after the header |
 | `related` | list | Paths or URLs of related documents |
 | `lang` | string | Language of the labels the renderer adds (callout titles, "Figure 2", "overdue"…), a BCP 47 tag such as `de` or `pt-BR`; see §2.2. Default English |
+| `typography` | boolean | Spec v2: `true` turns on typographic quotes, dashes and ellipses (§4.8). Spec v1 always has them, and ignores the key |
 
 The values of the enum keys (`status`, `audience`, `theme`) are matched in any case: `audience: Both` is `both` (§5).
 
@@ -86,7 +90,7 @@ lang: de        # Hinweis, Abbildung 2, überfällig, Fußnoten …
 - **What changes**: rendered HTML only. The article gets `lang="…"` (and the page `<html lang="…">`) and the labels the page script shows (copy buttons, diagram messages) travel with it in `data-smd-labels`. Values the author wrote are translated only where they are vocabulary: `status: draft`, `:priority[high]`, `impact=high`, `color=green` with no text. Dates, numbers, titles and all other text stay as written.
 - **What does not change**: agent views, `smd outline`, `smd to-md` (including its "Figure 2" labels), validator messages and JSON outputs stay English. They are read by agents and tools, for which stable, compact output matters more than the reader's language.
 - **English**: a document without `lang`, or with `lang: en` (or any `en-…` tag), renders exactly as it did before `lang` existed.
-- **Fallback**: renderers may take a language for documents that don't name one: `renderSmd(text, { lang })`, the markdown-it plugin's `lang` option or a render's `env.lang`, and `--lang` on `smd render`, `smd pdf` and `smd build`. The document's own `lang` always wins. `smd build` labels its navigation, search and dashboard in `--lang`, else the home document's `lang`, else English.
+- **Fallback**: renderers may take a language for documents that don't name one: `renderSmd(text, { lang })`, the markdown-it plugin's `lang` option or a render's `env.lang`, and `--lang` on `smd export` and `smd build`. The document's own `lang` always wins. `smd build` labels its navigation, search and dashboard in `--lang`, else the home document's `lang`, else English.
 
 ---
 
@@ -100,7 +104,10 @@ Any Markdown content, including other containers.
 
 - An opening fence is **three or more colons**, then a name (`[a-zA-Z][\w-]*`), then an optional attribute list `{…}` directly after the name, then an optional title.
 - A closing fence is a line with **three or more colons and nothing else**.
-- **Nesting**: a closing fence always closes the *innermost* open container. Colon count is cosmetic — authors may use more colons on outer containers (`::::tabs`) for readability, but it's not required. Write each closing fence with as many colons as its opener, as `smd fmt` does: in spec v2 (`smd: 2`) a closing fence closes the innermost container opened with the same count, and 1.10 reports a mismatch as the hint `container/colons`.
+- **Nesting**: a closing fence with N colons closes the innermost open container that was **opened with exactly N colons**. Containers opened inside that one close with it: they have no closing fence of their own, and the validator reports each (`container/unclosed`, a warning). When no open container was opened with N colons, the fence closes the innermost open container, as in spec v1, and the validator warns `container/colons`. Outer containers usually have more colons than the ones inside them (`::::tabs` around `:::tab`); write each closing fence with as many colons as its opener, as `smd fmt` does, so every fence closes its own container.
+- A closing fence inside a list item or a block quote can only close a container opened in that item or quote.
+
+  **Spec v1 (documents without `smd: 2`):** a closing fence always closes the *innermost* open container, whatever its colon count; colon counts are cosmetic. 1.10 and later report a fence whose count differs from its container's as the hint `container/colons`.
 - Fenced code blocks and `$$` display math (§4.4) inside a container are opaque; a `:::` inside a code block or a math block never closes the container (nor opens one).
 - An unclosed container extends to the end of its parent (and is a validation error).
 - Titles support inline Markdown.
@@ -117,7 +124,7 @@ Any Markdown content, including other containers.
 | `tabs` → `tab` | Tab group; each `tab` title is its label | `title` (on `tab`) |
 | `columns` → `column` | Side-by-side layout (stacks on narrow screens) | `width` (`30%` or ratio `2`) |
 | `steps` | Renders the ordered list inside as numbered steps | — |
-| `agent` | Content addressed to AI agents (instructions, constraints) | `title`, `priority` (deprecated: no tool reads it, see §11) |
+| `agent` | Content addressed to AI agents (instructions, constraints) | `title` (`priority` was removed in 2.0, see §11.2) |
 | `human` | Content addressed to human readers only | `title` |
 
 | `decision` | Decision record (ADR-style); title = the decision | `status` (`proposed` `accepted` `rejected` `superseded` `deprecated`), `date`, `owner` |
@@ -174,7 +181,9 @@ See [Pricing](shared/terms.smd#pricing) in the shared terms.
 ```
 
 - **`file`** is a path relative to the including document. The included document's body is used, without its front matter.
-- **`section`** picks one section: the heading whose id (`#pricing` or `pricing`) or text matches, as `smd agent --section` matches them (an exact id wins over text that only contains the words), with everything up to the next heading of the same or a higher level, subsections included. Name the heading by its id or its whole text: in spec v2 (`smd: 2`) `section` matches only those (the whole text in any case), and 1.10 reports a section found by a part of its heading's text as the info `include/section-match`, with a fix to the heading's id.
+- **`section`** picks one section: the heading whose id (`#pricing` or `pricing`) is the value, or whose whole text is the value in any case (`Pricing`, `PRICING`), with everything up to the next heading of the same or a higher level, subsections included. An id wins over text; among equals the first heading wins. A value that names no heading this way, such as a part of a heading's text (`section="refund"` for `## Refunds`), is a missing section: the include shows its fallback, and `smd validate` reports `include/missing-section` (a warning). The version of the *including* document decides, for nested includes too, whatever the included files say. `smd agent --section` still matches a part of a heading's text: it is an option for people typing, not document syntax.
+
+  **Spec v1 (documents without `smd: 2`):** `section` also matches a heading whose text *contains* the value, as `smd agent --section` does: an exact id wins, else the first heading that matches at all, so `section="deploy"` includes `## Rapid deployment`. Since 1.10 a section found only by a part of its heading's text is the info `include/section-match`, with a fix to the heading's id; `smd migrate --to 2` makes the same rewrite.
 - **`level=N`** moves the included headings so the top one (the section heading, or the document's highest heading) becomes level N; the others keep their distance from it (capped at 6). Without it, headings keep the levels they have in their own file. Use it to nest the included text under the current heading.
 - The block is closed with `:::` like every container. Its **body is fallback text**: renderers that include ignore it, and show it (under a short note with a link to the file) only when the file can't be included. A link to the file is a good body: renderers older than 1.6, which don't know `include`, show it as a plain box.
 - The included text is parsed with the same rules as the document, so nested includes and every block (and markdown-it plugins the host adds) work. Paths inside it (nested includes, links, images, code embeds) stay relative to the included file. Its tasks can't be checked off from the including document.
@@ -199,7 +208,7 @@ Every API call counts against the SLO; the error budget is what is left.
 - **Entries:** the bullet list directly inside a `glossary` holds its entries. Each item starts with a bold term and a colon, `**Term**: definition` (or `**Term:** definition`); the rest of the item is the definition, and may have inline Markdown, more paragraphs and nested lists. A list renders as a glossary only when every item is an entry; otherwise it stays a plain list and defines nothing (`glossary/entry`). Other content in the block, such as an introduction, renders as usual. A document may have several glossaries; they share one set of terms.
 - **Rendering:** `<div class="smd-glossary">`, the title if any (`<div class="smd-glossary-title">`), then `<dl class="smd-glossary-list">` with `<dt id="term-{slug}"><dfn>Term</dfn></dt><dd>definition</dd>` for each entry. When a term is defined twice, the first definition wins and only its `<dt>` has the id (`glossary/duplicate`). Term ids are never renumbered: when a heading or another element of the document already has the id (`## Term limits` is `#term-limits`, as is the term *Limits*), it stays on both, and `glossary/duplicate-id` warns, so links that work today keep working and the author decides which element keeps it.
 - **Uses:** elsewhere in the document, the first use of each term in each section (the text between two headings of any level) links to its definition, with the definition's plain text as a tooltip: `<a class="smd-term" href="#term-api"><abbr title="Application Programming Interface">API</abbr></a>` for an abbreviation, `<a class="smd-term" href="#term-error-budget" title="How much …">error budget</a>` for any other term. Later uses in the same section stay plain text.
-- **Matching:** a use is a whole word: no letter, digit or `_` on either side, no `.` `/` `@` `#` `-` just before it and no `.` `/` `@` `-` followed by a letter or digit just after it, so `API.md`, `/api`, `#API` and `API-first` are not uses. An *abbreviation* (a term with capital letters and no lower-case ones: `API`, `SLO`, `P99`) matches only as written. Any other term matches as written or with the case of its first letter changed (`Error budget`, `error budget`), not otherwise (`ERROR BUDGET`). Longer terms win (`API gateway` over `API`). Straight and typographic quotes and dashes are the same character for matching (`'` `‘` `’`, `"` `“` `”`, `--` `–`, `---` `—`), so a term with an apostrophe (`Builder's rule`) is found in rendered text, where the typographer curled it. Other word forms (plurals) are not uses.
+- **Matching:** a use is a whole word: no letter, digit or `_` on either side, no `.` `/` `@` `#` `-` just before it and no `.` `/` `@` `-` followed by a letter or digit just after it, so `API.md`, `/api`, `#API` and `API-first` are not uses. An *abbreviation* (a term with capital letters and no lower-case ones: `API`, `SLO`, `P99`) matches only as written. Any other term matches as written or with the case of its first letter changed (`Error budget`, `error budget`), not otherwise (`ERROR BUDGET`). Longer terms win (`API gateway` over `API`). Straight and typographic quotes and dashes are the same character for matching (`'` `‘` `’`, `"` `“` `”`, `--` `–`, `---` `—`), so a term with an apostrophe (`Builder's rule`) is found in rendered text, where typography (§4.8) curled it. Other word forms (plurals) are not uses.
 - **Never changed:** headings (so heading ids and the table of contents stay the same), container titles, glossaries themselves, code spans and blocks, math, links and their text (raw `<a>` links too), autolinks and URLs, raw HTML blocks and tags, image alt text, attribute lists and inline directives. Footnote references and footnote definitions (§4.6) are never marked either.
 - **Includes (§3.4):** included text is part of the rendered document. A glossary in an included file defines terms for the whole document (so a shared glossary can be included), and the document's terms are marked in included text, under the same first-use-per-section rule. `smd validate` counts uses in included text when it can read the include, so a term used only there is not `glossary/unused`; editor hovers know the document's own glossaries.
 - **Accessibility:** a definition is never available only on hover. Each marked use is a link to its `<dt>`, which keyboard and screen-reader users can follow (rendered pages move focus to it), and the expansion of an abbreviation is its `<abbr title>`.
@@ -287,13 +296,21 @@ Tools before 1.10 render an alert as a blockquote whose first line is the `[!WAR
 
 A bracketed span immediately followed by an attribute list. Only style attributes (§5) are allowed. Content may contain other inline Markdown. Links (`[text](url)`) and images are unaffected because a styled span requires `{` directly after `]`.
 
+Any attribute list that parses makes a span, in both spec versions: the rule that a heading's `{}` or `{word}` is text (§4.2.2) is not applied to spans. A heading's braces end ordinary prose (`## Returns {ok}`, `## Object {}` in API references), where a span's need `{` right after a `]`, which prose almost never has; a bare word in a span is already reported as an unknown style attribute (`attrs/unknown`); and reading such spans as text would change documents that render a span today, for no case in the corpus.
+
 ### 4.2 Inline directives
 
 ```text
 :name[content]{attributes}
 ```
 
-The `:` must be at the start of a line or preceded by whitespace or opening punctuation, so `10:30` and `note:[x]` are never directives.
+The `:` must be at the start of a line or preceded by whitespace or opening punctuation, so `10:30` and `note:[x]` are never directives. A backslash before the colon (`\:abbr[HTML]`) keeps the text as written, as for any CommonMark punctuation.
+
+**Any name is a directive** (spec v2 RFC, proposal 7b): `:name[content]{attributes}`, with brackets, an attribute list or both, is a directive whatever its name. A name the table below doesn't list renders its content as inline Markdown in `<span class="smd-directive smd-directive-<name>">`, with its attributes applied as on a styled span (§4.1): `.class` adds `smd-u-<class>`, `#id` sets the id, and the style keys (§5.1) style it; other keys are kept for the tools that know the directive and are not shown. The agent view, `smd to-md` and the exports show the content, as for a styled span. The validator reports every such name as the warning `directive/unknown`, with a fix when a known name is close (`:badg[x]` → `:badge[x]`). A list that doesn't parse leaves the whole item as text, as for known names.
+
+**Names are read in any case** (proposal 11): `:Badge[x]` is `:badge[x]`, and an unknown `:Abbr[x]` renders in `smd-directive-abbr`. `smd fmt` leaves a name's case as written.
+
+**Spec v1 (documents without `smd: 2`):** only the names in the table, written in lower case, are directives. Any other `:name[…]` (`:abbr[HTML]`, `:Badge[x]`) is text, and the validator reports a name only when it is close to a known one. `smd migrate --to 2` escapes such text as `\:name[…]`, so it stays text in spec v2 (§10.1).
 
 The content, like CommonMark link text and a styled span's text (§4.1), may run over a line break: `:badge[on track` on one line and `for the beta]{color=green}` on the next is one badge. Tools read it as one item, as rendering does.
 
@@ -323,7 +340,9 @@ A heading may end with an attribute list: `## Title {#custom-id .class agent=ski
 
 - `#id` sets the anchor id (§4.2.3).
 - `agent=skip` marks the section (up to the next heading of the same or higher level) as **human-only**. Agent views omit it, and the preview shows a "humans only" tag.
-- Any trailing `{…}` that parses is read as the list and left out of the heading text, including an empty `{}` and a bare word such as `{ok}` (which headings don't accept). In spec v2 (`smd: 2`) a list is attributes only when it has items and each is `#id`, `.class` or `key=value`; otherwise it is part of the heading text. 1.10 reports such a list as the hint `heading/attrs-text`, with a fix that removes the braces or the bare words, which keeps how the heading renders.
+- A trailing list is attributes only when it parses, has items and each item is `#id`, `.class` or `key=value` (spec v2 RFC, proposal 5). Otherwise it is part of the heading text, as GitHub shows it: `## Returns {ok}` reads "Returns {ok}" with the id `returns-ok`, `## Object {}` reads "Object {}" with the id `object-`, and `## Mixed {#m ok}` reads "Mixed {#m ok}" (one bare word makes the whole list text). The heading's id (§4.2.3), the table of contents, `smd outline`, the agent view, `smd to-md`, `smd tasks` sections and `smd fmt` all read the text so. A list that doesn't parse is text too, and still the error `attrs/syntax`.
+
+**Spec v1 (documents without `smd: 2`):** any trailing `{…}` that parses is read as the list and left out of the heading text, including an empty `{}` and a bare word such as `{ok}` (which headings don't accept; `{agent}` is `agent=true`). The line-based readers (the agent view, `smd to-md`, `smd tasks`) leave out any trailing `{…}`, even one that doesn't parse. 1.10 and later report such a list as the hint `heading/attrs-text`, with a fix that removes the braces or the bare words, which keeps how the heading renders; `smd migrate --to 2` applies it, and writes `{agent}` as `{agent=true}`.
 
 ### 4.2.3 Heading ids
 
@@ -372,7 +391,9 @@ The rendered HTML is unchanged: it has the heading's own id only.
 ### 4.4 Math
 
 - Inline: `$E = mc^2$` — no whitespace just inside the `$`, and the closing `$` must not be followed by a digit (so `$5 and $10` is plain text).
-- Display: a `$$ … $$` block, or a fenced block with language `math`. A line starting with `$$` (indented less than four spaces) opens display math that ends on the same line when it also ends with `$$` (`$$ E = mc^2 $$`), else on the next line ending with `$$`; when no later line ends with `$$`, the line opens nothing and is text. Display math may interrupt a paragraph.
+- Display: a `$$ … $$` block, or a fenced block with language `math`. Display math opens on a line (indented less than four spaces) that is **only `$$`**, and closes on the next line that is only `$$`; or it is `$$ E = mc^2 $$` on one line, a line that starts and ends with `$$` with math between. When no later line is only `$$`, the opening line opens nothing and is text. A line that starts or ends with `$$` and has other text beside it (`$$5 per seat`, `costs $$`) is text: it neither opens nor closes math. Display math may interrupt a paragraph, since its delimiters are on lines of their own, as a code fence may.
+
+  **Spec v1 (documents without `smd: 2`):** a line starting with `$$` opens display math that ends on the same line when it also ends with `$$` (`$$ E = mc^2 $$`), else on the next line *ending* with `$$`; when no later line ends with `$$`, the line opens nothing and is text. So `Pricing:` followed by `$$5 per seat` opens math that runs to the next line ending in `$$`. `smd migrate --to 2` moves delimiters onto lines of their own, which v1 reads the same way.
 - Display math is opaque, as code is: nothing inside it is SMD syntax, and a `:::` line inside it neither closes nor opens a container (§3).
 - Syntax: LaTeX as supported by KaTeX.
 
@@ -420,9 +441,9 @@ Retries are capped at five[^retries], as the SRE review asked[^SRE].
 
 ```text
 ---
-smd: 1
+smd: 2
 title: Release notes
-version: "2.10"
+version: 2.10
 release:
   date: 2026-10-20
 owners: ["@platform", "@docs"]
@@ -436,15 +457,38 @@ Version {{version}} ships on {{release.date}}. Questions: {{owners}}.
 renders *What's new in 2.10* and *Version 2.10 ships on 2026-10-20. Questions: @platform, @docs.* (since 1.6)
 
 - **Syntax:** `{{name}}`, with optional spaces inside the braces (`{{ version }}`). A name is a front matter key: letters, digits, `_` and `-`, starting with a letter or `_`. Dots reach into nested mappings (`{{release.date}}`) and lists (`{{owners.0}}`); a key that itself contains the dots wins over the nested path.
-- **Values:** strings, numbers and booleans as YAML reads them, and lists of those joined with `, `. A string on several lines becomes one line. The value is **text**: Markdown and HTML in it are shown as written, never rendered (HTML is escaped). YAML reads `version: 2.10` as the number 2.1, so quote version numbers: `version: "2.10"`.
+- **Values:** strings, numbers and booleans, and lists of those joined with `, `. A number or boolean written as a plain YAML scalar is shown **as written in the source**: `version: 2.10` shows `2.10`, `build: 007` shows `007`, `beta: True` shows `True`, `size: 1e3` shows `1e3`, in lists and nested mappings too. A quoted string shows its value as YAML reads it (`"2.10"` shows `2.10`), and so does a block scalar (`|`, `>`); dates such as `updated: 2026-10-05` are strings already. A string on several lines becomes one line. The value is **text**: Markdown and HTML in it are shown as written, never rendered (HTML is escaped). The page header shows `version`, `updated`, `owners` and `tags` with the same spelling, and the agent view's header (§8a) every value it lists.
+
+  **Spec v1 (documents without `smd: 2`):** numbers and booleans are shown as YAML reads them, so `version: 2.10` (the number 2.1) shows `2.1`, in `{{version}}` and in the header (`v2.1`); `007` shows `7`, `True` shows `true` and `1e3` shows `1000`. Quote a value to keep its spelling: `version: "2.10"`. `smd migrate --to 2` notes each value shown differently, and with `--quote-variables` quotes it, so every version shows it as written.
 - **Only defined names are replaced.** `{{name}}` for a key the front matter doesn't have, or whose value is a mapping or empty, stays exactly as written, so documents that show Handlebars, Jinja or Mustache syntax in prose render as before. The validator reports them (§7): `variable/undefined` as info, with the closest key as a fix, and `variable/not-text` as a warning.
 - **Escaping:** `\{{name}}` shows `{{name}}` (the backslash escapes the brace, as for any Markdown punctuation), and so does a code span. `{{{name}}}` (Handlebars' triple braces) is never a variable.
 - **Where values are shown:** text in paragraphs, headings, lists, tables, block quotes and footnotes, link text, image alt text, container titles (`:::note Upgrading to {{version}}`, also `title="…"`) and inline directive content (`:badge[v{{version}}]`, `:due[{{release.date}}]`; there the value becomes part of the content, so `:due` checks the date it names).
-- **Order:** values are put in while inline Markdown is parsed, before anything that works on the resulting text: a glossary term (§3.5) inside a value is marked like any other use (and is a use for `glossary/unused`), task labels and heading text include the value, and the typographer treats it as text.
+- **Order:** values are put in while inline Markdown is parsed, before anything that works on the resulting text: a glossary term (§3.5) inside a value is marked like any other use (and is a use for `glossary/unused`), task labels and heading text include the value, and typography (§4.8) treats it as text.
 - **Never replaced:** code spans, fenced and indented code, math, Mermaid, raw HTML (tags, attribute values and HTML blocks) and comments, link and image destinations and reference definitions (URLs keep `{{…}}`; renderers percent-encode the braces), attribute lists other than a container's title, and the front matter itself: the header shows `title` and `summary` as written.
 - **Heading ids** come from the heading as written: `## What's new in {{version}}` has the id `whats-new-in-version` whatever the value, so links don't break when the value changes. The heading text (table of contents, outline, `smd agent --section`, `smd tasks` sections) shows the value.
 - **Includes:** text included with `:::include` (§3.4) uses the *including* document's front matter, since the included body comes without its own.
 - **Tools:** rendered output, the agent view (§8a), `smd to-md` (§8), `smd tasks` and `smd query` (task text, due dates and block titles), `smd meta` and the editors' outlines show the values; `smd fmt` leaves `{{name}}` as written. In the markdown-it plugin the `variables` option (default on) turns them off; the plugin reads the front matter from the source, and a host that removes the front matter first can pass its data as `env.smdVariables`.
+
+### 4.8 Typography and autolinks
+
+*Spec v2 (`smd: 2`); spec v2 RFC, proposal 8.*
+
+Text is shown as written: renderers make no typographic replacements unless the front matter says `typography: true`. With it, they make these:
+
+| Written | With `typography: true` |
+|---|---|
+| `"double"`, `'single'`, `it's` | “double”, ‘single’, it’s |
+| `--`, `---` | – (en dash), — (em dash) |
+| `...` | … |
+| `(c)`, `(r)`, `(tm)`, `+-` | ©, ®, ™, ± |
+
+- **Where:** text in paragraphs, headings, lists, tables, block quotes and footnotes, container titles, inline directive content, the header's `title` and `summary`, front matter values shown with `{{key}}` (§4.7), and text included with `:::include` (§3.4), which follows the including document's front matter. Never code, math, raw HTML, link destinations or the text of an autolink.
+- **Autolinks:** text becomes a link only as a GFM autolink literal: a URL that starts with `http://`, `https://` or `ftp://`, a `mailto:` address, `www.` followed by a domain (in lower case; linked as `http://www.…`), or an e-mail address (`team@example.com`). A bare domain (`example.com`, `README.md`), a protocol-relative `//host` and `WWW.` in capitals are text. `typography: true` doesn't change links. `<https://…>` autolinks and `[text](url)` links are links as in CommonMark.
+- **The key:** `typography: true`, a YAML boolean; any other value leaves typography off. A spec v1 document may have the key; it has no effect there.
+- **What doesn't change:** heading ids come from the source text in either version (§4.2.3). The agent view, `smd to-md`, tasks and query show the source text. Glossary terms match straight and typographic quotes and dashes alike (§3.5), so they are found with typography on or off.
+- **Hosts:** the markdown-it plugin applies these rules to a spec v2 document (`smd: 2` in its front matter, or the plugin's `spec: 2` option) whatever the host's `typographer` and `linkify` options say, but it only takes away: a host with the typographer off (the Obsidian plugin) shows no typography even with `typography: true`, and a host with `linkify` off makes no autolinks. A host that removes the front matter passes `typography` with the rest of it in `env.smdVariables`.
+
+**Spec v1 (documents without `smd: 2`):** renderers make the typographic replacements above everywhere, and link bare domains whose top-level domain linkify knows (`example.com` as `http://example.com`, `README.md` as `http://README.md`), `//host` and `WWW.` in any case, but not `www.` before an unknown top-level domain (`www.shop.test`): markdown-it's typographer and fuzzy linkify. `typography` has no effect. The markdown-it plugin follows the host's `typographer` and `linkify` options. Tools before 2.0 read a spec v2 document this way too. `smd migrate --to 2 --keep-typography --link-domains` keeps a v1 document's look under v2 (§10.1).
 
 ---
 
@@ -455,12 +499,13 @@ renders *What's new in 2.10* and *Version 2.10 ships on 2026-10-20. Questions: @
 ```
 
 - Values may be bare, `"double-quoted"` or `'single-quoted'`.
-- **Escapes in quoted values:** inside double quotes `\"` is a `"`, and inside single quotes `\'` is a `'`, so a value can hold its own kind of quote: `title="say \"hi\""`, `title='it\'s'`. A backslash and the character after it always go together, so `\"` never ends a double-quoted value. Every other backslash is literal: `\'` inside double quotes, `\"` inside single quotes, and Windows paths (`file="C:\docs\plan.smd"`) keep theirs. `\\` is two backslashes in spec v1. A list that reads only without escapes, such as `title="C:\docs\"` (a value ending in a backslash, valid before 1.10), reads as it did: its quoted values run to the next quote of their kind.
-- Prefer quotes that need no escape: `'say "hi"'`. `smd fmt` writes double quotes, single quotes for a value with a `"`, and double quotes with `\"` only for a value with both kinds of quote.
+- **Escapes in quoted values** (spec v2 RFC, proposal 6): inside double quotes `\"` is a `"`, inside single quotes `\'` is a `'`, and inside either `\\` is one backslash. So a value can hold its own kind of quote, `title="say \"hi\""`, `title='it\'s'`, and end in a backslash, `title="C:\docs\\"`. A backslash and the character after it always go together, so `\"` never ends a double-quoted value. Every other backslash is literal: `\'` inside double quotes, `\"` inside single quotes, and Windows paths (`file="C:\docs\plan.smd"`) keep theirs. A list whose quoted value never ends (`title="C:\docs\"`) is malformed: the error `attrs/syntax`, and its text renders as written.
+- Prefer quotes that need no escape: `'say "hi"'`. `smd fmt` writes double quotes, single quotes for a value with a `"`, and double quotes with `\"` only for a value with both kinds of quote. It writes a backslash as `\\` only where one alone would go with the character after it: before the closing quote or at the end of the value (`"C:\docs\\"`), and in a run of backslashes (`"\\\\server\share"` for `\\server\share`); `"C:\Users"` keeps its single backslash. The Block Editor's forms write values the same way.
+- **Spec v1 (documents without `smd: 2`):** `\"` and `\'` are escapes as above (since 1.10), but `\\` is two backslashes, and a list that reads only without escapes, such as `title="C:\docs\"` (a value ending in a backslash, valid before 1.10), reads as it did: its quoted values run to the next quote of their kind. `smd fmt` writes no `\\`. `smd migrate --to 2` rewrites the values whose reading differs, so they read the same in spec v2 (§10.1).
 - `.class` adds a utility class (rendered as `smd-u-<class>`); `#id` sets the element id.
 - A bare `flag` means `flag=true`.
-- **Duplicates:** a key or an `#id` given more than once takes its last value, and a class given more than once is added more than once. Styled Markdown 2.0 reports duplicates as errors in every document (with the same rendering), so 1.10 reports them as the hint `attrs/duplicate`. A container's `title=` likewise wins over title text after the attributes, which is not shown; 1.10 reports both together as the hint `container/title-conflict`, and 2.0 as an error.
-- **Enumerated values** (the fixed choices of a container or directive attribute, such as `:::decision{status}`, `:::api{method}` and `:metric{trend good}`) are matched in any case: `status=Accepted` is `status=accepted`, and `trend=Up` is `trend=up`. Renderers use the value as the vocabulary lists it (`status=Accepted` renders as `accepted`, `method=get` as `GET`). The same holds for the enumerated front matter keys `status`, `audience` and `theme` (§2.1). `smd fmt` leaves the case of all of them as written, so a formatted document stays formatted; writing them in the vocabulary's case is left to `smd migrate --to 2`. Directive names, style attribute values (§5.1) and named colors (§5.2) are matched as written.
+- **Duplicates:** an attribute list gives each key, `#id` and class once. One given more than once is the error `attrs/duplicate` in every document since 2.0 (a hint in 1.10; spec v2 RFC, proposal 4). Renderers keep resolving it as before, so no document changes meaning: a key or an `#id` takes its last value, and a repeated class is added more than once. A container is likewise titled by `title=` or by text after its attributes, not both: both together is the error `container/title-conflict` (a hint in 1.10), and the attribute wins, the text not being shown. `smd validate --fix` and `smd migrate --to 2` fix both.
+- **Enumerated values** (the fixed choices of a container or directive attribute, such as `:::decision{status}`, `:::api{method}` and `:metric{trend good}`) are matched in any case: `status=Accepted` is `status=accepted`, and `trend=Up` is `trend=up`. Renderers use the value as the vocabulary lists it (`status=Accepted` renders as `accepted`, `method=get` as `GET`). The same holds for the enumerated front matter keys `status`, `audience` and `theme` (§2.1). `smd fmt` leaves the case of all of them as written, so a formatted document stays formatted; writing them in the vocabulary's case is left to `smd migrate --to 2`. Style attribute values (§5.1) and named colors (§5.2) are matched as written. Directive names are matched in any case in spec v2 (§4.2), and as written in spec v1.
 
 ### 5.1 Style attributes
 
@@ -504,8 +549,8 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 
 | Code | Severity | Trigger |
 |------|----------|---------|
-| `frontmatter/invalid` | error | YAML does not parse, or is not a mapping, or is unclosed |
-| `frontmatter/version` | info / warning | `smd` missing (info; fix: add it), not a whole number though it reads as 1 (`true`, `[1]`, `1.0`, `"1.0"`; info, a warning in 2.0; fix: `smd: 1`), or unsupported (warning; for `smd: 2`, "spec v2 is not supported until Styled Markdown 2.0"). A string of digits such as `"1"` is accepted |
+| `frontmatter/invalid` | error | YAML does not parse, or is not a mapping, or is unclosed. Since 2.0 the lines of closed front matter that can't be read render in an error block (§2.1) |
+| `frontmatter/version` | info / warning | `smd` missing (info; fix: add it), not a whole number (warning since 2.0, an info in 1.10: `true`, `[2]`, `1.5`, `"1.0"`, `0`, read as version 1; fix: `smd: 1`; a whole number written as a decimal, `2.0`, is read as that number, fix: `smd: 2`), or newer than the tool knows (warning; read with the newest rules). `1`, `2` and strings of digits such as `"2"` are accepted |
 | `frontmatter/unknown-key` | hint | Non-standard key (fix when a close match exists) |
 | `frontmatter/status` · `/audience` · `/accent` · `/type` · `/date` | warning / error | Invalid values (fix: the one close allowed value or color, `true`/`false` for `yes`/`no`/`"true"`, `2026-09-05` for `2026/9/5`) |
 | `frontmatter/duplicate-title` | hint | First `# H1` repeats the front matter title |
@@ -513,21 +558,21 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `frontmatter/stale` | info | `updated` is older than the stale threshold and the document is not archived or deprecated |
 | `frontmatter/lang` | info | `lang` is not a language tag, or names a language without labels (they render in English); lists the supported languages |
 | `container/unknown` | warning | Unknown container name (fix: closest name) |
-| `container/unclosed` | error | Missing closing `:::` (fix: add it at the end of the document, for an unindented container) |
+| `container/unclosed` | error / warning | Missing closing `:::` (error; fix: add it at the end of the document, for an unindented container). Spec v2: a warning for a container that a closing fence of a container around it closes (§3), since it ends where the document shows it ending (fix: add its own closing fence before that one, for an unindented container) |
 | `container/stray-close` | warning | `:::` with nothing open |
-| `container/colons` | hint | A closing fence has another colon count than the container it closes (`::::` closing `:::tab`). It closes the innermost container today; in spec v2 it closes the innermost one opened with as many colons (fix: the opener's count, as `smd fmt` writes it) |
-| `container/title-conflict` | hint | A container has both `title=` and title text after its attributes; the attribute wins and the text is not shown. An error in 2.0 (fix: remove the text) |
+| `container/colons` | hint / warning | Spec v1: a hint for a closing fence with another colon count than the container it closes (`::::` closing `:::tab`), which spec v2 pairs differently. Spec v2: a warning for a closing fence whose colon count no open container has, which closes the innermost one (§3). Fix: the count of the container it closes, as `smd fmt` writes it |
+| `container/title-conflict` | error | A container has both `title=` and title text after its attributes; the attribute wins and the text is not shown. A hint in 1.10, an error in every document since 2.0 (fix: remove the text) |
 | `container/parent` | warning | `tab` outside `tabs`, `column` outside `columns` |
 | `container/agent-in-skip` | warning | An `agent` block inside a section whose heading has `{agent=skip}`: the agent view leaves the section out, so agents never read the instructions |
 | `attrs/syntax` | error | Malformed `{…}` |
-| `attrs/unknown` | warning | Attribute not accepted in this position (fix when one accepted name is close and not already set) |
-| `attrs/value` | error | Invalid color, size, width, progress value… (fix when one allowed value is close, or a year-first date needs `-` separators) |
-| `attrs/duplicate` | hint | A key, an `#id` or a class given more than once in one attribute list; the last one is used. An error in 2.0 (fix: each once, with the value that is used, where it first appears) |
-| `heading/attrs-text` | hint | A heading ends in `{}` or in a list with a bare word (`{ok}`), which is dropped today and is heading text in spec v2 (fix: remove the braces or the words, keeping today's rendering; none for `{agent}`) |
-| `directive/unknown` | warning | `:name[…]` close to a known directive (fix: closest name) |
+| `attrs/unknown` | warning | Attribute not accepted in this position (fix when one accepted name is close and not already set). `priority` on an `agent` block, removed in 2.0, is reported on the attribute, with a fix that removes it |
+| `attrs/value` | error | Invalid color, size, width, progress value, enumerated container value such as a `figure`'s `kind`… (fix when one allowed value is close, or a year-first date needs `-` separators). An invalid `kind` was the warning `figure/kind` before 2.0 |
+| `attrs/duplicate` | error | A key, an `#id` or a class given more than once in one attribute list; the last one is used. A hint in 1.10, an error in every document since 2.0 (fix: each once, with the value that is used, where it first appears) |
+| `heading/attrs-text` | hint | Spec v1 only: a heading ends in `{}` or in a list with a bare word (`{ok}`), which is dropped today and is heading text in spec v2 (fix: remove the braces or the words, keeping today's rendering; none for `{agent}`). A spec v2 document already reads such a list as text (§4.2.2) |
+| `directive/unknown` | warning | A name outside the vocabulary. Spec v2: every `:name[…]` or `:name{…}` that renders as a directive with its content in a plain span (§4.2), with a fix when a known name is close. Spec v1: only a `:name[…]` close to a known directive (fix: closest name), which is text |
 | `directive/content` | error | Directive needs `[content]` |
 | `mermaid/type` · `mermaid/empty` | error / warning | Unknown diagram type (fix: closest type) / empty diagram |
-| `mermaid/syntax` | warning | The diagram does not parse (checked with Mermaid's own parser where the tool ships it) |
+| `mermaid/syntax` | error | The diagram does not parse (checked with Mermaid's own parser where the tool ships it). A warning from 1.2 to 1.10, an error in every document since 2.0; there is no fix |
 | `math/syntax` · `math/unclosed` | error | KaTeX parse error / unclosed `$$` |
 | `fence/unclosed` | error | Unclosed code fence (fix: add it at the end of the document, for an unindented fence) |
 | `link/missing-anchor` | warning | `[x](#id)` or `[x](other.smd#id)` with no heading or element with that id (fix: closest id) |
@@ -536,7 +581,6 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `link/undefined-reference` | warning | `[text][label]` or `[label][]` with no `[label]: …` definition |
 | `figure/unknown-ref` | warning | `:ref[id]` names no `figure` in the document (fix: closest figure id) |
 | `figure/duplicate-id` | warning | Two `figure` blocks share an `{#id}`; references go to the first |
-| `figure/kind` | warning | `kind` on a `figure` is not `figure`, `table` or `listing`; it counts as `figure` (fix: closest value). A warning rather than `attrs/value`, so documents that passed before 1.6 keep passing. **Deprecated:** 2.0 reports it as `attrs/value` (§11), so rule settings and suppressions that name `figure/kind` should name `attrs/value` too |
 | `glossary/entry` | warning | A list item in a `glossary` is not `**Term**: definition` (its list then renders as a plain list and defines no terms), or an entry has no definition |
 | `glossary/duplicate` | warning | A term is defined again (in any glossary of the document); uses link to the first definition |
 | `glossary/duplicate-id` | warning | A term's id `term-{slug}` is also the id of a heading (such as `## Term limits`) or of another element in the document; links to it and the term's uses may lead there. Give the other element its own `{#id}` or rename one of them |
@@ -557,12 +601,11 @@ Every diagnostic has a stable `code`, a severity and, when safe, a machine-appli
 | `footnote/duplicate` | warning | A second definition of a footnote label; the first one is used |
 | `variable/undefined` | info | `{{name}}` names no front matter key; it is shown as written (fix: the closest key). `info`, since `{{…}}` in prose may be meant literally, as in documents written before 1.6 |
 | `variable/not-text` | warning | `{{name}}` names a front matter mapping or empty value, which has no text; it is shown as written |
-| `deprecated/agent-priority` | hint | `priority` on an `agent` block, which no tool reads; 2.0 removes it (fix: remove it) |
 | `task/overdue` | info | Open task past its `:due[…]` date |
 | `table/pipe-in-code` | info | A pipe inside a code span in a table row. GFM splits a row into cells at every pipe without a backslash before it, code spans included, so the code span never forms, as on GitHub (fix: put a backslash before the pipe; the cell shows the pipe without it) |
-| `rules/unknown` | warning | A suppression comment names an unknown rule code (fix: closest code) |
+| `rules/unknown` | warning | A suppression comment or a rule setting names an unknown rule code (fix: closest code). For a code removed in 2.0 (`figure/kind`, `deprecated/agent-priority`) the message names the code that reports those problems now, and the fix changes to it |
 
-The hints `container/colons`, `container/title-conflict`, `attrs/duplicate`, `heading/attrs-text` and `deprecated/agent-priority`, the info `include/section-match` and the info form of `frontmatter/version` (1.10) warn early about what Styled Markdown 2.0 rejects or reads differently. They never make a document that passed fail, `--strict` included, and each fix keeps how the document renders today.
+The hints `container/colons` and `heading/attrs-text` and the info `include/section-match` (1.10) warn early, in documents without `smd: 2`, about what spec v2 reads differently. In a document with `smd: 2`, `container/colons` is the warning described above instead. They never make a document that passed fail, `--strict` included, and each fix keeps how the document renders today. Since 2.0, in every document, the 1.10 hints `attrs/duplicate` and `container/title-conflict` are errors and the 1.10 info form of `frontmatter/version` is a warning.
 
 Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.smdrc.json` file in the document's folder or a parent folder has `{"rules": {"<code>" | "<category>/*" | "*": "off" | "error" | "warning" | "info" | "hint"}}`. The nearest file applies, the search stops at the repository root, and the most specific key wins. Inside a document, the comments `<!-- smd-disable-next-line [codes] -->`, `<!-- smd-disable-line [codes] -->` and `<!-- smd-disable [codes] -->` … `<!-- smd-enable [codes] -->` silence rules. No codes means every rule. Codes are separated by spaces or commas and may be `category/*`.
 
@@ -594,6 +637,7 @@ Tools must let users change these defaults. A `smd.config.json`, `.smdrc` or `.s
 | Unknown container `:::name Title` | a `**Title**` paragraph, then the content (§3) |
 | GitHub alert `> [!WARNING]` | unchanged, the same alert (§3.8) |
 | `[text]{…}` | `text` (bold/italic/strike preserved from `weight`/`style`) |
+| `:name[x]{…}` with a name outside the vocabulary (spec v2) | `x`, as for a styled span (bold/italic/strike from `weight`/`style`); in spec v1 it is text and stays as written |
 | `:badge[x]` | `` `x` `` |
 | `:status[x]{color=green}` | `🟢 x` |
 | `:progress{value=60}` | `▰▰▰▰▰▰▱▱▱▱ 60%` |
@@ -625,6 +669,7 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 | `changelog` | `<changelog title="…">` … `</changelog>`; each release heading as `## 1.2.0 (2026-03-01)  [L<n>]` (version without its link, then the date), followed by its notes |
 | `quote` | `<quote author="…" source="…" cite="…">` … `</quote>` (attribution as plain words; a `cite` that rendering leaves out is left out here too) |
 | Styling, badges, status, metrics | Plain words: `[Beta]`, `[status: On track (ok)]`, `Activation: 42% (+3%)`, `(due 2026-10-01, OVERDUE)` |
+| A directive outside the vocabulary (spec v2) | Its content, as for a styled span: `:abbr[HTML]` is `HTML`; in spec v1 it is text and stays as written |
 | Images, HTML comments | `[image: alt]`, removed |
 | Tables | Cell padding removed |
 | File embeds | `[code: path lines a-b — read that file]` (or inlined with `--embed`) |
@@ -643,7 +688,59 @@ The *agent view* is a canonical, lossless-in-meaning rendering for LLMs (`smd ag
 
 ## 10. Versioning
 
-Additive features (new containers, directives, front matter keys) keep `smd: 1`; older renderers degrade gracefully (unknown containers render as a box, with their title since 1.10 (§3), unknown keys are kept). Only breaking changes increment `smd`.
+The front matter key `smd` is the document's **spec version**: it selects the rules every tool reads the document with (rendering, the agent view, `smd to-md`, tasks, query, the validator, `smd fmt`, the exporters). Versions are majors only; features are found by graceful degradation, never by a version such as `smd: 1.6`.
+
+| `smd` value | Read with | `frontmatter/version` |
+|---|---|---|
+| `2`, `"2"` | spec v2 | — |
+| `1`, `"1"`; no `smd` key; no front matter, or front matter that doesn't parse | spec v1 | an info when the key is missing (fix: add `smd: 1`) |
+| A whole number above 2, e.g. `3` | the newest rules the tool knows (v2 in Styled Markdown 2.x), so the document stays readable | warning |
+| Anything else: a boolean, a list, a decimal, a string that isn't digits, zero (`true`, `[2]`, `1.5`, `"v2"`, `0`) | spec v1 | warning (an info in 1.10); fix: `smd: 1` |
+
+The value as YAML reads it decides, so `smd: 2.0`, the number 2, is spec v2, with a warning that asks for `smd: 2`. A missing key means spec v1 throughout 2.x, which covers every existing document and every `.md` file; 2.x tools keep a complete v1 mode, and the default is revisited in 3.0. Tools before 2.0 warn about `smd: 2` and read the document with the v1 rules.
+
+**New documents are spec v2.** Since Styled Markdown 2.0, tools that write a new document write `smd: 2`: `smd init` (its templates), `smd from-md`, `smd decisions --md`, `smd report`, `smd tasks --gantt --smd` and the editor's front matter snippet. A tool that adds front matter to an existing document never changes the rules it is read with: the `frontmatter/version` fix writes `smd: 1`, and VS Code's Set Document Status writes `smd: 2` only when spec v2 reads the document as v1 does. Write `smd: 1` to keep the v1 rules in a new document; `smd migrate --to 2` (§10.1) moves an existing one.
+
+**Hosts that can't see the front matter.** `renderSmd`, the markdown-it plugin and the remark and rehype plugins take a `spec: 1 | 2` option for documents that don't say. **The document's front matter wins:** when it has an `smd` key, the key decides, even when its value is invalid (then it is v1); the option only decides for a document without one. The markdown-it plugin reads the front matter from the source, or from `env.smdVariables` when the host removed it and passes it along, and puts the version on the render's env as `smdSpec`. An included file (§3.4) is read with the version of the document that includes it.
+
+**Rules that differ by version.** This specification describes spec v2. Where a v2 rule differs from v1, the section that defines it gives the v2 rule, followed by a paragraph that starts **Spec v1 (documents without `smd: 2`):** with the rule those documents keep. Each such rule is listed here:
+
+| Rule | Section | Spec v2 (`smd: 2`) | Spec v1 |
+|---|---|---|---|
+| `$$` display math delimiters (RFC proposal 2) | §4.4 | Math opens on a line that is only `$$` (or `$$…$$` on one line) and closes on a line that is only `$$`; a line with text beside `$$` is text | A line starting with `$$` opens math, and the next line ending with `$$` closes it |
+| Closing fences (RFC proposal 3) | §3, §7 | A closing fence closes the innermost container opened with as many colons, and the ones inside it with it (`container/unclosed`, a warning); one that matches none closes the innermost (`container/colons`, a warning) | A closing fence closes the innermost container; colon counts are cosmetic (`container/colons`, a hint) |
+| `:::include` `section=` | §3.4 | An exact heading id, or the heading's whole text in any case; anything else is a missing section | Also the first heading whose text contains it (an exact id wins) |
+| Front matter values shown | §4.7 | `{{key}}` and the header show plain numbers and booleans as written in the YAML (`2.10`, `True`, `007`) | As YAML reads them (`2.1`, `true`, `7`) |
+| A heading's trailing `{}` or `{word}` (proposal 5) | §4.2.2 | Heading text, as GitHub shows it; the id is made from it (`## Returns {ok}` is `#returns-ok`) | Left out of the heading text (`{}` is empty, `{ok}` is `ok=true`) |
+| `\\` in a quoted attribute value (proposal 6) | §5 | One backslash; a value that ends in one backslash is written `\\`, and `"C:\docs\"` is malformed | Two backslashes; `"C:\docs\"` reads without escapes |
+| `:name[…]` with a name outside the vocabulary (proposal 7b) | §4.2 | A directive: its content in a `smd-directive smd-directive-<name>` span, and a `directive/unknown` warning | Text |
+| Directive names (proposal 11) | §4.2 | Any case: `:Badge[x]` is a badge | As written: `:Badge[x]` is text |
+| Typography and autolinks | §4.8 | Text as written unless the front matter says `typography: true`; only GFM autolink literals are links (`www.`, `https://`, e-mail) | Typographic quotes, dashes, ellipses and symbols always; bare domains (`example.com`) are links too |
+
+**Rules for every document.** Some 2.0 changes apply whatever `smd` says, so they are not in the table: v1 documents get them too. Each is marked *all documents* where it is defined:
+
+| Rule | Section | Since 2.0, in every document | Before 2.0 |
+|---|---|---|---|
+| Front matter that can't be read | §2.1 | Its lines are shown in an error block; the body renders as usual | Everything up to the closing line was hidden |
+| Duplicate attributes, container title conflicts | §5, §7 | `attrs/duplicate` and `container/title-conflict` are errors; rendering is unchanged | Hints (1.10) |
+| Mermaid syntax | §7 | `mermaid/syntax` is an error | A warning |
+| An invalid `kind` on a `figure` | §7 | An `attrs/value` error | The warning `figure/kind` |
+| `priority` on `:::agent` | §11.2 | Removed: an `attrs/unknown` warning | Accepted, with a hint (1.10) |
+
+Implementations decide the version in one place: in this repository, `specVersion(text)` (or `specVersion(frontMatterData)`) for tools that have the text, and `isV2(env)` for markdown-it rules, which read the `smdSpec` the renderer puts on the env before parsing (`extension/src/core/specVersion.ts`).
+
+Additive features (new containers, directives, front matter keys) keep the spec version; older renderers degrade gracefully (unknown containers render as a box, with their title since 1.10 (§3), unknown keys are kept, and in spec v2 an unknown directive shows its content). Only breaking changes increment `smd`.
+
+How an inline directive that a reader doesn't know reads (spec v2 RFC, proposal 7b). Since spec v2 reads any name as a directive, a directive added in a later release shows its content, styled as a span, in every 2.x tool; a spec v1 document, and every reader that reads a document with v1 rules, keeps the text:
+
+| Reader | `:abbr[HTML]{.term}` in a document with `smd: 2` |
+|---|---|
+| Styled Markdown 2.x | `<span class="smd-directive smd-directive-abbr smd-u-term">HTML</span>`; `HTML` in the agent view, `smd to-md` and the exports; a `directive/unknown` warning |
+| A 2.x tool that knows `abbr` (a later release) | The directive as that release defines it |
+| `.smd` tools before 2.0, which read `smd: 2` with the v1 rules (and warn `frontmatter/version`) | `:abbr` as text, then `[HTML]{.term}` as a styled span: "`:abbrHTML`" in the render, the agent view and `smd to-md`. Without an attribute list, `:abbr[HTML]` as written. A mixed-case known name (`:Badge[x]`) is text too |
+| GitHub and other Markdown renderers | The text as written, `:abbr[HTML]{.term}` |
+
+So a spec v2 document in `smd fmt` canonical form reads the same with v1 tools apart from typography, attribute escapes (`\\`) and the content of unknown directives (RFC, versioning rule 5). Write a known name in lower case where tools before 2.0 still read the document; `smd fmt` keeps a name's case as written.
 
 For example, tools before 1.6 don't know `:::include`: they render its body in a plain box (`smd-box smd-box-include`), warn `container/unknown`, and show the body in the agent view and `smd to-md`. That is why an include's body should be fallback text such as a link to the file.
 
@@ -672,7 +769,39 @@ Localized labels (§2.2) degrade to English: tools before 1.6 don't know `lang`,
 
 ### 10.1 Migrating to spec v2
 
-Spec v2 (`smd: 2`, Styled Markdown 2.0) reads a few things differently; the accepted changes are in the spec v2 RFC (`docs/SPEC-V2-PROPOSALS.smd` on the 2.0 branch). A document opts in by saying `smd: 2`. `smd migrate --to 2` plans what a document needs so that it means the same under v2 as it does today. It is a command of its own, because it changes text that `smd fmt`, which only changes layout, never touches. 1.10 only reports the plan (`--dry-run`); 2.0 applies it.
+Spec v2 (`smd: 2`, Styled Markdown 2.0) reads a few things differently; the accepted changes are in the spec v2 RFC (`docs/SPEC-V2-PROPOSALS.smd` on the 2.0 branch). A document opts in by saying `smd: 2`. `smd migrate --to 2` plans what a document needs so that it means the same under v2 as it does today. It is a command of its own, because it changes text that `smd fmt`, which only changes layout, never touches. 1.10 only reported the plan (`--dry-run`); since 2.0, `smd migrate <files|dirs> --to 2` writes it, and VS Code's **Migrate to Spec v2** applies it to the open document as one undoable edit.
+
+For example, this v1 document:
+
+```markdown
+---
+smd: 1
+title: Plan
+---
+
+::::tabs
+:::tab Overview
+See :abbr[HTML].
+::::
+:::
+```
+
+is written as:
+
+```markdown
+---
+smd: 2
+title: Plan
+---
+
+::::tabs
+:::tab Overview
+See \:abbr[HTML].
+:::
+::::
+```
+
+`smd migrate` writes only `.smd` files whose plan changes something, each whole or not at all (a temporary file in the same folder, renamed over it), with its line endings and final newline as they were, and never through a symbolic link that leads outside the paths given. It prints each file it writes and the plan's notes, which are left to the author (typography without `--keep-typography`, a link in the title or summary, a value to quote by hand). It then reads each file back and checks it: a new plan has nothing left to change, and the v2 rendering of the written file equals the v1 rendering of the original, apart from what the notes and "v2" steps say; any other difference is a warning (`--no-verify` skips the check). `--check` writes nothing and exits 1 when a file needs migrating, for CI; `--dry-run` reports the plan. Exit codes when writing: 0 done or nothing to do, 1 a file could not be written (or a link leads outside the paths given), 2 a usage error, which includes a file argument that isn't `.smd`.
 
 The steps run in this order. "v1" steps leave the document rendering as before with v1 tools; "v2" steps keep what the document means when it is read with the v2 rules, and its v1 rendering may change slightly. Text in code, math and raw HTML is never rewritten.
 
@@ -681,23 +810,43 @@ The steps run in this order. "v1" steps leave the document rendering as before w
 | Closing fences | proposal 3 | v1 | A closing fence is written with its container's colon count (`::::` closing `:::tab` becomes `:::`), as `smd fmt` writes it and the `container/colons` fix does |
 | Duplicate attributes | proposal 4 | v1 | A key, `#id` or class given twice is kept once, with the value v1 uses (the last), where it first appears (`attrs/duplicate`). Only a repeated class renders differently: v1 writes it twice |
 | Title text that is not shown | proposal 4 | v1 | The title text of a container that also has `title=` is removed (`container/title-conflict`); text beside an HTML comment is a note |
+| Agent priority | proposal 12 | v1 | `priority` on `:::agent`, removed in 2.0 (§11.2), is removed, with the braces when nothing else is in them (`attrs/unknown`). No tool read it, so nothing renders differently |
 | `$$` delimiters | proposal 2 | v1 | A `$$` line that also has math on it is split, so each delimiter is on a line of its own (`$$ x` becomes `$$` and `x`), with the block's indentation, `>` markers or list indentation. The math is the same |
-| Braces after headings | proposal 5 | v1 | An empty `{}` or a bare `{word}` after a heading is removed (`heading/attrs-text`); `{agent}` is a note |
-| Unknown directives | proposal 7b | v2 | A literal `:name[…]` whose name isn't an inline directive as written (`:abbr[HTML]`, `:Badge[x]`) gets its colon escaped (`\:abbr[HTML]`), so v2 doesn't read it as a directive. CommonMark shows `\:` as `:` |
-| Include sections | proposal 9 | v1 | A `section=` that finds its heading only by a part of the heading's text is rewritten to the heading's id (`include/section-match`). Needs the included file |
+| Braces after headings | proposal 5 | v1 | An empty `{}` or a bare `{word}` after a heading is removed (`heading/attrs-text`); a bare `agent`, which v1 reads as `agent=true`, is written `agent=true` |
+| Backslashes in attribute values | proposal 6 | v2 | A quoted value that spec v2 would read differently is written with the escapes v2 needs to read the value v1 reads: `"\\server"` (two backslashes in v1) becomes `"\\\\server"`, and `"C:\docs\"` (a value ending in a backslash) becomes `"C:\docs\\"`. Only attribute lists that v1 reads (after a container's name, a heading, a styled span or a known directive) |
+| Unknown directives | proposals 7b, 11 | v2 | A literal `:name[…]` or `:name{…}` whose name isn't an inline directive as written (`:abbr[HTML]`, `:Badge[x]`, `:sep{.wide}`) gets its colon escaped (`\:abbr[HTML]`), so v2 doesn't read it as a directive. CommonMark shows `\:` as `:`. A mixed-case known name is escaped, not lower-cased: v1 shows it as text, and lower-casing it would make it a directive. Front matter values that the page header renders (`title`, `summary`) are not rewritten: put such text in a code span there |
+| Include sections | proposal 9 | v1 | A `section=` that finds its heading only by a part of the heading's text is rewritten to the heading's id (`include/section-match`), so v2 includes the same section v1 does. Needs the included file |
 | Enumerated values | proposal 11 | v2 | Container, directive and front matter values are written in the vocabulary's case: `status=Accepted` → `accepted`, `method=get` → `GET`, `theme: Dark` → `dark`. Directive content such as `:priority[High]` is shown as written, and is left alone |
-| Typography | proposal 8 | v2 | With `--keep-typography`, `typography: true` is added to the front matter of a document whose text the typographer changes (curly quotes, dashes, ellipses, `(c)` and other symbols), to keep them under v2; otherwise a note counts those places |
-| Bare domain links | proposal 8 | v2 | A note for each bare domain linked today (`example.com`), which v2 doesn't link; with `--link-domains`, it is written as `<https://example.com>` |
-| Front matter values | proposal 10 | v2 | A note for each value the page header or a `{{key}}` shows other than as written (`version: 2.10` shows `2.1` in v1 and `2.10` in v2); with `--quote-variables`, it is quoted, so every version shows `2.10` |
+| Typography | proposal 8 | v2 | With `--keep-typography`, `typography: true` is added to the front matter of a document whose text the typographer changes (curly quotes, dashes, ellipses, `(c)` and other symbols), so spec v2 shows them as v1 does (§4.8); otherwise a note counts those places |
+| Bare domain links | proposal 8 | v1 | A note for each link v1 makes that v2 doesn't (§4.8): a bare domain (`example.com`), `//host`, `WWW.` in capitals; with `--link-domains`, it is written as a Markdown link to the address v1 links, `[example.com](http://example.com)`, which both versions show the same (a `--`, `...` or `(c)` in its text is escaped, so typography leaves it alone). A link in the front matter's `title` or `summary`, and `www.` text that v2 links and v1 doesn't (`www.shop.test`), are notes |
+| Front matter values | proposal 10 | v2 | A note for each value the page header, the agent view's header or a `{{key}}` shows other than as written (`version: 2.10` shows `2.1` in v1 and `2.10` in v2); with `--quote-variables`, a top-level plain value is quoted, so every version shows `2.10`. A value in a list or a nested mapping (`tags: [1.10]`) stays a note, to quote by hand |
 | Spec version | versioning rules | v1 | `smd: 1`, a missing key, a value that counts as 1 (`true`, `"1"`) or a missing front matter becomes `smd: 2`. Tools before 2.0 warn about `smd: 2` and read the document with the v1 rules |
 
-A document that already says `smd: 2` (or a newer version) needs nothing. Suppression comments don't stop a step: they silence reports, while the steps are about meaning. The plan of a migrated document has nothing more to change, apart from notes.
+After the closing fence and `$$` steps, every closing fence has its container's colon count and every multi-line math delimiter is on a line of its own, so spec v2 pairs the fences and reads the math as v1 did (§3, §4.4). A document that already says `smd: 2` (or a newer version) needs nothing, so migrating twice changes nothing. Suppression comments don't stop a step: they silence reports, while the steps are about meaning. The plan of a migrated document has nothing more to change, apart from notes.
+
+An included file (§3.4) is read with the version of the document that includes it, so text that an `:::include` brings in is read with the v2 rules once the including document says `smd: 2`; the plan of the including document doesn't rewrite it. When that changes what it shows (typographic quotes in the included text, say), the check after writing warns. The included file's own `smd` value doesn't change that: write the characters themselves in it, or add `typography: true` to the including document.
 
 ## 11. Deprecated
 
-These still work in spec v1 and in every 1.x release, with a hint (or a note in the message) from 1.10. Styled Markdown 2.0 removes them.
+What is deprecated still works, and is removed in a later major. What 1.10 deprecated is removed in 2.0 (§11.2); nothing in the document syntax is deprecated in 2.0. The CLI's older export command names are (§11.1).
 
-| Deprecated | Since | In 2.0 | Instead |
+### 11.1 Deprecated tool names
+
+Styled Markdown 2.0 gathers the CLI's exports under one command, `smd export <file> --to <format>`. The older command names stay as aliases with the same options, output and exit codes, and print no warning (scripts that read stderr keep working). They may be removed in 3.0.
+
+| Deprecated | Since | Instead |
+|---|---|---|
+| `smd render <file>` | 2.0 | `smd export <file> --to html` |
+| `smd to-md <file>` | 2.0 | `smd export <file> --to md` |
+| `smd pdf <file>` | 2.0 | `smd export <file> --to pdf` |
+| `smd docx <file>` | 2.0 | `smd export <file> --to docx` |
+
+### 11.2 Removed in 2.0
+
+Deprecated in 1.10, with a hint (or a note in the message), and removed in Styled Markdown 2.0 for every document, whatever its `smd` value.
+
+| Removed | Deprecated in | What 2.0 does | Migration |
 |---|---|---|---|
-| `priority` on `:::agent` | 1.10 | Removed, unless a meaning is agreed first; no tool reads it | Leave it out. 1.10 reports it as the hint `deprecated/agent-priority`, with a fix that removes it |
-| The `figure/kind` diagnostic code | 1.10 | An invalid `kind` on a `figure` is reported as `attrs/value` | Name `attrs/value` as well as `figure/kind` in rule settings and suppression comments. The 1.10 message says so |
+| `priority` on `:::agent` | 1.10 | No meaning was agreed and no tool read it: it is an unknown attribute, the warning `attrs/unknown`, reported on the attribute. The block renders as before | `smd validate --fix` or `smd migrate --to 2` removes it (with the braces when nothing else is in them) |
+| The `deprecated/agent-priority` diagnostic code | 1.10 | The problem is reported as `attrs/unknown`. A rule setting or suppression comment that names the code (or `deprecated/*`) gets a `rules/unknown` warning that says so, and sets or silences nothing | Name `attrs/unknown` instead (the comment's quick fix does it) |
+| The `figure/kind` diagnostic code | 1.10 | An invalid `kind` on a `figure` is an `attrs/value` error, as on every other container. A rule setting or suppression comment that names `figure/kind` gets a `rules/unknown` warning that says the code was merged into `attrs/value`, and sets or silences nothing | Fix the `kind` (the `attrs/value` quick fix offers the closest value), or name `attrs/value` |

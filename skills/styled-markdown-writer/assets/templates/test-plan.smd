@@ -1,5 +1,5 @@
 ---
-smd: 1
+smd: 2
 title: "Test plan: {{title}}"
 summary: What is being tested, for which release, and the exit criteria that decide go or no-go.
 status: draft

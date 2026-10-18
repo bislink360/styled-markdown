@@ -30,9 +30,21 @@ const checks = {
 
   async 'all commands are registered'() {
     const all = await vscode.commands.getCommands(true);
-    for (const c of ['smd.openPreview', 'smd.openPreviewToSide', 'smd.exportHtml', 'smd.exportMarkdown', 'smd.exportConfluence', 'smd.exportNotion', 'smd.exportDocx', 'smd.convertFromMarkdown', 'smd.validateWorkspace']) {
+    for (const c of ['smd.openPreview', 'smd.openPreviewToSide', 'smd.exportHtml', 'smd.exportMarkdown', 'smd.exportConfluence', 'smd.exportNotion', 'smd.exportDocx', 'smd.convertFromMarkdown', 'smd.validateWorkspace', 'smd.previewMigration', 'smd.migrateToV2']) {
       assert.ok(all.includes(c), `missing command ${c}`);
     }
+  },
+
+  async 'Migrate to Spec v2 applies the plan as one undoable edit and saves nothing'() {
+    const content = '---\nsmd: 1\n---\n\n::::note\nx\n:::\n\nSee :abbr[HTML].\n';
+    const doc = await vscode.workspace.openTextDocument({ language: 'smd', content });
+    await vscode.window.showTextDocument(doc);
+    await vscode.commands.executeCommand('smd.migrateToV2');
+    await waitFor(() => doc.getText() !== content, 'the migration edit');
+    assert.equal(doc.getText(), '---\nsmd: 2\n---\n\n::::note\nx\n::::\n\nSee \\:abbr[HTML].\n');
+    assert.ok(doc.isDirty, 'not saved');
+    await vscode.commands.executeCommand('undo');
+    await waitFor(() => doc.getText() === content, 'one undo reverts it');
   },
 
   async 'valid examples produce no problems'() {
@@ -346,7 +358,8 @@ const checks = {
     const mermaid = () => vscode.languages.getDiagnostics(doc.uri).filter((d) => d.code === 'mermaid/syntax');
     const [d] = await waitFor(() => mermaid().length && mermaid(), 'a mermaid/syntax diagnostic');
     assert.equal(d.range.start.line, 4);
-    assert.equal(d.severity, vscode.DiagnosticSeverity.Warning);
+    // An error since 2.0 (spec v2 RFC, "Tool and API changes").
+    assert.equal(d.severity, vscode.DiagnosticSeverity.Error);
     assert.match(d.message, /^Mermaid syntax error: expected TXT/);
 
     const edit = new vscode.WorkspaceEdit();
@@ -554,7 +567,8 @@ const checks = {
     await vscode.window.showTextDocument(plain);
     await until((s) => s.visible && s.text === '$(circle-large-outline) No status', 'no status in the status bar');
     assert.equal(await vscode.commands.executeCommand('smd.setStatus', 'approved', plain.uri), true);
-    assert.equal(plain.getText(), '---\nsmd: 1\nstatus: approved\n---\n\n# Notes\n');
+    // A new front matter says smd: 2 since 2.0, as this document reads the same under spec v2 (documentStatus.ts).
+    assert.equal(plain.getText(), '---\nsmd: 2\nstatus: approved\n---\n\n# Notes\n');
     await until((s) => s.text === '$(verified) Approved', 'the approved status in the status bar');
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
 
@@ -565,7 +579,7 @@ const checks = {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
 
-  async 'the built-in Markdown preview renders .smd syntax in .md files'() {
+  async 'the built-in Markdown preview renders .smd syntax in .md files that opt in with smd'() {
     const ext = vscode.extensions.getExtension('bislink360.styled-markdown');
     const contributes = ext.packageJSON.contributes;
     assert.equal(contributes['markdown.markdownItPlugins'], true);
@@ -573,23 +587,32 @@ const checks = {
       assert.ok(fs.existsSync(path.join(ext.extensionPath, file)), `${file} is built`);
     }
 
-    // What VS Code calls with its markdown-it instance.
+    // What VS Code calls with its markdown-it instance. Since 2.0 (smd.markdownPreview.enabled is opt-in by
+    // default) only .md files whose front matter has an smd key get the syntax.
     const api = await ext.activate();
     assert.equal(typeof api.extendMarkdownIt, 'function');
     const MarkdownIt = require(path.join(ext.extensionPath, 'node_modules', 'markdown-it'));
     const md = api.extendMarkdownIt(new MarkdownIt());
-    const html = md.render(':::note Heads up\nUse :badge[smd] syntax in **.md** files.\n:::\n\n```mermaid\ngraph TD; A-->B\n```\n\n```js\nplain();\n```\n');
+    const body = ':::note Heads up\nUse :badge[smd] syntax in **.md** files.\n:::\n\n```mermaid\ngraph TD; A-->B\n```\n\n```js\nplain();\n```\n';
+    const html = md.render(`---\nsmd: 1\n---\n\n${body}`);
     assert.match(html, /<div class="smd-callout smd-callout-note"/);
     assert.match(html, /<span class="smd-badge">smd<\/span>/);
     assert.match(html, /<pre class="smd-mermaid">/);
     assert.match(html, /<pre><code class="language-js">plain\(\);/, 'plain code blocks stay the host’s');
+    assert.equal(md.render(body), new MarkdownIt().render(body), 'a .md file without smd is plain Markdown');
 
     // The preview's own renderer, when this VS Code exposes it.
     if ((await vscode.commands.getCommands(true)).includes('markdown.api.render')) {
-      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: '# Plain\n\n:::tip\nShown as a callout.\n:::\n' });
-      const rendered = await vscode.commands.executeCommand('markdown.api.render', doc);
-      assert.match(String(rendered), /smd-callout-tip/);
-      assert.match(String(rendered), /<h1[^>]*>Plain<\/h1>/);
+      const content = '# Plain\n\n:::tip\nShown as a callout.\n:::\n';
+      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: `---\nsmd: 2\n---\n\n${content}` });
+      const rendered = String(await vscode.commands.executeCommand('markdown.api.render', doc));
+      assert.match(rendered, /smd-callout-tip/);
+      assert.match(rendered, /<h1[^>]*>Plain<\/h1>/);
+      const plainDoc = await vscode.workspace.openTextDocument({ language: 'markdown', content });
+      const plain = String(await vscode.commands.executeCommand('markdown.api.render', plainDoc));
+      assert.doesNotMatch(plain, /smd-callout/, 'without smd in the front matter, no .smd syntax');
+      assert.match(plain, /<h1[^>]*>Plain<\/h1>/);
+      assert.match(plain, /:::tip/);
     } else {
       console.log('    (markdown.api.render is not available in this VS Code: checked extendMarkdownIt only)');
     }

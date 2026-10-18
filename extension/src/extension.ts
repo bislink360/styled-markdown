@@ -13,7 +13,12 @@ import { registerStatusWorkflow } from './statusWorkflow';
 import { registerTasksView } from './tasksView';
 import { registerDocxExport } from './docxExport';
 import { migrationPlan } from './core/migrate';
-import { migrationReport, migrationSummary } from './migrateReport';
+import { migrationEdit, migrationReport, migrationSummary, planCounts } from './migrateReport';
+
+const APPLY = 'Apply';
+/** What the preview says after its summary in the editor. */
+const MIGRATE_NEXT = 'Dry run: nothing was changed. "Apply", or Styled Markdown: Migrate to Spec v2, applies it to the editor (not saved).';
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** The API VS Code's built-in Markdown preview uses (see markdownPreview.ts). */
 export interface SmdExtensionApi {
@@ -39,6 +44,39 @@ export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
 
   let migration: vscode.OutputChannel | undefined;
   context.subscriptions.push({ dispose: () => migration?.dispose() });
+  /** The migration's output channel, cleared. */
+  const migrationChannel = (): vscode.OutputChannel => {
+    migration ??= vscode.window.createOutputChannel('Styled Markdown: Migration to Spec v2');
+    migration.clear();
+    return migration;
+  };
+
+  /** Apply the plan of `smd migrate --to 2` to the document as one edit (undoable, not saved), and show its notes. */
+  const applyMigration = async (doc: vscode.TextDocument): Promise<void> => {
+    const text = doc.getText();
+    const plan = migrationPlan(text, { readFile: readerFor(doc) });
+    const edit = migrationEdit(text, plan);
+    const channel = migrationChannel();
+    channel.append(migrationReport(vscode.workspace.asRelativePath(doc.uri), plan));
+    if (!edit) {
+      vscode.window.showInformationMessage(plan.from >= 2 ? 'This document already says smd: 2: nothing to migrate.' : 'Nothing to migrate in this document (see the output).');
+      if (plan.steps.length) channel.show(true);
+      return;
+    }
+    const change = new vscode.WorkspaceEdit();
+    change.replace(doc.uri, new vscode.Range(doc.positionAt(edit.start), doc.positionAt(edit.end)), edit.text);
+    if (!(await vscode.workspace.applyEdit(change))) {
+      vscode.window.showErrorMessage('The migration could not be applied: the document is unchanged.');
+      return;
+    }
+    const { changes, notes } = planCounts(plan);
+    const verb = notes === 1 ? 'is' : 'are';
+    const left = notes ? ` The ${plural(notes, 'note')} above ${verb} left to you.` : '';
+    channel.append(`\nMigrated to spec v2: ${plural(changes, 'change')} applied as one edit, not saved (Undo reverts it).${left}\n`);
+    channel.show(true);
+    const inOutput = notes ? ` ${plural(notes, 'note')} in the output.` : '';
+    vscode.window.showInformationMessage(`Migrated to spec v2 (${plural(changes, 'change')}, not saved).${inOutput}`);
+  };
 
   context.subscriptions.push(
     previews,
@@ -114,15 +152,24 @@ export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
       await vscode.window.showTextDocument(target);
     }),
 
-    // The dry run of `smd migrate --to 2` for the current file: a report, nothing is written.
-    vscode.commands.registerCommand('smd.previewMigration', () => {
+    // The dry run of `smd migrate --to 2` for the current file: a report, nothing is written; "Apply" migrates it.
+    vscode.commands.registerCommand('smd.previewMigration', async () => {
       const doc = activeSmd();
       if (!doc) return;
       const plan = migrationPlan(doc.getText(), { readFile: readerFor(doc) });
-      migration ??= vscode.window.createOutputChannel('Styled Markdown: Migration to Spec v2');
-      migration.clear();
-      migration.append(migrationReport(vscode.workspace.asRelativePath(doc.uri), plan) + migrationSummary([plan]));
-      migration.show(true);
+      const channel = migrationChannel();
+      channel.append(migrationReport(vscode.workspace.asRelativePath(doc.uri), plan) + migrationSummary([plan], MIGRATE_NEXT));
+      channel.show(true);
+      const { changes } = planCounts(plan);
+      if (!changes) return;
+      const choice = await vscode.window.showInformationMessage(`Migrating to spec v2 changes ${plural(changes, 'place')} (see the output).`, APPLY);
+      if (choice === APPLY) await applyMigration(doc);
+    }),
+
+    // `smd migrate --to 2` on the open document: one undoable edit, not saved.
+    vscode.commands.registerCommand('smd.migrateToV2', async () => {
+      const doc = activeSmd();
+      if (doc) await applyMigration(doc);
     }),
 
     vscode.commands.registerCommand('smd.validateWorkspace', async () => {

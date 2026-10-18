@@ -1,4 +1,4 @@
-# Styled Markdown syntax reference (spec v1)
+# Styled Markdown syntax reference (spec v2)
 
 Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists every `.smd` addition with all attributes and allowed values.
 
@@ -24,7 +24,7 @@ Everything in CommonMark + GitHub-Flavored Markdown is valid. This file lists ev
 
 ```yaml
 ---
-smd: 1                       # required in practice (validator suggests it)
+smd: 2                       # the spec version: 2 for new documents; 1 (or no key) keeps the v1 rules
 title: Saved Searches        # rendered as the page title; don't repeat as "# H1"
 summary: One or two sentences. Agents read this first.
 status: draft                # draft | review | approved | deprecated | archived
@@ -39,12 +39,15 @@ accent: indigo               # named color or #hex for headings/links
 toc: true                    # table of contents after the header
 related: [docs/other.smd]    # list of paths/URLs
 lang: de                     # optional: language of rendered labels (de es fr ja pt zh; default English)
+typography: true             # optional, smd: 2 only: curly quotes, dashes, ellipses (v1 always has them)
 ---
 ```
 
-`lang` changes only the words the renderer adds (callout titles, "Figure 2", "overdue", status names); the document's text, the agent view and `smd to-md` are unchanged. Set it when the document is written in that language.
+`lang` changes only the words the renderer adds (callout titles, "Figure 2", "overdue", status names); the document's text, the agent view and `smd export --to md` are unchanged. Set it when the document is written in that language.
 
 Unknown keys are allowed (reported as hints, except keys the text shows with `{{key}}`, see §8).
+
+`smd` selects the rules a document is read with. Write `smd: 2` in a new document. It shows text as written: no curly quotes or dashes unless `typography: true`, and only `https://…`, `www.…` and e-mail addresses become links (a bare `example.com` is text). A heading's trailing `{word}` is heading text, any `:name[…]` is a directive, and `\\` in a quoted attribute value is one backslash. A document with `smd: 1` or no `smd` key keeps the v1 rules, so keep an existing document's value when you edit it; `smd migrate <file> --to 2` moves it to spec v2 and keeps what it shows (`--dry-run` reports the plan first).
 
 ## 2. Block containers — general rules
 
@@ -55,7 +58,7 @@ content (any Markdown, including other blocks)
 ```
 
 - Open with 3+ colons, the name, optional `{attrs}` **immediately** after the name, then an optional title (inline Markdown allowed).
-- Close with a line of 3+ colons and nothing else. It closes the **innermost** open block.
+- Close with a line of 3+ colons and nothing else. It closes the **innermost** open block. In a document with `smd: 2` it closes the innermost block opened with **as many colons**, so write every closing fence with its opener's colons (as `smd fmt` does).
 - Nesting works at any depth. Writing outer blocks with more colons (`::::tabs`) is a readability convention.
 - A `:::` inside a code fence never closes a block.
 - Every block also accepts the style attributes from §12.
@@ -263,7 +266,7 @@ See [Pricing](shared/terms.smd#pricing) in the shared terms.
 | Attribute | Meaning |
 |---|---|
 | `file` (needed) | The `.smd` document to include, relative to this one. Its body is used, without its front matter. |
-| `section` | Only one section and its subsections: a heading's text or id, as `smd agent --section` matches it. |
+| `section` | Only one section and its subsections: a heading's id (`pricing`) or its whole text in any case (`Pricing`). With `smd: 2` a part of the text matches nothing (v1 documents also match a part); prefer the id. |
 | `level` | 1–6: the level the included top heading becomes, so it nests under the current heading (here `###` under a `##`). |
 
 - Write shared text (terms, glossary, setup steps) once and include it instead of copying it.
@@ -301,7 +304,7 @@ Context for people only. Agents skip it.
 | `:kbd[Ctrl+Shift+P]` | Keyboard keys |
 | `:mention[@team]` | Mention |
 | `:ref[fig-checkout]` | "Figure 2", linked to the `:::figure{#fig-checkout}` (see §4) |
-| `$E=mc^2$` / `$$ … $$` | Math (KaTeX). No space just inside the `$`; `$5 and $10` is not math. |
+| `$E=mc^2$` / `$$ … $$` | Math (KaTeX). No space just inside the `$`; `$5 and $10` is not math. Put a block's `$$` delimiters on lines of their own (in an `smd: 2` document only such lines open and close it). |
 
 A directive's `:` must follow whitespace or opening punctuation, so `10:30` is safe.
 
@@ -336,9 +339,9 @@ Version {{version}} ships on {{release.date}}. :badge[v{{version}}]{color=indigo
 - `{{name}}` shows the value of a front matter key; dots reach nested keys and list items (`{{owners.0}}`), and a list shows as `a, b`. Spaces inside the braces are fine.
 - Works in text, headings, lists, tables, link text, image alt text, block titles and directive content. Never in code, math, URLs, raw HTML, attribute lists or the front matter itself.
 - Only defined keys are replaced: anything else stays as written (`variable/undefined`, info, fixes near misses such as `{{verison}}`). A key holding a mapping is `variable/not-text`. `\{{name}}` or a code span keeps literal braces.
-- Quote versions: YAML reads `version: 2.10` as the number 2.1.
+- With `smd: 2`, values show as written: `version: 2.10` shows `2.10`. In `smd: 1` documents YAML reads it as the number 2.1, so quote it there (`version: "2.10"`).
 - Heading ids use the heading as written (`#whats-new-in-version`), so they don't change with the value.
-- Agents and `smd to-md` see the values; tools before 1.6 and GitHub show `{{version}}` as written.
+- Agents and `smd export --to md` see the values; tools before 1.6 and GitHub show `{{version}}` as written.
 
 ## 9. Tasks
 

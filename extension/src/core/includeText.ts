@@ -8,6 +8,7 @@ import { findLinks } from './links';
 import {
   alertLines, inlineItemLines, inlineMathLines, literalLines, parseSmd, renderedTaskLines, type AlertLines, type InlineItemLines, type InlineMathLines,
 } from './parse';
+import type { SpecVersion } from './specVersion';
 
 /** `:::include` for the line-based views (agent view, plain Markdown, validation), which read text rather than tokens. */
 
@@ -124,9 +125,10 @@ export const figuresOf = (figures: ExpandedFigures, key: string): ReadonlyMap<nu
  */
 export function expandedFigures(text: string, readFile?: (relativePath: string) => string | undefined): ExpandedFigures {
   const lines = text.split(/\r?\n/);
-  const walk: FigureWalk = { counter: new FigureCounter(), byId: new Map(), byDocument: new Map(), source: includeSource(readFile), root: text };
+  const parsed = parseSmd(text);
+  const walk: FigureWalk = { counter: new FigureCounter(), byId: new Map(), byDocument: new Map(), source: includeSource(readFile), root: text, spec: parsed.spec };
   const from = parseFrontMatter(text).bodyStartLine;
-  numberDocument({ key: '', lines, figures: parseSmd(text).figures, from, to: lines.length - 1 }, walk);
+  numberDocument({ key: '', lines, figures: parsed.figures, from, to: lines.length - 1 }, walk);
   return { byId: walk.byId, byDocument: walk.byDocument };
 }
 
@@ -137,6 +139,8 @@ interface FigureWalk {
   source: IncludeSource;
   /** The root document, for include cycles. */
   root: string;
+  /** The root document's spec version, which included documents are read with too. */
+  spec: SpecVersion;
 }
 
 /** One document of the walk: its lines, its figures (lines in `lines`) and the lines [from, to] it shows. */
@@ -153,7 +157,7 @@ interface FigureDocument {
 function numberDocument(doc: FigureDocument, walk: FigureWalk): void {
   const own = new Map<number, Figure>();
   walk.byDocument.set(doc.key, own);
-  const includes = walk.source.readFile ? findIncludes(doc.lines, doc.from, doc.to) : [];
+  const includes = walk.source.readFile ? findIncludes(doc.lines, doc.from, doc.to, walk.spec) : [];
   const events = [...doc.figures.map((figure) => ({ line: figure.line, figure })), ...includes.map((include) => ({ line: include.line, include }))]
     .sort((a, b) => a.line - b.line);
   // The last line of the include whose fallback body the included text replaces.
@@ -181,5 +185,5 @@ function expandFigures(block: IncludeBlock, doc: FigureDocument, walk: FigureWal
   const { text, offset } = includedText(inc);
   const figures = parseSmd(text).figures.map((f) => ({ ...f, line: f.line + offset }));
   numberDocument({ key: includeKey(doc.key, block.line), lines: inc.lines, figures, from: inc.start, to: inc.end, scope: innerScope(scope, inc) }, walk);
-  return containerEnd(doc.lines, block.line);
+  return containerEnd(doc.lines, block.line, walk.spec, doc.from);
 }

@@ -1,0 +1,42 @@
+---
+smd: 2
+title: Display math delimiters in spec v2
+summary: "Pins how spec v2 reads `$$` display math (RFC proposal 2): it opens on a line that is only `$$`, or `$$…$$` on one line, and closes on a line that is only `$$`. Read with `smd: 1`, a line that starts or ends with `$$` is a delimiter; the unit tests compare both."
+status: draft
+updated: 2026-10-17
+---
+
+## Own-line delimiters
+
+The area of a circle:
+
+$$
+A = \pi r^2
+$$
+
+$$ E = mc^2 $$
+
+## Text beside a delimiter
+
+Pricing:
+$$5 per seat, billed monthly
+
+## Plans
+
+The team plan costs $$
+
+The line that starts with `$$` and the line that ends with `$$` are text in spec v2: no math opens or closes on them, and the heading between them is a heading.
+
+## Math in a callout
+
+:::note Ratios
+$$
+\frac{a}{b}
+:::
+\frac{c}{d}
+$$
+
+Still inside the note: math is opaque, so the `:::` line in it is math.
+:::
+
+Outside the note.

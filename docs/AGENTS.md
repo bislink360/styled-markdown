@@ -78,7 +78,7 @@ Start from a template when one fits: `smd init docs/x.smd --template prd|adr|rfc
 
 ```yaml
 ---
-smd: 1
+smd: 2
 title: Short title
 summary: One or two sentences — what and why.
 status: draft
@@ -86,6 +86,8 @@ owners: ["@team"]
 updated: 2026-09-26
 ---
 ```
+
+`smd: 2` (spec v2) shows text as written: straight quotes stay straight (type `—` or `’`, or add `typography: true`), only `https://…`, `www.…` and e-mail addresses become links, a heading's trailing `{word}` is heading text, and any `:name[…]` is a directive (`\:name[…]` keeps it text). When you edit an existing document, keep its `smd` value: `smd: 1` or no key keeps the v1 rules, and `smd migrate <file> --to 2` moves it to spec v2 without changing what it shows.
 
 Then write normal Markdown, adding Styled Markdown only where it helps the reader:
 
@@ -124,7 +126,7 @@ Then write normal Markdown, adding Styled Markdown only where it helps the reade
 
 Rules:
 
-- A line with only `:::` closes the **innermost** open container. Using more colons on outer containers (`::::tabs`) is optional but improves readability.
+- A line with only `:::` closes the **innermost** open container. Using more colons on outer containers (`::::tabs`) is optional but improves readability. In a document with `smd: 2`, a closing fence closes the innermost container opened with as many colons, so write each one with its opener's colons, and put `$$` math delimiters on lines of their own.
 - Attributes go **directly after** the name with no space: `:::card{accent=blue} Title`, `[text]{color=red}`.
 - Use named colors, not hex, unless matching a brand color.
 - Don't repeat the front matter `title` as a `# H1`.
@@ -146,4 +148,4 @@ Every problem has a stable `code` (e.g. `container/unclosed`, `attrs/value`) and
 
 ## Need plain Markdown?
 
-`smd to-md file.smd` produces GitHub-compatible Markdown (callouts → GitHub alerts, badges → code spans, etc.).
+`smd export file.smd --to md` produces GitHub-compatible Markdown (callouts → GitHub alerts, badges → code spans, etc.).

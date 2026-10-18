@@ -67,7 +67,9 @@ test('own names: attribute values, keys and statuses', () => {
 test('own names: completion, hovers and the Block Editor forms offer nothing for them', () => {
   assert.equal(containerForm(':::constructor{a=1} T', 'constructor'), undefined);
   assert.equal(containerForm(':::toString T', 'toString'), undefined);
-  assert.equal(inlineFields({ kind: 'directive', name: 'constructor', values: {}, content: 'x', at: { line: 0, start: 0, end: 16 } }), undefined);
+  // A name outside the vocabulary (a directive only in spec v2) gets the generic form of a styled span, nothing inherited.
+  const fields = inlineFields({ kind: 'directive', name: 'constructor', values: {}, content: 'x', at: { line: 0, start: 0, end: 16, content: { start: 13, end: 14 } } });
+  assert.deepEqual(fields?.map((f) => f.name), ['content', 'color', 'bg', 'border']);
   // Attribute keys after an unknown name are the style keys; values of an inherited key are none.
   const keys = completionsAt(':::constructor{', 0, 15)?.items.map((i) => i.label) ?? [];
   assert.ok(keys.includes('color') && !keys.includes('constructor'), keys.join(', '));

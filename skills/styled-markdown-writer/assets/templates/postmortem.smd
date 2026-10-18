@@ -1,5 +1,5 @@
 ---
-smd: 1
+smd: 2
 title: "Postmortem: {{title}}"
 summary: What users saw and for how long, the root cause in one clause, and the most important follow-up.
 status: review

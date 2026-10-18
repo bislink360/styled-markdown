@@ -7,11 +7,28 @@
  *
  * The markdown-it rule (markdownItRules.ts) substitutes while rendering; the functions here do the same
  * on plain lines for the agent view, `smd to-md`, the validator and the editors.
+ *
+ * Which text a value shows (SPEC §4.7) depends on the spec version: spec v1 shows the value YAML reads
+ * (`version: 2.10` is the number 2.1, shown `2.1`); spec v2 keeps the spelling of the YAML source (`2.10`). Every
+ * reader gets the values to show from {@link shownValues} (or documentVariables), the one place that decides.
  */
-import { parseFrontMatter } from './frontmatter';
+import { closesDisplayMath, displayMathOpener } from './containers';
+import { parseFrontMatter, sourceSpelledData } from './frontmatter';
+import { specVersion, type SpecVersion } from './specVersion';
 
 /** A document's front matter, as parsed. */
 export type Variables = Readonly<Record<string, unknown>>;
+
+/**
+ * The front matter values a document shows, through `{{name}}` and in its page header: `data` (the front matter as
+ * parsed) in spec v1; in spec v2, the same values with every plain number and boolean spelled as in the YAML source
+ * (`version: 2.10` shows `2.10`, `ok: True` shows `True`). Quoted, block and date values show the same in both.
+ * `source` is the document's text; front matter a host removed and passed as data has no source, so it shows as parsed.
+ */
+export function shownValues(data: Variables, source: string | undefined, spec: SpecVersion): Variables {
+  if (spec !== 2 || !source?.startsWith('---')) return data;
+  return sourceSpelledData(source) ?? data;
+}
 
 /** A variable name: a front matter key, or a dotted path into nested mappings and lists (`owner.name`, `links.0`). */
 const NAME = String.raw`[A-Za-z_][\w-]*(?:\.[\w-]+)*`;
@@ -126,10 +143,24 @@ const blankCode = (line: string) => line.replaceAll(/(`+)[\s\S]*?\1/g, (m) => ' 
 
 /** A line whose text is never substituted: a reference definition (`[label]: url`) or `$$ display math`. */
 const LITERAL_LINE = /^\s{0,3}(?:\[[^\]]+\]:|\$\$)/;
+/** A reference definition, for spec v2, where a line starting with `$$` is math only as displayMathOpener says. */
+const DEFINITION_LINE = /^\s{0,3}\[[^\]]+\]:/;
 
-/** substituteVariables on a line, leaving its code spans, reference definitions and display math untouched. */
-export function substituteLine(line: string, variables: Variables | undefined): string {
-  if (!variables || !line.includes('{{') || LITERAL_LINE.test(line)) return line;
+/**
+ * A line whose text is never substituted. Spec v1: a reference definition or a line starting with `$$`. Spec v2: a
+ * reference definition or display math that opens on the line (a line starting with `$$` and more text is text).
+ */
+function literalLine(line: string, spec: SpecVersion): boolean {
+  if (spec === 1) return LITERAL_LINE.test(line);
+  return DEFINITION_LINE.test(line) || (/^\s{0,3}\$\$/.test(line) && displayMathOpener(line.trim(), spec) !== null);
+}
+
+/**
+ * substituteVariables on a line, leaving its code spans, reference definitions and display math untouched; `spec` is
+ * the version the document is read with.
+ */
+export function substituteLine(line: string, variables: Variables | undefined, spec: SpecVersion = 1): string {
+  if (!variables || !line.includes('{{') || literalLine(line, spec)) return line;
   return line.split(CODE_SPAN).map((part, i) => (i % 2 === 1 ? part : substituteVariables(part, variables))).join('');
 }
 
@@ -142,21 +173,26 @@ export interface VariableUse extends VariableRef {
 type Block = { kind: 'fence'; mark: string } | { kind: 'math' } | { kind: 'comment' } | null;
 
 /** The block that continues after `line` once inside `block`, or null when the line closes it. */
-function stillInside(block: NonNullable<Block>, line: string): Block {
+function stillInside(block: NonNullable<Block>, line: string, spec: SpecVersion): Block {
   if (block.kind === 'fence') {
     const mark = /^\s{0,3}(`{3,}|~{3,})\s*$/.exec(line)?.[1];
     return mark?.[0] === block.mark[0] && mark.length >= block.mark.length ? null : block;
   }
-  if (block.kind === 'math') return line.trimEnd().endsWith('$$') ? null : block;
+  if (block.kind === 'math') return closesDisplayMath(line, spec) ? null : block;
   return line.includes('-->') ? null : block;
 }
 
+/** Whether a line opens `$$` math that runs on to later lines (spec v1 as these scans always read it). */
+function opensMath(math: string, spec: SpecVersion): boolean {
+  if (spec === 1) return math.startsWith('$$') && !(math.length > 3 && math.endsWith('$$'));
+  return displayMathOpener(math, spec) === 'block';
+}
+
 /** The block a line outside any block opens: a code fence, `$$` math or an HTML comment that runs on. */
-function opens(line: string): Block {
+function opens(line: string, spec: SpecVersion): Block {
   const fence = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
   if (fence) return { kind: 'fence', mark: fence[1] };
-  const math = line.trim();
-  if (math.startsWith('$$') && !(math.length > 3 && math.endsWith('$$'))) return { kind: 'math' };
+  if (opensMath(line.trim(), spec)) return { kind: 'math' };
   const comment = line.lastIndexOf('<!--');
   return comment >= 0 && !line.includes('-->', comment) ? { kind: 'comment' } : null;
 }
@@ -164,17 +200,18 @@ function opens(line: string): Block {
 /**
  * Every `{{name}}` in the body of a document, from line `from` (the first body line) on: outside code
  * fences, `$$` math, HTML comments and reference definitions, and outside inline code. `isCode` tells which lines
- * are code as rendering reads them (see ParseResult.code): a `$$` line there is code and opens no math.
+ * are code as rendering reads them (see ParseResult.code): a `$$` line there is code and opens no math. `spec` is the
+ * version the document is read with (display math delimiters).
  */
-export function findVariables(lines: string[], from = 0, isCode: (line: number) => boolean = () => false): VariableUse[] {
+export function findVariables(lines: string[], from = 0, isCode: (line: number) => boolean = () => false, spec: SpecVersion = 1): VariableUse[] {
   const uses: VariableUse[] = [];
   let block: Block = null;
   for (let i = from; i < lines.length; i++) {
     const line = lines[i];
-    if (block) { block = stillInside(block, line); continue; }
-    block = opens(line);
+    if (block) { block = stillInside(block, line, spec); continue; }
+    block = opens(line, spec);
     if (block?.kind === 'math' && isCode(i)) { block = null; continue; }
-    if (block?.kind === 'fence' || block?.kind === 'math' || LITERAL_LINE.test(line)) continue;
+    if (block?.kind === 'fence' || block?.kind === 'math' || literalLine(line, spec)) continue;
     // A comment that runs on to later lines hides the rest of this one.
     const visible = block ? line.slice(0, line.lastIndexOf('<!--')) : line;
     for (const ref of variablesIn(blankCode(visible))) uses.push({ ...ref, line: i });
@@ -212,10 +249,10 @@ function nameStart(prefix: string): number | undefined {
  * Is `line` inside a code fence, `$$` math or an HTML comment that starts on an earlier body line? `isCode` tells
  * which lines are code as rendering reads them (see findVariables): a `$$` line there opens no math.
  */
-function insideBlock(lines: string[], from: number, line: number, isCode: (line: number) => boolean): boolean {
+function insideBlock(lines: string[], from: number, line: number, isCode: (line: number) => boolean, spec: SpecVersion): boolean {
   let block: Block = null;
   for (let i = from; i < line; i++) {
-    block = block ? stillInside(block, lines[i]) : opens(lines[i]);
+    block = block ? stillInside(block, lines[i], spec) : opens(lines[i], spec);
     if (block?.kind === 'math' && isCode(i)) block = null;
   }
   return block !== null;
@@ -241,9 +278,9 @@ export function variableCompletion(
   const from = nameStart(lineText.slice(0, column));
   if (from === undefined) return undefined;
   const fm = parseFrontMatter(text);
-  if (line < fm.bodyStartLine || insideBlock(lines, fm.bodyStartLine, line, isCode)) return undefined;
+  if (line < fm.bodyStartLine || insideBlock(lines, fm.bodyStartLine, line, isCode, specVersion(fm.data))) return undefined;
   const close = !/^[\w.-]*[ \t]*\}\}/.test(lineText.slice(column));
-  return { from, close, names: variableNames(fm.data) };
+  return { from, close, names: variableNames(shownValues(fm.data, text, specVersion(fm.data))) };
 }
 
 /**
@@ -256,9 +293,10 @@ export function variableHover(
   const fm = parseFrontMatter(text);
   const lines = text.split(/\r?\n/);
   if (line < fm.bodyStartLine || !lines[line]?.includes('{{')) return undefined;
-  const ref = findVariables(lines.slice(0, line + 1), fm.bodyStartLine, isCode).find((r) => r.line === line && column >= r.column && column <= r.endColumn);
+  const ref = findVariables(lines.slice(0, line + 1), fm.bodyStartLine, isCode, specVersion(fm.data)).find((r) => r.line === line && column >= r.column && column <= r.endColumn);
   if (!ref) return undefined;
-  return { markdown: `**{{${ref.name}}}** — ${valueDescription(lookupVariable(fm.data, ref.name))}`, start: ref.column, end: ref.endColumn };
+  const shown = shownValues(fm.data, text, specVersion(fm.data));
+  return { markdown: `**{{${ref.name}}}** — ${valueDescription(lookupVariable(shown, ref.name))}`, start: ref.column, end: ref.endColumn };
 }
 
 function valueDescription(value: VariableValue): string {
@@ -276,9 +314,15 @@ function codeSpan(s: string): string {
   return `${fence}${pad}${s}${pad}${fence}`;
 }
 
-/** The front matter of a document given as lines, reading only the front matter lines. */
+/**
+ * The values `{{name}}` shows in a document given as lines ({@link shownValues}, by the document's own spec version),
+ * reading only the front matter lines.
+ */
 export function documentVariables(lines: readonly string[]): Variables {
   if (lines[0]?.trimEnd() !== '---') return {};
   const end = lines.findIndex((l, i) => i > 0 && ['---', '...'].includes(l.trimEnd()));
-  return end < 0 ? {} : parseFrontMatter(lines.slice(0, end + 1).join('\n')).data;
+  if (end < 0) return {};
+  const source = lines.slice(0, end + 1).join('\n');
+  const data = parseFrontMatter(source).data;
+  return shownValues(data, source, specVersion(data));
 }

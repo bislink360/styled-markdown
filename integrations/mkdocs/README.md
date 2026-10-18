@@ -5,14 +5,14 @@ An [MkDocs](https://www.mkdocs.org) plugin for [Styled Markdown](https://github.
 ## Requirements
 
 - Python 3.9+ and MkDocs 1.6+
-- **Node.js 18+** on `PATH`. The renderer is the Styled Markdown engine in JavaScript, shipped inside the package (`bridge.cjs`, no npm install). The plugin starts one `node` process per build. Without Node the build stops with a message saying so.
+- **Node.js 22+** on `PATH`. The renderer is the Styled Markdown engine in JavaScript, shipped inside the package (`bridge.cjs`, no npm install). The plugin starts one `node` process per build. Without Node the build stops with a message saying so.
 
 ## Install
 
 Until the package is on PyPI, install the wheel attached to the [GitHub Release](https://github.com/bislink360/styled-markdown/releases):
 
 ```bash
-pip install https://github.com/bislink360/styled-markdown/releases/download/v1.10.0/mkdocs_styled_markdown-1.10.0-py3-none-any.whl
+pip install https://github.com/bislink360/styled-markdown/releases/download/v2.0.0/mkdocs_styled_markdown-2.0.0-py3-none-any.whl
 ```
 
 Once it is published to PyPI: `pip install mkdocs-styled-markdown`. The plugin's version is the Styled Markdown release it ships.
@@ -39,7 +39,7 @@ List `search` too when you add `plugins:`: MkDocs only adds it by itself when th
 ## What it does
 
 - **Pages:** every `.smd` file in `docs_dir` is a page, at the URL a `.md` file of the same name would have (`guide/setup.smd` → `guide/setup/`). It shows up in the navigation, the search index and `nav:` like any page. When a `.smd` and a `.md` file have the same URL, the `.smd` page is built and the build warns.
-- **Title:** front matter `title`, else the first `#` heading, else MkDocs' usual fallback. The front matter also renders as the page header (title, status, owners, tags), as in `smd render`.
+- **Title:** front matter `title`, else the first `#` heading, else MkDocs' usual fallback. The front matter also renders as the page header (title, status, owners, tags), as in `smd export --to html`.
 - **Table of contents:** from the document's headings and their ids (`## Setup {#install}` → `#install`), so the theme's table of contents, permalinks and anchor checks work.
 - **Links:** links between `.smd` pages, and from `.smd` to `.md` pages, point at the built pages (`setup.smd#install` → `../setup/#install`), with or without `use_directory_urls`. Links from `.md` pages to `.smd` files work through MkDocs itself. Images and other files keep their relative paths.
 - **`:::include` and code embeds** (```` ```ts file="…" ````) read files inside `docs_dir` only; anything outside shows the block's fallback text. Put documents that are only included in a folder listed in `exclude_docs`.

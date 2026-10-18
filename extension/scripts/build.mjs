@@ -23,7 +23,7 @@ writeFileSync(join(vendor, 'smd-markdown-preview.css'), previewCss);
 const common = {
   bundle: true,
   platform: 'node',
-  target: 'node18',
+  target: 'node22',
   format: 'cjs',
   sourcemap: true,
   loader: { '.md': 'text', '.smd': 'text' },
@@ -39,7 +39,8 @@ const common = {
 };
 
 const builds = [
-  { ...common, entryPoints: [join(root, 'src', 'extension.ts')], outfile: join(root, 'dist', 'extension.js'), external: ['vscode'] },
+  // VS Code 1.97, the oldest the extension supports, runs extensions on Node.js 20.
+  { ...common, target: 'node20', entryPoints: [join(root, 'src', 'extension.ts')], outfile: join(root, 'dist', 'extension.js'), external: ['vscode'] },
   { ...common, entryPoints: [join(root, 'src', 'cli.ts')], outfile: join(root, 'dist', 'cli.js'), banner: { js: '#!/usr/bin/env node' } },
   // The MkDocs plugin's renderer (integrations/mkdocs), shipped in its Python package.
   { ...common, entryPoints: [join(root, 'src', 'mkdocsBridgeMain.ts')], outfile: join(root, 'dist', 'mkdocs-bridge.cjs'), sourcemap: false },

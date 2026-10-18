@@ -1,4 +1,5 @@
 import { FIGURE_KINDS } from './spec';
+import type { SpecVersion } from './specVersion';
 
 /**
  * Numbered figures: `:::figure{#id kind=table} Caption` blocks and the `:ref[id]` references to them.
@@ -63,9 +64,14 @@ export interface FigureRef {
 
 /** `:ref[id]`, where a directive may start (see inlineDirective): line start, space or opening punctuation. */
 export const REF_DIRECTIVE = /(^|[\s([{>*_~"'-]):ref\[([^\]\n]*)\]/g;
+/** The same in spec v2, where directive names are read in any case (`:Ref[id]`, RFC proposal 11). */
+const REF_DIRECTIVE_V2 = /(^|[\s([{>*_~"'-]):ref\[([^\]\n]*)\]/gi;
+
+/** REF_DIRECTIVE for a document read with the rules of `spec`. */
+export const refDirective = (spec: SpecVersion): RegExp => (spec >= 2 ? REF_DIRECTIVE_V2 : REF_DIRECTIVE);
 
 /** Every `:ref[id]` outside code fences and inline code, from `from` (the first body line) on. */
-export function findRefs(lines: string[], from = 0): FigureRef[] {
+export function findRefs(lines: string[], from = 0, spec: SpecVersion = 1): FigureRef[] {
   const refs: FigureRef[] = [];
   let fence: string | null = null;
   for (let i = from; i < lines.length; i++) {
@@ -75,7 +81,7 @@ export function findRefs(lines: string[], from = 0): FigureRef[] {
       continue;
     }
     if (mark) { fence = mark[1]; continue; }
-    refs.push(...refsOnLine(lines[i], i));
+    refs.push(...refsOnLine(lines[i], i, spec));
   }
   return refs;
 }
@@ -84,10 +90,10 @@ function closesFence(line: string, mark: string, fence: string): boolean {
   return mark[0] === fence[0] && mark.length >= fence.length && line.trim() === mark;
 }
 
-function refsOnLine(raw: string, line: number): FigureRef[] {
+function refsOnLine(raw: string, line: number, spec: SpecVersion): FigureRef[] {
   // Blank out inline code so its contents are never treated as syntax.
   const text = raw.replace(/(`+)([\s\S]*?)\1/g, (m) => ' '.repeat(m.length));
-  return [...text.matchAll(REF_DIRECTIVE)].map((m) => {
+  return [...text.matchAll(refDirective(spec))].map((m) => {
     const column = m.index + m[1].length;
     return { id: m[2].trim(), line, column, endColumn: m.index + m[0].length };
   });

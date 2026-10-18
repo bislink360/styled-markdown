@@ -3,11 +3,11 @@ import { changelogEntries, versionLabel, type ChangelogEntry } from './changelog
 import {
   omissionOrder, omissionPointer, omittableSections, withOmitted, type BudgetResult, type BudgetSection, type Tokenizer,
 } from './budget';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, isKnownContainer, parseContainerInfo, type ContainerInfo } from './containers';
+import { closedBy, closerColons, CONTAINER_CLOSE, CONTAINER_OPEN, isKnownContainer, parseContainerInfo, type ContainerInfo } from './containers';
 import { parseFenceInfo, sliceLines } from './fence';
-import { REF_DIRECTIVE, type Figure, type FigureNumber } from './figures';
+import { refDirective, type Figure, type FigureNumber } from './figures';
 import { findFootnotes, type FootnoteDefinition } from './footnotes';
-import { parseFrontMatter, asStringList } from './frontmatter';
+import { parseFrontMatter, asStringList, unreadFrontMatter } from './frontmatter';
 import {
   includeLabel, includePath, includeProblemText, includeRequest, innerScope, loadInclude, rootScope, type IncludeScope,
 } from './include';
@@ -19,13 +19,14 @@ import {
   alertLines, aroundInlineMath, convertedParts, fenceLines, inlineItemLines, inlineMathLines, lazyLineSet, literalLines, parseSmd, renderedTaskLines,
   type AlertLines, type InlineItemLines, type InlineMathLines, type InlinePart,
 } from './parse';
-import { dueState, HEADING_ATTRS, type Heading } from './render';
-import { matchesHeading, sectionsOf, type Section } from './sections';
+import { dueState, type Heading } from './render';
+import { matchesHeading, sectionsOf, withoutHeadingAttrs, type Section } from './sections';
 import { quoteCite } from './quote';
-import { CALLOUT_TYPES } from './spec';
+import { CALLOUT_TYPES, INLINE_DIRECTIVES } from './spec';
+import { specVersion, type SpecVersion } from './specVersion';
 import { openTaskLines } from './taskLines';
 import { own } from './util';
-import { documentVariables, substituteVariables, type Variables } from './variables';
+import { documentVariables, shownValues, substituteVariables, type Variables } from './variables';
 
 /**
  * Agent view: a compact, meaning-preserving rendering of an .smd document for LLMs.
@@ -163,10 +164,15 @@ function containerHead(name: string, source: HeadSource): ContainerHead {
 /** What the view reads included files with: nothing when includes are only pointers. */
 const viewReader = (options: AgentViewOptions) => (options.includes === false ? undefined : options.readFile);
 
-const NOISE_KEYS = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
+/** Front matter keys the agent view's header leaves out of its facts. */
+export const AGENT_HEADER_HIDDEN: ReadonlySet<string> = new Set(['smd', 'theme', 'accent', 'toc', 'title', 'summary']);
 
 interface ViewScope {
   data: Record<string, unknown>;
+  /** The front matter as the document shows it: spelled as written in spec v2 (shownValues). */
+  shown: Variables;
+  /** The lines of front matter that could not be read, as written (see unreadFrontMatter). */
+  unread?: string[];
   bodyStart: number;
   lines: string[];
   sections: Section[];
@@ -187,7 +193,10 @@ function viewScope(text: string, options: AgentViewOptions): ViewScope {
   const inScope = (line: number) =>
     (!selected || selected.some((s) => line >= s.start && line <= s.end)) &&
     !skipped.some((s) => line >= s.start && line <= s.end && !(selected?.some((sel) => sel.heading === s.heading)));
-  return { data: fm.data, bodyStart: fm.bodyStartLine, lines, sections, selected, skipped, missingSections, inScope };
+  const shown = shownValues(fm.data, text, specVersion(fm.data));
+  return {
+    data: fm.data, shown, unread: unreadFrontMatter(text, fm), bodyStart: fm.bodyStartLine, lines, sections, selected, skipped, missingSections, inScope,
+  };
 }
 
 function selectSections(sections: Section[], queries: string[] | undefined): { selected: Section[] | null; missingSections: string[] } {
@@ -216,7 +225,8 @@ function viewHead(scope: ViewScope, options: AgentViewOptions): ViewHead {
     if (outside.trim()) external = `Document-wide agent instructions:\n${outside.trim()}\n\n`;
     footnotes = outsideFootnotes(scope, options);
   }
-  return { header: header(scope.data, selected ? selected.map((s) => s.heading.text) : null), external, footnotes };
+  const head = [header(scope.data, scope.shown, selected ? selected.map((s) => s.heading.text) : null), unreadBlock(scope.unread)].filter(Boolean).join('\n');
+  return { header: head, external, footnotes };
 }
 
 /**
@@ -337,19 +347,37 @@ function omitToFit(draft: Draft, scope: ViewScope, maxTokens: number): BudgetSec
   return omitted;
 }
 
-function header(data: Record<string, unknown>, sections: string[] | null): string {
+/**
+ * Front matter that could not be read: a `[front matter could not be read]` line and its lines as written, in a
+ * fence longer than any backtick run in them, as the rendered document shows them in an error block.
+ */
+function unreadBlock(unread: string[] | undefined): string {
+  if (!unread) return '';
+  const longest = Math.max(2, ...unread.map((l) => Math.max(0, ...[...l.matchAll(/`+/g)].map((m) => m[0].length))));
+  const fence = '`'.repeat(longest + 1);
+  return ['[front matter could not be read]', `${fence}yaml`, ...unread, fence].join('\n');
+}
+
+/** The view's header. `data` decides which facts are shown, `shown` how they are spelled (as written in spec v2). */
+function header(data: Record<string, unknown>, shown: Variables, sections: string[] | null): string {
   const out: string[] = [];
   if (typeof data.title === 'string') out.push(`# ${data.title}`);
   const facts: string[] = [];
   for (const [key, value] of Object.entries(data)) {
-    if (NOISE_KEYS.has(key) || value === null || value === undefined || value === '') continue;
-    const v = Array.isArray(value) ? asStringList(value).join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    if (AGENT_HEADER_HIDDEN.has(key) || value === null || value === undefined || value === '') continue;
+    const v = factText(Object.hasOwn(shown, key) ? shown[key] : value);
     if (v) facts.push(`${key}: ${v}`);
   }
   if (facts.length) out.push(facts.join(' · '));
   if (typeof data.summary === 'string') out.push(`summary: ${data.summary}`);
   if (sections) out.push(`(excerpt — sections: ${sections.join(', ')})`);
   return out.join('\n');
+}
+
+/** A front matter value as one header fact: a list joined with ", ", a mapping as JSON. */
+function factText(value: unknown): string {
+  if (Array.isArray(value)) return asStringList(value).join(', ');
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
 interface TransformOptions extends AgentViewOptions {
@@ -378,18 +406,31 @@ interface TransformOptions extends AgentViewOptions {
   includeScope?: IncludeScope;
 }
 
+/**
+ * A closing fence closes the open containers from index `at` on (see closedBy), innermost first: `close` sees each
+ * while it is still open, then it is taken off.
+ */
+function popFrames<T>(stack: T[], at: number, close: (frame: T) => unknown): void {
+  while (stack.length > Math.max(at, 0)) {
+    close(stack.at(-1)!);
+    stack.pop();
+  }
+}
+
 function transform(lines: string[], from: number, inScope: (line: number) => boolean, options: TransformOptions): string {
   const out: string[] = [];
   const lineRefs = options.lineRefs ?? true;
   const { figures, ownFigures, literal, inlineMath, alerts, inlineItems, taskLines } = documentContext(lines, options);
   const variables = options.variables ?? documentVariables(lines);
+  // The document's spec version, from its front matter: an included document's is the including one's, as in rendering.
+  const spec = specVersion(variables);
   const text = (s: string, openTask = false, math?: ReadonlyArray<[number, number]>, parts?: ReadonlyArray<InlinePart>) => {
-    const read: TextContext = { today: options.today, openTask, figures: figures.byId, variables };
+    const read: TextContext = { today: options.today, openTask, figures: figures.byId, variables, spec };
     // An item that runs over several lines is read whole, as rendering reads it; each line shows its part.
     return styledText(s, read, math, convertedParts(parts, (whole) => styledText(whole, read)));
   };
-  const changelogs = options.changelogs ?? changelogEntries(lines);
-  interface Frame { name: string; close?: string; drop: boolean; start: number }
+  const changelogs = options.changelogs ?? changelogEntries(lines, 0, spec);
+  interface Frame { name: string; colons: number; close?: string; drop: boolean; start: number }
   const stack: Frame[] = [];
   const dropping = () => stack.some((f) => f.drop);
   const inAgent = () => stack.some((f) => f.name === 'agent');
@@ -453,20 +494,18 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
 
     // ---- containers ----
     if (CONTAINER_CLOSE.test(line)) {
-      const frame = stack[stack.length - 1];
-      if (frame) {
-        flushDone(i);
-        if (frame.close) emit(frame.close, i);
-        stack.pop();
-      }
+      // The containers the fence closes, innermost first (spec v2 may close several, see closedBy).
+      const at = closedBy(stack.map((f) => f.colons), closerColons(line), spec);
+      if (at >= 0) flushDone(i);
+      popFrames(stack, at, (frame) => frame.close && emit(frame.close, i));
       continue;
     }
     const open = CONTAINER_OPEN.exec(line);
-    const info = open ? parseContainerInfo(open[3] + open[4]) : null;
+    const info = open ? parseContainerInfo(open[3] + open[4], spec) : null;
     if (open && info) {
       flushDone(i);
       const title = info.title ? text(info.title) : '';
-      const frame: Frame = { name: info.name, drop: false, start: i };
+      const frame: Frame = { name: info.name, colons: open[2].length, drop: false, start: i };
       stack.push(frame);
       if (info.name === 'human' && !options.includeHuman) { frame.drop = true; continue; }
       if (info.name === 'details' && options.brief) {
@@ -489,7 +528,7 @@ function transform(lines: string[], from: number, inScope: (line: number) => boo
     const h = /^(\s{0,3}#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
     if (h) {
       flushDone(i);
-      emit(`${h[1].trim()} ${headingText(h[2], changelogs.get(i), text)}${lineRefs ? `  [L${i + 1}]` : ''}`, i);
+      emit(`${h[1].trim()} ${headingText(h[2], changelogs.get(i), text, spec)}${lineRefs ? `  [L${i + 1}]` : ''}`, i);
       continue;
     }
 
@@ -583,14 +622,15 @@ function alertTags(alerts: readonly AlertLines[], lines: string[], emit: (line: 
 /** The agent view of lines [start, end] (zero-based, inclusive) on their own, e.g. one block. */
 export function agentViewOfRange(lines: string[], start: number, end: number, options: AgentViewOptions = {}): string {
   const text = lines.join('\n');
-  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text), inlineMath: inlineMathLines(text),
+  const variables = documentVariables(lines);
+  const whole = { figures: expandedFigures(text, viewReader(options)), changelogs: changelogEntries(lines, 0, specVersion(variables)), variables, literalLines: literalLines(text), inlineMath: inlineMathLines(text),
     alerts: alertLines(text), inlineItems: inlineItemLines(text), taskLines: renderedTaskLines(text) };
   return transform(lines.slice(0, end + 1), start, () => true, { ...options, ...whole }).trim();
 }
 
 /** A heading's words; a changelog release in brief, `1.2.0 (2026-03-01)`, the version without its link. */
-function headingText(raw: string, entry: ChangelogEntry | undefined, text: (s: string) => string): string {
-  if (!entry) return text(raw.replace(HEADING_ATTRS, ''));
+function headingText(raw: string, entry: ChangelogEntry | undefined, text: (s: string) => string, spec: SpecVersion): string {
+  if (!entry) return text(withoutHeadingAttrs(raw, spec));
   const version = text(versionLabel(entry.version));
   return entry.date ? `${version} (${text(entry.date)})` : version;
 }
@@ -664,20 +704,47 @@ function renderFence(fence: { start: number; body: string[]; info: string }, end
 
 const STATUS_WORDS: Record<string, string> = { green: 'ok', teal: 'ok', red: 'bad', pink: 'bad', orange: 'warn', amber: 'warn', yellow: 'warn' };
 
+/** How {@link inlineText} reads a line. Every field is optional. */
+export interface InlineTextOptions {
+  /** "Today" as YYYY-MM-DD: a `:due[…]` before it, on an open task, reads `(due …, OVERDUE)`. */
+  today?: string;
+  /** The line is an open task's (`- [ ] …`), so a past `:due[…]` is overdue. Default false. */
+  openTask?: boolean;
+  /** The document's figures by id: `:ref[id]` becomes `Figure 2 (id)`. Without them it stays as written. */
+  figures?: ReadonlyMap<string, FigureNumber>;
+  /** The document's front matter: `{{name}}` becomes the value of `name`. Without it, `{{name}}` stays as written. */
+  variables?: Variables;
+  /**
+   * The line's inline math as `[start, end)` offsets, when it is read with the lines around it (see mathOnLine);
+   * by default it is read from the line.
+   */
+  math?: ReadonlyArray<[number, number]>;
+}
+
 /**
  * Strip styling syntax from one line, keeping the words. Code spans and `$inline math$` are left
  * untouched. With the document's figures by id, `:ref[id]` becomes `Figure 2 (id)`; with its front matter,
- * `{{name}}` becomes the value of `name`. `math` is the line's inline math when it is read with the lines around
- * it (see mathOnLine); else it is read from the line.
+ * `{{name}}` becomes the value of `name` (see {@link InlineTextOptions}).
+ *
+ * Since 2.0 the options are one object: 1.x's `inlineText(line, today, true)` is `inlineText(line, { today, openTask: true })`.
  */
-export function inlineText(
-  line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables, math?: ReadonlyArray<[number, number]>,
-): string {
-  return styledText(line, { today, openTask, figures, variables }, math);
+export function inlineText(line: string, options: InlineTextOptions = {}): string {
+  // JavaScript callers of the 1.x signature get an error, not a line read without their arguments.
+  if (typeof options !== 'object' || options === null) {
+    throw new TypeError('inlineText(line, options): since 2.0 the options are one object, e.g. inlineText(line, { today, openTask: true })');
+  }
+  const { today, openTask = false, figures, variables, math } = options;
+  // The front matter decides the rules: a spec v2 document's directives read in any case, and unknown ones show their content.
+  return styledText(line, { today, openTask, figures, variables, spec: specVersion(variables) }, math);
+}
+
+/** inlineText read with the rules of `spec`, its `{{name}}` replaced from `variables` when given. Internal. */
+export function plainInlineText(line: string, spec: SpecVersion, variables?: Variables): string {
+  return styledText(line, { openTask: false, spec, variables });
 }
 
 /** How inlineText reads a line: the date for overdue tasks, whether it is an open task's, the figures and front matter. */
-interface TextContext { today?: string; openTask: boolean; figures?: ReadonlyMap<string, FigureNumber>; variables?: Variables }
+interface TextContext { today?: string; openTask: boolean; figures?: ReadonlyMap<string, FigureNumber>; variables?: Variables; spec: SpecVersion }
 
 /**
  * inlineText, with parts of the line already converted (see convertedParts): they are put back as converted, and the
@@ -686,34 +753,53 @@ interface TextContext { today?: string; openTask: boolean; figures?: ReadonlyMap
 function styledText(line: string, read: TextContext, math?: ReadonlyArray<[number, number]>, replaced?: ReadonlyArray<[number, number, string]>): string {
   return aroundInlineMath(line, (text) => text
     .split(/(`+[^`]*`+)/)
-    .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, read.variables), read.today, read.openTask, read.figures)))
+    .map((part, idx) => (idx % 2 === 1 ? part : plain(substituteVariables(part, read.variables), read)))
     .join(''), math, replaced);
 }
 
 /** `:ref[id]` → `Figure 2 (id)`; references to unknown ids stay as written. */
-function refText(s: string, figures: ReadonlyMap<string, FigureNumber> | undefined): string {
+function refText(s: string, figures: ReadonlyMap<string, FigureNumber> | undefined, spec: SpecVersion): string {
   if (!figures?.size) return s;
-  return s.replace(REF_DIRECTIVE, (m, pre: string, raw: string) => {
+  return s.replace(refDirective(spec), (m, pre: string, raw: string) => {
     const id = raw.trim();
     const figure = figures.get(id);
     return figure ? `${pre}${figure.label} (${id})` : m;
   });
 }
 
-function plain(s: string, today: string | undefined, openTask: boolean, figures?: ReadonlyMap<string, FigureNumber>): string {
-  return refText(s, figures)
+/**
+ * `:name[content]{attrs}` in text: a lower-case name in spec v1, any case in spec v2 (RFC proposal 11). A name with
+ * neither `[content]` nor `{attributes}` is text, as in rendering. Content may run over a line break when an item is
+ * read whole (see convertedParts).
+ */
+const DIRECTIVE_TEXT_V1 = /(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g;
+const DIRECTIVE_TEXT_V2 = /(^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g;
+
+function plain(s: string, { today, openTask, figures, spec }: TextContext): string {
+  return refText(s, figures, spec)
     .replace(/!\[([^\]\n]*)\]\([^)\n]*\)/g, (_m, alt) => (alt ? `[image: ${alt}]` : ''))
-    // A name with neither `[content]` nor `{attributes}` is text, as in rendering. Content may run over a line break
-    // when an item is read whole (see convertedParts).
-    .replace(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[([^\]]*)\])?(?:\{([^{}\n]*)\})?/g, (m, pre: string, name: string, content?: string, rawAttrs?: string) =>
-      (content === undefined && rawAttrs === undefined ? m : directiveText(m, { pre, name, content: content ?? '', rawAttrs: rawAttrs ?? '' }, today, openTask)))
-    .replace(/(!?)\[([^\]]*)\]\{([^{}\n]*)\}/g, (m, bang, content, rawAttrs) => (bang || !parseAttrs(rawAttrs) ? m : content))
+    .replace(spec >= 2 ? DIRECTIVE_TEXT_V2 : DIRECTIVE_TEXT_V1, (m, pre: string, name: string, content?: string, rawAttrs?: string) =>
+      (content === undefined && rawAttrs === undefined
+        ? m
+        : directiveText(m, { pre, name: spec >= 2 ? name.toLowerCase() : name, content: content ?? '', rawAttrs: rawAttrs ?? '' }, { today, openTask, spec })))
+    .replace(/(!?)\[([^\]]*)\]\{([^{}\n]*)\}/g, (m, bang, content, rawAttrs) => (bang || !parseAttrs(rawAttrs, spec) ? m : content))
     .replace(/==(?=\S)([^=]+?)(?<=\S)==/g, '$1');
 }
 
-/** One `:name[content]{attrs}` in plain text (`m` as written), or `m` for a name the agent view keeps as written. */
-function directiveText(m: string, { pre, name, content, rawAttrs }: { pre: string; name: string; content: string; rawAttrs: string }, today: string | undefined, openTask: boolean): string {
-  const v = parseAttrs(rawAttrs)?.values ?? {};
+/**
+ * One `:name[content]{attrs}` in plain text (`m` as written), or `m` for a name the agent view keeps as written. In
+ * spec v2 a name outside the vocabulary is a directive that shows its content (RFC proposal 7b), as a styled span does;
+ * in spec v1 it is text.
+ */
+function directiveText(
+  m: string, { pre, name, content, rawAttrs }: { pre: string; name: string; content: string; rawAttrs: string },
+  { today, openTask, spec }: { today: string | undefined; openTask: boolean; spec: SpecVersion },
+): string {
+  const attrs = parseAttrs(rawAttrs, spec);
+  // In spec v2 a list that can't be read leaves the whole item as text, as rendering does.
+  if (spec >= 2 && !attrs) return m;
+  if (spec >= 2 && !Object.hasOwn(INLINE_DIRECTIVES, name)) return `${pre}${content}`;
+  const v = attrs?.values ?? {};
   const status = own(STATUS_WORDS, v.color ?? '');
   switch (name) {
     case 'badge': return `${pre}[${content}]`;
@@ -743,8 +829,9 @@ function directiveText(m: string, { pre, name, content, rawAttrs }: { pre: strin
  */
 function sectionViews(lines: string[], from: number, documentOptions: TransformOptions): (start: number, end: number) => string {
   const text = lines.join('\n');
+  const variables = documentVariables(lines);
   const options = {
-    ...documentOptions, figures: expandedFigures(text, viewReader(documentOptions)), changelogs: changelogEntries(lines), variables: documentVariables(lines), literalLines: literalLines(text),
+    ...documentOptions, figures: expandedFigures(text, viewReader(documentOptions)), changelogs: changelogEntries(lines, 0, specVersion(variables)), variables, literalLines: literalLines(text),
     inlineMath: inlineMathLines(text),
   };
   if (options.brief) return (start, end) => transform(lines, from, (l) => l >= start && l <= end, options);

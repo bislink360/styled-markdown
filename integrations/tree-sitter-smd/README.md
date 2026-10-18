@@ -11,7 +11,7 @@ Markdown in Tree-sitter is already two grammars: [tree-sitter-markdown](https://
 
 - **Parsed here:**
   - front matter (injected as YAML)
-  - `:::name{attrs} Title` … `:::` containers, nested (a bare `:::` closes the innermost one, whatever the colon count)
+  - `:::name{attrs} Title` … `:::` containers, nested (a bare `:::` closes the innermost one, whatever the colon count, as in spec v1; see below)
   - fenced code (injected by its info string; `mermaid` included) and `$$` math (injected as LaTeX), so `:::` or `$` inside them is never `.smd` syntax
   - inline directives `:name[content]{attrs}`, styled spans `[text]{attrs}`, `==highlight==`, `$math$`, `{{variables}}`, `[^footnotes]` and their `[^label]:` definitions, task boxes, code spans, and attribute lists, including `{#id}` at the end of a heading
 - **Everything else** is a `line`. `queries/injections.scm` hands all lines to the `markdown` parser as one combined document, so paragraphs, lists, headings and tables work across lines, and Markdown injects `markdown_inline` into its own inline text. The `.smd` constructs inside a line are named nodes, which injections leave out, so Markdown doesn't see them.
@@ -35,6 +35,7 @@ The scanner ([`src/scanner.c`](src/scanner.c)) follows the renderer's rules (`ex
 - The text inside a span, mark or directive is one node. `.smd` syntax nested in it, such as `:badge[v{{version}}]`, isn't highlighted separately.
 - A `{…}` at the end of any line is highlighted as an attribute list, not only at the end of a heading.
 - Fences, `$$` and `:::` count as blocks at any indentation, including in 4-space indented code.
+- Containers and `$$` math follow the spec v1 rules in every document: a bare `:::` closes the innermost open container, and a line starting with `$$` opens math that the next line ending with `$$` closes. A document with `smd: 2` pairs closing fences by colon count and opens and closes math only on lines that are just `$$` (docs/SPEC.md §3, §4.4). The two read the same where every closing fence has its container's colon count and every `$$` delimiter is on a line of its own, as `smd fmt` and `smd migrate --to 2` write them; elsewhere the highlighting of an `smd: 2` document can differ from how it renders.
 - Directive names follow the renderer's syntax (`[a-z][a-z0-9-]*`), but every such name is highlighted, known or not.
 
 There is no `indents.scm`: `.smd` container bodies are not indented by convention, and Markdown's indentation comes from lists, which the Markdown grammar handles.
@@ -62,7 +63,7 @@ vim.api.nvim_create_autocmd('User', {
     require('nvim-treesitter.parsers').smd = {
       install_info = {
         url = 'https://github.com/bislink360/styled-markdown',
-        revision = 'v1.10.0',
+        revision = 'v2.0.0',
         location = 'integrations/tree-sitter-smd',
         queries = 'integrations/tree-sitter-smd/queries',
       },
@@ -89,7 +90,7 @@ local parsers = require('nvim-treesitter.parsers').get_parser_configs()
 parsers.smd = {
   install_info = {
     url = 'https://github.com/bislink360/styled-markdown',
-    revision = 'v1.10.0',
+    revision = 'v2.0.0',
     location = 'integrations/tree-sitter-smd',
     files = { 'src/parser.c', 'src/scanner.c' },
   },
@@ -124,7 +125,7 @@ indent = { tab-width = 2, unit = "  " }
 
 [[grammar]]
 name = "smd"
-source = { git = "https://github.com/bislink360/styled-markdown", rev = "v1.10.0", subpath = "integrations/tree-sitter-smd" }
+source = { git = "https://github.com/bislink360/styled-markdown", rev = "v2.0.0", subpath = "integrations/tree-sitter-smd" }
 ```
 
 Then:

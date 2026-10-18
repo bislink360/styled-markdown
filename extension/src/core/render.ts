@@ -2,14 +2,18 @@ import MarkdownIt from 'markdown-it';
 import type { Token } from 'markdown-it';
 import hljs from 'highlight.js/lib/common';
 import { escapeHtml, resolveColor } from './attrs';
-import { type FrontMatter, parseFrontMatter } from './frontmatter';
+import { type FrontMatter, parseFrontMatter, unreadFrontMatter } from './frontmatter';
 import { documentLanguage, EN, isEnglish, isEnglishMessages, messagesFor, runtimeLabels, type Messages } from './i18n';
-import { applySmd, smdFeatures, type SmdContext } from './markdownItSetup';
-import { renderHeader } from './markdownItHtml';
+import { addTableRules, applySmd, smdFeatures, type ReadFile, type SmdContext } from './markdownItSetup';
+import { renderFrontMatterError, renderHeader } from './markdownItHtml';
 import type { FigureEnv, VariableEnv } from './markdownItRules';
 import { documentRiskMatrixHtml } from './riskHtml';
+import { resolveSpec, specEnv, type SpecEnv, type SpecVersion } from './specVersion';
+import { typographyOf } from './typography';
+import { shownValues } from './variables';
 
 export { HEADING_ATTRS, slugify } from './markdownItRules';
+export type { ReadFile } from './markdownItSetup';
 export { dueState } from './markdownItHtml';
 
 export interface RenderOptions {
@@ -20,8 +24,9 @@ export interface RenderOptions {
   /**
    * Read a file relative to the document, for ```lang file="…"` embeds and `:::include` blocks (nested includes ask
    * for paths relative to this document too). Return undefined when not allowed/missing. Without it nothing is included.
+   * The markdown-it plugin's `readFile` is the same function: the second argument is the render's env (see ReadFile).
    */
-  readFile?: (relativePath: string) => string | undefined;
+  readFile?: ReadFile;
   /** "Today" as YYYY-MM-DD, for :due[] states. Defaults to the current date. */
   today?: string;
   /**
@@ -29,6 +34,11 @@ export interface RenderOptions {
    * of its own: a BCP 47 tag such as `de` or `pt-BR`. Unsupported languages, and the default, are English.
    */
   lang?: string;
+  /**
+   * The spec version for a document whose front matter has no `smd` key, for hosts that can't see the front
+   * matter. The document's own `smd` wins over it. Default 1.
+   */
+  spec?: SpecVersion;
 }
 
 export interface Heading {
@@ -47,11 +57,13 @@ export interface RenderResult {
   headings: Heading[];
   /** The document's language tag: its front matter `lang`, else the `lang` option, else `en`. */
   lang?: string;
+  /** The spec version the document was read with: its front matter `smd`, else the `spec` option, else 1. */
+  spec?: SpecVersion;
 }
 
-export type ResolvedOptions = Required<Omit<RenderOptions, 'readFile' | 'lang'>> & Pick<RenderOptions, 'readFile'>;
+export type ResolvedOptions = Required<Omit<RenderOptions, 'readFile' | 'lang' | 'spec'>> & Pick<RenderOptions, 'readFile'>;
 
-export interface Env extends FigureEnv, VariableEnv {
+export interface Env extends FigureEnv, VariableEnv, SpecEnv {
   lineOffset: number;
   headings: Heading[];
   slugs: Map<string, number>;
@@ -68,10 +80,11 @@ export interface Env extends FigureEnv, VariableEnv {
 /** Every .smd rule, reading its options from the env (renderSmd and parseSmd put them there). */
 const SMD_CONTEXT: SmdContext = {
   options: (env) => (env as Env | undefined)?.options ?? {},
-  // Only the document's figures, variables and labels go along, so `:ref[id]` and `{{name}}` in a title resolve and nothing else changes.
+  // Only the document's figures, variables, labels and rules (spec version, typography) go along, so `:ref[id]` and
+  // `{{name}}` in a title resolve, the title reads with the document's rules, and nothing else changes.
   title: (text, env) => {
     const { smdFigures, smdVariables, messages } = (env as Env | undefined) ?? {};
-    return titleMarkdown().renderInline(text, { smdFigures, smdVariables, messages });
+    return titleMarkdown().renderInline(text, { smdFigures, smdVariables, messages, ...specEnv(env) });
   },
   riskMatrix: (source, messages) => documentRiskMatrixHtml(source, messages),
   ownLines: true,
@@ -96,16 +109,8 @@ export function createMarkdownIt(options: RenderOptions = {}): MarkdownIt {
     },
   });
   applySmd(md, ALL_SYNTAX, SMD_CONTEXT);
-
-  // Make tables horizontally scrollable on narrow previews.
-  md.renderer.rules.table_open = (tokens, idx, opts, _env, self) =>
-    `<div class="smd-table-wrap">${self.renderToken(tokens, idx, opts)}`;
-  md.renderer.rules.table_close = (tokens, idx, opts, _env, self) => `${self.renderToken(tokens, idx, opts)}</div>`;
-  // Markdown tables have one header row: each header cell heads its column.
-  md.renderer.rules.th_open = (tokens, idx, opts, _env, self) => {
-    tokens[idx].attrSet('scope', 'col');
-    return self.renderToken(tokens, idx, opts);
-  };
+  // Tables scroll on narrow previews, and their header cells head their columns.
+  addTableRules(md);
   return md;
 }
 
@@ -121,8 +126,8 @@ export function renderSmd(text: string, options: RenderOptions = {}): RenderResu
   return renderParsed(text, parseFrontMatter(text), options);
 }
 
-/** The front matter of a document and the body after it, however they were split. */
-export type ParsedDocument = Pick<FrontMatter, 'data' | 'body' | 'bodyStartLine'>;
+/** The front matter of a document and the body after it, however they were split (with the error, when it has one). */
+export type ParsedDocument = Pick<FrontMatter, 'data' | 'body' | 'bodyStartLine'> & Partial<Pick<FrontMatter, 'error'>>;
 
 /**
  * renderSmd with the front matter already split off, for hosts that remove it before the
@@ -134,7 +139,7 @@ export function renderParsed(text: string, fm: ParsedDocument, options: RenderOp
   const body = md.renderer.render(tokens, md.options, env);
   const frame = documentFrame(parsed, header);
   const html = `${frame.open}${frame.header}${frame.toc}${body}</article>`;
-  return { html, frontMatter: fm.data, headings: env.headings, lang };
+  return { html, frontMatter: fm.data, headings: env.headings, lang, spec: parsed.spec };
 }
 
 /** What renderSmd puts around the body: the `<article>` opening tag, the title header and the table of contents. */
@@ -144,14 +149,18 @@ export interface DocumentFrame {
   toc: string;
 }
 
-/** The frame of a parsed document, once its body is rendered (the contents come from the env). */
+/**
+ * The frame of a parsed document, once its body is rendered (the contents come from the env). Front matter that
+ * could not be read is shown as written in an error block where the header goes, `header: false` included.
+ */
 export function documentFrame(parsed: Omit<ParsedTokens, 'tokens'>, header = true): DocumentFrame {
-  const { md, env, data, lang, messages } = parsed;
+  const { md, env, data, lang, messages, unread } = parsed;
   const accent = typeof data.accent === 'string' ? resolveColor(data.accent) : null;
   const style = accent ? ` style="--smd-accent:${escapeHtml(accent)}"` : '';
+  const error = unread ? renderFrontMatterError(unread, messages) : '';
   return {
     open: `<article class="smd-doc"${languageAttrs(lang, messages)}${style}>`,
-    header: header ? renderHeader((s) => md.renderInline(s, { messages }), data, messages) : '',
+    header: error + (header ? renderHeader((s) => md.renderInline(s, { messages, ...specEnv(env) }), data, messages, parsed.shown) : ''),
     toc: data.toc === true ? renderToc(env.headings, messages) : '',
   };
 }
@@ -163,8 +172,14 @@ export interface ParsedTokens {
   env: Env;
   /** The front matter. */
   data: Record<string, unknown>;
+  /** The front matter values the document shows, in `{{name}}` and the header: spelled as written in spec v2 (shownValues). */
+  shown: Record<string, unknown>;
   lang: string;
   messages: Messages;
+  /** The lines of front matter that could not be read, as written (see unreadFrontMatter). */
+  unread?: string[];
+  /** The spec version the document is read with (also on the env as `smdSpec`). */
+  spec: SpecVersion;
 }
 
 /** The tokens of a whole .smd document as renderSmd parses them, for the exporters (exportTree.ts). */
@@ -183,11 +198,18 @@ function parseTokens(text: string, fm: ParsedDocument, options: RenderOptions): 
   const data = fm.data;
   const lang = documentLanguage(data.lang, options.lang);
   const messages = messagesFor(lang);
-  const env: Env = { lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts, source: text, smdVariables: data, messages };
+  // Before parsing, so every rule reads the version from the env (see specVersion.ts).
+  const spec = resolveSpec(data, options.spec);
+  const shown = shownValues(data, text, spec) as Record<string, unknown>;
+  const env: Env = {
+    lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), options: opts, source: text, smdVariables: shown, messages, smdSpec: spec,
+    smdTypography: typographyOf(data),
+  };
   // markdown-it treats a lone \r as a line break, but every other tool here splits lines on \r?\n.
   // A space keeps heading lines and data-line (preview scroll sync) in step with the editor.
   const tokens = md.parse(fm.body.replace(/\r(?!\n)/g, ' '), env);
-  return { md, tokens, env, data, lang, messages };
+  const unread = unreadFrontMatter(text, fm);
+  return { md, tokens, env, data, shown, lang, messages, spec, ...(unread ? { unread } : {}) };
 }
 
 /**

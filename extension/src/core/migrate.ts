@@ -1,28 +1,33 @@
 import type { Token } from 'markdown-it';
-import { parseAttrs } from './attrs';
+import { escapeQuoted, findAttrsEnd, isFlagItem, itemValue, lexAttrItems, parseAttrs, type Attrs } from './attrs';
 import { CONTAINER_OPEN, isKnownContainer, parseContainerInfo } from './containers';
 import { attrValueFix, frontMatterValueFix } from './fixes';
-import { parseFrontMatter, type FrontMatter } from './frontmatter';
+import { AGENT_HEADER_HIDDEN } from './agentView';
+import { parseFrontMatter, sourceSpelledData, type FrontMatter } from './frontmatter';
 import { FRONTMATTER_SCHEMA } from './frontmatterSchema';
 import { EN } from './i18n';
 import { codeLines, inlineMathLines, literalLines, mathOnLine, type InlineMathLines } from './parse';
-import { createMarkdownIt, type Env } from './render';
+import { createMarkdownIt, HEADING_ATTRS, type Env } from './render';
 import { CONTAINERS, INLINE_DIRECTIVES } from './spec';
+import { readSpec, specVersion } from './specVersion';
+import { gfmLinkify } from './typography';
+import { AGENT_PRIORITY_REMOVED } from './v2Hints';
 import { applyFixes, validateSmd, type Diagnostic, type Fix } from './validate';
-import { findVariables, variableText } from './variables';
+import { findVariables, lookupVariable, variableText } from './variables';
 
 /**
  * The plan of `smd migrate --to 2`: what a document needs so that it means the same under spec v2 (`smd: 2`) as it
- * does today. Each step rewrites a few lines, or is a note when nothing is rewritten. 1.10 only reports the plan
- * (`--dry-run`); Styled Markdown 2.0 writes it.
+ * does today. Each step rewrites a few lines, or is a note when nothing is rewritten. 1.10 only reported the plan
+ * (`--dry-run`); Styled Markdown 2.0 writes it (migrateCommand.ts, and the editor's "Migrate to Spec v2"), then checks
+ * what it wrote (migrateCheck.ts).
  *
- * Internal: not exported from the npm package, since the plan's shape may still change before 2.0 makes it write.
+ * Internal: not exported from the npm package, so the plan's shape can still change in a minor release.
  * The steps reuse the validator's quick fixes (the spec v2 hints) and `applyFixes`, as `smd validate --fix` does.
  */
 
 /** What a step rewrites, in the order the steps run. */
 export type MigrationKind =
-  | 'closer' | 'duplicate-attrs' | 'title-text' | 'math-delimiters' | 'heading-braces' | 'unknown-directive'
+  | 'closer' | 'duplicate-attrs' | 'title-text' | 'agent-priority' | 'math-delimiters' | 'heading-braces' | 'attr-escapes' | 'unknown-directive'
   | 'include-section' | 'value-case' | 'typography' | 'fuzzy-link' | 'variable-spelling' | 'version';
 
 export interface MigrationStep {
@@ -48,7 +53,7 @@ export interface MigrationStep {
 export interface MigrationOptions {
   /** Add `typography: true` where the typographer changes text today, to keep curly quotes and dashes (proposal 8). */
   keepTypography?: boolean;
-  /** Write fuzzy-linked bare domains (`example.com`) as `<https://example.com>`, which stay links (proposal 8). */
+  /** Write fuzzy-linked bare domains (`example.com`) as Markdown links to the address v1 links (`[example.com](http://example.com)`), which render the same in v2 (proposal 8). */
   linkDomains?: boolean;
   /** Quote front matter values that are shown differently from how they are written (`version: 2.10`, proposal 10). */
   quoteVariables?: boolean;
@@ -73,11 +78,15 @@ const KINDS: Record<MigrationKind, { proposal: string; keeps: 'v1' | 'v2'; reaso
   },
   'duplicate-attrs': {
     proposal: '4', keeps: 'v1',
-    reason: 'Spec v2 reports a key, an id or a class given twice as an error (proposal 4). Each is kept once, with the value v1 uses (the last), where it first appears.',
+    reason: 'Styled Markdown 2.0 reports a key, an id or a class given twice as an error in every document (proposal 4). Each is kept once, with the value v1 uses (the last), where it first appears.',
   },
   'title-text': {
     proposal: '4', keeps: 'v1',
-    reason: 'Spec v2 reports a container titled both by title="…" and by text as an error (proposal 4). The text, which v1 does not show, is removed.',
+    reason: 'Styled Markdown 2.0 reports a container titled both by title="…" and by text as an error in every document (proposal 4). The text, which v1 does not show, is removed.',
+  },
+  'agent-priority': {
+    proposal: '12', keeps: 'v1',
+    reason: 'Styled Markdown 2.0 removed "priority" on ":::agent", which no tool read (proposal 12), so it is an unknown attribute in every document. It is removed; nothing renders differently.',
   },
   'math-delimiters': {
     proposal: '2', keeps: 'v1',
@@ -87,9 +96,13 @@ const KINDS: Record<MigrationKind, { proposal: string; keeps: 'v1' | 'v2'; reaso
     proposal: '5', keeps: 'v1',
     reason: 'Spec v2 reads an empty "{}" or a bare "{word}" after a heading as heading text (proposal 5). It is removed, which is how v1 shows the heading.',
   },
+  'attr-escapes': {
+    proposal: '6', keeps: 'v2',
+    reason: 'Spec v2 reads "\\\\" in a quoted attribute value as one backslash, and a value can no longer end in a single backslash (proposal 6). The value is written with the escapes v2 needs to read it as v1 does ("\\\\\\\\server" for \\\\server, "C:\\docs\\\\" for C:\\docs\\); v1 reads those as more backslashes.',
+  },
   'unknown-directive': {
     proposal: '7b', keeps: 'v2',
-    reason: 'Spec v2 reads any ":name[…]" as a directive and shows only its content (proposal 7b). A name outside the vocabulary is text today, so its colon is escaped to keep it text; v1 shows "\\:" as ":".',
+    reason: 'Spec v2 reads any ":name[…]" or ":name{…}" as a directive, its name in any case, and shows only its content (proposals 7b and 11). A name outside the vocabulary, or not in lower case, is text today, so its colon is escaped to keep it text; v1 shows "\\:" as ":".',
   },
   'include-section': {
     proposal: '9', keeps: 'v1',
@@ -104,7 +117,7 @@ const KINDS: Record<MigrationKind, { proposal: string; keeps: 'v1' | 'v2'; reaso
     reason: 'Spec v2 turns the typographer off unless the front matter sets "typography: true" (proposal 8).',
   },
   'fuzzy-link': {
-    proposal: '8', keeps: 'v2',
+    proposal: '8', keeps: 'v1',
     reason: 'Spec v2 links only GFM autolink literals (http://, https://, www. and e-mail addresses), so a bare domain is no longer a link (proposal 8).',
   },
   'variable-spelling': {
@@ -120,6 +133,7 @@ const KINDS: Record<MigrationKind, { proposal: string; keeps: 'v1' | 'v2'; reaso
 /** Every kind, in the order the steps run. */
 export const KIND_ORDER = Object.keys(KINDS) as MigrationKind[];
 
+const ATTR_ESCAPES: MigrationKind = 'attr-escapes';
 const FUZZY_LINK: MigrationKind = 'fuzzy-link';
 const VARIABLE_SPELLING: MigrationKind = 'variable-spelling';
 const VERSION: MigrationKind = 'version';
@@ -148,6 +162,14 @@ const splitLines = (text: string) => text.split(/\r?\n/);
 
 /** The plan that migrates `text` to spec v2. Pure: nothing is read but through `options.readFile`. */
 export function migrationPlan(text: string, options: MigrationOptions = {}): MigrationPlan {
+  const plan = planSteps(text, options, true);
+  // Spec v2's escapes only mean what v1 meant once the document says smd: 2. When the plan can't write it (front matter
+  // that doesn't parse, an `smd` value it can't rewrite), the values stay as v1 reads them.
+  const escaped = plan.steps.some((s) => s.kind === ATTR_ESCAPES && !s.note);
+  return escaped && specVersion(plan.result) < TARGET ? planSteps(text, options, false) : plan;
+}
+
+function planSteps(text: string, options: MigrationOptions, escapes: boolean): MigrationPlan {
   const fm = parseFrontMatter(text);
   const from = declaredVersion(fm);
   const lines = splitLines(text);
@@ -159,25 +181,51 @@ export function migrationPlan(text: string, options: MigrationOptions = {}): Mig
   fixStep(w, 'container/colons', 'closer');
   fixStep(w, 'attrs/duplicate', 'duplicate-attrs');
   fixStep(w, 'container/title-conflict', 'title-text');
+  fixStep(w, 'attrs/unknown', 'agent-priority', (d) => d.message === AGENT_PRIORITY_REMOVED);
   mathStep(w);
+  if (from < TARGET) headingAgentStep(w);
   fixStep(w, 'heading/attrs-text', 'heading-braces');
-  unknownDirectiveStep(w);
+  // A document that already says smd: 2 (with force) is read with the v2 rules: its escapes and directives are meant.
+  if (from < TARGET) {
+    if (escapes) attrEscapeStep(w);
+    unknownDirectiveStep(w);
+  }
   if (options.readFile) fixStep(w, 'include/section-match', 'include-section');
   valueCaseStep(w);
   typographyStep(w);
   fuzzyLinkStep(w);
   variableStep(w);
   versionStep(w);
+  // Once it says smd: 2, its fences pair as spec v2 reads them. Math that v1 closes on a line with text beside the `$$`,
+  // which the `$$` step leaves alone where splitting it would change the math, opens nothing in v2 (as a `$$` that
+  // nothing closes does in both versions), so the fences after it that v1 reads as math are fences: their colon counts
+  // are written as v2 pairs them, which changes nothing that v2 shows.
+  if (from < TARGET && specVersion(textOf(w)) === TARGET) fixStep(w, 'container/colons', 'closer');
   // In the order the steps run, and by line within each (math is split bottom-up).
   w.steps.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.line - b.line);
   return { from, steps: w.steps, result: textOf(w) };
 }
 
-/** The version a document declares: 1 without a key or with one that counts as 1 today (`true`, `"1"`). */
+/**
+ * Markdown that spec v2 reads as spec v1 reads `text` (a document read with the v1 rules, such as a `.md` file), for
+ * `smd from-md`, which writes `smd: 2`: multi-line `$$` delimiters on lines of their own, and each literal `:name[…]`
+ * or `:name{…}` outside the vocabulary escaped (`\:abbr[HTML]`), so it stays text, as GitHub shows it. Only these two
+ * steps: the others keep v1 meaning that GitHub doesn't have (typography, bare domain links, a heading's `{}`).
+ */
+export function markdownForV2(text: string): string {
+  const lines = splitLines(text);
+  const w: Work = { lines, origin: lines.map((_, i) => i), eol: text.includes('\r\n') ? '\r\n' : '\n', steps: [], options: {} };
+  mathStep(w);
+  unknownDirectiveStep(w);
+  return w.steps.length ? textOf(w) : text;
+}
+
+/**
+ * The version a document declares, as every tool reads it (readSpec): 1 without a key or with a value that isn't a
+ * whole number (`true`, `[2]`), else the whole number written, a newer one included.
+ */
 function declaredVersion(fm: FrontMatter): number {
-  if (fm.error || fm.data.smd === undefined) return 1;
-  const version = Number(fm.data.smd);
-  return Number.isInteger(version) && version > 1 ? version : 1;
+  return fm.error ? 1 : readSpec(fm.data.smd).declared ?? 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,13 +286,13 @@ function applyLineFixes(w: Work, fixes: Fix[], kind: MigrationKind): void {
  */
 const unsuppressed = (text: string) => text.replaceAll('smd-disable', 'smd-xisable').replaceAll('smd-enable', 'smd-xnable');
 
-/** Apply the fixes of the hint `code` until none is left, and note the hints that have no fix. */
-function fixStep(w: Work, code: string, kind: MigrationKind): void {
+/** Apply the fixes of the diagnostic `code` (those `which` picks) until none is left, and note the ones that have no fix. */
+function fixStep(w: Work, code: string, kind: MigrationKind, which: (d: Diagnostic) => boolean = () => true): void {
   const options = { readFile: kind === 'include-section' ? w.options.readFile : undefined };
   let text = textOf(w);
   let manual: Diagnostic[] = [];
   for (let pass = 0; pass < FIX_PASSES; pass++) {
-    const found = validateSmd(unsuppressed(text), options).filter((d) => d.code === code);
+    const found = validateSmd(unsuppressed(text), options).filter((d) => d.code === code && which(d));
     if (pass === 0) manual = found.filter((d) => !d.fix);
     const fixed = applyFixes(text, found);
     if (!fixed.applied) break;
@@ -258,13 +306,16 @@ function fixStep(w: Work, code: string, kind: MigrationKind): void {
 // $$ delimiters (proposal 2)
 // ---------------------------------------------------------------------------
 
-/** The block tokens of the body as rendering parses it, with the line the body starts on. */
+/**
+ * The block tokens of the body as rendering parses it, with the line the body starts on: with the rules of the version
+ * the document says (v1 for every document being migrated; v2 for one that already says smd: 2, planned with `force`).
+ */
 function bodyTokens(text: string, typographer = true): { tokens: Token[]; md: ReturnType<typeof createMarkdownIt>; env: Env; fm: FrontMatter } {
   const fm = parseFrontMatter(text);
   const md = createMarkdownIt();
   if (!typographer) md.set({ typographer: false });
   const env: Env = {
-    lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), source: text, smdVariables: fm.data, messages: EN,
+    lineOffset: fm.bodyStartLine, headings: [], slugs: new Map(), source: text, smdVariables: fm.data, messages: EN, smdSpec: specVersion(fm.data),
     options: { allowHtml: true, agentBlocks: 'collapsed', readFile: undefined, today: '2000-01-01' },
   };
   // As renderSmd: markdown-it reads a lone \r as a line break, the line scanners don't.
@@ -338,11 +389,24 @@ const isKnownDirective = (name: string): boolean => Object.hasOwn(INLINE_DIRECTI
 
 /** `:name[` that is text today: the name is not a known directive as written, and a `]` closes it later on the line. */
 const DIRECTIVE_START = /(?<=^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)\[/g;
+/** `:name{` (its attribute list blanked out by textOnly): spec v2 reads it as a directive when the list is one. */
+const DIRECTIVE_BRACES = /(?<=^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)(?=\0)/g;
 
-function unknownDirectiveColumns(text: string): number[] {
-  return [...text.matchAll(DIRECTIVE_START)]
-    .filter((m) => !isKnownDirective(m[1]) && text.includes(']', m.index + m[0].length))
-    .map((m) => m.index);
+/** Whether a spec v2 attribute list starts at `open` in `raw`. */
+function v2ListAt(raw: string, open: number): boolean {
+  const close = raw[open] === '{' ? findAttrsEnd(raw, open, TARGET) : -1;
+  return close >= 0 && parseAttrs(raw.slice(open + 1, close), TARGET) !== null;
+}
+
+/**
+ * The columns of the `:` of each `:name[…]` and `:name{…}` that v1 reads as text and v2 as a directive. Content may
+ * run over a line break, as link text may: `continued` says whether a `]` comes on the lines after this one.
+ */
+function unknownDirectiveColumns(text: string, raw: string, continued: () => boolean): number[] {
+  const closes = (from: number) => text.includes(']', from) || continued();
+  const brackets = [...text.matchAll(DIRECTIVE_START)].filter((m) => !isKnownDirective(m[1]) && closes(m.index + m[0].length));
+  const braces = [...text.matchAll(DIRECTIVE_BRACES)].filter((m) => !isKnownDirective(m[1]) && v2ListAt(raw, m.index + m[0].length));
+  return [...brackets, ...braces].map((m) => m.index).sort((a, b) => a - b);
 }
 
 /** Body lines outside code, math and raw HTML, with what is code or math on them. */
@@ -359,17 +423,112 @@ function* textLines(w: Work): Generator<{ i: number; raw: string; math: Readonly
   }
 }
 
+/** Whether a `]` comes on one of the lines from `from` up to the next blank line (the rest of the paragraph). */
+function closesInParagraph(lines: readonly string[], from: number): boolean {
+  for (let l = from; l < lines.length && lines[l].trim(); l++) if (lines[l].includes(']')) return true;
+  return false;
+}
+
 function unknownDirectiveStep(w: Work): void {
   const edits: Array<{ i: number; next: string }> = [];
   for (const { i, raw, math } of textLines(w)) {
     if (!raw.includes(':')) continue;
-    const columns = unknownDirectiveColumns(textOnly(raw, math, true));
+    const columns = unknownDirectiveColumns(textOnly(raw, math, true), raw, () => closesInParagraph(w.lines, i + 1));
     if (!columns.length) continue;
     let next = raw;
     for (const c of columns.reverse()) next = `${next.slice(0, c)}\\${next.slice(c)}`;
     edits.push({ i, next });
   }
   for (const { i, next } of edits) change(w, i, 1, [next], 'unknown-directive');
+}
+
+// ---------------------------------------------------------------------------
+// `{agent}` after a heading (proposal 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * A bare `agent` in a heading's attribute list, which v1 reads as `agent=true` (rendered as `data-agent="true"`), is
+ * written `agent=true`, so the list stays attributes in spec v2 and renders the same. The validator's fix for the
+ * other bare words (heading/attrs-text) runs after it.
+ */
+function headingAgentStep(w: Work): void {
+  const edits: Array<{ i: number; next: string }> = [];
+  for (const { i, raw } of textLines(w)) {
+    const m = /^\s{0,3}#{1,6}\s/.test(raw) ? HEADING_ATTRS.exec(raw) : null;
+    const items = m ? lexAttrItems(m[1], 1) : null;
+    if (!m || !items?.some(({ match }) => isFlagItem(match) && match[3] === 'agent')) continue;
+    const open = m.index + m[0].indexOf('{') + 1;
+    const last = items.at(-1)!;
+    const inner = items.map(({ match }) => (isFlagItem(match) && match[3] === 'agent' ? match[0].replace('agent', 'agent=true') : match[0])).join('');
+    edits.push({ i, next: `${raw.slice(0, open)}${inner}${raw.slice(open + last.pos + last.match[0].length)}` });
+  }
+  for (const { i, next } of edits) change(w, i, 1, [next], 'heading-braces');
+}
+
+// ---------------------------------------------------------------------------
+// Backslashes in quoted attribute values (proposal 6)
+// ---------------------------------------------------------------------------
+
+/** A known directive's name (as v1 reads it) right before an attribute list. */
+const KNOWN_DIRECTIVE_BEFORE = /(?:^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(?:\[[^\]\n]*\])?$/;
+
+/**
+ * Where v1 reads an attribute list on a line (the columns of its `{`): after a container's name, at the end of a
+ * heading, and inline after a styled span's `]` or a known directive. `masked` is the line with code and math blanked.
+ */
+function listStarts(raw: string, masked: string): number[] {
+  const starts = new Set<number>();
+  const open = CONTAINER_OPEN.exec(raw);
+  if (open && raw[raw.length - open[4].length] === '{') starts.add(raw.length - open[4].length);
+  const heading = /^\s{0,3}#{1,6}\s/.test(raw) ? HEADING_ATTRS.exec(raw) : null;
+  if (heading) starts.add(heading.index + heading[0].indexOf('{'));
+  for (let p = masked.indexOf('{'); p !== -1; p = masked.indexOf('{', p + 1)) {
+    const before = masked.slice(0, p);
+    const directive = KNOWN_DIRECTIVE_BEFORE.exec(before);
+    if (before.endsWith(']') || (directive && isKnownDirective(directive[1]))) starts.add(p);
+  }
+  return [...starts].sort((a, b) => a - b);
+}
+
+const sameAttrs = (a: Attrs | null, b: Attrs | null) => !!a && !!b && JSON.stringify(a) === JSON.stringify(b);
+
+/** A quoted item written so that spec v2 reads the value v1 reads; other items as they are. */
+function requoted(m: RegExpExecArray): string {
+  const { value, quote } = itemValue(m, 1);
+  if (!quote || value === undefined) return m[0];
+  const written = `${quote}${quote === '"' ? m[4] : m[5]}${quote}`;
+  const at = m[0].lastIndexOf(written);
+  return `${m[0].slice(0, at)}${quote}${escapeQuoted(value, quote)}${quote}${m[0].slice(at + written.length)}`;
+}
+
+/**
+ * The inside of the attribute list that opens at `open`, rewritten so that spec v2 reads the values v1 reads, when the
+ * two readings differ (`\\` in a quoted value, or a value that ends in a single backslash); undefined when they don't,
+ * or when no rewrite reads the same.
+ */
+function v2List(raw: string, open: number): { close: number; inner: string } | undefined {
+  const close = findAttrsEnd(raw, open, 1);
+  const inner = close < 0 ? '' : raw.slice(open + 1, close);
+  const v1 = close < 0 ? null : parseAttrs(inner, 1);
+  if (!v1 || (findAttrsEnd(raw, open, TARGET) === close && sameAttrs(v1, parseAttrs(inner, TARGET)))) return undefined;
+  const items = lexAttrItems(inner, 1) ?? [];
+  const last = items.at(-1);
+  const rewritten = items.map(({ match }) => requoted(match)).join('') + inner.slice(last ? last.pos + last.match[0].length : 0);
+  return sameAttrs(v1, parseAttrs(rewritten, TARGET)) ? { close, inner: rewritten } : undefined;
+}
+
+function attrEscapeStep(w: Work): void {
+  const edits: Array<{ i: number; next: string }> = [];
+  for (const { i, raw, math } of textLines(w)) {
+    if (!raw.includes('\\') || !raw.includes('{')) continue;
+    let next = raw;
+    for (const open of listStarts(raw, textOnly(raw, math, false)).reverse()) {
+      const list = v2List(next, open);
+      if (list) next = `${next.slice(0, open + 1)}${list.inner}${next.slice(list.close)}`;
+    }
+    if (next !== raw) edits.push({ i, next });
+  }
+  for (const { i, next } of edits) change(w, i, 1, [next], 'attr-escapes');
 }
 
 // ---------------------------------------------------------------------------
@@ -456,6 +615,9 @@ const TYPOGRAPHY: ReadonlyArray<[string, string, RegExp]> = [
   ['symbol', 'symbols', /[©®™±§]/g],
 ];
 
+/** The front matter keys the header shows as inline Markdown. */
+const HEADER_TEXT = ['title', 'summary'];
+
 /** Typographic characters per line: in the body's text, in container titles and in the front matter title and summary. */
 function typographyByLine(text: string, typographer: boolean): Map<number, number[]> {
   const { tokens, md, env, fm } = bodyTokens(text, typographer);
@@ -468,7 +630,7 @@ function typographyByLine(text: string, typographer: boolean): Map<number, numbe
   const inline = (s: string, line: number) => {
     for (const t of md.parseInline(s, { ...env, headings: [], slugs: new Map() })) addText(t.children ?? [], line, add);
   };
-  for (const key of ['title', 'summary']) {
+  for (const key of HEADER_TEXT) {
     const value = fm.data[key];
     if (typeof value === 'string') inline(value, Math.max(0, keyLine(splitLines(text), fm, key)));
   }
@@ -539,26 +701,71 @@ function addFrontMatterKey(w: Work, line: string, kind: MigrationKind, reason: s
 // Fuzzy links (proposal 8)
 // ---------------------------------------------------------------------------
 
-/** Links that GFM makes from text too: a scheme, `www.`, or an e-mail address. */
-const GFM_AUTOLINK = /^(?:[a-z][a-z0-9+.-]*:\/\/|mailto:|www\.)|@/i;
+interface FuzzyLink {
+  label: string;
+  /** Where v1 points the link (`http://example.com`). */
+  href: string;
+  first: number;
+  last: number;
+  /** In the front matter's title or summary, which the header shows: only a note. */
+  key?: string;
+  /** Text today that spec v2 links: only a note. */
+  gained?: true;
+}
 
-interface FuzzyLink { label: string; first: number; last: number }
+const HTML_LINK_OPEN = /^<a[\s>]/i;
+const HTML_LINK_CLOSE = /^<\/a\s*>/i;
 
-/** Bare domains linkify links today, with the lines of the text they are in. */
+/** Whether spec v2 links `label` the same way: GFM's autolink literals match all of it. */
+function gfmLinks(gfm: ReturnType<typeof gfmLinkify>, label: string): boolean {
+  const [match] = gfm.match(label) ?? [];
+  return match?.index === 0 && match.lastIndex === label.length;
+}
+
+/**
+ * The links linkify makes in `children` that spec v2 doesn't make (`example.com`, `//host`, `WWW.HOST`), and the
+ * other way round, text that spec v2 links (`www.host.test`, whose top-level domain v1 doesn't know), on lines
+ * [first, last].
+ */
+function fuzzyIn(children: Token[], gfm: ReturnType<typeof gfmLinkify>, place: Omit<FuzzyLink, 'label' | 'href'>): FuzzyLink[] {
+  let inLink = 0;
+  return children.flatMap((c, k): FuzzyLink[] => {
+    if (c.type === 'link_open' || (c.type === 'html_inline' && HTML_LINK_OPEN.test(c.content))) inLink++;
+    if (c.type === 'link_close' || (c.type === 'html_inline' && HTML_LINK_CLOSE.test(c.content))) inLink--;
+    if (c.type === 'text' && inLink <= 0) {
+      return (gfm.match(c.content) ?? []).filter((m) => m.schema === 'www.').map((m) => ({ label: m.raw, href: '', ...place, gained: true }));
+    }
+    const label = children[k + 1]?.content ?? '';
+    if (c.type !== 'link_open' || c.markup !== 'linkify' || !label || gfmLinks(gfm, label)) return [];
+    return [{ label, href: c.attrGet('href') ?? '', ...place }];
+  });
+}
+
+/** Bare domains linkify links today, with the lines of the text they are in: the body's, then the header's. */
 function fuzzyLinks(text: string): FuzzyLink[] {
-  const { tokens, fm } = bodyTokens(text);
+  const { tokens, fm, md, env } = bodyTokens(text);
+  const gfm = gfmLinkify(md.linkify);
   const found: FuzzyLink[] = [];
   let range: [number, number] = [fm.bodyStartLine, fm.bodyStartLine];
   for (const t of tokens) {
     if (t.map) range = [t.map[0] + fm.bodyStartLine, t.map[1] - 1 + fm.bodyStartLine];
-    const children = t.children ?? [];
-    children.forEach((c, k) => {
-      const label = children[k + 1]?.content ?? '';
-      if (c.type === 'link_open' && c.markup === 'linkify' && label && !GFM_AUTOLINK.test(label)) found.push({ label, first: range[0], last: range[1] });
-    });
+    found.push(...fuzzyIn(t.children ?? [], gfm, { first: range[0], last: range[1] }));
+  }
+  for (const key of HEADER_TEXT) {
+    const value = fm.data[key];
+    if (typeof value !== 'string') continue;
+    const line = Math.max(0, keyLine(splitLines(text), fm, key));
+    for (const t of md.parseInline(value, { ...env, headings: [], slugs: new Map() })) found.push(...fuzzyIn(t.children ?? [], gfm, { first: line, last: line, key }));
   }
   return found;
 }
+
+/**
+ * `label` as link text that reads as written with typography on too: the second character of `--`, `..`, `+-`, `,,`,
+ * `??` and `!!`, and the `(` of `(c)`, `(r)` and `(tm)`, escaped (linkify's text is never typographic).
+ */
+const literalLabel = (label: string) =>
+  label.replaceAll(/(?<=[-+.,?!])[-.,?!]/g, '\\$&').replaceAll(/\((?=(?:c|r|tm)\))/gi, '\\(');
 
 const DOMAIN_EDGE = /[\w.@/:-]/;
 
@@ -577,20 +784,28 @@ function locate(w: Work, link: FuzzyLink, from: { line: number; column: number }
   return undefined;
 }
 
-type DomainEdits = Map<number, Array<{ column: number; label: string }>>;
+type DomainEdits = Map<number, Array<{ column: number; label: string; href: string }>>;
 
-/** The source place of each fuzzy link, by line; a link this tool can't place becomes a note. */
+/** The source place of each fuzzy link, by line; a link this tool can't place, or in the header's text, becomes a note. */
 function placeFuzzyLinks(w: Work): DomainEdits {
   const edits: DomainEdits = new Map();
   let from = { line: 0, column: 0 };
   for (const link of fuzzyLinks(textOf(w))) {
+    if (link.gained) {
+      note(w, link.first, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} "${link.label}" is text today, and spec v2 links it (a GFM autolink literal); escape its first dot (www\\.) to keep it text.`);
+      continue;
+    }
+    if (link.key) {
+      note(w, link.first, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} "${link.label}" in "${link.key}" is linked in the header today; write it as a Markdown link there to keep the link.`);
+      continue;
+    }
     const at = locate(w, link, from);
     if (!at) {
       note(w, link.first, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} "${link.label}" is linked today, from text this tool can't rewrite.`);
       continue;
     }
     from = { line: at.line, column: at.column + link.label.length };
-    edits.set(at.line, [...(edits.get(at.line) ?? []), { column: at.column, label: link.label }]);
+    edits.set(at.line, [...(edits.get(at.line) ?? []), { column: at.column, label: link.label, href: link.href }]);
   }
   return edits;
 }
@@ -602,21 +817,18 @@ function fuzzyLinkStep(w: Work): void {
     const labels = links.map((l) => `"${l.label}"`).join(', ');
     const are = several(links.length, 'is', 'are');
     if (!w.options.linkDomains) {
-      note(w, line, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} linked today. Run with --link-domains to write ${several(links.length, 'it', 'them')} as <https://…>.`);
+      note(w, line, FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} linked today. Run with --link-domains to write ${several(links.length, 'it as a Markdown link', 'them as Markdown links')} to the address linked today.`);
       continue;
     }
     let next = w.lines[line];
-    for (const l of [...links].reverse()) next = `${next.slice(0, l.column)}<https://${l.label}>${next.slice(l.column + l.label.length)}`;
-    change(w, line, 1, [next], FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} written as an autolink, which stays a link.`);
+    for (const l of [...links].reverse()) next = `${next.slice(0, l.column)}[${literalLabel(l.label)}](${l.href})${next.slice(l.column + l.label.length)}`;
+    change(w, line, 1, [next], FUZZY_LINK, `${KINDS[FUZZY_LINK].reason} ${labels} ${are} written as a Markdown link to the address v1 links, which shows the same.`);
   }
 }
 
 // ---------------------------------------------------------------------------
 // Variables (proposal 10)
 // ---------------------------------------------------------------------------
-
-/** Front matter keys the page header shows as text: `v{version}` and `Updated {updated}`. */
-const HEADER_KEYS = ['version', 'updated'];
 
 /** A plain scalar as written after `key:`, up to a comment; undefined for quoted, block or empty values. */
 function writtenScalar(rest: string): string | undefined {
@@ -625,12 +837,45 @@ function writtenScalar(rest: string): string | undefined {
   return text && !/^["'[{|>&*!]/.test(text) ? text : undefined;
 }
 
+/**
+ * A value as JSON with its numbers and booleans as text, so that a value YAML reads and the same value as written
+ * (sourceSpelledData) compare equal when they are shown the same: `2` and `"2"` do, `2.1` and `"2.10"` don't.
+ */
+const shownText = (value: unknown) => JSON.stringify(value, (_key, v: unknown) => (typeof v === 'number' || typeof v === 'boolean' ? String(v) : v));
+
+/** Whether `name` (a front matter key, or a `{{name}}` path) shows differently in spec v1 and spec v2. */
+function respelled(data: Record<string, unknown>, spelled: Record<string, unknown>, name: string): boolean {
+  if (Object.hasOwn(data, name)) return shownText(data[name]) !== shownText(spelled[name]);
+  const [before, after] = [lookupVariable(data, name), lookupVariable(spelled, name)];
+  return before.kind === 'text' && after.kind === 'text' && before.text !== after.text;
+}
+
+/**
+ * Front matter values shown other than as written (proposal 10): in the page header (`version`, `updated`, owners and
+ * tags), in the agent view's header (every key but the ones it leaves out) and through `{{name}}`. A top-level key
+ * with a plain number or boolean on its own line is a note, or quoted with `quoteVariables`; anything else that shows
+ * differently (a list, a nested key) is a note to quote it by hand.
+ */
 function variableStep(w: Work): void {
   const text = textOf(w);
   const fm = parseFrontMatter(text);
-  if (!fm.present || fm.error) return;
+  const spelled = sourceSpelledData(text);
+  if (!fm.present || fm.error || !spelled) return;
   const code = codeLines(text);
-  const shown = new Set([...HEADER_KEYS, ...findVariables(w.lines, fm.bodyStartLine, (l) => code.has(l)).map((v) => v.name)]);
+  const uses = findVariables(w.lines, fm.bodyStartLine, (l) => code.has(l)).map((v) => v.name);
+  const shown = new Set([...Object.keys(fm.data).filter((key) => !AGENT_HEADER_HIDDEN.has(key)), ...uses]);
+  const done = spellingLines(w, fm, shown);
+  for (const name of shown) {
+    const line = keyLine(w.lines, fm, name.split('.')[0]);
+    if (line < 0 || done.has(line) || !respelled(fm.data, spelled, name)) continue;
+    done.add(line);
+    note(w, line, VARIABLE_SPELLING, `${KINDS[VARIABLE_SPELLING].reason} "${name}" shows a number or boolean in a list or a nested key, which is shown differently in spec v2: quote it by hand to keep how it is shown.`);
+  }
+}
+
+/** The top-level keys in `shown` with a plain number or boolean that shows differently: a note, or quoted. Returns their lines. */
+function spellingLines(w: Work, fm: FrontMatter, shown: ReadonlySet<string>): Set<number> {
+  const lines = new Set<number>();
   for (let i = 1; i < fm.bodyStartLine - 1; i++) {
     const m = /^([A-Za-z_][\w.-]*)[ \t]*:/.exec(w.lines[i]);
     const value = m && Object.hasOwn(fm.data, m[1]) ? fm.data[m[1]] : undefined;
@@ -638,6 +883,7 @@ function variableStep(w: Work): void {
     const written = writtenScalar(w.lines[i].slice(m[0].length));
     const display = variableText(value);
     if (written === undefined || written === display) continue;
+    lines.add(i);
     const today = `"${m[1]}: ${written}" is shown as "${display}" today and as "${written}" in spec v2.`;
     if (!w.options.quoteVariables) {
       note(w, i, VARIABLE_SPELLING, `${KINDS[VARIABLE_SPELLING].reason} ${today} Run with --quote-variables to quote it, so every version shows "${written}".`);
@@ -647,6 +893,7 @@ function variableStep(w: Work): void {
     const next = `${w.lines[i].slice(0, column)}"${written}"${w.lines[i].slice(column + written.length)}`;
     change(w, i, 1, [next], VARIABLE_SPELLING, `${KINDS[VARIABLE_SPELLING].reason} ${today} Quoted, it is shown as "${written}" by every version.`);
   }
+  return lines;
 }
 
 // ---------------------------------------------------------------------------
@@ -669,7 +916,7 @@ function versionStep(w: Work): void {
     else addFrontMatterKey(w, `smd: ${TARGET}`, VERSION, KINDS.version.reason);
     return;
   }
-  if (Number(fm.data.smd) === TARGET) return;
+  if (readSpec(fm.data.smd).declared === TARGET) return;
   const line = keyLine(w.lines, fm, SMD_KEY);
   const raw = w.lines[line] ?? '';
   const colon = raw.indexOf(':') + 1;
@@ -684,9 +931,24 @@ function versionStep(w: Work): void {
   change(w, line, 1, [`${raw.slice(0, column)}${TARGET}${raw.slice(column + value.length)}`], VERSION);
 }
 
-/** The value after `key:` on its line as written (`1`, `"1"`, `true`, `[1]`), up to a comment; not a block scalar or one on later lines. */
+/**
+ * The value after `key:` on its line as written (`1`, `"1"`, `true`, `[1]`), up to a comment; not a block scalar or one
+ * on later lines. Only YAML's spaces and tabs are trimmed: other white space, such as a byte order mark, is part of
+ * the value, so it is replaced with the rest of it.
+ */
 function lineValue(rest: string): string | undefined {
   const comment = rest.search(/\s#/);
-  const text = (comment < 0 ? rest : rest.slice(0, comment)).trim();
+  const text = yamlTrim(comment < 0 ? rest : rest.slice(0, comment));
   return text && !/^[|>]/.test(text) ? text : undefined;
+}
+
+const isYamlSpace = (c: string | undefined) => c === ' ' || c === '\t';
+
+/** `s` without the spaces and tabs around it. */
+function yamlTrim(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end && isYamlSpace(s[start])) start++;
+  while (end > start && isYamlSpace(s[end - 1])) end--;
+  return s.slice(start, end);
 }

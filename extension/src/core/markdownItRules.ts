@@ -1,16 +1,18 @@
 import type { StateBlock, StateCore, StateInline, Token } from 'markdown-it';
 import { attrsToStyle, emptyAttrs, escapeHtml, findAttrsEnd, parseAttrs, type Attrs } from './attrs';
-import { ContainerInfo, parseContainerInfo } from './containers';
+import { closesDisplayMath, ContainerInfo, displayMathOpener, parseContainerInfo } from './containers';
 import { FigureCounter, figureTargets, type FigureNumber } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
-import { parseFrontMatter } from './frontmatter';
-import { renderInlineDirective, withoutDueNotes } from './markdownItHtml';
-import { HEADING_ATTRS, slugify } from './sections';
+import { parseFrontMatter, unreadFrontMatter } from './frontmatter';
+import { renderInlineDirective, renderUnknownDirective, withoutDueNotes } from './markdownItHtml';
+import { HEADING_ATTRS, headingAttrList, slugify } from './sections';
 import { INLINE_DIRECTIVES } from './spec';
+import { isSpecVersion, isV2, resolveSpec, specEnv, specOf, type SpecEnv, type SpecVersion } from './specVersion';
+import { typographyOf } from './typography';
 import type { IncludeResult, IncludeScope } from './include';
 import type { SmdContext } from './markdownItSetup';
 import type { Env, Heading } from './render';
-import { substituteLine, variableAt, lookupVariable, type Variables } from './variables';
+import { shownValues, substituteLine, variableAt, lookupVariable, type Variables } from './variables';
 
 export { HEADING_ATTRS, slugify } from './sections';
 
@@ -27,9 +29,17 @@ const lineText = (state: StateBlock, l: number) => state.src.slice(state.bMarks[
 // ---------------------------------------------------------------------------
 
 /**
+ * The colon counts of the containers whose body is being parsed, outermost first, for the containers opened inside
+ * them (spec v2 pairs closing fences by colon count). A list or a quote starts afresh: a closing fence in it can't
+ * close a container around it.
+ */
+const openAround = new WeakMap<StateBlock, readonly number[]>();
+
+/**
  * Block rule for `:::name …` containers. Unlike markdown-it-container, it
  * tracks nesting: a bare `:::` closes the innermost open container, and
- * fenced code and `$$` display math inside a container are skipped. Colon counts are cosmetic.
+ * fenced code and `$$` display math inside a container are skipped. In spec v1 colon counts are cosmetic; in spec v2
+ * a closing fence closes the innermost container opened with as many colons (see closedBy in containers.ts).
  */
 export function containerBlock(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
   if (state.sCount[startLine] - state.blkIndent >= 4) return false;
@@ -37,8 +47,11 @@ export function containerBlock(state: StateBlock, startLine: number, endLine: nu
   if (!open) return false;
   if (silent) return true;
 
-  const closeLine = findContainerClose(state, startLine, endLine);
-  const end = closeLine === -1 ? endLine : closeLine;
+  const v2 = isV2(state.env);
+  const outer = openAround.get(state) ?? [];
+  const around = (state.parentType as string) === 'container' ? outer : [];
+  const close = findContainerClose(state, startLine, endLine, { colons: open[1].length, around, v2 });
+  const end = close.line === -1 ? endLine : close.line;
 
   const oldParent = state.parentType;
   const oldLineMax = state.lineMax;
@@ -49,19 +62,30 @@ export function containerBlock(state: StateBlock, startLine: number, endLine: nu
   openToken.block = true;
   openToken.info = open[2];
   openToken.map = [startLine, end];
+  openAround.set(state, [...around, open[1].length]);
   state.md.block.tokenize(state, startLine + 1, end);
+  openAround.set(state, outer);
   const closeToken = state.push('container_smd_close', 'div', -1);
   closeToken.markup = open[1];
   closeToken.block = true;
+  // Spec v2: the closing fence's line, when the container has one of its own (blocks.ts); not one around it closes it.
+  if (v2 && close.own) closeToken.map = [close.line, close.line + 1];
   state.parentType = oldParent;
   state.lineMax = oldLineMax;
-  state.line = closeLine === -1 ? end : closeLine + 1;
+  state.line = close.own ? close.line + 1 : end;
   return true;
 }
 
-interface ContainerScan {
-  /** Containers opened inside the one being closed. */
-  depth: number;
+/** The container being closed: its colon count, those of the containers it is directly in, and the version. */
+interface ScannedContainer {
+  colons: number;
+  around: readonly number[];
+  v2: boolean;
+}
+
+interface ContainerScan extends ScannedContainer {
+  /** The colon counts of the containers opened inside the one being closed, outermost first. */
+  open: number[];
   /** The open code fence (``` or ~~~ run), if any. */
   fence: string | null;
   /** The last line of the `$$` display math being skipped, or -1. */
@@ -72,40 +96,68 @@ interface ContainerScan {
   math: boolean;
 }
 
-/** The line of the bare `:::` that closes the container opened on startLine, or -1 when it runs to the end. */
-function findContainerClose(state: StateBlock, startLine: number, endLine: number): number {
+/**
+ * Where the container opened on startLine ends: the line of its closing fence (`own`), the line of a fence that closes a
+ * container around it and so this one too (spec v2), or -1 when it runs to the end.
+ */
+function findContainerClose(state: StateBlock, startLine: number, endLine: number, container: ScannedContainer): { line: number; own: boolean } {
   const math = state.md.block.ruler.getRules('').includes(mathBlock);
-  const scan: ContainerScan = { depth: 0, fence: null, mathEnd: -1, endLine, math };
+  const scan: ContainerScan = { ...container, open: [], fence: null, mathEnd: -1, endLine, math };
   for (let l = startLine + 1; l < endLine; l++) {
     const text = lineText(state, l);
     if (text.length && state.sCount[l] < state.blkIndent) break; // outdented: parent list/quote ended
-    if (closesContainer(state, l, text, scan)) return l;
+    const closing = closesContainer(state, l, text, scan);
+    if (closing) return { line: l, own: closing === OWN };
   }
-  return -1;
+  return { line: -1, own: false };
 }
 
-/** Follow fences, display math and nesting over one line; true when it is the bare `:::` that closes the scanned container. */
-function closesContainer(state: StateBlock, l: number, text: string, scan: ContainerScan): boolean {
+const OWN = 'own';
+const AROUND = 'around';
+/** What a line closes, seen from the scanned container: it (`own`), one around it (`around`), or nothing it ends. */
+type Closing = typeof OWN | typeof AROUND | null;
+
+/** Follow fences, display math and nesting over one line; whether it is a closing fence that ends the scanned container. */
+function closesContainer(state: StateBlock, l: number, text: string, scan: ContainerScan): Closing {
   if (scan.fence) {
     if (closesFence(text, scan.fence)) scan.fence = null;
-    return false;
+    return null;
   }
   // Indented code, and the lines of display math, are opaque.
-  if (state.sCount[l] - state.blkIndent >= 4 || l <= scan.mathEnd) return false;
+  if (state.sCount[l] - state.blkIndent >= 4 || l <= scan.mathEnd) return null;
   const fence = /^(`{3,}|~{3,})/.exec(text);
   if (fence) {
     scan.fence = fence[1];
-    return false;
+    return null;
   }
-  if (opensDisplayMath(state, l, text, scan)) return false;
-  if (/^:{3,}\s*[a-zA-Z]/.test(text)) {
-    scan.depth++;
-    return false;
+  if (opensDisplayMath(state, l, text, scan)) return null;
+  const opener = /^(:{3,})\s*[a-zA-Z]/.exec(text);
+  if (opener) {
+    scan.open.push(opener[1].length);
+    return null;
   }
-  if (!/^:{3,}\s*$/.test(text)) return false;
-  if (scan.depth === 0) return true;
-  scan.depth--;
-  return false;
+  const closer = /^(:{3,})\s*$/.exec(text);
+  return closer ? closeWith(scan, closer[1].length) : null;
+}
+
+/**
+ * What a closing fence with `colons` colons closes (see closedBy in containers.ts). Spec v1: the innermost open
+ * container. Spec v2: the innermost one opened with as many colons, inside the scanned container, the scanned one, or
+ * one around it; else the innermost.
+ */
+function closeWith(scan: ContainerScan, colons: number): Closing {
+  if (scan.v2) {
+    const inner = scan.open.lastIndexOf(colons);
+    if (inner >= 0) {
+      scan.open.length = inner;
+      return null;
+    }
+    if (colons === scan.colons) return OWN;
+    if (scan.around.includes(colons)) return AROUND;
+  }
+  if (!scan.open.length) return OWN;
+  scan.open.pop();
+  return null;
 }
 
 /** Whether line l opens display math, read exactly as mathBlock reads it; the scan then skips to its last line. */
@@ -132,15 +184,15 @@ export interface ContainerMeta extends ContainerInfo {
 }
 
 export function annotateContainers(state: StateCore): void {
-  annotateTokens(state.tokens, state.src);
+  annotateTokens(state.tokens, state.src, specOf(state.env));
 }
 
-/** Parse the opening line of every container in `tokens` (parsed from `src`) into its meta. */
-export function annotateTokens(tokens: Token[], src: string): void {
+/** Parse the opening line of every container in `tokens` (parsed from `src`, read with `spec`) into its meta. */
+export function annotateTokens(tokens: Token[], src: string, spec: SpecVersion = 1): void {
   const stack: Token[] = [];
   for (const token of tokens) {
     if (token.type === 'container_smd_open') {
-      const info = parseContainerInfo(token.info) ?? { name: 'box', attrs: emptyAttrs(), title: '' };
+      const info = parseContainerInfo(token.info, spec) ?? { name: 'box', attrs: emptyAttrs(), title: '' };
       const meta: ContainerMeta = { ...info, close: '</div>' };
       if (info.name === 'risk-matrix') meta.source = src;
       token.meta = meta;
@@ -191,18 +243,15 @@ export function styledSpan(state: StateInline, silent: boolean): boolean {
   if (state.src.charCodeAt(start) !== 0x5b /* [ */) return false;
   const labelEnd = state.md.helpers.parseLinkLabel(state, start, true);
   if (labelEnd < 0 || state.src[labelEnd + 1] !== '{') return false;
-  const attrsEnd = findAttrsEnd(state.src, labelEnd + 1);
+  const spec = specOf(state.env);
+  const attrsEnd = findAttrsEnd(state.src, labelEnd + 1, spec);
   if (attrsEnd < 0) return false;
-  const attrs = parseAttrs(state.src.slice(labelEnd + 2, attrsEnd));
+  const attrs = parseAttrs(state.src.slice(labelEnd + 2, attrsEnd), spec);
   if (!attrs) return false;
 
   if (!silent) {
-    const { style } = attrsToStyle(attrs);
     const open = state.push('smd_span_open', 'span', 1);
-    const classes = ['smd-span', ...attrs.classes.map((c) => `smd-u-${c}`)];
-    open.attrSet('class', classes.join(' '));
-    if (style) open.attrSet('style', style);
-    if (attrs.id) open.attrSet('id', attrs.id);
+    setSpanAttrs(open, attrs, 'smd-span');
     // The attributes as written, for the exporters (exportTree.ts), which map them rather than read the CSS.
     open.meta = { values: attrs.values } satisfies SpanMeta;
     const oldMax = state.posMax;
@@ -216,17 +265,42 @@ export function styledSpan(state: StateInline, silent: boolean): boolean {
   return true;
 }
 
-/** `:name[content]{attrs}` inline directives (badge, kbd, progress, mention, status). */
+/** The class, style and id of `[text]{attrs}` on its opening token, with `base` first among the classes. */
+function setSpanAttrs(open: Token, attrs: Attrs, base: string): void {
+  const { style } = attrsToStyle(attrs);
+  open.attrSet('class', [base, ...attrs.classes.map((c) => `smd-u-${c}`)].join(' '));
+  if (style) open.attrSet('style', style);
+  if (attrs.id) open.attrSet('id', attrs.id);
+}
+
+/** A directive's name: lower case in spec v1 (`:Badge[x]` is text); any case in spec v2 (RFC proposal 11). */
+const DIRECTIVE_NAME_V1 = /^:([a-z][a-z0-9-]*)(?=[[{])/;
+const DIRECTIVE_NAME_V2 = /^:([A-Za-z][A-Za-z0-9-]*)(?=[[{])/;
+
+/**
+ * The name of the inline directive whose `:` is at `start` (lower-cased in spec v2), or undefined. The `:` comes at
+ * the start, or after whitespace or opening punctuation (the prefix rule). In spec v1 only the vocabulary's names, as
+ * written, are directives; in spec v2 any name is (RFC proposal 7b), in any case.
+ */
+export function directiveNameAt(src: string, start: number, end: number, spec: SpecVersion): { name: string; length: number } | undefined {
+  if (src.charCodeAt(start) !== 0x3a /* : */) return undefined;
+  const prev = start > 0 ? src[start - 1] : ' ';
+  if (!/[\s([{>*_~"'-]/.test(prev)) return undefined;
+  const m = (spec >= 2 ? DIRECTIVE_NAME_V2 : DIRECTIVE_NAME_V1).exec(src.slice(start, end));
+  if (!m) return undefined;
+  // Own names only: `:constructor[x]` is not a known directive (in spec v2 it is an unknown one).
+  if (spec < 2 && !Object.hasOwn(INLINE_DIRECTIVES, m[1])) return undefined;
+  return { name: spec >= 2 ? m[1].toLowerCase() : m[1], length: m[0].length };
+}
+
+/** `:name[content]{attrs}` inline directives (badge, kbd, progress, mention, status…; in spec v2 any name). */
 export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdContext): boolean {
   const start = state.pos;
-  if (state.src.charCodeAt(start) !== 0x3a /* : */) return false;
-  const prev = start > 0 ? state.src[start - 1] : ' ';
-  if (!/[\s([{>*_~"'-]/.test(prev)) return false;
-  const m = /^:([a-z][a-z0-9-]*)(?=[[{])/.exec(state.src.slice(start, state.posMax));
-  // Own names only: `:constructor[x]` is not a directive.
-  if (!m || !Object.hasOwn(INLINE_DIRECTIVES, m[1])) return false;
-  const name = m[1];
-  let pos = start + m[0].length;
+  const spec = specOf(state.env);
+  const at = directiveNameAt(state.src, start, state.posMax, spec);
+  if (!at) return false;
+  const name = at.name;
+  let pos = start + at.length;
 
   let content = '';
   if (state.src[pos] === '[') {
@@ -237,9 +311,9 @@ export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdCon
   }
   let attrs = emptyAttrs();
   if (state.src[pos] === '{') {
-    const end = findAttrsEnd(state.src, pos);
+    const end = findAttrsEnd(state.src, pos, spec);
     if (end < 0) return false;
-    const parsed = parseAttrs(state.src.slice(pos + 1, end));
+    const parsed = parseAttrs(state.src.slice(pos + 1, end), spec);
     if (!parsed) return false;
     attrs = parsed;
     pos = end + 1;
@@ -251,7 +325,8 @@ export function inlineDirective(state: StateInline, silent: boolean, ctx: SmdCon
 
 /**
  * A directive's token: its HTML, or for `:ref[id]` an `smd_ref` token resolved when rendering (the figure may come later).
- * Front matter variables in the content are replaced first (`:badge[v{{version}}]`).
+ * Front matter variables in the content are replaced first (`:badge[v{{version}}]`). A name outside the vocabulary
+ * (spec v2 only) renders its content in a `smd-directive smd-directive-<name>` span, styled as `[text]{attrs}` is.
  */
 function pushDirective(state: StateInline, name: string, content: string, attrs: Attrs, ctx: SmdContext): void {
   if (name === 'ref') {
@@ -260,7 +335,10 @@ function pushDirective(state: StateInline, name: string, content: string, attrs:
   }
   const text = ctx.variables ? substituteLine(content, envVariables(state.env)) : content;
   const token = state.push('html_inline', '', 0);
-  token.content = renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today, ctx.messages(state.env));
+  const spec = specEnv(state.env);
+  token.content = Object.hasOwn(INLINE_DIRECTIVES, name)
+    ? renderInlineDirective(state.md, name, text, attrs.values, ctx.options(state.env).today, ctx.messages(state.env), spec)
+    : renderUnknownDirective(state.md, name, text, attrs, spec);
   token.meta = { directive: name, content: text, values: attrs.values } satisfies DirectiveMeta;
 }
 
@@ -295,12 +373,43 @@ export function envVariables(env: unknown): Variables | undefined {
 /**
  * Keep the document's front matter on the env for `{{name}}`, unless the env already has it: renderSmd puts
  * it there, and so may a host that removes the front matter before rendering. Inline-only parses (titles)
- * keep the document's.
+ * keep the document's. The values are the ones the document shows (shownValues): spelled as written in spec v2.
  */
 export function collectVariables(state: StateCore): void {
   const env = state.env as VariableEnv | undefined;
   if (state.inlineMode || !env || typeof env !== 'object' || env.smdVariables) return;
-  if (state.src.startsWith('---')) env.smdVariables = parseFrontMatter(state.src).data;
+  if (state.src.startsWith('---')) env.smdVariables = shownValues(parseFrontMatter(state.src).data, state.src, specOf(env));
+}
+
+// ---------------------------------------------------------------------------
+// Spec version  (smd: 2)
+// ---------------------------------------------------------------------------
+
+/** The env of a parse inside a render: the scan of a file to include (see markdownItInclude.ts). */
+interface InnerEnv extends SpecEnv, VariableEnv {
+  smdIncludeScan?: boolean;
+}
+
+/**
+ * For markdown-it hosts: put the spec version on the env before block parsing, so every rule can read it with
+ * `isV2(state.env)` (see specVersion.ts). The document's `smd` wins: in the source's front matter, else in
+ * `env.smdVariables` (front matter the host removed and passed along), else the plugin's `spec` option, else 1. An
+ * inline render inside a rule and the scan of an included file keep the version their env carries, their document's.
+ * Each render works it out again, so an env used twice doesn't keep the last document's. The document's
+ * `typography: true` goes on the env beside it, as `smdTypography`. renderSmd sets both itself and doesn't add this rule.
+ */
+export function hostSpec(option: SpecVersion | undefined): (state: StateCore) => void {
+  return (state) => {
+    const env = state.env as InnerEnv | undefined;
+    if (!env || typeof env !== 'object') return;
+    if ((state.inlineMode || env.smdIncludeScan === true) && isSpecVersion(env.smdSpec)) return;
+    const own = !state.inlineMode && state.src.startsWith('---') ? parseFrontMatter(state.src) : undefined;
+    const data = own?.present && !own.error ? own.data : env.smdVariables;
+    env.smdSpec = resolveSpec(data, option);
+    // Spec v2 reads the document's `typography: true` from the same front matter (typography.ts); only then is it on the env.
+    if (typographyOf(data)) env.smdTypography = true;
+    else delete env.smdTypography;
+  };
 }
 
 /**
@@ -396,15 +505,16 @@ export function mathBlock(state: StateBlock, startLine: number, endLine: number,
 
 /**
  * The last line of the `$$` display math opening on startLine (startLine itself for `$$…$$` on one line), or -1
- * when none opens there: the line doesn't start with `$$`, or no later line before endLine ends with `$$`.
+ * when none opens there: the line opens no math, or no later line before endLine closes it (see displayMathOpener).
+ * Spec v1: a line starting with `$$` opens, a line ending with `$$` closes. Spec v2: a line that is only `$$` opens
+ * and closes.
  */
 function mathBlockEnd(state: StateBlock, startLine: number, endLine: number): number {
-  const first = lineText(state, startLine);
-  if (!first.startsWith('$$')) return -1;
-  const rest = first.slice(2);
-  if (rest.trimEnd().endsWith('$$') && rest.trim().length > 2) return startLine;
+  const spec = specOf(state.env);
+  const opener = displayMathOpener(lineText(state, startLine), spec);
+  if (opener !== 'block') return opener === 'line' ? startLine : -1;
   for (let l = startLine + 1; l < endLine; l++) {
-    if (lineText(state, l).trimEnd().endsWith('$$')) return l;
+    if (closesDisplayMath(lineText(state, l), spec)) return l;
   }
   return -1;
 }
@@ -583,7 +693,11 @@ function footnoteItem(state: StateCore, content: Token[], use: { n: number; coun
 // Front matter
 // ---------------------------------------------------------------------------
 
-/** `---` YAML front matter on the first line, as one `smd_front_matter` token carrying the parsed data. */
+/**
+ * `---` YAML front matter on the first line, as one `smd_front_matter` token carrying the parsed data. Front matter
+ * that could not be read has its lines as written in `content`, which render in an error block. Otherwise, in spec v2
+ * its content is the front matter's source, so the header can show values as written (see addFrontMatter).
+ */
 export function frontMatterBlock(state: StateBlock, startLine: number, _endLine: number, silent: boolean): boolean {
   if (startLine !== 0 || state.blkIndent !== 0 || lineText(state, 0).trimEnd() !== '---') return false;
   const fm = parseFrontMatter(state.src);
@@ -593,6 +707,11 @@ export function frontMatterBlock(state: StateBlock, startLine: number, _endLine:
   token.block = true;
   token.map = [0, fm.bodyStartLine];
   token.meta = fm.data;
+  const unread = unreadFrontMatter(state.src, fm);
+  if (unread) {
+    token.info = 'error';
+    token.content = unread.join('\n');
+  } else if (isV2(state.env)) token.content = state.src.slice(0, state.eMarks[fm.bodyStartLine - 1]);
   state.line = fm.bodyStartLine;
   return true;
 }
@@ -644,7 +763,8 @@ function markTask(state: StateCore, i: number, checked: boolean): void {
 /** The plain text of a task's inline tokens: text, code, and the text of inline HTML such as directives. */
 function taskLabel(children: Token[], done: boolean): string {
   return children.map((c) => {
-    if (c.type === 'text' || c.type === 'code_inline' || c.type === 'smd_variable') return c.content;
+    // An escaped character (`\:`) is a text_special token until markdown-it joins the text, after this rule.
+    if (c.type === 'text' || c.type === 'text_special' || c.type === 'code_inline' || c.type === 'smd_variable') return c.content;
     if (c.type === 'html_inline') return htmlText(done ? withoutDueNotes(c.content) : c.content);
     if (c.type === 'image') return taskLabel(c.children ?? [], done);
     return c.type === 'softbreak' || c.type === 'hardbreak' ? ' ' : '';
@@ -765,14 +885,16 @@ function includedSlugs(tokens: Token[], later: Array<[Token, Heading, string]>):
 
 export function headingAttrs(state: StateCore): void {
   const tokens = state.tokens;
+  const spec = specOf(state.env);
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].type !== 'heading_open') continue;
     const inline = tokens[i + 1];
     const last = inline.children?.[inline.children.length - 1];
     if (!last || last.type !== 'text') continue;
-    const m = HEADING_ATTRS.exec(last.content);
-    const attrs = m ? parseAttrs(m[1]) : null;
-    if (!m || !attrs) continue;
+    // In spec v2 a trailing `{}` or `{word}` is heading text (RFC proposal 5).
+    const list = headingAttrList(last.content, spec);
+    if (!list) continue;
+    const { match: m, attrs } = list;
     last.content = last.content.slice(0, m.index);
     inline.content = inline.content.replace(HEADING_ATTRS, '');
     if (attrs.id) tokens[i].attrSet('id', attrs.id);

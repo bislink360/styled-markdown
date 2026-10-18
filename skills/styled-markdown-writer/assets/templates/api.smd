@@ -1,5 +1,5 @@
 ---
-smd: 1
+smd: 2
 title: "{{title}} API"
 summary: What the API does, who calls it, and how it is authenticated.
 status: draft

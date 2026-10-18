@@ -17,7 +17,7 @@ from typing import Any
 from mkdocs.exceptions import PluginError
 
 BRIDGE_SCRIPT = Path(__file__).with_name("bridge.cjs")
-MIN_NODE = 18
+MIN_NODE = 22
 
 NODE_MISSING = (
     "styled-markdown: Node.js {min}+ is needed to render .smd pages, but {node!r} was not found on PATH. "

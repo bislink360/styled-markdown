@@ -1,5 +1,7 @@
 import { agentViewOfRange, inlineText } from './agentView';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo, type ContainerInfo } from './containers';
+import {
+  closeContainers, closerColons, CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, openerColons, parseContainerInfo, type ContainerInfo,
+} from './containers';
 import { parseFrontMatter } from './frontmatter';
 import { extractTasks } from './meta';
 import { parseSmd } from './parse';
@@ -7,6 +9,7 @@ import type { Heading } from './render';
 import { CALLOUT_TYPES, CONTAINERS, RISK_LEVELS, STYLE_KEYS } from './spec';
 import { own, suggest } from './util';
 import { documentVariables } from './variables';
+import { specVersion, type SpecVersion } from './specVersion';
 
 /**
  * Block queries: select decisions, risks, API endpoints, callouts, tasks and headings by type and
@@ -273,24 +276,26 @@ function taskBlocks(text: string, today: string, sectionAt: (line: number) => st
 
 function containerBlocks(lines: string[], from: number, sectionAt: (line: number) => string | null): Block[] {
   const variables = documentVariables(lines);
+  const spec = specVersion(variables);
   const blocks: Block[] = [];
-  const open: Block[] = [];
+  const open: Array<{ block: Block; colons: number }> = [];
   let fence: Fence = null;
-  const inMath = displayMath(lines);
+  const inMath = displayMath(lines, spec);
   for (let i = from; i < lines.length; i++) {
     const step = fenceStep(lines[i], fence);
     fence = step.fence;
     if (step.code || inMath(i)) continue;
     if (CONTAINER_CLOSE.test(lines[i])) {
-      const done = open.pop();
-      if (done) done.endLine = i;
+      // The fence's own container ends on it; one closed with it (spec v2) ends on the line before.
+      const done = closeContainers(open, closerColons(lines[i]), spec, (o) => o.colons);
+      done.forEach((o, k) => { o.block.endLine = k === done.length - 1 ? i : i - 1; });
       continue;
     }
-    const info = openingOf(lines[i]);
+    const info = openingOf(lines[i], spec);
     if (!info) continue;
-    const block: Block = { type: info.name, line: i, endLine: lines.length - 1, title: inlineText(info.title, undefined, false, undefined, variables), attrs: containerAttrs(info), section: sectionAt(i) };
+    const block: Block = { type: info.name, line: i, endLine: lines.length - 1, title: inlineText(info.title, { variables }), attrs: containerAttrs(info), section: sectionAt(i) };
     blocks.push(block);
-    open.push(block);
+    open.push({ block, colons: openerColons(lines[i]) });
   }
   return blocks;
 }
@@ -305,9 +310,9 @@ function fenceStep(line: string, fence: Fence): { fence: Fence; code: boolean } 
   return { fence: closes ? null : fence, code: true };
 }
 
-function openingOf(line: string): ContainerInfo | null {
+function openingOf(line: string, spec: SpecVersion): ContainerInfo | null {
   const open = CONTAINER_OPEN.exec(line);
-  return open ? parseContainerInfo(open[3] + open[4]) : null;
+  return open ? parseContainerInfo(open[3] + open[4], spec) : null;
 }
 
 /** Attributes as written plus the spec's defaults; the title is a field of its own. */

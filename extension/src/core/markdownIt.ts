@@ -1,5 +1,7 @@
 import type MarkdownIt from 'markdown-it';
-import { applySmd, hostContext, smdFeatures } from './markdownItSetup';
+import { addTableRules, applySmd, hasSmd, hostContext, smdFeatures, type ReadFile } from './markdownItSetup';
+
+export type { ReadFile } from './markdownItSetup';
 
 /**
  * Styled Markdown as a markdown-it plugin, for any markdown-it host (13 or 14):
@@ -13,6 +15,13 @@ import { applySmd, hostContext, smdFeatures } from './markdownItSetup';
  * builds its markdown-it instance with the same rules.
  */
 export interface MarkdownItSmdOptions {
+  /**
+   * `'smd'`: render as renderSmd does (since 2.0). It turns on `codeFrames`, `headingIds`, `sourceLines` and
+   * `frontMatter`, sets the instance's `typographer` and `linkify` options, and wraps tables as renderSmd does
+   * (`<div class="smd-table-wrap">`, `scope="col"` on header cells). An option you pass wins over the preset's.
+   * Raw HTML (`html`) and code highlighting (`highlight`) stay the instance's own. Default: no preset.
+   */
+  preset?: 'smd';
   /**
    * `:::name{attrs} Title … :::` block containers: callouts, cards, tabs, decisions, risks, APIs, numbered figures, glossaries, changelogs, quotes…
    * Figure numbers are kept on the render's `env` as `smdFigures` for `:ref[id]`. Default true.
@@ -45,13 +54,13 @@ export interface MarkdownItSmdOptions {
    * line highlights on code blocks. Other code blocks are left to the host. Default true.
    */
   fences?: boolean;
-  /** Frame every code block like the .smd preview, with a language label. Default false. */
+  /** Frame every code block like the .smd preview, with a language label. Default false (true with `preset: 'smd'`). */
   codeFrames?: boolean;
-  /** Give headings ids from their text (`#getting-started`, `#setup-1`), as renderSmd does. Default false. */
+  /** Give headings ids from their text (`#getting-started`, `#setup-1`), as renderSmd does. Default false (true with `preset: 'smd'`). */
   headingIds?: boolean;
-  /** Add `data-line` source line numbers to block elements, as the .smd preview does. Default false. */
+  /** Add `data-line` source line numbers to block elements, as the .smd preview does. Default false (true with `preset: 'smd'`). */
   sourceLines?: boolean;
-  /** Render `---` YAML front matter as the .smd document header (title, status, owners, tags). Default false. */
+  /** Render `---` YAML front matter as the .smd document header (title, status, owners, tags). Default false (true with `preset: 'smd'`). */
   frontMatter?: boolean;
   /**
    * Front matter variables: `{{version}}` in text shows the value of the front matter key `version`
@@ -66,9 +75,9 @@ export interface MarkdownItSmdOptions {
    * Read a file for ```` ```lang file="…" ```` embeds and `:::include` blocks, relative to the document being
    * rendered (`env` is the env passed to `md.render`; nested includes ask for paths relative to that document too).
    * Return undefined when the file is missing or not allowed. Without it, embeds show "Cannot read" and includes
-   * their fallback body under an "Include not available here" note.
+   * their fallback body under an "Include not available here" note. renderSmd's `readFile` is the same function.
    */
-  readFile?: (relativePath: string, env: unknown) => string | undefined;
+  readFile?: ReadFile;
   /** "Today" as YYYY-MM-DD, for `:due[]` states. Defaults to the current date. */
   today?: string;
   /**
@@ -77,11 +86,39 @@ export interface MarkdownItSmdOptions {
    * document's own `lang:` overrides both. Unsupported languages, and the default, are English.
    */
   lang?: string;
+  /**
+   * The spec version (1 or 2) of documents that don't say, for hosts that remove the front matter. The document's
+   * own `smd` wins: in the source's `---` front matter, else in `env.smdVariables` (front matter a host removed and
+   * passes along per render). Default 1. The plugin puts the version on the render's env as `smdSpec` before
+   * parsing, where the rules read it.
+   *
+   * Spec v2 documents get spec v2's typography and links (SPEC §4.8, typography.ts): no typographic replacements
+   * unless the front matter says `typography: true`, and only GFM autolink literals. Those rules only take away from
+   * the host's `typographer` and `linkify` options; spec v1 documents follow them as before.
+   */
+  spec?: 1 | 2;
+}
+
+/** The options `preset: 'smd'` turns on, as renderSmd has them. */
+const SMD_PRESET = { codeFrames: true, headingIds: true, sourceLines: true, frontMatter: true } as const;
+
+/** `options` with the preset's values for the options it leaves out. */
+function presetOptions(options: MarkdownItSmdOptions): MarkdownItSmdOptions {
+  if (options.preset !== 'smd') return options;
+  const resolved: MarkdownItSmdOptions = { ...options };
+  for (const [key, value] of Object.entries(SMD_PRESET) as Array<[keyof typeof SMD_PRESET, boolean]>) resolved[key] ??= value;
+  return resolved;
 }
 
 /** Add Styled Markdown syntax to a markdown-it instance. Using it twice on one instance has no further effect. */
 export function markdownItSmd(md: MarkdownIt, options: MarkdownItSmdOptions = {}): void {
-  applySmd(md, smdFeatures(options), hostContext(md, options));
+  if (hasSmd(md)) return;
+  const resolved = presetOptions(options);
+  if (resolved.preset === 'smd') {
+    md.set({ typographer: true, linkify: true });
+    addTableRules(md);
+  }
+  applySmd(md, smdFeatures(resolved), hostContext(md, resolved));
 }
 
 export default markdownItSmd;

@@ -11,7 +11,7 @@ This package provides the complete engine as a **library** and the **`smd` CLI**
 ![Rendered Styled Markdown](https://raw.githubusercontent.com/bislink360/styled-markdown/main/docs/images/01-overview.png)
 
 - 📦 One install gives you the render, validate, fix, convert, agent-view, outline and task-extraction tools
-- 🧩 CommonJS + ESM + TypeScript types; runs in Node 18+ and in bundlers/browsers (the library has no `fs` dependency)
+- 🧩 CommonJS + ESM + TypeScript types; runs in Node 22+ and in bundlers/browsers (the library has no `fs` dependency)
 - 🤖 Built for LLM pipelines: `agentView()` typically cuts **37–85%** of tokens while keeping meaning
 
 ## Install
@@ -28,6 +28,7 @@ npx styled-markdown --help         # run without installing
 smd validate docs/ --fix              # check files, auto-fix typos; exit code 1 on errors (CI-friendly)
 smd validate docs/ --format github    # GitHub Actions annotations (--summary "$GITHUB_STEP_SUMMARY" adds a job summary)
 smd fmt docs/ --check                 # formatting check for CI; without --check it formats in place
+smd migrate docs/ --to 2              # move documents to spec v2 (smd: 2), keeping their meaning (--dry-run: the plan)
 smd outline docs/spec.smd             # sections, line ranges and token cost per section
 smd agent docs/spec.smd --section api # compact agent view of one section (+ agent instructions)
 smd tasks docs/ --mine @alice         # open tasks across docs: priority, owner, due date, overdue first
@@ -37,20 +38,20 @@ smd risks docs/ --html -o risks.html  # risk register: impact × likelihood, hig
 smd diff docs/ --since HEAD~3         # only the sections that changed since a commit, in the agent view
 smd report docs/ --since 2026-09-01 -o status.smd # draft a status report: tasks done and added since, open, decisions, risks
 smd issues docs/                      # GitHub Issues sync plan via gh (a dry run; --apply [--create] [--close] syncs)
-smd render docs/spec.smd -o spec.html # standalone HTML page (prints well: Print → Save as PDF)
-smd pdf docs/spec.smd                 # spec.pdf, if Playwright or Puppeteer is installed (not bundled)
-smd docx docs/spec.smd                # spec.docx, if Pandoc is installed (not bundled); --html-only for Pandoc's input
+smd export docs/spec.smd -o spec.html # standalone HTML page (prints well: Print → Save as PDF); -o picks the format
+smd export docs/spec.smd --to pdf     # spec.pdf, if Playwright or Puppeteer is installed (not bundled)
+smd export docs/spec.smd --to docx    # spec.docx, if Pandoc is installed (not bundled); --html-only for Pandoc's input
+smd export docs/spec.smd -o spec.md   # plain GitHub Markdown (callouts → GitHub alerts)
+smd export docs/spec.smd --to confluence -o spec.xml  # Confluence storage format (built-in macros)
+smd export docs/spec.smd --to notion -o spec.json     # Notion API blocks, as request bodies
 smd build docs/ --out site            # static docs site: navigation, search, backlinks, task/decision/risk dashboard
-smd to-md docs/spec.smd -o spec.md    # plain GitHub Markdown (callouts → GitHub alerts)
-smd export --to confluence docs/spec.smd -o spec.xml  # Confluence storage format (built-in macros)
-smd export --to notion docs/spec.smd -o spec.json     # Notion API blocks, as request bodies
-smd init docs/plan.smd --template prd # new document from one of 13 templates (smd templates lists them)
+smd init docs/plan.smd --template prd # new document (smd: 2) from one of 13 templates (smd templates lists them)
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
 smd mcp                               # MCP server (stdio) with outline, section, agent, tasks, validate, query
 smd lsp --stdio                       # language server for Neovim, Helix, Zed… (also installed as smd-language-server)
 ```
 
-Run `smd --help` for every option.
+Run `smd --help` for every option. The export commands before 2.0, `smd render`, `smd to-md`, `smd pdf` and `smd docx`, still work as before.
 
 The package also installs **`smd-language-server`**, the same as `smd lsp`: point your editor's LSP client at `smd-language-server --stdio` for `.smd` files to get diagnostics with quick fixes, the outline, symbol search, hover, completion, go to definition and formatting. Setups for Neovim, Helix and Zed: [editor guide](https://github.com/bislink360/styled-markdown/blob/main/docs/EDITORS.md).
 
@@ -58,7 +59,7 @@ The package also installs **`smd-language-server`**, the same as `smd lsp`: poin
 
 ```ts
 import {
-  renderSmd, renderPage, validateSmd, applyFixes, agentView, outline,
+  renderSmd, renderPage, specVersion, validateSmd, applyFixes, agentView, outline,
   smdToMarkdown, smdToConfluence, smdToNotion, notionRequests, markdownToSmd, getDocumentInfo, extractTasks,
   querySmd, indexEntry, smdIndex, diffSmd, formatSmd,
   decisionLog, decisionLogMarkdown, statusChanges, statusReportMarkdown, statusReport,
@@ -69,12 +70,15 @@ import {
 ### Render
 
 ```ts
-// HTML fragment + front matter + headings
-const { html, frontMatter, headings } = renderSmd(source, {
+// HTML fragment + front matter + headings + the spec version the document was read with
+const { html, frontMatter, headings, spec } = renderSmd(source, {
   agentBlocks: 'collapsed',                  // how :::agent blocks show to humans: collapsed | expanded | hidden
-  readFile: (path) => fs.readFileSync(path, 'utf8'), // enables ```ts file="…" embeds (sandbox it yourself)
+  readFile: (path) => fs.readFileSync(path, 'utf8'), // enables ```ts file="…" embeds and :::include (sandbox it yourself)
   lang: 'de',                                // labels ("Hinweis", "Abbildung 2") for documents without their own `lang:`
+  spec: 2,                                   // spec version for documents without an `smd:` key (default 1); their own `smd:` wins
 });
+
+specVersion(source);                         // 1 or 2: which rules read the document (its `smd:`; see SPEC.md §10)
 
 // Complete standalone page (styles + runtime for tabs, Mermaid, theme switching)
 const page = renderPage(source);
@@ -100,6 +104,7 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 
 | Option | Default | What it adds |
 |---|---|---|
+| `preset` | none | `'smd'`: render as `renderSmd` does (since 2.0; see below). It turns on `codeFrames`, `headingIds`, `sourceLines` and `frontMatter` unless you pass them |
 | `containers` | `true` | `:::note`, `:::tabs`, `:::decision`, `:::risk`, `:::api`, numbered `:::figure`, `:::glossary`, `:::changelog`, `:::quote` and the other blocks |
 | `glossary` | `true` | `:::glossary` term lists as `<dl>`, and the first use of each term per section linked to its definition with a tooltip (needs `containers`) |
 | `directives` | `true` | `:badge[…]`, `:kbd[…]`, `:progress[…]`, `:due[…]`, `:priority[…]`, `:metric[…]`, `:status[…]`, `:mention[…]`, `:ref[…]` |
@@ -109,21 +114,38 @@ The plugin only adds rules to your instance: your options (including `html`), yo
 | `footnotes` | `true` | GitHub-style `[^1]` footnotes, collected in a numbered section at the end (since 1.6). If you use markdown-it-footnote, add it before this plugin (this option then steps aside) or set `footnotes: false` |
 | `tasks` | `true` | `- [ ]` / `- [x]` task lists as checkboxes |
 | `fences` | `true` | ```` ```mermaid ```` and ```` ```math ```` blocks, and `title="…"`, `file="…"` and `{2,5-7}` on code blocks; turn it off if your host has its own fence attributes |
-| `codeFrames` | `false` | Frame every code block with a language label, as the `.smd` preview does |
-| `headingIds` | `false` | Heading ids from their text (`#setup`, `#setup-1`), the same slugs as `renderSmd` |
-| `sourceLines` | `false` | `data-line` source line numbers on blocks |
-| `frontMatter` | `false` | Render `---` YAML front matter as the `.smd` document header (leave it off if your host handles front matter) |
+| `codeFrames` | `false` (`true` with `preset`) | Frame every code block with a language label, as the `.smd` preview does |
+| `headingIds` | `false` (`true` with `preset`) | Heading ids from their text (`#setup`, `#setup-1`), the same slugs as `renderSmd` |
+| `sourceLines` | `false` (`true` with `preset`) | `data-line` source line numbers on blocks |
+| `frontMatter` | `false` (`true` with `preset`) | Render `---` YAML front matter as the `.smd` document header (leave it off if your host handles front matter) |
 | `variables` | `true` | `{{version}}` in text shows the front matter value of `version` (`{{owner.name}}` for nested keys; since 1.6). Names the front matter doesn't define stay as written. The front matter is read from the source; if your host removes it first, pass its data as `env.smdVariables` |
 | `agentBlocks` | `'collapsed'` | How `:::agent` blocks show to humans: `collapsed`, `expanded` or `hidden` |
-| `readFile` | none | `(path, env) => string \| undefined` for ```` ```ts file="…" ```` embeds; `env` is what you passed to `md.render` (sandbox it yourself) |
+| `readFile` | none | `(path, env?) => string \| undefined` for ```` ```ts file="…" ```` embeds and `:::include`; `env` is what you passed to `md.render` (sandbox it yourself). The same `ReadFile` function as `renderSmd`'s (since 2.0) |
 | `today` | current date | `YYYY-MM-DD` for `:due[]` states |
 | `lang` | English | Language of the labels the plugin adds ("Note", "Figure 2", "overdue"…), a BCP 47 tag: `de`, `es`, `fr`, `ja`, `pt`, `zh` (`pt-BR` → `pt`; others are English). A render's `env.lang` overrides it, and with `frontMatter` the document's `lang:` overrides both (since 1.6) |
+| `spec` | `1` | The spec version (`1` or `2`) of documents that don't say, for hosts that remove the front matter (since 2.0). The document's own `smd:` wins: in the source's front matter, else in the front matter you pass as `env.smdVariables`. The plugin puts the version on the render's env as `smdSpec` |
+
+**Typography and links in spec v2.** Your `typographer` and `linkify` options apply to spec v1 documents as they always did. A spec v2 document (`smd: 2`, or `spec: 2`) gets no typographic quotes, dashes or ellipses unless its front matter says `typography: true`, and only GFM autolink literals become links (`https://…`, `www.…`, e-mail addresses; not `example.com`). The plugin only takes away: with your `typographer` or `linkify` off, they stay off. If your host removes the front matter, pass `typography` with the rest of it in `env.smdVariables`. See SPEC §4.8.
+
+**Render like `renderSmd`: `preset: 'smd'`** (since 2.0). The plugin's defaults leave out what a host usually has its own way of doing: heading ids, the front matter header, code frames and source lines are off, and typography and links follow your instance. The preset turns on what `renderSmd` does, so the same document gives the same HTML (inside `<article class="smd-doc">`):
+
+```ts
+import hljs from 'highlight.js/lib/common';
+const md = new MarkdownIt({
+  html: true,                                                    // renderSmd's default; the preset leaves raw HTML to you
+  highlight: (code, lang) => (hljs.getLanguage(lang) ? hljs.highlight(code, { language: lang }).value : ''),
+}).use(smd, { preset: 'smd', sourceLines: false });              // an option you pass wins over the preset's
+```
+
+It turns on `headingIds`, `frontMatter`, `codeFrames` and `sourceLines`, sets your instance's `typographer` and `linkify` to `true` (spec v2 documents still follow the rules above; `md.set({ typographer: false })` after `.use()` turns one back off), and wraps tables in `<div class="smd-table-wrap">` with `scope="col"` on header cells. Raw HTML (`html`) and code highlighting stay your instance's. Without `preset`, nothing changes.
+
+**`readFile` (since 2.0)** has one signature for `renderSmd` and the plugin, `ReadFile = (relativePath: string, env?: unknown) => string | undefined` (exported as a type). `env` is the render's markdown-it env, the same object for every file one render reads: the `env` you passed to `md.render`, or `renderSmd`'s own (opaque). A one-argument function works for both.
 
 Each rule is named `smd_…`, so `md.disable('smd_mark')` turns a single one off. The blocks are styled by `smd.css` on their own; wrap the output in `<article class="smd-doc">` for the `.smd` typography too. Mermaid blocks render as `<pre class="smd-mermaid">` source inside `.smd-diagram`, ready for `mermaid.run({ querySelector: 'pre.smd-mermaid' })`. Figures are numbered per `md.render` call, and `:ref[id]` resolves against the figures of that call (they are kept on the `env` as `smdFigures`). Two things need the whole document and stay with `renderSmd`: the computed `:::risk-matrix` grid (the plugin renders its title and body) and the `toc: true` table of contents.
 
 ### remark and rehype plugins (Astro, Docusaurus, Next.js)
 
-`styled-markdown/remark` renders the whole file with `renderSmd` and replaces the Markdown tree with the resulting HTML, so every `.smd` construct looks exactly as it does with `smd render`. `styled-markdown/rehype` does the same for pipelines that only take rehype plugins. Neither imports anything from unified: the package still has zero dependencies.
+`styled-markdown/remark` renders the whole file with `renderSmd` and replaces the Markdown tree with the resulting HTML, so every `.smd` construct looks exactly as it does with `smd export --to html`. `styled-markdown/rehype` does the same for pipelines that only take rehype plugins. Neither imports anything from unified: the package still has zero dependencies.
 
 ```js
 import { unified } from 'unified';
@@ -139,7 +161,7 @@ const file = await unified()
   .use(rehypeStringify, { allowDangerousHtml: true })
   .process(source);
 String(file);           // <article class="smd-doc">…</article>
-file.data.smd;          // { frontMatter, headings }
+file.data.smd;          // { frontMatter, headings, spec }
 ```
 
 | Option | Default | |
@@ -148,11 +170,11 @@ file.data.smd;          // { frontMatter, headings }
 | `header` | `true` | the title/status/owners header from front matter; `false` when the site layout already shows the title |
 | `frontMatter` | see below | `(file) => object`: front matter the host already removed from the source |
 | `readFile` | none | `(relativePath, file) => string \| undefined`, for ```` ```ts file="…" ```` embeds (resolve against `file.path`, sandbox it yourself) |
-| `allowHtml`, `agentBlocks`, `today`, `lang` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML |
+| `allowHtml`, `agentBlocks`, `today`, `lang`, `spec` | as `renderSmd` | `allowHtml: false` for documents you don't trust: the output is inserted as raw HTML. `spec` is the version of files whose front matter (their own, or the host's) has no `smd:` |
 
 **Front matter.** When the source still starts with `---` (plain unified, with or without remark-frontmatter), the plugin reads it like `renderSmd`. When the host removed it first, the plugin looks for the parsed data in `file.data.astro.frontmatter` (Astro), `file.data.matter` (vfile-matter) or `file.data.frontmatter`, or uses your `frontMatter` option. Front matter nodes (`yaml`, `toml`) and MDX `import`/`export` nodes stay in the tree.
 
-**What the page needs.** The stylesheet (`styled-markdown/smd.css`), KaTeX's CSS when documents have math (rendered at build time), and for Mermaid diagrams, tabs and copy buttons the Mermaid script plus the runtime that `smd render` inlines (`SMD_RUNTIME_JS` from `styled-markdown`). The runtime hydrates the page once on load. Without it, diagrams show their source and tab panes are stacked under their labels.
+**What the page needs.** The stylesheet (`styled-markdown/smd.css`), KaTeX's CSS when documents have math (rendered at build time), and for Mermaid diagrams, tabs and copy buttons the Mermaid script plus the runtime that `smd export --to html` inlines (`SMD_RUNTIME_JS` from `styled-markdown`). The runtime hydrates the page once on load. Without it, diagrams show their source and tab panes are stacked under their labels.
 
 | Host | Status | Notes |
 |---|---|---|
@@ -272,7 +294,7 @@ smdToMarkdown(source);                    // GitHub-flavored Markdown
 smdToConfluence(source, { readFile });    // Confluence storage format (XHTML with built-in macros); raw HTML reduced to text
 notionRequests(smdToNotion(source));      // Notion blocks, cut into PATCH /v1/blocks/{id}/children bodies (within Notion's limits)
 markdownToSmd(markdown, 'Fallback title'); // add front matter, GitHub alerts → callouts
-smdToPandocHtml(source);                  // HTML for `pandoc -f html -t docx` (what `smd docx` converts; no docx writer here)
+smdToPandocHtml(source);                  // HTML for `pandoc -f html -t docx` (what `smd export --to docx` converts; no docx writer here)
 formatSmd(source);                        // the `smd fmt` layout: fence colons, attribute order, tables, blank lines
 
 const info = getDocumentInfo(source);     // front matter, outline, tasks, decisions, risks, agent blocks, diagnostics
@@ -287,8 +309,9 @@ const risks = querySmd(source, 'risk[impact>=high][status!=closed]'); // the `sm
 // [{ type: 'risk', title: 'Apple Pay domain verification delays launch', attrs: { impact: 'high', … }, line: 144, endLine: 146, section: 'Risks', text: '<risk impact="high" …' }]
 
 const entry = indexEntry(source, 'docs/checkout.smd'); // one `smd index` catalog entry
-// { path, title, summary, status, owners, tags, audience, updated, related, tokens: { file, agent }, counts: { openTasks, … }, sections: [{ level, text, id, line, endLine, tokens }] }
-const catalog = smdIndex([{ path: 'docs/checkout.smd', text: source }]); // { format: 'smd-index', version: 1, smd: 1, documents: [entry, …] }, sorted by path
+// { path, smd, title, summary, status, owners, tags, audience, updated, related, tokens: { file, agent }, counts: { openTasks, … }, sections: [{ level, text, id, line, endLine, tokens }] }
+// (`smd` is the document's spec version, 1 or 2)
+const catalog = smdIndex([{ path: 'docs/checkout.smd', text: source }]); // { format: 'smd-index', version: 1, smd: 2, documents: [entry, …] }, sorted by path (`smd`: the newest spec version the tool knows)
 const log = decisionLog([{ path: 'docs/adr-0007.smd', text: source }], { status: ['accepted'] }); // the `smd decisions` log, newest first
 // [{ title, status: 'accepted', date: '2026-09-18', owner: '@platform', path, line, endLine, section, anchor, document, adr: true }]
 const adrIndex = decisionLogMarkdown(log, { link: (p) => p.replace(/^docs\//, '') }); // `smd decisions --md`: an ADR index to save as docs/decisions.smd
@@ -324,11 +347,25 @@ Also: `parseIssueRefs(line)` (every reference, code spans ignored), `taskIssueRe
 
 Also exported: `parseSelector` and `SelectorError` (invalid selectors), `parseFrontMatter`, `parseSmd` (headings and anchor ids without rendering), `RULE_CODES`, `applyRuleSettings`, `mermaidBlocks`, `ganttDate` and `TASK_CSV_COLUMNS` (task export), `estimateTokens`, `fillTemplate`, `SMD_CSS`, `SMD_RUNTIME_JS`, and the vocabulary (`CONTAINERS`, `INLINE_DIRECTIVES`, `NAMED_COLORS`, `FRONTMATTER_KEYS`, …) for building your own tooling.
 
+The vocabulary is read-only (since 2.0): every table is frozen, nested objects and arrays included, and typed `Readonly`. Copy one to extend it: `{ ...CONTAINERS, mine: { description: 'My block' } }`, `[...NAMED_COLORS, 'brand']`.
+
+`inlineText(line, options?)` is one line of `.smd` as the agent view writes it: styling removed, the words kept. Its options are one object (since 2.0; 1.x took them as positional arguments), all optional:
+
+```ts
+inlineText(':badge[v2] by :due[2026-10-01], see :ref[fig-a], for {{team}}', {
+  today: '2026-10-15',   // YYYY-MM-DD: a past :due[…] reads "(due …, OVERDUE)" on an open task
+  openTask: true,        // the line is an open task's (default false)
+  figures,               // the document's figures by id (ReadonlyMap): :ref[id] → "Figure 2 (id)"
+  variables: frontMatter, // {{name}} → the front matter value
+});
+// '[v2] by (due 2026-10-01, OVERDUE), see Figure 1 (fig-a), for Core'
+```
+
 ## A taste of the format
 
 ````markdown
 ---
-smd: 1
+smd: 2
 title: Saved Searches
 summary: Let users save a search and get notified about new results.
 status: review

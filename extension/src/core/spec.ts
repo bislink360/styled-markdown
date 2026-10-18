@@ -2,9 +2,19 @@
  * The Styled Markdown vocabulary. Everything the renderer, validator,
  * completion provider and converters know about lives here, so the format
  * has exactly one source of truth.
+ *
+ * Every table is read-only (since 2.0): its type says so, and it is deeply frozen when this module loads (see the
+ * end of the file), so code that changes one fails, with a TypeError in strict mode. Copy a table to change it.
  */
 
-export const SMD_VERSION = 1;
+/**
+ * The spec version new documents are written with (since 2.0, `smd: 2`): by `smd init`'s templates, `smd from-md`,
+ * `smd decisions --md`, `smd report`, `smd tasks --gantt --smd` and the snippets. A writer that adds front matter to
+ * an existing document keeps the rules it is read with unless spec v2 reads it the same (Set Document Status), and
+ * the validator's fix for a missing `smd` key writes `smd: 1`, the version such a document is read with. The newest
+ * version tools read is LATEST_SPEC (specVersion.ts).
+ */
+export const SMD_VERSION = 2;
 
 /** Named colors. They map to CSS variables that adapt to light/dark themes. */
 export const NAMED_COLORS = [
@@ -12,29 +22,29 @@ export const NAMED_COLORS = [
   'blue', 'indigo', 'purple', 'pink', 'gray', 'muted', 'accent',
 ] as const;
 
-export const DECISION_STATUS = ['proposed', 'accepted', 'rejected', 'superseded', 'deprecated'];
-export const RISK_LEVELS = ['low', 'medium', 'high', 'critical'];
-export const RISK_STATUS = ['open', 'mitigated', 'accepted', 'closed'];
-export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'WS', 'RPC', 'EVENT'];
-export const PRIORITY_VALUES = ['P0', 'P1', 'P2', 'P3', 'P4', 'critical', 'high', 'medium', 'low'];
+export const DECISION_STATUS: readonly string[] = ['proposed', 'accepted', 'rejected', 'superseded', 'deprecated'];
+export const RISK_LEVELS: readonly string[] = ['low', 'medium', 'high', 'critical'];
+export const RISK_STATUS: readonly string[] = ['open', 'mitigated', 'accepted', 'closed'];
+export const HTTP_METHODS: readonly string[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'WS', 'RPC', 'EVENT'];
+export const PRIORITY_VALUES: readonly string[] = ['P0', 'P1', 'P2', 'P3', 'P4', 'critical', 'high', 'medium', 'low'];
 
 export const CALLOUT_TYPES = ['note', 'info', 'tip', 'success', 'warning', 'danger', 'question'] as const;
 
 /** `:::figure{kind=…}` values. Each kind has its own label and counter: Figure 1, Table 1, Listing 1. */
-export const FIGURE_KINDS = ['figure', 'table', 'listing'];
+export const FIGURE_KINDS: readonly string[] = ['figure', 'table', 'listing'];
 
 export interface ContainerSpec {
-  description: string;
+  readonly description: string;
   /** Attribute keys accepted on the opening line, beyond the shared style keys. */
-  attrs?: string[];
+  readonly attrs?: readonly string[];
   /** Must be nested directly inside this container. */
-  parent?: string;
+  readonly parent?: string;
   /** Title text after the name is meaningful. */
-  title?: boolean;
+  readonly title?: boolean;
   /** Allowed values for enumerated attributes. */
-  values?: Record<string, string[]>;
+  readonly values?: Readonly<Record<string, readonly string[]>>;
   /** Attributes that must be present. */
-  required?: string[];
+  readonly required?: readonly string[];
 }
 
 const callout = (label: string): ContainerSpec => ({
@@ -43,7 +53,7 @@ const callout = (label: string): ContainerSpec => ({
   attrs: ['title', 'collapsible'],
 });
 
-export const CONTAINERS: Record<string, ContainerSpec> = {
+export const CONTAINERS: Readonly<Record<string, ContainerSpec>> = {
   note: callout('Neutral note'),
   info: callout('Informational'),
   tip: callout('Helpful tip'),
@@ -62,7 +72,7 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
   agent: {
     description: 'Content addressed to AI agents (instructions, constraints, context). Collapsed for humans in the preview.',
     title: true,
-    attrs: ['title', 'priority'],
+    attrs: ['title'],
   },
   human: { description: 'Content addressed only to human readers. Agents may skip it.', title: true, attrs: ['title'] },
   include: {
@@ -125,7 +135,7 @@ export const CONTAINERS: Record<string, ContainerSpec> = {
 };
 
 /** Style keys accepted on any attribute list: [text]{...}, :::box{...}, etc. */
-export const STYLE_KEYS: Record<string, string> = {
+export const STYLE_KEYS: Readonly<Record<string, string>> = {
   color: 'Text color: a named color (red, blue…) or #hex / rgb()',
   bg: 'Background color: a named color or #hex / rgb()',
   border: 'Border color: a named color or #hex',
@@ -136,29 +146,29 @@ export const STYLE_KEYS: Record<string, string> = {
   style: 'Text decoration: italic | underline | strike',
 };
 
-export const SIZE_VALUES: Record<string, string> = {
+export const SIZE_VALUES: Readonly<Record<string, string>> = {
   xs: '0.75em', sm: '0.875em', md: '1em', lg: '1.25em', xl: '1.5em', '2xl': '2em',
 };
-export const WEIGHT_VALUES: Record<string, string> = { normal: '400', medium: '500', bold: '700' };
-export const FONT_VALUES: Record<string, string> = {
+export const WEIGHT_VALUES: Readonly<Record<string, string>> = { normal: '400', medium: '500', bold: '700' };
+export const FONT_VALUES: Readonly<Record<string, string>> = {
   sans: 'var(--smd-font-sans)', serif: 'var(--smd-font-serif)', mono: 'var(--smd-font-mono)',
 };
-export const ALIGN_VALUES = ['left', 'center', 'right'];
-export const TEXT_STYLE_VALUES: Record<string, string> = {
+export const ALIGN_VALUES: readonly string[] = ['left', 'center', 'right'];
+export const TEXT_STYLE_VALUES: Readonly<Record<string, string>> = {
   italic: 'font-style:italic', underline: 'text-decoration:underline', strike: 'text-decoration:line-through',
 };
 
 export interface InlineDirectiveSpec {
-  description: string;
+  readonly description: string;
   /** Whether [content] is required. */
-  content: boolean;
-  attrs: string[];
-  example: string;
+  readonly content: boolean;
+  readonly attrs: readonly string[];
+  readonly example: string;
   /** Allowed values for enumerated attributes. */
-  values?: Record<string, string[]>;
+  readonly values?: Readonly<Record<string, readonly string[]>>;
 }
 
-export const INLINE_DIRECTIVES: Record<string, InlineDirectiveSpec> = {
+export const INLINE_DIRECTIVES: Readonly<Record<string, InlineDirectiveSpec>> = {
   badge: { description: 'Colored pill label', content: true, attrs: ['color'], example: ':badge[Shipped]{color=green}' },
   kbd: { description: 'Keyboard key', content: true, attrs: [], example: ':kbd[Ctrl+Shift+P]' },
   progress: { description: 'Progress bar, value 0–100', content: false, attrs: ['value', 'color', 'label'], example: ':progress{value=60}' },
@@ -196,8 +206,8 @@ export const VARIABLE_SYNTAX = {
 } as const;
 
 /** Known front-matter keys. Unknown keys are allowed but reported as hints. */
-export const FRONTMATTER_KEYS: Record<string, string> = {
-  smd: 'Styled Markdown spec version (currently 1)',
+export const FRONTMATTER_KEYS: Readonly<Record<string, string>> = {
+  smd: 'Styled Markdown spec version: 1, or 2 for the spec v2 rules (a document without it is version 1)',
   title: 'Document title',
   summary: 'One or two sentence summary — agents read this first',
   status: 'draft | review | approved | deprecated | archived',
@@ -212,15 +222,31 @@ export const FRONTMATTER_KEYS: Record<string, string> = {
   toc: 'true to render a table of contents after the header',
   related: 'List of related documents (paths or URLs)',
   lang: 'Language of the rendered labels (callout titles, "Figure 2", "overdue"…), a BCP 47 tag such as de or pt-BR. Default English',
+  typography: 'Spec v2: true turns on typographic quotes, dashes and ellipses (v1 always has them)',
 };
 
-export const STATUS_VALUES = ['draft', 'review', 'approved', 'deprecated', 'archived'];
-export const AUDIENCE_VALUES = ['humans', 'agents', 'both'];
+export const STATUS_VALUES: readonly string[] = ['draft', 'review', 'approved', 'deprecated', 'archived'];
+export const AUDIENCE_VALUES: readonly string[] = ['humans', 'agents', 'both'];
 
-export const MERMAID_TYPES = [
+export const MERMAID_TYPES: readonly string[] = [
   'flowchart', 'graph', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'stateDiagram-v2',
   'erDiagram', 'journey', 'gantt', 'pie', 'quadrantChart', 'requirementDiagram', 'gitGraph',
   'C4Context', 'C4Container', 'C4Component', 'C4Dynamic', 'C4Deployment', 'mindmap', 'timeline',
   'zenuml', 'sankey-beta', 'sankey', 'xychart-beta', 'xychart', 'block-beta', 'block', 'packet-beta',
   'packet', 'kanban', 'architecture-beta', 'architecture', 'radar-beta', 'treemap-beta',
 ];
+
+/** Freeze `value`, and every object and array in it. */
+function deepFreeze(value: unknown, seen = new Set<object>()): void {
+  if (value === null || typeof value !== 'object' || seen.has(value)) return;
+  seen.add(value);
+  Object.freeze(value);
+  for (const child of Object.values(value)) deepFreeze(child, seen);
+}
+
+// The shared tables, frozen once so no caller (in this package or using it) can change them for everyone else.
+deepFreeze([
+  NAMED_COLORS, DECISION_STATUS, RISK_LEVELS, RISK_STATUS, HTTP_METHODS, PRIORITY_VALUES, CALLOUT_TYPES, FIGURE_KINDS, CONTAINERS,
+  STYLE_KEYS, SIZE_VALUES, WEIGHT_VALUES, FONT_VALUES, ALIGN_VALUES, TEXT_STYLE_VALUES, INLINE_DIRECTIVES, VARIABLE_SYNTAX,
+  FRONTMATTER_KEYS, STATUS_VALUES, AUDIENCE_VALUES, MERMAID_TYPES,
+]);

@@ -1,4 +1,5 @@
-import { AUDIENCE_VALUES, FRONTMATTER_KEYS, NAMED_COLORS, SMD_VERSION, STATUS_VALUES } from './spec';
+import { AUDIENCE_VALUES, FRONTMATTER_KEYS, NAMED_COLORS, STATUS_VALUES } from './spec';
+import { SPEC_VERSIONS } from './specVersion';
 import { own } from './util';
 
 /**
@@ -26,16 +27,17 @@ const listOf = (description: string, examples: unknown[]): FrontMatterProperty =
 });
 
 const PROPERTIES: Record<string, FrontMatterProperty> = {
-  // A whole number; a string of digits is tolerated, as the validator tolerates it (anything else is reported).
+  // A version this tool has rules for; a string of digits is tolerated, as the validator tolerates it (anything else is
+  // reported: a newer version and invalid values as warnings).
   smd: {
     description: FRONTMATTER_KEYS.smd,
-    anyOf: [{ type: 'integer', enum: [SMD_VERSION] }, { type: 'string', pattern: `^0*${SMD_VERSION}$` }],
+    anyOf: [{ type: 'integer', enum: [...SPEC_VERSIONS] }, { type: 'string', pattern: `^0*[${SPEC_VERSIONS.join('')}]$` }],
   },
   title: { description: FRONTMATTER_KEYS.title, type: 'string' },
   summary: { description: FRONTMATTER_KEYS.summary, type: 'string' },
-  status: { description: FRONTMATTER_KEYS.status, type: 'string', enum: STATUS_VALUES },
+  status: { description: FRONTMATTER_KEYS.status, type: 'string', enum: [...STATUS_VALUES] },
   owners: listOf(FRONTMATTER_KEYS.owners, [['@maya', '@platform-team']]),
-  audience: { description: FRONTMATTER_KEYS.audience, type: 'string', enum: AUDIENCE_VALUES },
+  audience: { description: FRONTMATTER_KEYS.audience, type: 'string', enum: [...AUDIENCE_VALUES] },
   tags: listOf(FRONTMATTER_KEYS.tags, [['checkout', 'q4']]),
   version: { description: FRONTMATTER_KEYS.version, type: ['string', 'number'], examples: ['1.0'] },
   updated: { description: FRONTMATTER_KEYS.updated, type: 'string', format: 'date', pattern: DATE },
@@ -52,6 +54,7 @@ const PROPERTIES: Record<string, FrontMatterProperty> = {
   toc: { description: FRONTMATTER_KEYS.toc, type: 'boolean' },
   related: listOf(FRONTMATTER_KEYS.related, [['adr-0007-event-bus.smd', 'https://example.com/spec']]),
   lang: { description: FRONTMATTER_KEYS.lang, type: 'string', examples: ['de', 'pt-BR'] },
+  typography: { description: FRONTMATTER_KEYS.typography, type: 'boolean' },
 };
 
 export const FRONTMATTER_SCHEMA = {

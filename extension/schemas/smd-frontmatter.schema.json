@@ -6,17 +6,18 @@
   "type": "object",
   "properties": {
     "smd": {
-      "description": "Styled Markdown spec version (currently 1)",
+      "description": "Styled Markdown spec version: 1, or 2 for the spec v2 rules (a document without it is version 1)",
       "anyOf": [
         {
           "type": "integer",
           "enum": [
-            1
+            1,
+            2
           ]
         },
         {
           "type": "string",
-          "pattern": "^0*1$"
+          "pattern": "^0*[12]$"
         }
       ]
     },
@@ -182,6 +183,10 @@
         "de",
         "pt-BR"
       ]
+    },
+    "typography": {
+      "description": "Spec v2: true turns on typographic quotes, dashes and ellipses (v1 always has them)",
+      "type": "boolean"
     }
   },
   "additionalProperties": true

@@ -1,28 +1,41 @@
 import type MarkdownIt from 'markdown-it';
+import type { StateCore } from 'markdown-it';
 import { alertOf, githubAlerts } from './alerts';
 import { escapeHtml } from './attrs';
 import {
   fenceRule, footnoteBackref, footnoteClose, footnoteOpen, footnoteRef, footnotesClose, footnotesOpen, renderContainer, renderHeader,
-  renderMath, renderRef, type RenderRule,
+  renderFrontMatterError, renderMath, renderRef, type RenderRule,
 } from './markdownItHtml';
 import { addChangelogRules, changelogEntries } from './markdownItChangelog';
 import { expandIncludes, includedLinks } from './markdownItInclude';
 import {
   annotateContainers, collectVariables, containerBlock, envFigures, footnoteDefinition, footnoteReference, footnoteTail, frontMatterBlock,
-  headingAttrs, headingIds, inlineDirective, inlineVariable, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
+  headingAttrs, headingIds, hostSpec, inlineDirective, inlineVariable, mark, mathBlock, mathInline, numberFigures, sourceLines, styledSpan, taskLists,
   variablesAsText,
 } from './markdownItRules';
 import { glossaryTerms } from './markdownItGlossary';
 import { documentLanguage, languageTag, messagesFor, type Messages } from './i18n';
 import type { MarkdownItSmdOptions } from './markdownIt';
+import { specOf } from './specVersion';
+import { addTextRules } from './typography';
+import { shownValues } from './variables';
 
 /** Registers the .smd rules on a markdown-it instance, for renderSmd and for markdown-it hosts. */
+
+/**
+ * Reads a file for embeds (`file="…"` on a code block) and `:::include` blocks, for renderSmd and the markdown-it
+ * plugin alike (one signature since 2.0). `relativePath` is relative to the document being rendered; nested
+ * includes ask for paths relative to that document too. `env` is the render's markdown-it env, the same object for
+ * every file one render reads: the `env` a host passes to `md.render`, or renderSmd's own (opaque). It returns the
+ * file's text, or undefined when the file is missing or not allowed.
+ */
+export type ReadFile = (relativePath: string, env?: unknown) => string | undefined;
 
 /** Options read while rendering. */
 export interface SmdRenderOptions {
   agentBlocks?: 'collapsed' | 'expanded' | 'hidden';
   today?: string;
-  readFile?: (relativePath: string, env?: unknown) => string | undefined;
+  readFile?: ReadFile;
 }
 
 /** What the rules read at render time; renderSmd and markdown-it hosts fill it differently. */
@@ -39,6 +52,11 @@ export interface SmdContext {
   variables?: boolean;
   /** The labels for one render, in the document's language. */
   messages(env: unknown): Messages;
+  /**
+   * For hosts: puts the spec version on the env before block parsing (see hostSpec). renderSmd leaves it out: it
+   * sets `env.smdSpec` itself.
+   */
+  spec?: (state: StateCore) => void;
 }
 
 /** The syntax to add, all resolved. */
@@ -74,6 +92,7 @@ export function hostContext(md: MarkdownIt, options: MarkdownItSmdOptions): SmdC
     ownLines: options.sourceLines ?? false,
     variables: options.variables ?? true,
     messages: (env) => messagesFor(hostLanguage(env, options.lang)),
+    spec: hostSpec(options.spec),
   };
 }
 
@@ -92,10 +111,37 @@ function hostLanguage(env: unknown, fallback: string | undefined): string {
 const ALT = { alt: ['paragraph', 'reference', 'blockquote', 'list'] };
 const applied = new WeakSet<MarkdownIt>();
 
+/** Whether the .smd rules are on `md` already. */
+export function hasSmd(md: MarkdownIt): boolean {
+  return applied.has(md);
+}
+
+/**
+ * renderSmd's tables (and `preset: 'smd'`'s): each in a `<div class="smd-table-wrap">`, so a wide one scrolls on a
+ * narrow page, and `scope="col"` on header cells, since a Markdown table's one header row heads its columns.
+ */
+export function addTableRules(md: MarkdownIt): void {
+  const rules = md.renderer.rules;
+  const own: RenderRule = (tokens, idx, opts, _env, self) => self.renderToken(tokens, idx, opts);
+  const open = rules.table_open ?? own;
+  const close = rules.table_close ?? own;
+  const header = rules.th_open ?? own;
+  rules.table_open = (tokens, idx, opts, env, self) => `<div class="smd-table-wrap">${open(tokens, idx, opts, env, self)}`;
+  rules.table_close = (tokens, idx, opts, env, self) => `${close(tokens, idx, opts, env, self)}</div>`;
+  rules.th_open = (tokens, idx, opts, env, self) => {
+    tokens[idx].attrSet('scope', 'col');
+    return header(tokens, idx, opts, env, self);
+  };
+}
+
 /** Register the rules for `features` on `md`. Rule order matches renderSmd's, whatever is left out. */
 export function applySmd(md: MarkdownIt, features: SmdFeatures, ctx: SmdContext): void {
   if (applied.has(md)) return;
   applied.add(md);
+  // First of all, so every rule after it can read the spec version from the env.
+  if (ctx.spec) md.core.ruler.after('normalize', 'smd_spec', ctx.spec);
+  // Spec v2's typography and autolink literals, around the core linkify and typographer rules.
+  addTextRules(md);
   if (features.frontMatter) addFrontMatter(md, ctx);
   if (features.containers) addContainers(md, ctx);
   if (features.math) addMath(md);
@@ -117,9 +163,13 @@ function addFrontMatter(md: MarkdownIt, ctx: SmdContext): void {
     const data = state.tokens.find((t) => t.type === 'smd_front_matter')?.meta as Record<string, unknown> | undefined;
     if (data?.lang !== undefined && state.env && typeof state.env === 'object') (state.env as LanguageEnv).smdLang = data.lang;
   });
-  // Front matter values are shown as written: `{{name}}` in the title is not replaced.
+  // Front matter values are shown as written: `{{name}}` in the title is not replaced. In spec v2 the token holds the
+  // front matter's source (see frontMatterBlock), so numbers keep their spelling.
   md.renderer.rules.smd_front_matter = (tokens, idx, _opts, env) => {
-    const header = renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), tokens[idx].meta as Record<string, unknown>, ctx.messages(env));
+    if (tokens[idx].info === 'error') return renderFrontMatterError(tokens[idx].content.split('\n'), ctx.messages(env));
+    const data = tokens[idx].meta as Record<string, unknown>;
+    const shown = shownValues(data, tokens[idx].content, specOf(env)) as Record<string, unknown>;
+    const header = renderHeader((s) => md.renderInline(s, { ...(env as object), smdVariables: {} }), data, ctx.messages(env), shown);
     return `${header}\n`;
   };
 }

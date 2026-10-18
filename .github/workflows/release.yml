@@ -33,7 +33,7 @@ concurrency:
 env:
   TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
-  NODE_VERSION: 20
+  NODE_VERSION: 22
   # Publishing tools, pinned. Keep VSCE_VERSION in step with @vscode/vsce in extension/package-lock.json.
   VSCE_VERSION: 3.9.2
   OVSX_VERSION: 1.2.0

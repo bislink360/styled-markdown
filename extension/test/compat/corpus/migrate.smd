@@ -20,14 +20,23 @@ The second tab.
 
 ## Duplicate attributes
 
-- A styled span whose color is given twice, where the last one wins:
+- A styled span whose color is given twice, where the last one wins (an error since 2.0, silenced so that this document passes validation; smd migrate rewrites it anyway):
 
+    <!-- smd-disable-next-line attrs/duplicate -->
     [Blue text]{color=red color=blue}
 
 ## Title text that is not shown
 
+<!-- smd-disable-next-line container/title-conflict -->
 :::note{title="Shown title"} Text that is not shown
 The title attribute wins.
+:::
+
+## Agent priority
+
+<!-- smd-disable-next-line attrs/unknown -->
+:::agent{priority=high}
+Removed in 2.0.
 :::
 
 ## Display math
@@ -63,6 +72,12 @@ Priority :priority[High], trend :metric[3%]{label="Rate" trend=Up}.
 ## Typography, links and variables
 
 "Quotes" -- dashes... (c) are curled today. Docs live at example.com and www.example.org. This is version {{version}}.
+
+## Backslashes in attribute values
+
+:::note{title="\\server\share"}
+Two backslashes are two in v1 and one in v2, and v2 reads an empty :abbr{.wide} as a directive.
+:::
 
 ## A stray closer
 

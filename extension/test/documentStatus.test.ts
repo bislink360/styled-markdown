@@ -98,11 +98,20 @@ test('inserts a missing status after summary, else title, else at the end', () =
 });
 
 test('creates a minimal front matter when there is none', () => {
-  assert.equal(setStatus('# Title\n\nBody\n', 'draft'), '---\nsmd: 1\nstatus: draft\n---\n\n# Title\n\nBody\n');
-  assert.equal(setStatus('\n# Title\n', 'draft'), '---\nsmd: 1\nstatus: draft\n---\n\n# Title\n', 'no second blank line');
-  assert.equal(setStatus('', 'review'), '---\nsmd: 1\nstatus: review\n---\n');
-  assert.equal(setStatus('# T\r\n', 'draft'), '---\r\nsmd: 1\r\nstatus: draft\r\n---\r\n\r\n# T\r\n');
-  assert.equal(setStatus('', 'draft', { eol: '\r\n' }), '---\r\nsmd: 1\r\nstatus: draft\r\n---\r\n', 'the editor\'s line ending for an empty document');
+  assert.equal(setStatus('# Title\n\nBody\n', 'draft'), '---\nsmd: 2\nstatus: draft\n---\n\n# Title\n\nBody\n');
+  assert.equal(setStatus('\n# Title\n', 'draft'), '---\nsmd: 2\nstatus: draft\n---\n\n# Title\n', 'no second blank line');
+  assert.equal(setStatus('', 'review'), '---\nsmd: 2\nstatus: review\n---\n');
+  assert.equal(setStatus('# T\r\n', 'draft'), '---\r\nsmd: 2\r\nstatus: draft\r\n---\r\n\r\n# T\r\n');
+  assert.equal(setStatus('', 'draft', { eol: '\r\n' }), '---\r\nsmd: 2\r\nstatus: draft\r\n---\r\n', 'the editor\'s line ending for an empty document');
+});
+
+test('new front matter keeps the v1 rules of a document that spec v2 would read differently', () => {
+  // Since 2.0 new front matter says smd: 2 (SMD_VERSION), but only where spec v2 reads the document as v1 does: the
+  // typographer changes these quotes and dashes, which spec v2 leaves as written, so the document stays smd: 1.
+  assert.equal(setStatus('"Quoted" -- text\n', 'draft'), '---\nsmd: 1\nstatus: draft\n---\n\n"Quoted" -- text\n');
+  assert.equal(setStatus('Visit example.com\n', 'draft'), '---\nsmd: 1\nstatus: draft\n---\n\nVisit example.com\n', 'a bare domain link');
+  assert.equal(setStatus('See :abbr[HTML].\n', 'draft'), '---\nsmd: 1\nstatus: draft\n---\n\nSee :abbr[HTML].\n', 'text that v2 reads as a directive');
+  assert.equal(setStatus('Plain text, no change.\n', 'draft'), '---\nsmd: 2\nstatus: draft\n---\n\nPlain text, no change.\n');
 });
 
 test('sets updated to today only when the key exists', () => {
@@ -112,7 +121,7 @@ test('sets updated to today only when the key exists', () => {
   assert.equal(setStatus('---\nstatus: draft\nupdated: 2026-01-01\n---\n', 'review'), '---\nstatus: review\nupdated: 2026-01-01\n---\n', 'without today');
   // Inserted status right before the updated line: both edits apply.
   assert.equal(setStatus('---\ntitle: X\nupdated: 2026-01-01\n---\n', 'draft', { today: TODAY }), '---\ntitle: X\nstatus: draft\nupdated: 2026-09-30\n---\n');
-  assert.equal(setStatus('# T\n', 'draft', { today: TODAY }), '---\nsmd: 1\nstatus: draft\n---\n\n# T\n', 'new front matter has no updated key');
+  assert.equal(setStatus('# T\n', 'draft', { today: TODAY }), '---\nsmd: 2\nstatus: draft\n---\n\n# T\n', 'new front matter has no updated key');
 });
 
 test('no edits when the status is already set', () => {

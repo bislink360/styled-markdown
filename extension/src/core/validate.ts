@@ -1,7 +1,10 @@
 import katex from 'katex';
 import { applyRuleSettings, applySuppressions, type RuleSettings } from './rules';
 import { attrsToStyle, isStyleKey, parseAttrs, resolveColor, type AttrProblem, type Attrs } from './attrs';
-import { CONTAINER_CLOSE, CONTAINER_OPEN, parseContainerInfo } from './containers';
+import {
+  closeContainers, closesDisplayMath, CONTAINER_CLOSE, CONTAINER_OPEN, displayMathOpener, parseContainerInfo, type ContainerInfo,
+} from './containers';
+import { specVersion, type SpecVersion } from './specVersion';
 import { parseFrontMatter } from './frontmatter';
 import { dueState, HEADING_ATTRS, type Heading } from './render';
 import { findFootnotes, type FootnoteDefinition, type FootnoteReference } from './footnotes';
@@ -16,17 +19,19 @@ import { findGlossary, findTermUses, type GlossaryEntry, type GlossaryProblem } 
 import { codeLines, inlineItemLines, inlineMathLines, lazyLineSet, literalLines, mathOnLine, parseSmd, type InlineMathLines } from './parse';
 import { openTaskLines } from './taskLines';
 import { checkTablePipes } from './tableCheck';
-import { sectionsOf, type Section } from './sections';
+import { headingAttrList, sectionsOf, withoutHeadingAttrs, type Section } from './sections';
 import { outsideCode } from './include';
 import { findVariables, lookupVariable, substituteLine, variableNames, type Variables, type VariableUse } from './variables';
 import { own, suggest } from './util';
-import { checkCloser, checkContainerHints, checkHeadingHints, checkInlineAttrLists, checkSmdVersion } from './v2Hints';
+import {
+  checkCloser, checkContainerHints, checkHeadingHints, checkInlineAttrLists, checkSmdVersion, removedAgentPriority, type OpenContainer,
+} from './v2Hints';
 import {
   attrKeyFix, attrValueFix, booleanValue, closeAtEndFix, frontMatterValueFix, normalizeDate, replaceOnceFix, uniqueSuggestion,
 } from './fixes';
 import {
   ALIGN_VALUES, FONT_VALUES, NAMED_COLORS, PRIORITY_VALUES, SIZE_VALUES, STYLE_KEYS, WEIGHT_VALUES,
-  CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, SMD_VERSION, type InlineDirectiveSpec,
+  CONTAINERS, INLINE_DIRECTIVES, MERMAID_TYPES, type InlineDirectiveSpec,
 } from './spec';
 import { FRONTMATTER_SCHEMA, frontMatterProperty } from './frontmatterSchema';
 import { languageTag, matchLanguage, SUPPORTED_LANGUAGES } from './i18n';
@@ -92,17 +97,19 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
   if (fm.present && !fm.error) checkFrontMatter(fm.data, lines, fm.bodyStartLine, push, options, inCode);
   // For the checks of text: nothing in code or math is syntax, so what they find there is not reported.
   const pushText = outsideLiteral(push, literalText(text, lines, fm.bodyStartLine));
+  // The rules the body is read with: display math, closing fences, headings, directives and attribute escapes differ in spec v2.
+  const spec = specVersion(fm.data);
 
   // --- Body ---------------------------------------------------------------
-  interface Open { name: string; len: number; line: number }
-  const stack: Open[] = [];
+  const stack: OpenContainer[] = [];
   let fence: { char: string; len: number; lang: string; info: string; line: number; content: string[] } | null = null;
   let mathStart = -1;
   let mathLines: string[] = [];
+  const unclosedMath = unclosedMathLines(lines, fm.bodyStartLine, spec, inCode);
   let firstH1: { text: string; line: number } | null = null;
   const isOpenTask = lazyLineSet(() => new Set(openTaskLines(text)));
   // Directives whose text runs over several lines are checked whole, at the line their attributes end on.
-  const multiLine = multiLineDirectives(text, lines);
+  const multiLine = multiLineDirectives(text, lines, spec);
   const multiLineEnds = new Map(multiLine.map((d) => [d.line, [d.col, d.end] as [number, number]]));
 
   for (let i = fm.bodyStartLine; i < lines.length; i++) {
@@ -120,7 +127,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       }
       continue;
     }
-    const fenceOpen = /^(\s{0,3})(`{3,}|~{3,})\s*([^\s`]*)/.exec(raw);
+    const fenceOpen = FENCE_OPEN.exec(raw);
     if (fenceOpen) {
       fence = { char: fenceOpen[2][0], len: fenceOpen[2].length, lang: fenceOpen[3].toLowerCase(), info: raw.slice(fenceOpen[1].length + fenceOpen[2].length), line: i, content: [] };
       continue;
@@ -128,7 +135,7 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
     // Display math $$ … $$
     if (mathStart >= 0) {
-      if (raw.trimEnd().endsWith('$$')) {
+      if (closesDisplayMath(raw, spec)) {
         mathLines.push(raw.trimEnd().slice(0, -2));
         checkMath(mathLines.join('\n'), mathStart, wholeLine);
         mathStart = -1;
@@ -140,36 +147,36 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
     }
     const trimmed = raw.trim();
     // A `$$` in indented code is code: it opens no math (its text checks are dropped as literal).
-    if (trimmed.startsWith('$$') && !inCode(i)) {
-      const rest = trimmed.slice(2);
-      if (rest.endsWith('$$') && rest.length > 2) checkMath(rest.slice(0, -2), i, wholeLine);
-      else { mathStart = i; mathLines = [rest]; }
+    const math = trimmed.startsWith('$$') && !inCode(i) ? mathOpener(trimmed, spec) : null;
+    if (math === 'line') {
+      checkMath(trimmed.slice(2, -2), i, wholeLine);
+      continue;
+    }
+    if (math === 'block') {
+      // Math that nothing closes opens nothing, as rendering reads it: the lines after it are checked as usual.
+      if (unclosedMath.has(i)) continue;
+      mathStart = i;
+      mathLines = [trimmed.slice(2)];
       continue;
     }
 
     // Containers
     const close = CONTAINER_CLOSE.exec(raw);
     if (close) {
-      // A bare ::: always closes the innermost open container.
-      const closed = stack.pop();
-      if (!closed) {
-        wholeLine(i, 'warning', 'container/stray-close', `Closing "${close[2]}" has no matching opening container.`);
-      } else {
-        checkCloser(i, close[1].length, close[2].length, closed, push);
-      }
+      closeContainer(stack, { line: i, indent: close[1].length, colons: close[2].length }, spec, { lines, push });
       continue;
     }
     const open = CONTAINER_OPEN.exec(raw);
     if (open) {
       const len = open[2].length;
       const col = open[1].length;
-      const info = parseContainerInfo(open[3] + open[4]);
+      const info = parseContainerInfo(open[3] + open[4], spec);
       if (info) {
         const parent = stack[stack.length - 1];
         const nameStart = raw.indexOf(open[3], col + len);
         const nameEnd = nameStart + info.name.length;
         checkContainer(info, i, nameStart, nameEnd, parent?.name, push, raw);
-        checkContainerHints(info, i, raw, nameEnd, push);
+        checkContainerHints(info, i, raw, nameEnd, push, spec);
         stack.push({ name: info.name, len, line: i });
       }
       continue;
@@ -177,24 +184,24 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
 
     // Headings
     const h1 = /^#\s+(.+?)\s*#*\s*$/.exec(raw);
-    if (h1 && !firstH1) firstH1 = { text: h1[1].replace(HEADING_ATTRS, ''), line: i };
-    if (/^\s{0,3}#{1,6}\s/.test(raw)) checkHeadingAttrs(raw, i, pushText);
+    if (h1 && !firstH1) firstH1 = { text: withoutHeadingAttrs(h1[1], spec), line: i };
+    if (/^\s{0,3}#{1,6}\s/.test(raw)) checkHeadingAttrs(raw, i, pushText, spec);
 
     // Open tasks that are past their due date: lines rendering shows with a checkbox (see scanTasks)
     const openTask = /^\s*(?:[-*+]|\d+[.)])\s+\[ \]\s/.test(raw) && isOpenTask(i);
-    const due = openTask ? /:due\[(\d{4}-\d{2}-\d{2})\]/.exec(raw) : null;
+    const due = openTask ? (spec >= 2 ? DUE_V2 : DUE_V1).exec(raw) : null;
     if (due && dueState(due[1], options.today) === 'overdue') {
       pushText(i, due.index, due.index + due[0].length, 'info', 'task/overdue', `Open task is overdue (due ${due[1]}).`);
     }
 
-    checkInline(raw, i, pushText, fm.data, multiLineEnds.get(i));
+    checkInline(raw, i, pushText, { variables: fm.data, spec }, multiLineEnds.get(i));
   }
 
   if (fence) {
     push(fence.line, 0, lines[fence.line].length, 'error', 'fence/unclosed', `Code block opened here is never closed with ${fence.char.repeat(fence.len)}.`,
       closeAtEndFix(lines, fence.line, fence.char.repeat(fence.len)));
   }
-  if (mathStart >= 0) wholeLine(mathStart, 'error', 'math/unclosed', 'Display math "$$" is never closed.');
+  for (const line of unclosedMath) wholeLine(line, 'error', 'math/unclosed', 'Display math "$$" is never closed.');
   for (const o of stack) {
     push(o.line, 0, lines[o.line].length, 'error', 'container/unclosed', `":::${o.name}" is never closed. Add a line with ${':'.repeat(o.len)} after its content.`,
       containerCloseFix(lines, o.line, o.len, fence, mathStart));
@@ -205,18 +212,18 @@ export function validateSmd(text: string, options: ValidateOptions = {}): Diagno
       'The front matter title is already rendered as the document heading; this "# heading" duplicates it.');
   }
 
-  for (const d of multiLine) checkDirective({ line: d.line, text: withoutCode(lines[d.line]), push: pushText }, d, fm.data);
+  for (const d of multiLine) checkDirective({ line: d.line, text: withoutCode(lines[d.line]), push: pushText, spec }, d, fm.data);
   checkTablePipes(text, lines, push);
   checkLinks(text, pushText, options);
   checkIncludes(text, (line, column, endColumn, code, message, severity = 'warning', fix) => push(line, column, endColumn, severity, code, message, fix), options);
   checkFigures(text, lines, fm.bodyStartLine, pushText, () => includedFigureIds(text, options.readFile));
   checkFootnotes(text, pushText);
   // Release headings and glossary terms are read with their `{{name}}` values in, as they render.
-  const expanded = lines.map((l) => substituteLine(l, fm.data));
-  const terms = checkGlossary({ lines, expanded }, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
+  const expanded = lines.map((l) => substituteLine(l, fm.data, spec));
+  const terms = checkGlossary({ lines, expanded, spec }, fm.bodyStartLine, push, () => includedTermIds(text, options.readFile));
   checkTermIds(terms, text, lines, fm.bodyStartLine, push);
-  for (const block of findChangelogs(expanded, fm.bodyStartLine)) checkChangelog(block.entries, lines, push);
-  for (const quote of findQuotes(lines, fm.bodyStartLine)) checkQuote(quote, lines[quote.line], push);
+  for (const block of findChangelogs(expanded, fm.bodyStartLine, spec)) checkChangelog(block.entries, lines, push);
+  for (const quote of findQuotes(lines, fm.bodyStartLine, spec)) checkQuote(quote, lines[quote.line], push);
   checkVariables(lines, fm.bodyStartLine, fm.data, pushText, inCode);
   checkAgentInSkipped(text, lines, fm.bodyStartLine, push);
 
@@ -273,6 +280,12 @@ function unknownKey(key: string, l: number, lines: string[], push: Push): void {
 /** Status values whose documents are not expected to be kept up to date. */
 const RETIRED_STATUS = ['archived', 'deprecated'];
 
+/**
+ * The version a document without an `smd` key is read with, which the fix for the missing key writes, so that the
+ * fix (and `smd validate --fix`) never changes which rules read it. `smd migrate --to 2` moves a document to spec v2.
+ */
+const UNDECLARED_SPEC = 1;
+
 /** Front matter checks, driven by FRONTMATTER_SCHEMA. Keys outside the schema are custom metadata. */
 function checkFrontMatter(
   data: Record<string, unknown>, lines: string[], end: number, push: Push, options: ValidateOptions, isCode: (line: number) => boolean,
@@ -290,14 +303,14 @@ function checkFrontMatter(
   };
 
   if (data.smd === undefined) {
-    push(0, 0, 3, 'info', 'frontmatter/version', `Add "smd: ${SMD_VERSION}" to the front matter so tools know which Styled Markdown version this file targets.`,
-      { line: 1, column: 0, endColumn: 0, replacement: `smd: ${SMD_VERSION}\n`, title: `Add "smd: ${SMD_VERSION}"` });
+    push(0, 0, 3, 'info', 'frontmatter/version', `Add "smd: ${UNDECLARED_SPEC}" to the front matter so tools know which Styled Markdown version this file targets.`,
+      { line: 1, column: 0, endColumn: 0, replacement: `smd: ${UNDECLARED_SPEC}\n`, title: `Add "smd: ${UNDECLARED_SPEC}"` });
   } else {
     checkSmdVersion(data.smd, keyLine('smd'), lines, push);
   }
 
   // Custom keys the body shows with `{{key}}` are meant: no unknown-key hint for them.
-  const shown = new Set(findVariables(lines, end, isCode).map((v) => v.name.split('.')[0]));
+  const shown = new Set(findVariables(lines, end, isCode, specVersion(data)).map((v) => v.name.split('.')[0]));
   for (const [key, value] of Object.entries(data)) {
     const prop = frontMatterProperty(key);
     if (!prop) {
@@ -356,8 +369,98 @@ function checkLanguage(value: unknown, markKey: MarkKey): void {
  * Close an unclosed container at the end of the document, unless a code block or `$$` math is still open there:
  * it would swallow the closing line, so that one is fixed first.
  */
+const FENCE_OPEN = /^(\s{0,3})(`{3,}|~{3,})\s*([^\s`]*)/;
+const fenceCloser = (fence: string) => new RegExp(`^\\s{0,3}${fence[0] === '`' ? '`' : '~'}{${fence.length},}\\s*$`);
+
+/**
+ * The `$$` lines that open multi-line display math that no later line closes (since 2.0, in both versions). Rendering
+ * reads such a line as text that opens nothing, so the lines after it are not math: the body checks read them as
+ * usual (containers, headings, inline syntax), and the `$$` line gets `math/unclosed`. Code fences are skipped as
+ * the body checks skip them, also inside math, so a fence is a fence whether math is open or not. Hence once one
+ * opener is never closed, no line after it closes math, and every later multi-line opener is unclosed too.
+ */
+function unclosedMathLines(lines: readonly string[], start: number, spec: SpecVersion, inCode: (line: number) => boolean): Set<number> {
+  const opensBlock = (i: number) => {
+    const trimmed = lines[i].trim();
+    return trimmed.startsWith('$$') && !inCode(i) && mathOpener(trimmed, spec) === 'block';
+  };
+  const unclosed = new Set<number>();
+  let open = -1;
+  outsideFences(lines, start, (i) => {
+    if (open < 0) {
+      if (opensBlock(i)) open = i;
+    } else if (closesDisplayMath(lines[i], spec)) {
+      open = -1;
+    }
+  });
+  if (open < 0) return unclosed;
+  unclosed.add(open);
+  outsideFences(lines, open + 1, (i) => {
+    if (opensBlock(i)) unclosed.add(i);
+  });
+  return unclosed;
+}
+
+/** Visit each line from `start` that is not in a code fence or a fence line itself, as the body checks find fences. */
+function outsideFences(lines: readonly string[], start: number, visit: (line: number) => void): void {
+  let fence: RegExp | null = null;
+  for (let i = start; i < lines.length; i++) {
+    if (fence) {
+      if (fence.test(lines[i])) fence = null;
+      continue;
+    }
+    const open = FENCE_OPEN.exec(lines[i]);
+    if (open) fence = fenceCloser(open[2]);
+    else visit(i);
+  }
+}
+
 function containerCloseFix(lines: string[], line: number, len: number, fence: object | null, mathStart: number): Fix | undefined {
   return fence || mathStart >= 0 ? undefined : closeAtEndFix(lines, line, ':'.repeat(len));
+}
+
+/**
+ * How a `$$` line outside code opens display math, given its trimmed text (see displayMathOpener). Spec v1 as the
+ * validator always read it: `$$…$$` on one line, else math that a line ending with `$$` closes.
+ */
+function mathOpener(trimmed: string, spec: SpecVersion): 'line' | 'block' | null {
+  if (spec === 2) return displayMathOpener(trimmed, spec);
+  const rest = trimmed.slice(2);
+  return rest.endsWith('$$') && rest.length > 2 ? 'line' : 'block';
+}
+
+/** A closing fence: its zero-based line, its indentation and its colon count. */
+interface Closer { line: number; indent: number; colons: number }
+
+/**
+ * A closing fence closes the open containers closedBy gives (containers.ts). Spec v1: the innermost, with the
+ * `container/colons` hint when its colon count differs. Spec v2: the innermost with as many colons, reporting the
+ * containers it closes with it (`container/unclosed`, a warning: they end where the document shows them end), or,
+ * when no open container has as many, the innermost, with a `container/colons` warning.
+ */
+function closeContainer(stack: OpenContainer[], closer: Closer, spec: SpecVersion, at: { lines: string[]; push: Push }): void {
+  const { line, indent, colons } = closer;
+  const closed = closeContainers(stack, colons, spec, (o) => o.len);
+  const own = closed.at(-1);
+  if (!own) {
+    at.push(line, 0, at.lines[line]?.length ?? 1, 'warning', 'container/stray-close', `Closing "${':'.repeat(colons)}" has no matching opening container.`);
+    return;
+  }
+  if (spec === 1) {
+    checkCloser(line, indent, colons, own, at.push);
+    return;
+  }
+  for (const inner of closed.slice(0, -1)) {
+    const fence = ':'.repeat(inner.len);
+    at.push(inner.line, 0, at.lines[inner.line].length, 'warning', 'container/unclosed',
+      `"${fence}${inner.name}" has no closing fence of its own: the "${':'.repeat(colons)}" on line ${line + 1} closes "${':'.repeat(own.len)}${own.name}" on line ${own.line + 1}, and this container with it. Add a line with ${fence} where its content ends.`,
+      /^\s/.test(at.lines[inner.line]) ? undefined : { line, column: 0, endColumn: 0, replacement: `${fence}\n`, title: `Add "${fence}" before line ${line + 1}` });
+  }
+  if (own.len === colons) return;
+  const fence = ':'.repeat(own.len);
+  at.push(line, indent, indent + colons, 'warning', 'container/colons',
+    `This closing fence has ${colons} colons, and no open container has as many, so it closes the innermost one, "${fence}${own.name}" on line ${own.line + 1}, which has ${own.len}. Write it with ${own.len} colons.`,
+    { line, column: indent, endColumn: indent + colons, replacement: fence, title: `Change to "${fence}"` });
 }
 
 /** Builds the fix for a front matter value on line `line`, if one is unambiguous. */
@@ -406,20 +509,19 @@ function dueDate(content: string): string | undefined {
 }
 
 /**
- * Enumerated container attributes whose invalid values are reported under their own rule. `:::figure{kind}`
- * is a warning: before 1.6 such a document only had a `container/unknown` warning and passed validation.
- * The `figure/kind` code is deprecated: 2.0 reports these as `attrs/value`, which `note` tells users who filter on it.
+ * Attributes a container doesn't take: `attrs/unknown`, with a fix when one accepted name is close. `priority` on
+ * `:::agent`, removed in 2.0, is reported on the attribute itself with a fix that removes it.
  */
-const ENUM_VALUE_RULES = new Map<string, { severity: Severity; code: string; note?: string }>([
-  ['figure.kind', {
-    severity: 'warning', code: 'figure/kind',
-    note: ' The "figure/kind" code is deprecated: Styled Markdown 2.0 reports this as "attrs/value", so rule settings and suppressions should name both.',
-  }],
-]);
-
-/** The rule for an invalid value of an enumerated container attribute: `attrs/value` (error) unless listed above. */
-function enumValueRule(container: string, key: string): { severity: Severity; code: string; note?: string } {
-  return ENUM_VALUE_RULES.get(`${container}.${key}`) ?? { severity: 'error', code: 'attrs/value' };
+function checkUnknownAttrs(info: ContainerInfo, allowed: Set<string>, line: number, nameStart: number, nameEnd: number, push: Push, raw: string): void {
+  const keys = Object.keys(info.attrs.values);
+  // A container with title text is never offered `title`: both together are a container/title-conflict error.
+  const names = [...allowed, ...Object.keys(STYLE_KEYS)].filter((k) => k !== 'title' || !info.title);
+  for (const key of keys) {
+    if (allowed.has(key) || isStyleKey(key)) continue;
+    if (info.name === 'agent' && key === 'priority' && removedAgentPriority(line, raw, nameEnd, push)) continue;
+    push(line, nameStart, nameEnd, 'warning', 'attrs/unknown', `Unknown attribute "${key}" on ":::${info.name}".`,
+      attrKeyFix(line, raw, nameEnd, raw.length, key, names, keys));
+  }
 }
 
 function checkContainer(
@@ -440,23 +542,16 @@ function checkContainer(
     push(line, nameStart, nameEnd, 'warning', 'container/parent',
       `":::${info.name}" should be placed directly inside "::::${spec.parent}".`);
   }
-  const allowed = new Set([...(spec.attrs ?? []), 'title']);
-  const keys = Object.keys(info.attrs.values);
-  for (const key of keys) {
-    if (!allowed.has(key) && !isStyleKey(key)) {
-      push(line, nameStart, nameEnd, 'warning', 'attrs/unknown', `Unknown attribute "${key}" on ":::${info.name}".`,
-        attrKeyFix(line, raw, nameEnd, raw.length, key, [...allowed, ...Object.keys(STYLE_KEYS)], keys));
-    }
-  }
+  checkUnknownAttrs(info, new Set([...(spec.attrs ?? []), 'title']), line, nameStart, nameEnd, push, raw);
   for (const p of attrsToStyle(info.attrs, true).problems) {
     push(line, nameStart, nameEnd, p.severity, 'attrs/value', p.message, styleFix(line, raw, nameEnd, raw.length, p));
   }
+  // Every enumerated value, `:::figure{kind}` included (its own `figure/kind` warning until 2.0).
   for (const [key, allowed] of Object.entries(spec.values ?? {})) {
     const v = info.attrs.values[key];
     if (v !== undefined && !allowed.some((a) => a.toLowerCase() === v.toLowerCase())) {
       const hint = suggest(v, allowed);
-      const rule = enumValueRule(info.name, key);
-      push(line, nameStart, nameEnd, rule.severity, rule.code, `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.${rule.note ?? ''}`,
+      push(line, nameStart, nameEnd, 'error', 'attrs/value', `Invalid ${key} "${v}" on ":::${info.name}"${hint ? ` — did you mean "${hint}"?` : '.'} Use one of: ${allowed.join(', ')}.`,
         attrValueFix(line, raw, nameEnd, raw.length, key, v, uniqueSuggestion(v, allowed)));
     }
   }
@@ -487,45 +582,57 @@ const withoutCode = (raw: string): string => raw.replace(/(`+)([\s\S]*?)\1/g, (m
  * The inline checks of one line. `ending` is the part of a directive that runs on from the lines above and ends here
  * (see multiLineDirectives): it is checked whole, so its `]{…}` is not a styled span.
  */
-function checkInline(raw: string, line: number, push: Push, variables: Variables, ending?: [number, number]): void {
+function checkInline(raw: string, line: number, push: Push, read: { variables: Variables; spec: SpecVersion }, ending?: [number, number]): void {
   const text = withoutCode(raw);
+  const { spec } = read;
 
-  const at: InlineAt = { line, text, push };
+  const at: InlineAt = { line, text, push, spec };
 
-  // :directive[content]{attrs}
+  // :directive[content]{attrs}; any case in spec v2, where `:Badge[x]` is `:badge[x]` (RFC proposal 11)
   const directiveSpans: Array<[number, number]> = ending ? [[ending[0] - 1, ending[1]]] : [];
-  for (const m of text.matchAll(/(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g)) {
+  for (const m of text.matchAll(spec >= 2 ? DIRECTIVE_USE_V2 : DIRECTIVE_USE_V1)) {
     if (!m[3] && !m[4]) continue;
-    const col = m.index! + m[1].length;
+    const col = m.index + m[1].length;
     const end = col + m[0].length - m[1].length;
     directiveSpans.push([col, end]);
-    checkDirective(at, { name: m[2], col, end, content: m[3], attrList: m[4] }, variables);
+    checkDirective(at, { name: directiveName(m[2], spec), col, end, content: m[3], attrList: m[4] }, read.variables);
   }
   checkStyledSpans(at, directiveSpans);
-  checkInlineAttrLists(raw, text, line, push);
+  checkInlineAttrLists(raw, text, line, push, spec);
 }
+
+/** `:name[content]{attrs}` on a line: the name in lower case in spec v1, in any case in spec v2. */
+const DIRECTIVE_USE_V1 = /(^|[\s([{>*_~"'-]):([a-z][a-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g;
+const DIRECTIVE_USE_V2 = /(^|[\s([{>*_~"'-]):([A-Za-z][A-Za-z0-9-]*)(\[[^\]\n]*\])?(\{[^{}\n]*\})?/g;
+/** A `:due[date]` on a task line. */
+const DUE_V1 = /:due\[(\d{4}-\d{2}-\d{2})\]/;
+const DUE_V2 = /:due\[(\d{4}-\d{2}-\d{2})\]/i;
+
+/** A directive's name as rendering reads it: as written in spec v1, lower-cased in spec v2. */
+const directiveName = (name: string, spec: SpecVersion) => (spec >= 2 ? name.toLowerCase() : name);
 
 /**
  * The inline directives whose text runs over several lines (`:badge[foo` on one line, `bar]{color=green}` on the
  * next), as rendering reads them (see inlineItemLines). Each is placed on its last line, from the start of its part
  * there to its end, where its attribute list is.
  */
-function multiLineDirectives(text: string, lines: string[]): Array<DirectiveUse & { line: number }> {
+function multiLineDirectives(text: string, lines: string[], spec: SpecVersion): Array<DirectiveUse & { line: number }> {
   if (!lines.some((l) => l.includes(':') && l.includes('['))) return [];
   const found: Array<DirectiveUse & { line: number }> = [];
+  const item = spec >= 2 ? /^:([A-Za-z][A-Za-z0-9-]*)(\[[^\]]*\])?(\{[^{}\n]*\})?$/ : /^:([a-z][a-z0-9-]*)(\[[^\]]*\])?(\{[^{}\n]*\})?$/;
   for (const parts of inlineItemLines(text).values()) {
-    for (const { item, index } of parts) {
-      const m = index === 0 ? /^:([a-z][a-z0-9-]*)(\[[^\]]*\])?(\{[^{}\n]*\})?$/.exec(item.text) : null;
-      const [line, start, end] = item.parts.at(-1)!;
+    for (const { item: { text: source, parts: all }, index } of parts) {
+      const m = index === 0 ? item.exec(source) : null;
+      const [line, start, end] = all.at(-1)!;
       // A line break in the content reads as a space, as it renders.
-      if (m) found.push({ line, name: m[1], col: start, end, content: m[2]?.replaceAll('\n', ' '), attrList: m[3] });
+      if (m) found.push({ line, name: directiveName(m[1], spec), col: start, end, content: m[2]?.replaceAll('\n', ' '), attrList: m[3] });
     }
   }
   return found;
 }
 
-/** Where an inline check reports: the line, its text with inline code blanked out, and the push. */
-interface InlineAt { line: number; text: string; push: Push }
+/** Where an inline check reports: the line, its text with inline code blanked out, the push, and the spec version. */
+interface InlineAt { line: number; text: string; push: Push; spec: SpecVersion }
 
 /** One `:name[content]{attrs}` on the line: `content` and `attrList` keep their brackets. */
 interface DirectiveUse { name: string; col: number; end: number; content?: string; attrList?: string }
@@ -535,7 +642,7 @@ function checkDirective(at: InlineAt, d: DirectiveUse, variables: Variables): vo
   const spec = own(INLINE_DIRECTIVES, d.name);
   if (!spec) { unknownDirective(at, d); return; }
   if (spec.content && !d.content) push(line, d.col, d.end, 'error', 'directive/content', `":${d.name}" needs content in brackets, e.g. ${spec.example}.`);
-  const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1)) : null;
+  const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1), at.spec) : null;
   if (d.attrList && !attrs) { push(line, d.col, d.end, 'error', 'attrs/syntax', 'Malformed attribute list.'); return; }
   // Checked with front matter variables replaced: :due[{{deadline}}] is the date in "deadline".
   const content = substituteLine(d.content?.slice(1, -1) ?? '', variables).trim();
@@ -543,12 +650,26 @@ function checkDirective(at: InlineAt, d: DirectiveUse, variables: Variables): vo
   if (attrs) checkDirectiveAttrs(at, d, spec, attrs);
 }
 
-/** Only flag names that look intentional, e.g. ":badg[..]" — not "see:[link]". */
-function unknownDirective({ line, push }: InlineAt, { name, col, end }: DirectiveUse): void {
+/**
+ * A name outside the vocabulary. In spec v1 it is text, and only a name that looks intentional is flagged, e.g.
+ * ":badg[..]", not "see:[link]". In spec v2 it is a directive that renders its content (RFC proposal 7b): every one
+ * is a `directive/unknown` warning, with a fix when a known name is close, and its style attributes are checked as a
+ * styled span's are (other keys may be the directive's own, in a tool that knows it).
+ */
+function unknownDirective(at: InlineAt, d: DirectiveUse): void {
+  const { line, push, spec } = at;
+  const { name, col, end } = d;
   const hint = suggest(name, Object.keys(INLINE_DIRECTIVES));
-  if (!hint) return;
-  push(line, col, end, 'warning', 'directive/unknown', `Unknown inline directive ":${name}" — did you mean ":${hint}"?`,
-    { line, column: col + 1, endColumn: col + 1 + name.length, replacement: hint, title: `Change to ":${hint}"` });
+  const fix: Fix | undefined = hint ? { line, column: col + 1, endColumn: col + 1 + name.length, replacement: hint, title: `Change to ":${hint}"` } : undefined;
+  if (spec < 2) {
+    if (hint) push(line, col, end, 'warning', 'directive/unknown', `Unknown inline directive ":${name}" — did you mean ":${hint}"?`, fix);
+    return;
+  }
+  push(line, col, end, 'warning', 'directive/unknown',
+    `Unknown inline directive ":${name}"${hint ? ` — did you mean ":${hint}"?` : '.'} It renders as its content, in a plain span.`, fix);
+  const attrs = d.attrList ? parseAttrs(d.attrList.slice(1, -1), spec) : null;
+  if (d.attrList && !attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed attribute list.'); return; }
+  for (const p of attrs ? attrsToStyle(attrs).problems : []) push(line, col, end, p.severity, 'attrs/value', p.message, styleFix(line, at.text, col, end, p));
 }
 
 function checkDirectiveContent({ line, text, push }: InlineAt, { name, col, end }: DirectiveUse, content: string, attrs: Attrs | null): void {
@@ -590,12 +711,12 @@ function checkDirectiveAttr(
 }
 
 /** `[text]{attrs}` styled spans; the attribute lists that belong to directives are skipped. */
-function checkStyledSpans({ line, text, push }: InlineAt, directiveSpans: Array<[number, number]>): void {
+function checkStyledSpans({ line, text, push, spec }: InlineAt, directiveSpans: Array<[number, number]>): void {
   for (const m of text.matchAll(/\]\{([^{}\n]*)\}/g)) {
     const col = m.index! + 1;
     const end = col + m[0].length - 1;
     if (directiveSpans.some(([s, e]) => col > s && col < e)) continue;
-    const attrs = parseAttrs(m[1]);
+    const attrs = parseAttrs(m[1], spec);
     if (!attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed attribute list. Expected {key=value key2="value 2" .class}.'); continue; }
     const keys = Object.keys(attrs.values);
     for (const key of keys) {
@@ -746,14 +867,14 @@ function missingAnchor(
 /** Figure ids are unique, and every `:ref[id]` names a figure of this document. */
 /** Figure ids and `:ref[id]` references; `included` lists the ids of figures brought in by `:::include`. */
 function checkFigures(text: string, lines: string[], bodyStart: number, push: Push, included: () => Set<string>): void {
-  const figures = parseSmd(text).figures;
+  const { figures, spec } = parseSmd(text);
   const targets = figureTargets(figures);
   for (const f of figures) {
     const first = f.id ? targets.get(f.id) : undefined;
     if (first && first !== f) duplicateFigure(f, first, lines[f.line], push);
   }
   let fromIncludes: Set<string> | undefined;
-  for (const ref of findRefs(lines, bodyStart)) {
+  for (const ref of findRefs(lines, bodyStart, spec)) {
     if (targets.has(ref.id)) continue;
     fromIncludes ??= included();
     if (!fromIncludes.has(ref.id)) unknownRef(ref, [...targets.keys(), ...fromIncludes], push);
@@ -765,7 +886,7 @@ function checkFigures(text: string, lines: string[], bodyStart: number, push: Pu
  * 1.6, `{{…}}` was plain text (templates, Handlebars or Jinja examples), so it must not start failing checks.
  */
 function checkVariables(lines: string[], bodyStart: number, data: Variables, push: Push, isCode: (line: number) => boolean): void {
-  const uses = findVariables(lines, bodyStart, isCode);
+  const uses = findVariables(lines, bodyStart, isCode, specVersion(data));
   if (!uses.length) return;
   const names = [...new Set([...Object.keys(data), ...variableNames(data).map((v) => v.name)])];
   for (const use of uses) {
@@ -812,9 +933,9 @@ function unknownRef(ref: FigureRef, ids: string[], push: Push): void {
  * `included` gives the terms used in included text (rendering it only when a term is not used otherwise). A use in
  * a `{{name}}` value counts, as rendering marks it: uses are found in the lines as written and with the values in.
  */
-function checkGlossary(text: { lines: string[]; expanded: string[] }, bodyStart: number, push: Push, included: () => Set<string>): GlossaryEntry[] {
-  const { lines, expanded } = text;
-  const glossary = findGlossary(lines, bodyStart);
+function checkGlossary(text: { lines: string[]; expanded: string[]; spec: SpecVersion }, bodyStart: number, push: Push, included: () => Set<string>): GlossaryEntry[] {
+  const { lines, expanded, spec } = text;
+  const glossary = findGlossary(lines, bodyStart, spec);
   for (const problem of glossary.problems) glossaryProblem(problem, push);
   const first = new Map<string, GlossaryEntry>();
   for (const entry of glossary.entries) {
@@ -827,9 +948,9 @@ function checkGlossary(text: { lines: string[]; expanded: string[] }, bodyStart:
     }
   }
   if (!first.size) return [];
-  const used = new Set(findTermUses(lines, bodyStart, glossary).map((u) => u.entry.id));
+  const used = new Set(findTermUses(lines, bodyStart, glossary, spec).map((u) => u.entry.id));
   if (expanded.some((l, i) => l !== lines[i])) {
-    for (const use of findTermUses(expanded, bodyStart, glossary)) used.add(use.entry.id);
+    for (const use of findTermUses(expanded, bodyStart, glossary, spec)) used.add(use.entry.id);
   }
   const unused = [...first.values()].filter((e) => !used.has(e.id));
   const usedInIncludes = unused.length ? included() : new Set<string>();
@@ -1006,14 +1127,16 @@ function checkMath(tex: string, line: number, wholeLine: WholeLine): void {
   if (error !== null) wholeLine(line, 'error', 'math/syntax', `Math error: ${error}`);
 }
 
-function checkHeadingAttrs(raw: string, line: number, push: Push): void {
+function checkHeadingAttrs(raw: string, line: number, push: Push, spec: SpecVersion): void {
   const m = HEADING_ATTRS.exec(raw);
   if (!m) return;
   const col = m.index + m[0].indexOf('{');
   const end = col + m[1].length + 2;
-  const attrs = parseAttrs(m[1]);
+  const attrs = parseAttrs(m[1], spec);
   if (!attrs) { push(line, col, end, 'error', 'attrs/syntax', 'Malformed heading attribute list. Expected {#id .class agent=skip}.'); return; }
-  checkHeadingHints(line, raw, m.index, col, end - 1, push);
+  // In spec v2 an empty list, or one with a bare word, is heading text (RFC proposal 5): there is nothing to check.
+  if (spec >= 2 && !headingAttrList(raw, spec)) return;
+  checkHeadingHints(line, raw, m.index, col, end - 1, push, spec);
   const keys = Object.keys(attrs.values);
   for (const [key, value] of Object.entries(attrs.values)) {
     if (key !== 'agent') {

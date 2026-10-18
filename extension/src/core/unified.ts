@@ -47,6 +47,8 @@ export interface SmdPluginOptions extends Omit<RenderOptions, 'readFile'> {
 export interface SmdFileData {
   frontMatter: Record<string, unknown>;
   headings: RenderResult['headings'];
+  /** The spec version the file was read with: its front matter `smd`, else the `spec` option, else 1. */
+  spec: 1 | 2;
 }
 
 /** Nodes kept when the tree is replaced: front matter nodes and MDX import/export statements. */
@@ -76,7 +78,7 @@ export function renderSmdFile(file: SmdVFile, options: SmdPluginOptions = {}): R
   const own = parseFrontMatter(source);
   const doc: ParsedDocument = own.present ? own : { data: hostFrontMatter(file, options), body: source, bodyStartLine: 0 };
   const result = renderParsed(source, doc, renderOptions(file, options), options.header ?? true);
-  const smd: SmdFileData = { frontMatter: result.frontMatter, headings: result.headings };
+  const smd: SmdFileData = { frontMatter: result.frontMatter, headings: result.headings, spec: result.spec ?? 1 };
   if (file.data) file.data.smd = smd;
   else file.data = { smd };
   return result;
@@ -96,8 +98,8 @@ function fileText(value: unknown): string {
 }
 
 function renderOptions(file: SmdVFile, options: SmdPluginOptions): RenderOptions {
-  const { allowHtml, agentBlocks, today, readFile } = options;
-  return { allowHtml, agentBlocks, today, readFile: readFile && ((path: string) => readFile(path, file)) };
+  const { allowHtml, agentBlocks, today, readFile, spec } = options;
+  return { allowHtml, agentBlocks, today, spec, readFile: readFile && ((path: string) => readFile(path, file)) };
 }
 
 function hostFrontMatter(file: SmdVFile, options: SmdPluginOptions): Record<string, unknown> {

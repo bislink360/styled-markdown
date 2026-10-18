@@ -1,14 +1,15 @@
 import type MarkdownIt from 'markdown-it';
 import type { StateInline, Token } from 'markdown-it';
 import { alertOf } from './alerts';
-import { isKnownContainer } from './containers';
+import { closesDisplayMath, displayMathOpener, isKnownContainer } from './containers';
 import { FigureCounter, figureTargets, type Figure } from './figures';
 import { normalizeFootnoteLabel } from './footnotes';
 import { parseFrontMatter } from './frontmatter';
 import { acceptAnyFootnote, mathInline, type ContainerMeta, type TaskBoxMeta } from './markdownItRules';
 import { createMarkdownIt, type Env, type Heading, type ResolvedOptions } from './render';
 import { CALLOUT_TYPES } from './spec';
-import type { Variables } from './variables';
+import { specVersion, type SpecVersion } from './specVersion';
+import { shownValues, type Variables } from './variables';
 
 /**
  * Incremental parsing for headings and anchor ids: what validation, outlines, the outline view and
@@ -50,6 +51,8 @@ export interface ParseResult {
    * read on their own (see inlineMathSpans and mathSpansOf).
    */
   inlineMath: ReadonlyMap<number, Array<[number, number]>>;
+  /** The spec version the document is read with: its front matter `smd` (see specVersion.ts). */
+  spec: SpecVersion;
 }
 
 /** A `:::figure` before numbering, with a body-relative line. */
@@ -138,16 +141,19 @@ interface State {
 /**
  * Front matter variables for `{{name}}` in headings, so their text matches renderSmd's. `key` is the raw
  * front matter when the body uses `{{` at all, else empty: states are only reused under the same key, so
- * editing the front matter of a document without variables keeps incremental parsing.
+ * editing the front matter of a document without variables keeps incremental parsing. States are only reused
+ * under the same spec version too, since the rules differ.
  */
 interface ParseVariables {
   key: string;
   data: Variables;
+  spec: SpecVersion;
 }
 
 function documentVariablesOf(lines: string[], fm: { data: Record<string, unknown>; bodyStartLine: number }, text: string): ParseVariables {
   const uses = lines.some((l) => l.includes('{{'));
-  return { key: uses ? text.split(/\r?\n/, fm.bodyStartLine).join('\n') : '', data: uses ? fm.data : {} };
+  const spec = specVersion(fm.data);
+  return { key: uses ? text.split(/\r?\n/, fm.bodyStartLine).join('\n') : '', data: uses ? shownValues(fm.data, text, spec) : {}, spec };
 }
 
 const OPTIONS: ResolvedOptions = { allowHtml: true, agentBlocks: 'collapsed', readFile: undefined, today: '' };
@@ -346,14 +352,16 @@ export function parseSmd(text: string): ParseResult {
   // The document header renders the title and summary as inline Markdown.
   for (const key of ['title', 'summary']) {
     const value = fm.data[key];
-    if (typeof value === 'string') collectIds(parser().parseInline(value, newEnv(0, labelsOf(state))), ids);
+    if (typeof value === 'string') collectIds(parser().parseInline(value, newEnv(0, labelsOf(state), {}, state.vars.spec)), ids, false, state.vars.spec);
   }
 
   const inDocument = ([start, end]: [number, number]): [number, number] => [start + fm.bodyStartLine, end + fm.bodyStartLine];
   const code = state.blocks.flatMap((b) => b.code).map(inDocument);
   const math = state.blocks.flatMap((b) => b.math).map(inDocument);
   const inlineMath = new Map(state.blocks.flatMap((b) => b.inlineMath).map(([line, spans]) => [line + fm.bodyStartLine, spans]));
-  const result: ParseResult = { headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code, math, inlineMath };
+  const result: ParseResult = {
+    headings, ids, frontMatter: fm.data, figures: numberFigures(state.blocks, fm.bodyStartLine), code, math, inlineMath, spec: state.vars.spec,
+  };
   fenceStarts.set(result, state.blocks.flatMap((b) => b.fences).map((line) => line + fm.bodyStartLine));
   alertsOf.set(result, state.blocks.flatMap((b) => b.alerts).map((a) => shiftAlert(a, fm.bodyStartLine)));
   tasksOf.set(result, new Set(state.blocks.flatMap((b) => b.tasks).map((line) => line + fm.bodyStartLine)));
@@ -492,7 +500,7 @@ const labelsOf = (state: Pick<State, 'blocks' | 'trailing'>): string[] =>
 /** The block state for `lines`: an incremental update of the closest recent state, or a full parse. */
 function update(lines: string[], vars: ParseVariables): State {
   let best: { state: State; prefix: number; suffix: number } | undefined;
-  for (const state of states.filter((s) => s.vars.key === vars.key)) {
+  for (const state of states.filter((s) => s.vars.key === vars.key && s.vars.spec === vars.spec)) {
     const prefix = commonPrefix(state.lines, lines);
     const suffix = commonSuffix(state.lines, lines, prefix);
     if (!best || prefix + suffix > best.prefix + best.suffix) best = { state, prefix, suffix };
@@ -510,7 +518,7 @@ function update(lines: string[], vars: ParseVariables): State {
 /** Parse everything. Inline parsing needs every reference label, so repeat once if new ones turn up. */
 function full(lines: string[], vars: ParseVariables, labels: string[] = []): State {
   for (;;) {
-    const parsed = parseRange(lines, 0, lines.length, { labels, vars: vars.data }, true);
+    const parsed = parseRange(lines, 0, lines.length, { labels, vars: vars.data, spec: vars.spec }, true);
     const state: State = { lines, ...parsed, refKey: labels.join('\u0001'), vars };
     const found = labelsOf(state);
     if (found.join('\u0001') === state.refKey) return state;
@@ -524,13 +532,14 @@ function incremental(old: State, lines: string[], prefix: number, suffix: number
   // Restart at the last block that starts before the changed line (the edit may extend or end it), or
   // earlier when a `$$` above is closed by a line at or after the edit (or not at all): adding or removing
   // that closing line decides whether the opener starts math.
-  // An opener is closed by the next line ending with `$$`, so only openers from the last such line
-  // before the edit onward can depend on it.
+  // An opener is closed by the next line ending with `$$` (spec v2: the next line that is only `$$`, which closes any
+  // math that reaches it), so only openers from the last such line before the edit onward can depend on it.
+  const spec = old.vars.spec;
   let limit = prefix;
   let lastClose = prefix - 1;
-  while (lastClose >= 0 && !lines[lastClose].trimEnd().endsWith('$$')) lastClose--;
+  while (lastClose >= 0 && !closesDisplayMath(lines[lastClose], spec)) lastClose--;
   for (let p = Math.max(0, lastClose); p < prefix; p++) {
-    if (isMathOpener(lines[p])) { limit = p + 1; break; }
+    if (isMathOpener(lines[p], spec)) { limit = p + 1; break; }
   }
   let k = -1;
   for (let i = 0; i < old.blocks.length && old.blocks[i].start < limit; i++) k = i;
@@ -544,7 +553,7 @@ function incremental(old: State, lines: string[], prefix: number, suffix: number
   let to = Math.min(lines.length, damageEnd + 64);
   for (;;) {
     const atEnd = to === lines.length;
-    const parsed = parseRange(lines, from, to, { labels, vars: old.vars.data }, atEnd, carried);
+    const parsed = parseRange(lines, from, to, { labels, vars: old.vars.data, spec: old.vars.spec }, atEnd, carried);
     if (atEnd) return { lines, blocks: [...kept, ...parsed.blocks], trailing: parsed.trailing, refKey: old.refKey, vars: old.vars };
     const grow = () => Math.min(lines.length, Math.max(parsed.mathHorizon, to + Math.max(256, (to - from) * 2)));
     // A `$$` the window couldn't close may be math in the full document: parse up to its closing line.
@@ -565,11 +574,23 @@ function incremental(old: State, lines: string[], prefix: number, suffix: number
  * A line that may open multi-line display math (see mathBlock in render.ts). Any indentation or quote
  * prefix counts, since math can open inside lists and quotes: a false positive only widens a window.
  */
-function isMathOpener(line: string): boolean {
-  const text = line.replace(/^[\s>]*/, '');
-  if (!text.startsWith('$$')) return false;
-  const rest = text.slice(2);
-  return !(rest.trimEnd().endsWith('$$') && rest.trim().length > 2);
+function isMathOpener(line: string, spec: SpecVersion): boolean {
+  return displayMathOpener(line.replace(/^[\s>]*/, ''), spec) === 'block';
+}
+
+/**
+ * The line that closes display math opening on line `p`, or lines.length when none does, for the window to reach.
+ * Spec v1: the next line ending with `$$`. Spec v2: math closes on a line that is only `$$` once its indentation and
+ * quote markers are left out, so any such line may be the one; the last is taken, which only widens the window.
+ */
+function mathCloseAfter(lines: string[], p: number, spec: SpecVersion): number {
+  if (spec === 1) {
+    let close = p + 1;
+    while (close < lines.length && !lines[close].trimEnd().endsWith('$$')) close++;
+    return close;
+  }
+  for (let close = lines.length - 1; close > p; close--) if (closesDisplayMath(lines[close].replace(/^[\s>]*/, ''), spec)) return close;
+  return lines.length;
 }
 
 function shift(block: Block, delta: number): Block {
@@ -597,9 +618,9 @@ function shift(block: Block, delta: number): Block {
  * short, so it is left out; blocks before it ended within the range and are exact.
  */
 function parseRange(
-  lines: string[], from: number, to: number, scope: { labels: string[]; vars: Variables }, complete: boolean, carried: Definition[] = [],
+  lines: string[], from: number, to: number, scope: { labels: string[]; vars: Variables; spec: SpecVersion }, complete: boolean, carried: Definition[] = [],
 ): { blocks: Block[]; trailing: Definition[]; mathHorizon: number } {
-  const env = newEnv(from, scope.labels, scope.vars);
+  const env = newEnv(from, scope.labels, scope.vars, scope.spec);
   acceptAnyFootnote(env); // which labels are defined is known once every block is (footnoteIds)
   const items: ItemsByText = new Map();
   env.inlineItems = items;
@@ -614,9 +635,8 @@ function parseRange(
       .filter((t) => t.map && ['smd_math_block', 'fence', 'code_block', 'html_block'].includes(t.type))
       .map((t) => [from + t.map![0], from + t.map![1]]);
     for (let p = from; p < to; p++) {
-      if (!isMathOpener(lines[p]) || skip.some(([a, b]) => p >= a && p < b)) continue;
-      let close = p + 1;
-      while (close < lines.length && !lines[close].trimEnd().endsWith('$$')) close++;
+      if (!isMathOpener(lines[p], scope.spec) || skip.some(([a, b]) => p >= a && p < b)) continue;
+      const close = mathCloseAfter(lines, p, scope.spec);
       if (close >= to && close < lines.length) mathHorizon = Math.max(mathHorizon, close + 1);
     }
   }
@@ -644,14 +664,14 @@ function parseRange(
       h++;
     }
     while (d < definitions.length && definitions[d].line < g.end) block.definitions.push(definitions[d++]);
-    collectBlockIds(g.tokens, block);
+    collectBlockIds(g.tokens, block, scope.spec);
     blocks.push(block);
   }
   return { blocks, trailing: complete ? definitions.slice(d) : [], mathHorizon };
 }
 
 /** A block's ids, footnote definitions and references; ids inside a definition go with it. */
-function collectBlockIds(tokens: Token[], block: Block): void {
+function collectBlockIds(tokens: Token[], block: Block, spec: SpecVersion): void {
   const open: number[] = [];
   for (const t of tokens) {
     if (t.type === 'smd_footnote_definition_open') {
@@ -663,7 +683,7 @@ function collectBlockIds(tokens: Token[], block: Block): void {
       continue;
     }
     const inside = open[open.length - 1] ?? -1;
-    collectIds([t], inside < 0 ? block.ids : block.notes[inside].ids, true);
+    collectIds([t], inside < 0 ? block.ids : block.notes[inside].ids, true, spec);
     block.noteRefs.push(...noteRefsIn(t, inside));
   }
 }
@@ -712,11 +732,11 @@ function documentNotes(blocks: Block[]): { notes: Block['notes']; refs: Block['n
   return { notes, refs };
 }
 
-function newEnv(lineOffset: number, labels: Iterable<string>, smdVariables: Variables = {}): ParseEnv {
+function newEnv(lineOffset: number, labels: Iterable<string>, smdVariables: Variables = {}, smdSpec: SpecVersion = 1): ParseEnv {
   const references: Record<string, unknown> = {};
   for (const label of labels) references[label] = { href: '', title: '' };
-  // Blocks are parsed apart from the front matter, so its variables come along explicitly (never from the source).
-  return { lineOffset, headings: [], slugs: new Map(), options: OPTIONS, bases: [], references, definitions: [], smdVariables };
+  // Blocks are parsed apart from the front matter, so its variables and spec version come along explicitly (never from the source).
+  return { lineOffset, headings: [], slugs: new Map(), options: OPTIONS, bases: [], references, definitions: [], smdVariables, smdSpec };
 }
 
 /** The `:::figure` openers among a block's tokens (nested ones too), with body-relative lines. */
@@ -829,20 +849,29 @@ function cutAt(source: string, part: string): number {
   return trimmed.endsWith(part) ? trimmed.length - part.length : -1;
 }
 
-function collectIds(tokens: Token[], out: Set<string> | string[], skipHeadings = false): void {
-  const add = (id: string) => (out instanceof Set ? out.add(id) : out.push(id));
+type IdSink = Set<string> | string[];
+
+const addId = (out: IdSink, id: string) => (out instanceof Set ? out.add(id) : out.push(id));
+
+/** A container's own `#id`, and the ids in its title when the container shows its title. */
+function containerIds(t: Token, out: IdSink, spec: SpecVersion): void {
+  const meta = t.meta as { name?: string; title?: string; attrs?: { id?: string } } | null;
+  if (meta?.attrs?.id) addId(out, meta.attrs.id);
+  if (meta?.title && rendersTitle(meta.name ?? '')) collectIds(titleParser().parseInline(meta.title, newEnv(0, [], {}, spec)), out, false, spec);
+}
+
+/** The `id` and `name` attributes written in raw HTML. */
+function htmlIds(t: Token, out: IdSink): void {
+  for (const m of t.content.matchAll(/\s(?:id|name)="([^"]*)"/g)) addId(out, unescapeHtml(m[1]));
+}
+
+function collectIds(tokens: Token[], out: IdSink, skipHeadings = false, spec: SpecVersion = 1): void {
   for (const t of tokens) {
     const id = t.attrGet('id');
-    if (id && !(skipHeadings && t.type === 'heading_open')) add(id);
-    const meta = t.meta as { name?: string; title?: string; attrs?: { id?: string } } | null;
-    if (t.type === 'container_smd_open') {
-      if (meta?.attrs?.id) add(meta.attrs.id);
-      if (meta?.title && rendersTitle(meta.name ?? '')) collectIds(titleParser().parseInline(meta.title, newEnv(0, [])), out);
-    }
-    if (t.type === 'html_block' || t.type === 'html_inline') {
-      for (const m of t.content.matchAll(/\s(?:id|name)="([^"]*)"/g)) add(unescapeHtml(m[1]));
-    }
-    if (t.children) collectIds(t.children, out, skipHeadings);
+    if (id && !(skipHeadings && t.type === 'heading_open')) addId(out, id);
+    if (t.type === 'container_smd_open') containerIds(t, out, spec);
+    if (t.type === 'html_block' || t.type === 'html_inline') htmlIds(t, out);
+    if (t.children) collectIds(t.children, out, skipHeadings, spec);
   }
 }
 

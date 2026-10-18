@@ -1,4 +1,7 @@
-import { CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, parseContainerInfo, type ContainerInfo } from './containers';
+import {
+  closeContainers, closerColons, CONTAINER_CLOSE, CONTAINER_OPEN, displayMath, openerColons, parseContainerInfo, type ContainerInfo,
+} from './containers';
+import { specVersion, type SpecVersion } from './specVersion';
 import { parseFenceInfo } from './fence';
 import { parseFrontMatter } from './frontmatter';
 import { EN, label, type Messages } from './i18n';
@@ -99,12 +102,21 @@ export interface IncludeScope {
   root?: string;
   /** What the whole document has included so far (shared by every scope of one document). */
   read: { count: number; chars: number };
+  /**
+   * The spec version of the root document, which every include it leads to is read with (`section=` matching, SPEC
+   * §3.4); 1 when left out.
+   */
+  spec?: SpecVersion;
 }
 
 const lf = (text: string) => text.replaceAll(/\r\n?/g, '\n');
 
-export function rootScope(root?: string): IncludeScope {
-  return { dir: '', chain: [], shift: 0, ...(root === undefined ? {} : { root: lf(root) }), read: { count: 0, chars: 0 } };
+/**
+ * The scope of a root document. `spec` is its spec version: a renderer passes the one on its env; line-based readers
+ * leave it out, and the root text's front matter decides.
+ */
+export function rootScope(root?: string, spec: SpecVersion = root === undefined ? 1 : specVersion(root)): IncludeScope {
+  return { dir: '', chain: [], shift: 0, ...(root === undefined ? {} : { root: lf(root) }), read: { count: 0, chars: 0 }, spec };
 }
 
 /** The scope of the document a loaded include reads. */
@@ -157,7 +169,7 @@ export function loadInclude(request: IncludeRequest, scope: IncludeScope, source
   if (scope.root !== undefined && lf(text) === scope.root) return fail('cycle', [...scope.chain, path]);
   if (text.length > INCLUDE_LIMITS.chars) return fail('too-large');
   const lines = text.split(/\r?\n/);
-  const range = includedRange(text, lines.length, request, source);
+  const range = includedRange(text, lines.length, request, source, scope.spec);
   if (!range) return fail('missing-section');
   if (!counted(scope.read, lines, range)) return fail('too-large');
   const own = request.level && range.top ? request.level - range.top : 0;
@@ -166,13 +178,13 @@ export function loadInclude(request: IncludeRequest, scope: IncludeScope, source
 
 interface LineRange { start: number; end: number; top?: number }
 
-/** The included lines, and the level of their top heading when `level` needs it. */
-function includedRange(text: string, lineCount: number, request: IncludeRequest, source: IncludeSource): LineRange | undefined {
+/** The included lines, and the level of their top heading when `level` needs it. `spec` is the including document's. */
+function includedRange(text: string, lineCount: number, request: IncludeRequest, source: IncludeSource, spec?: SpecVersion): LineRange | undefined {
   const body = { start: parseFrontMatter(text).bodyStartLine, end: lineCount - 1 };
   if (!request.section && !request.level) return body;
   const headings = source.headings(text);
   if (!request.section) return { ...body, top: headings.length ? Math.min(...headings.map((h) => h.level)) : undefined };
-  const hit = findSection(sectionsOf(headings, lineCount), request.section);
+  const hit = findSection(sectionsOf(headings, lineCount), request.section, spec);
   return hit && { start: hit.start, end: hit.end, top: hit.heading.level };
 }
 
@@ -231,9 +243,12 @@ export function* outsideCode(lines: string[], from: number, to: number): Generat
   }
 }
 
-/** Indexes of the lines in [from, to] outside fenced code and `$$` display math (fence lines themselves are left out too). */
-function* outsideFences(lines: string[], from: number, to: number): Generator<number> {
-  const inMath = displayMath(lines);
+/**
+ * Indexes of the lines in [from, to] outside fenced code and `$$` display math (fence lines themselves are left out too),
+ * display math as spec version `spec` reads it.
+ */
+function* outsideFences(lines: string[], from: number, to: number, spec: SpecVersion): Generator<number> {
+  const inMath = displayMath(lines, spec);
   for (const [i, fence] of outsideCode(lines, from, to)) if (!fence && !inMath(i)) yield i;
 }
 
@@ -246,10 +261,10 @@ export function rebaseFenceFile(info: string, dir: string): string {
 
 export interface IncludeBlock { line: number; info: ContainerInfo }
 
-/** Every `:::include` opening line in lines [from, to], outside code. */
-export function findIncludes(lines: string[], from = 0, to = lines.length - 1): IncludeBlock[] {
+/** Every `:::include` opening line in lines [from, to], outside code and math (as spec version `spec` reads it). */
+export function findIncludes(lines: string[], from = 0, to = lines.length - 1, spec: SpecVersion = 1): IncludeBlock[] {
   const found: IncludeBlock[] = [];
-  for (const i of outsideFences(lines, from, to)) {
+  for (const i of outsideFences(lines, from, to, spec)) {
     const open = CONTAINER_OPEN.exec(lines[i]);
     const info = open ? parseContainerInfo(open[3] + open[4]) : null;
     if (info?.name === 'include') found.push({ line: i, info });
@@ -257,12 +272,44 @@ export function findIncludes(lines: string[], from = 0, to = lines.length - 1): 
   return found;
 }
 
-/** The line of the `:::` closing the container opened on line `open`, or the last line when it is never closed. */
-export function containerEnd(lines: string[], open: number): number {
+/** Whether a document has an `:::include` outside code and math, as its spec version reads it. */
+export function hasIncludes(text: string): boolean {
+  if (!/include/i.test(text)) return false;
+  return findIncludes(text.split(/\r?\n/), 0, undefined, specVersion(text)).length > 0;
+}
+
+/**
+ * The last line of the container opened on line `open`: the line of the `:::` closing it, or the last line when it is
+ * never closed. Spec v2 pairs closing fences by colon count (closedBy in containers.ts), which needs the containers
+ * around it: the lines are read from `from` (the first body line) on. A container closed with one around it ends on
+ * the line before that one's fence.
+ */
+export function containerEnd(lines: string[], open: number, spec: SpecVersion = 1, from = 0): number {
+  if (spec === 2) return pairedClose(lines, open, from).end;
   let depth = 0;
-  for (const i of outsideFences(lines, open + 1, lines.length - 1)) {
+  for (const i of outsideFences(lines, open + 1, lines.length - 1, spec)) {
     if (CONTAINER_OPEN.test(lines[i])) depth++;
     else if (CONTAINER_CLOSE.test(lines[i]) && depth-- === 0) return i;
   }
   return lines.length - 1;
+}
+
+/**
+ * For spec v2, where the container opened on line `open` ends, the containers from line `from` (the first body line)
+ * on paired by colon count: its last line (see containerEnd), and whether that is a closing fence of its own.
+ */
+export function pairedClose(lines: string[], open: number, from = 0): { end: number; own: boolean } {
+  const stack: Array<{ line: number; colons: number }> = [];
+  for (const i of outsideFences(lines, Math.min(from, open), lines.length - 1, 2)) {
+    const colons = openerColons(lines[i]);
+    if (colons) {
+      stack.push({ line: i, colons });
+      continue;
+    }
+    if (!CONTAINER_CLOSE.test(lines[i])) continue;
+    const closed = closeContainers(stack, closerColons(lines[i]), 2, (o) => o.colons);
+    const at = closed.findIndex((o) => o.line === open);
+    if (at >= 0) return at === closed.length - 1 ? { end: i, own: true } : { end: i - 1, own: false };
+  }
+  return { end: lines.length - 1, own: false };
 }

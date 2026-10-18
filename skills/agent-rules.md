@@ -1,6 +1,6 @@
 ## Styled Markdown (.smd)
 
-`.smd` files are Styled Markdown: Markdown plus `:::` containers, `{…}` attributes and `:name[…]` directives. Work with them through the `smd` CLI, run from the repository root as `{{smd}} <command>` (Node.js 18+, no install), or as `smd` if it is on PATH.
+`.smd` files are Styled Markdown: Markdown plus `:::` containers, `{…}` attributes and `:name[…]` directives. Work with them through the `smd` CLI, run from the repository root as `{{smd}} <command>` (Node.js 22+, no install), or as `smd` if it is on PATH.
 
 ### Reading
 
@@ -13,7 +13,8 @@
 
 ### Writing
 
-- Start from a template when one fits (`{{smd}} templates` lists them: prd, adr, rfc, runbook, api, status-report, meeting-notes, postmortem, release-notes, okrs, onboarding, test-plan, pr-description): `{{smd}} init docs/x.smd --template <name> --title "…"`. Otherwise start with front matter: `smd: 1`, `title`, `summary` (one or two sentences), `status: draft`, `owners`, `updated`.
+- Start from a template when one fits (`{{smd}} templates` lists them: prd, adr, rfc, runbook, api, status-report, meeting-notes, postmortem, release-notes, okrs, onboarding, test-plan, pr-description): `{{smd}} init docs/x.smd --template <name> --title "…"`. Otherwise start with front matter: `smd: 2`, `title`, `summary` (one or two sentences), `status: draft`, `owners`, `updated`.
+- `smd: 2` shows text as written: straight quotes stay straight (type `—` or add `typography: true`), only `https://`, `www.` and e-mail addresses become links, and any `:name[…]` is a directive (`\:name[…]` keeps it text). Keep an existing document's `smd` value; `{{smd}} migrate <file> --to 2` moves one to spec v2.
 - Write normal Markdown and add Styled Markdown only where it helps: `:::warning Title` … `:::` (also `note`, `info`, `tip`, `danger`, `question`, `details`), `:::agent` for instructions to agents, `:::decision{status=accepted owner=@a} Title`, `:::risk{impact=high likelihood=low} Title`, `:::api{method=POST path="/v1/x"} Title`, `- [ ] Task :priority[P1] @owner :due[2026-10-15]`, `[text]{color=red}`, `:badge[Beta]{color=amber}`, ```` ```mermaid ```` diagrams.
 - A line with only `:::` closes the innermost container. Attributes go directly after the name, with no space. Use named colors. Don't repeat the `title` as a `# H1`. Mark human-only sections `## Background {agent=skip}`.
 - Before you finish, run `{{smd}} validate <file> --fix` until there are 0 errors, then `{{smd}} fmt <file>`.

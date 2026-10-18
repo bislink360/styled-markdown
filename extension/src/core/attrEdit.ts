@@ -1,7 +1,8 @@
-import { findAttrsEnd, itemValue, lexAttrItems } from './attrs';
+import { escapeQuoted, findAttrsEnd, itemValue, lexAttrItems } from './attrs';
 import { CONTAINER_OPEN } from './containers';
 import { attrRank, quote } from './format';
 import { CONTAINERS } from './spec';
+import type { SpecVersion } from './specVersion';
 import { own } from './util';
 
 /**
@@ -43,12 +44,12 @@ const KEY: AttrKind = 'key';
 const ID: AttrKind = 'id';
 
 /** One lexed item, its whitespace trimmed off. */
-function lexItem(m: RegExpExecArray, pos: number): AttrItem {
+function lexItem(m: RegExpExecArray, pos: number, spec: SpecVersion): AttrItem {
   const text = m[0];
   const start = pos + text.length - text.trimStart().length;
   const end = pos + text.trimEnd().length;
   if (m[1]) return { kind: m[1] === '.' ? 'class' : ID, name: m[2], start, end, quote: '' };
-  const { value, quote } = itemValue(m);
+  const { value, quote } = itemValue(m, spec);
   const item: AttrItem = { kind: KEY, name: m[3], start, end, quote };
   if (value === undefined) return item;
   // The value as written (escapes and all), with its quotes.
@@ -61,8 +62,8 @@ function lexItem(m: RegExpExecArray, pos: number): AttrItem {
  * text. They are the items parseAttrs reads (lexAttrItems), so values come unescaped. Later items win in
  * parseAttrs, so the last of a repeated key is the one that counts.
  */
-export function lexAttrs(src: string): AttrItem[] | null {
-  return lexAttrItems(src)?.map(({ match, pos }) => lexItem(match, pos)) ?? null;
+export function lexAttrs(src: string, spec: SpecVersion = 1): AttrItem[] | null {
+  return lexAttrItems(src, spec)?.map(({ match, pos }) => lexItem(match, pos, spec)) ?? null;
 }
 
 const splice = (text: string, span: Span, insert: string) => text.slice(0, span.start) + insert + text.slice(span.end);
@@ -76,10 +77,11 @@ function lastIndex(items: readonly AttrItem[], test: (item: AttrItem) => boolean
 const lastIndexOf = (items: readonly AttrItem[], kind: AttrKind, name?: string) =>
   lastIndex(items, (i) => i.kind === kind && (name === undefined || i.name === name));
 
-/** `value` in the quotes it had, when they can still hold it. */
-function inSameQuotes(value: string, style: QuoteStyle): string | undefined {
+/** `value` in the quotes it had, when they can still hold it (in spec v2 with the backslashes it needs, see escapeQuoted). */
+function inSameQuotes(value: string, style: QuoteStyle, spec: SpecVersion): string | undefined {
   if (style === '') return BARE_VALUE.test(value) ? value : undefined;
-  return value.includes(style) ? undefined : `${style}${value}${style}`;
+  if (value.includes(style)) return undefined;
+  return `${style}${spec >= 2 ? escapeQuoted(value, style) : value}${style}`;
 }
 
 /** A value no attribute list can hold on its line: a line break. (Both kinds of quote are written with `\"`.) */
@@ -92,25 +94,25 @@ const unwritable = (value: AttrValue) => value !== true && /[\r\n]/.test(value);
  * (CONTAINERS[name].attrs). Null when `src` is malformed or no attribute list can hold the value (a line break, or
  * backslashes before quotes that would read as escapes).
  */
-export function setAttr(src: string, key: string, value: AttrValue, order: readonly string[] = []): string | null {
-  const out = writeAttr(src, key, value, order);
+export function setAttr(src: string, key: string, value: AttrValue, order: readonly string[] = [], spec: SpecVersion = 1): string | null {
+  const out = writeAttr(src, key, value, { order, spec });
   if (out === null || value === true) return out;
-  const items = lexAttrs(out);
+  const items = lexAttrs(out, spec);
   return items?.[lastIndexOf(items, KEY, key)]?.value === value ? out : null;
 }
 
-function writeAttr(src: string, key: string, value: AttrValue, order: readonly string[]): string | null {
-  const items = lexAttrs(src);
+function writeAttr(src: string, key: string, value: AttrValue, { order, spec }: { order: readonly string[]; spec: SpecVersion }): string | null {
+  const items = lexAttrs(src, spec);
   if (!items || unwritable(value) || !/^[A-Za-z_][\w-]*$/.test(key)) return null;
   const index = lastIndexOf(items, KEY, key);
-  if (index < 0) return insertItem(src, items, key, value === true ? key : `${key}=${quote(key, value, order)}`, order);
+  if (index < 0) return insertItem(src, items, key, value === true ? key : `${key}=${quote(key, value, order, spec)}`, order);
   const item = items[index];
   if (value === true) return item.value === undefined ? src : splice(src, item, key);
-  if (!item.valueSpan) return splice(src, { start: item.end, end: item.end }, `=${quote(key, value, order)}`);
+  if (!item.valueSpan) return splice(src, { start: item.end, end: item.end }, `=${quote(key, value, order, spec)}`);
   // A value quoted as formatAttrs quotes it stays formatted; one quoted by hand keeps its quotes if it can.
-  const formatted = src.slice(item.valueSpan.start, item.valueSpan.end) === quote(key, item.value!, order);
-  const kept = formatted ? undefined : inSameQuotes(value, item.quote);
-  return splice(src, item.valueSpan, kept ?? quote(key, value, order));
+  const formatted = src.slice(item.valueSpan.start, item.valueSpan.end) === quote(key, item.value!, order, spec);
+  const kept = formatted ? undefined : inSameQuotes(value, item.quote, spec);
+  return splice(src, item.valueSpan, kept ?? quote(key, value, order, spec));
 }
 
 /** Where formatAttrs would put each item: the id, the classes, then the keys by attrRank. */
@@ -139,28 +141,28 @@ function removeItem(src: string, items: readonly AttrItem[], index: number): str
 }
 
 /** Remove every item of a kind (and name). */
-function removeAll(src: string, kind: AttrKind, name?: string): string | null {
+function removeAll(src: string, kind: AttrKind, name: string | undefined, spec: SpecVersion): string | null {
   let out = src;
-  let items = lexAttrs(out);
+  let items = lexAttrs(out, spec);
   if (!items) return null;
   let index = lastIndexOf(items, kind, name);
   while (index >= 0) {
     out = removeItem(out, items, index);
-    items = lexAttrs(out) ?? [];
+    items = lexAttrs(out, spec) ?? [];
     index = lastIndexOf(items, kind, name);
   }
   return out;
 }
 
 /** Remove `key` (every time it is written) from the inside of an attribute list; null when `src` is malformed. */
-export function removeAttr(src: string, key: string): string | null {
-  return removeAll(src, KEY, key);
+export function removeAttr(src: string, key: string, spec: SpecVersion = 1): string | null {
+  return removeAll(src, KEY, key, spec);
 }
 
 /** Set the `#id` (the last one, which wins), or remove every id when `id` is undefined. Null for a malformed list or id. */
-export function setId(src: string, id: string | undefined): string | null {
-  if (id === undefined) return removeAll(src, ID);
-  const items = lexAttrs(src);
+export function setId(src: string, id: string | undefined, spec: SpecVersion = 1): string | null {
+  if (id === undefined) return removeAll(src, ID, undefined, spec);
+  const items = lexAttrs(src, spec);
   if (!items || !ID_NAME.test(id)) return null;
   const index = lastIndexOf(items, ID);
   if (index >= 0) return splice(src, { start: items[index].start + 1, end: items[index].end }, id);
@@ -185,7 +187,7 @@ export interface ContainerHeader {
 }
 
 /** The parts of a container's opening line, or null when it isn't one. */
-export function containerHeader(line: string): ContainerHeader | null {
+export function containerHeader(line: string, spec: SpecVersion = 1): ContainerHeader | null {
   const m = CONTAINER_OPEN.exec(line);
   if (!m) return null;
   const [, indent, colons, name, rest] = m;
@@ -193,7 +195,7 @@ export function containerHeader(line: string): ContainerHeader | null {
   const nameStart = restStart - name.length;
   let titleFrom = restStart;
   let attrs: Span | undefined;
-  const close = rest.startsWith('{') ? findAttrsEnd(rest, 0) : -1;
+  const close = rest.startsWith('{') ? findAttrsEnd(rest, 0, spec) : -1;
   if (close !== -1) {
     attrs = { start: restStart, end: restStart + close + 1 };
     titleFrom = attrs.end;
@@ -233,15 +235,15 @@ function editHeaderAttrs(line: string, h: ContainerHeader, edit: (inner: string)
 }
 
 /** Set an attribute on a container's opening line; null when the line isn't one or the value can't be written. */
-export function setContainerAttr(line: string, key: string, value: AttrValue): string | null {
-  const h = containerHeader(line);
-  return h && editHeaderAttrs(line, h, (inner) => setAttr(inner, key, value, containerOrder(h.nameText)));
+export function setContainerAttr(line: string, key: string, value: AttrValue, spec: SpecVersion = 1): string | null {
+  const h = containerHeader(line, spec);
+  return h && editHeaderAttrs(line, h, (inner) => setAttr(inner, key, value, containerOrder(h.nameText), spec));
 }
 
 /** Remove an attribute from a container's opening line (and the braces when nothing is left). */
-export function removeContainerAttr(line: string, key: string): string | null {
-  const h = containerHeader(line);
-  return h && editHeaderAttrs(line, h, (inner) => removeAttr(inner, key));
+export function removeContainerAttr(line: string, key: string, spec: SpecVersion = 1): string | null {
+  const h = containerHeader(line, spec);
+  return h && editHeaderAttrs(line, h, (inner) => removeAttr(inner, key, spec));
 }
 
 /**
@@ -249,16 +251,16 @@ export function removeContainerAttr(line: string, key: string): string | null {
  * parseContainerInfo), else as the text after the name and attributes. An empty title removes it. Line breaks
  * become spaces.
  */
-export function setContainerTitle(line: string, title: string): string | null {
-  const h = containerHeader(line);
+export function setContainerTitle(line: string, title: string, spec: SpecVersion = 1): string | null {
+  const h = containerHeader(line, spec);
   if (!h) return null;
   const text = title.split(/\r\n|[\r\n]/).map((part) => part.trim()).filter(Boolean).join(' ');
   const inner = h.attrs ? line.slice(h.attrs.start + 1, h.attrs.end - 1) : '';
-  if (h.attrs && lexAttrs(inner)?.some((i) => i.kind === KEY && i.name === TITLE)) {
-    if (text) return editHeaderAttrs(line, h, (src) => setAttr(src, TITLE, text, containerOrder(h.nameText)));
+  if (h.attrs && lexAttrs(inner, spec)?.some((i) => i.kind === KEY && i.name === TITLE)) {
+    if (text) return editHeaderAttrs(line, h, (src) => setAttr(src, TITLE, text, containerOrder(h.nameText), spec));
     // Removing title="…" would make the text after it the title: remove both.
     const untitled = splice(line, { start: h.attrs.end, end: h.title.end }, '');
-    return editHeaderAttrs(untitled, { ...h, title: { start: h.attrs.end, end: h.attrs.end } }, (src) => removeAttr(src, TITLE));
+    return editHeaderAttrs(untitled, { ...h, title: { start: h.attrs.end, end: h.attrs.end } }, (src) => removeAttr(src, TITLE, spec));
   }
   if (h.title.end > h.title.start) return splice(line, text ? h.title : { start: titleGapStart(h), end: h.title.end }, text);
   return text ? splice(line, h.title, ` ${text}`) : line;

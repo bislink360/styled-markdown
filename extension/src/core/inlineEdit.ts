@@ -7,6 +7,7 @@ import { inlineDirective, styledSpan, type DirectiveMeta, type SpanMeta } from '
 import type { SmdContext } from './markdownItSetup';
 import { createMarkdownIt } from './render';
 import { INLINE_DIRECTIVES } from './spec';
+import type { SpecEnv, SpecVersion } from './specVersion';
 import { own } from './util';
 
 /**
@@ -236,10 +237,11 @@ function placeOf(r: Recorded, text: string, lines: readonly string[], layout: La
  * `lines` (the block's own lines, as split on line breaks). Directives and spans inside code, math, HTML, escapes,
  * link destinations, image text and `:::include` blocks are not there, as they are not rendered as such.
  */
-export function scanInline(lines: readonly string[], options: { allowHtml?: boolean } = {}): InlineItem[] {
+export function scanInline(lines: readonly string[], options: { allowHtml?: boolean; spec?: SpecVersion } = {}): InlineItem[] {
   const md = parser(options.allowHtml ?? true);
   const source = lines.map(normalized);
-  const env: RecordingEnv & Record<string, unknown> = {};
+  // The block is read with its document's spec version, as rendering reads it.
+  const env: RecordingEnv & SpecEnv & Record<string, unknown> = { smdSpec: options.spec ?? 1 };
   const tokens: Token[] = [];
   md.block.parse(source.join('\n'), md, env, tokens);
   const items: InlineItem[] = [];
@@ -270,11 +272,11 @@ const splice = (text: string, span: Span, insert: string) => text.slice(0, span.
 export const inlineOrder = (name: string): readonly string[] => (name === SPAN ? [] : own(INLINE_DIRECTIVES, name)?.attrs ?? []);
 
 /** The inside of an attribute list with the change's attributes set or removed; null when one can't be written. */
-function editAttrs(inner: string, name: string, attrs: Readonly<Record<string, string | null>>): string | null {
+function editAttrs(inner: string, name: string, attrs: Readonly<Record<string, string | null>>, spec: SpecVersion): string | null {
   let out: string | null = inner;
   for (const [key, value] of Object.entries(attrs)) {
     if (out === null) return null;
-    out = value === null ? removeAttr(out, key) : setAttr(out, key, value, inlineOrder(name));
+    out = value === null ? removeAttr(out, key, spec) : setAttr(out, key, value, inlineOrder(name), spec);
   }
   return out;
 }
@@ -283,14 +285,15 @@ function editAttrs(inner: string, name: string, attrs: Readonly<Record<string, s
  * The item's line with the change made: the content inside its brackets, the attributes inside its braces (kept
  * in their order and quotes; new keys at their canonical place, as `smd fmt` writes them). A directive with
  * content loses `{}` when no attribute is left; a span, or a directive without brackets, keeps it, since without
- * it the text would no longer be one. Null when the item has no place or the change can't be written there.
+ * it the text would no longer be one. Null when the item has no place or the change can't be written there. Values
+ * are written with the escapes of `spec`, the document's spec version.
  */
-export function editInline(line: string, item: InlineItem, change: InlineChange): string | null {
+export function editInline(line: string, item: InlineItem, change: InlineChange, spec: SpecVersion = 1): string | null {
   const at = item.at;
   if (!at) return null;
   let attrsText = at.attrs ? line.slice(at.attrs.start + 1, at.attrs.end - 1) : '';
   if (change.attrs) {
-    const next = editAttrs(attrsText, item.name, change.attrs);
+    const next = editAttrs(attrsText, item.name, change.attrs, spec);
     if (next === null) return null;
     attrsText = next;
   }

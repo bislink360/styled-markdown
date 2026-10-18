@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { agentView, indexEntry, outline, smdIndex, INDEX_FORMAT, SMD_VERSION } from '../src/core';
+import { agentView, indexEntry, outline, smdIndex, INDEX_FORMAT, LATEST_SPEC } from '../src/core';
 
 const doc = [
   '---', 'title: Checkout plan', 'summary: One-page checkout.', 'status: review',
@@ -35,7 +35,7 @@ test('indexEntry lists metadata, token costs and routing counts', () => {
   const entry = indexEntry(doc, 'docs/plan.smd', { today: '2026-09-20' });
   const view = agentView(doc, { today: '2026-09-20' });
   assert.deepEqual({ ...entry, sections: undefined }, {
-    path: 'docs/plan.smd', title: 'Checkout plan', summary: 'One-page checkout.', status: 'review',
+    path: 'docs/plan.smd', smd: 1, title: 'Checkout plan', summary: 'One-page checkout.', status: 'review',
     owners: ['@maya', '@payments'], tags: ['checkout', 'q4'], audience: 'both', updated: '2026-09-01', related: ['adr-0007.smd'],
     tokens: { file: view.originalTokens, agent: view.tokens },
     counts: {
@@ -81,10 +81,26 @@ test('smdIndex sorts documents by path, lists each once and is deterministic', (
   ];
   const catalog = smdIndex(docs, { generator: 'smd test' });
   assert.equal(catalog.format, INDEX_FORMAT);
-  assert.deepEqual([catalog.version, catalog.smd, catalog.generator], [1, SMD_VERSION, 'smd test']);
+  assert.deepEqual([catalog.version, catalog.smd, catalog.generator], [1, LATEST_SPEC, 'smd test']);
+  assert.equal(LATEST_SPEC, 2, 'the catalog names the newest spec version the tool knows');
   assert.deepEqual(catalog.documents.map((d) => d.path), ['B.smd', 'a.smd', 'b/z.smd']);
   assert.equal(JSON.stringify(smdIndex(docs, { generator: 'smd test' })), JSON.stringify(catalog));
   assert.equal('generator' in smdIndex([]), false);
+});
+
+test('each catalog entry has its document\'s spec version, as every reader reads it', () => {
+  const entry = (front: string) => indexEntry(`${front}# T\n`, 't.smd').smd;
+  assert.equal(entry(''), 1, 'no front matter');
+  assert.equal(entry('---\ntitle: T\n---\n'), 1, 'no smd key');
+  assert.equal(entry('---\nsmd: 1\n---\n'), 1);
+  assert.equal(entry('---\nsmd: 2\n---\n'), 2);
+  assert.equal(entry('---\nsmd: "2"\n---\n'), 2);
+  assert.equal(entry('---\nsmd: 3\n---\n'), 2, 'a newer version reads with the newest rules');
+  assert.equal(entry('---\nsmd: true\n---\n'), 1, 'an invalid value is version 1');
+  // Additive: the rest of the entry is what it is for the same document with smd: 1.
+  const v1 = indexEntry(doc.replace('---\n', '---\nsmd: 1\n'), 'p.smd');
+  const v2 = indexEntry(doc.replace('---\n', '---\nsmd: 2\n'), 'p.smd');
+  assert.deepEqual({ ...v2, smd: 1 }, v1);
 });
 
 // Requires `npm run build`.

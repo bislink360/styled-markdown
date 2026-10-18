@@ -6,7 +6,7 @@ branding:
   color: purple
 
 # Runs the smd CLI bundled in this repository (skills/styled-markdown-reader/scripts/smd.cjs) with the
-# runner's Node.js (18+; GitHub-hosted runners have it). Nothing is installed or downloaded.
+# runner's Node.js (22+; add actions/setup-node first if the runner's is older). Nothing is installed or downloaded.
 inputs:
   paths:
     description: "Files or folders to check, one per line (paths may contain spaces). Relative to the repository root."

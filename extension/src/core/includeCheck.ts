@@ -1,9 +1,10 @@
 import { parseFrontMatter } from './frontmatter';
 import {
-  cycleText, findIncludes, includePath, includeRequest, innerScope, INCLUDE_LIMITS, isHeadingLevel, loadInclude, rootScope,
+  cycleText, findIncludes, hasIncludes, includePath, includeRequest, innerScope, INCLUDE_LIMITS, isHeadingLevel, loadInclude, rootScope,
   type IncludeBlock, type IncludeFailure, type IncludeRequest, type IncludeScope, type IncludeSource, type LoadedInclude,
 } from './include';
 import { includeSource } from './includeText';
+import { specVersion, type SpecVersion } from './specVersion';
 import { anchorIds } from './links';
 import { renderSmd } from './render';
 import { attrValueFix } from './fixes';
@@ -11,8 +12,10 @@ import { findSection, matchesExactly, sectionsOf } from './sections';
 import type { Fix, Severity } from './validate';
 
 /**
- * Validation of `:::include` blocks. Every problem is a warning: the block still renders, with its fallback. A
- * section found only by a part of its heading's text is an info (`include/section-match`), since spec v2 matches exactly.
+ * Validation of `:::include` blocks. Every problem is a warning: the block still renders, with its fallback. Sections
+ * are found as the including document's spec version finds them (SPEC §3.4). In spec v1, a section found only by a part
+ * of its heading's text is an info (`include/section-match`), since spec v2 matches exactly; a spec v2 document never
+ * finds one that way, so its section is missing instead (`include/missing-section`).
  */
 
 /** Reports a problem on `line`, columns [column, endColumn): a warning unless `severity` says otherwise. */
@@ -32,8 +35,10 @@ export function checkIncludes(text: string, report: IncludeReport, options: Incl
   const lines = text.split(/\r?\n/);
   const scope = rootScope(text);
   const source = includeSource(options.readFile);
-  for (const block of findIncludes(lines, parseFrontMatter(text).bodyStartLine)) {
-    checkInclude(block, lines[block.line], { scope, source, report, options });
+  const fm = parseFrontMatter(text);
+  const spec = specVersion(fm.data);
+  for (const block of findIncludes(lines, fm.bodyStartLine, undefined, spec)) {
+    checkInclude(block, lines[block.line], { scope, source, report, options, spec });
   }
 }
 
@@ -42,6 +47,8 @@ interface Check {
   source: IncludeSource;
   report: IncludeReport;
   options: IncludeCheckOptions;
+  /** The document's spec version, which included text is read with too. */
+  spec: SpecVersion;
 }
 
 function checkInclude(block: IncludeBlock, raw: string, check: Check): void {
@@ -66,9 +73,10 @@ function checkInclude(block: IncludeBlock, raw: string, check: Check): void {
 
 /**
  * `section="deploy"` that finds `## Rapid deployment` only because the heading's text contains it. Spec v2 matches an
- * exact id or the whole heading text, so this is an info, with a fix to the id of the heading it finds.
+ * exact id or the whole heading text, so this is an info, with a fix to the id of the heading it finds. Spec v1 only.
  */
 function sectionMatch(block: IncludeBlock, raw: string, request: IncludeRequest, check: Check): void {
+  if (check.scope.spec === 2) return;
   const path = includePath('', request.file);
   const text = check.source.readFile?.(path);
   if (text === undefined || !request.section) return;
@@ -91,18 +99,18 @@ function includeProblem(request: IncludeRequest, check: Check): { code: string; 
     return missing ? { code: 'include/missing-file', message: `Cannot include "${path}": the file does not exist.` } : undefined;
   }
   const result = loadInclude(request, check.scope, check.source);
-  const failure = result.ok ? nestedFailure(result.include, check.scope, check.source) : result;
+  const failure = result.ok ? nestedFailure(result.include, check.scope, check.source, check.spec) : result;
   return failure && problemOf(failure, check.options);
 }
 
 /** A cycle, or a limit, that a loaded include runs into further down. */
-function nestedFailure(include: LoadedInclude, outer: IncludeScope, source: IncludeSource): IncludeFailure | undefined {
+function nestedFailure(include: LoadedInclude, outer: IncludeScope, source: IncludeSource, spec: SpecVersion): IncludeFailure | undefined {
   const scope = innerScope(outer, include);
-  for (const block of findIncludes(include.lines, include.start, include.end)) {
+  for (const block of findIncludes(include.lines, include.start, include.end, spec)) {
     const request = includeRequest(block.info.attrs.values);
     const result = request && loadInclude(request, scope, source);
     if (!result) continue;
-    const failure = result.ok ? nestedFailure(result.include, scope, source) : result;
+    const failure = result.ok ? nestedFailure(result.include, scope, source, spec) : result;
     if (failure && failure.problem !== 'missing-file' && failure.problem !== 'missing-section') return failure;
   }
   return undefined;
@@ -134,7 +142,7 @@ function problemOf(failure: IncludeFailure, options: IncludeCheckOptions): { cod
 /** Ids a `#fragment` in the document can point at, the headings its includes bring in included. */
 export function documentIds(text: string, readFile?: (relativePath: string) => string | undefined): Set<string> {
   const ids = anchorIds(text);
-  if (!readFile || !findIncludes(text.split(/\r?\n/)).length) return ids;
+  if (!readFile || !hasIncludes(text)) return ids;
   for (const h of renderSmd(text, { readFile }).headings) ids.add(h.slug);
   return ids;
 }
@@ -143,7 +151,7 @@ const FIGURE_ID = /<figure id="([^"]+)" class="smd-figure /g;
 
 /** Ids of the figures the document's includes bring in, which `:ref[id]` may name (none without includes). */
 export function includedFigureIds(text: string, readFile?: (relativePath: string) => string | undefined): Set<string> {
-  if (!readFile || !findIncludes(text.split(/\r?\n/)).length) return new Set();
+  if (!readFile || !hasIncludes(text)) return new Set();
   const html = renderSmd(text, { readFile }).html;
   return new Set([...html.matchAll(FIGURE_ID)].map((m) => decodeHtml(m[1])));
 }
@@ -152,7 +160,7 @@ const TERM_USE = /<a class="smd-term" href="#([^"]+)"/g;
 
 /** Ids of the glossary terms the rendered document uses, included text too (none without includes). */
 export function includedTermIds(text: string, readFile?: (relativePath: string) => string | undefined): Set<string> {
-  if (!readFile || !findIncludes(text.split(/\r?\n/)).length) return new Set();
+  if (!readFile || !hasIncludes(text)) return new Set();
   const html = renderSmd(text, { readFile }).html;
   return new Set([...html.matchAll(TERM_USE)].map((m) => decodeHtml(m[1])));
 }

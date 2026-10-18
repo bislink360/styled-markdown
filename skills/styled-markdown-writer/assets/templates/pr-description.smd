@@ -1,5 +1,5 @@
 ---
-smd: 1
+smd: 2
 title: "{{title}}"
 summary: What this pull request changes and why, in one or two sentences.
 status: review
