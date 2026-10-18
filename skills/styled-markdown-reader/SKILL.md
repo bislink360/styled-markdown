@@ -14,7 +14,7 @@ description: Read and query Styled Markdown (.smd) files token-efficiently, focu
 The bundled CLI strips the first two and lets you pull only the sections you need.
 
 ```bash
-node <this-skill-dir>/scripts/smd.cjs <command> …    # or `smd` if on PATH; Node 18+, no install
+node <this-skill-dir>/scripts/smd.cjs <command> …    # or `smd` if on PATH; Node 22+, no install
 ```
 
 ## Workflow

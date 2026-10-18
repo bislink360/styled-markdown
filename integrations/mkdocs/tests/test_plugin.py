@@ -165,7 +165,7 @@ def test_missing_node_on_path_fails_with_a_clear_message(site):
     env = dict(os.environ, PATH=str(Path(sys.executable).parent))
     result = site.build(env=env)
     assert result.returncode != 0
-    assert "Node.js 18+ is needed to render .smd pages, but 'node' was not found on PATH" in result.stderr
+    assert "Node.js 22+ is needed to render .smd pages, but 'node' was not found on PATH" in result.stderr
 
 
 def test_node_option_names_the_executable(site):
@@ -177,7 +177,7 @@ def test_node_option_names_the_executable(site):
 
 def test_bridge_without_node_raises_plugin_error(monkeypatch):
     monkeypatch.setattr(bridge_module.shutil, "which", lambda _name: None)
-    with pytest.raises(PluginError, match=r"Node\.js 18\+ is needed"):
+    with pytest.raises(PluginError, match=r"Node\.js 22\+ is needed"):
         NodeBridge()
 
 

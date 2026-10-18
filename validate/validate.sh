@@ -14,10 +14,10 @@ usage_error() {
 }
 
 if ! command -v node > /dev/null 2>&1; then
-  usage_error "Node.js 18 or later is required: add actions/setup-node before this step."
+  usage_error "Node.js 22 or later is required: add actions/setup-node before this step."
 fi
-if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 18 ? 0 : 1)'; then
-  usage_error "Node.js 18 or later is required (found $(node --version)): add actions/setup-node before this step."
+if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; then
+  usage_error "Node.js 22 or later is required (found $(node --version)): add actions/setup-node before this step."
 fi
 if [ ! -f "$cli" ]; then usage_error "smd CLI not found: $cli"; fi
 

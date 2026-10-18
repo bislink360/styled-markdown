@@ -22,11 +22,11 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 
 | Component | Needs |
 |---|---|
-| VS Code extension | VS Code **1.90 or newer**, or a VS Code-compatible editor that installs `.vsix` files (Cursor, VSCodium, Windsurf) |
-| CLI and agent skills | **Node.js 18 or newer** |
-| MkDocs plugin | Python 3.9+, MkDocs 1.6+ and **Node.js 18 or newer** on `PATH` |
+| VS Code extension | VS Code **1.97 or newer**, or a VS Code-compatible editor that installs `.vsix` files (Cursor, VSCodium, Windsurf) |
+| CLI and agent skills | **Node.js 22 or newer** |
+| MkDocs plugin | Python 3.9+, MkDocs 1.6+ and **Node.js 22 or newer** on `PATH` |
 | Obsidian plugin | Obsidian **1.4 or newer**, desktop or mobile |
-| Building from source | Node.js 18+, npm, Git |
+| Building from source | Node.js 22+, npm, Git |
 | Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd export --to docx` and **Export to Word (.docx)** |
 
 ## Install the VS Code extension
@@ -163,7 +163,7 @@ jobs:
           fail-on: warning
 ```
 
-It runs the `smd` CLI bundled in the repository with the runner's Node.js (18 or later; GitHub-hosted Ubuntu, Windows and macOS runners have it, otherwise add `actions/setup-node` first). Nothing is installed or downloaded.
+It runs the `smd` CLI bundled in the repository with the runner's Node.js (22 or later since 2.0; add `actions/setup-node` with `node-version: 22` before it when the runner's is older). Nothing is installed or downloaded.
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -215,7 +215,7 @@ Then run `pre-commit install` once. The hooks (from v1.5.0):
 
 Other `args` are passed to the command, e.g. `[--config, docs/smd.config.json]` or `[--stale-after, '0']` for `smd-validate`.
 
-The hooks use `language: node`: pre-commit installs this repository's root `package.json`, whose only file is the bundled single-file CLI (`skills/styled-markdown-reader/scripts/smd.cjs`), so there are no dependencies and nothing comes from the npm registry. On macOS and Linux pre-commit uses the `node` and `npm` on your PATH; without them, and always on Windows, it downloads a private Node.js once. The single-file CLI doesn't include the Mermaid parser, so the hooks don't report `mermaid/syntax`; run `smd validate` from the npm package in CI for that.
+The hooks use `language: node`: pre-commit installs this repository's root `package.json`, whose only file is the bundled single-file CLI (`skills/styled-markdown-reader/scripts/smd.cjs`), so there are no dependencies and nothing comes from the npm registry. On macOS and Linux pre-commit uses the `node` (22 or newer) and `npm` on your PATH; without them, and always on Windows, it downloads a private Node.js once. The single-file CLI doesn't include the Mermaid parser, so the hooks don't report `mermaid/syntax`; run `smd validate` from the npm package in CI for that.
 
 ### With lint-staged and husky
 
@@ -257,7 +257,7 @@ It checks the files as they are in the working tree and doesn't change them; `--
 
 ## MkDocs plugin
 
-`mkdocs-styled-markdown` makes the `.smd` files in an [MkDocs](https://www.mkdocs.org) site's `docs_dir` pages, rendered by the same engine as `smd export --to html`, inside the site's theme. It is a Python package that ships the engine as a Node.js script, so the machine that builds the site needs Node.js 18+ on `PATH` (no npm install).
+`mkdocs-styled-markdown` makes the `.smd` files in an [MkDocs](https://www.mkdocs.org) site's `docs_dir` pages, rendered by the same engine as `smd export --to html`, inside the site's theme. It is a Python package that ships the engine as a Node.js script, so the machine that builds the site needs Node.js 22+ on `PATH` (no npm install).
 
 Until it is on PyPI, install the wheel from the GitHub release (each release attaches `mkdocs_styled_markdown-X.Y.Z-py3-none-any.whl` and the `.tar.gz` source):
 
@@ -329,4 +329,4 @@ The Obsidian plugin builds with the same toolchain: after `npm install` in `exte
 | Exported HTML has no diagrams or math offline | The HTML export loads Mermaid and KaTeX from a CDN, so open it with internet access. The in-editor preview works offline. |
 | Embedded code shows "Cannot read …" | The path is relative to the `.smd` file and must stay inside the workspace (or the document's folder). |
 | `code` command not found | In VS Code, run **Shell Command: Install 'code' command in PATH** (macOS), or reinstall VS Code with *Add to PATH* (Windows). |
-| `smd` prints `node: not found` | Install Node.js 18+ from [nodejs.org](https://nodejs.org). |
+| `smd` prints `node: not found` | Install Node.js 22+ from [nodejs.org](https://nodejs.org). |

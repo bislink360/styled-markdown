@@ -7,7 +7,7 @@ description: Create and edit Styled Markdown (.smd) documents that follow the .s
 
 `.smd` is Markdown plus a small, validated vocabulary: callouts, decisions, risks, API blocks, tasks with owners and due dates, KPIs, diagrams, and audience blocks. Documents are read by **people** in a styled preview and by **AI agents** through a compact "agent view". Write for both.
 
-Tool (Node 18+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (or `smd` if it's on PATH).
+Tool (Node 22+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (or `smd` if it's on PATH).
 
 ## Workflow
 

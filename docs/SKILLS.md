@@ -7,7 +7,7 @@ Styled Markdown ships two **agent skills**: folders of instructions, references,
 | **`styled-markdown-writer`** | **Create and edit `.smd` that follows the rules.** It picks the right template, uses only valid blocks and values, validates and auto-fixes, and writes documents that are cheap for other agents to read. | `SKILL.md`, `references/syntax.md` (complete syntax), `references/style-guide.md` (authoring rules), `assets/templates/*.smd` (13 templates), `scripts/smd.cjs` |
 | **`styled-markdown-reader`** | **Read `.smd` with minimal tokens**, focusing only on meaningful content: outline first, then only the relevant sections through the agent view, and raw lines only when editing. | `SKILL.md`, `scripts/smd.cjs` |
 
-`scripts/smd.cjs` is the complete `smd` CLI in one file (Node.js 18+, no `npm install`).
+`scripts/smd.cjs` is the complete `smd` CLI in one file (Node.js 22+, no `npm install`).
 
 ## Contents
 
@@ -81,7 +81,7 @@ Start a new Claude Code session after installing. Skills load automatically when
 - **Claude Agent SDK:** place the skill folders in `.claude/skills/` of the project the agent runs in (use `smd skills install --dir <project>/.claude/skills`), and enable project settings and the Skill tool in your agent options as described in the Agent SDK documentation on skills.
 - **Claude API (Skills):** upload the zips as custom skills and attach them to requests that use the code execution tool. Follow the current Anthropic documentation for the Skills API, since request fields and beta headers may change.
 
-The skills need a sandbox with Node.js 18+ for `scripts/smd.cjs`.
+The skills need a sandbox with Node.js 22+ for `scripts/smd.cjs`.
 
 ## GitHub Copilot, Cursor, Codex, Windsurf and other agents
 
@@ -102,7 +102,7 @@ node smd.cjs skills install --target cursor,copilot,agents
 | `agents` | A section in `AGENTS.md` between `<!-- styled-markdown:start -->` and `<!-- styled-markdown:end -->` | Always, by OpenAI Codex and other agents that read `AGENTS.md` |
 | `claude` | The Claude Code skills (the default) | See [Claude Code](#claude-code) |
 
-Pick any combination: repeat `--target` or separate targets with commas. Each run also copies the CLI to `.smd/smd.cjs`, and the rules tell the agent to run `node .smd/smd.cjs outline <file>` and so on, so the agent needs Node.js 18+ and nothing else.
+Pick any combination: repeat `--target` or separate targets with commas. Each run also copies the CLI to `.smd/smd.cjs`, and the rules tell the agent to run `node .smd/smd.cjs outline <file>` and so on, so the agent needs Node.js 22+ and nothing else.
 
 Output:
 

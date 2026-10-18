@@ -37,7 +37,7 @@ Technical details: stdio only (`--stdio`; `--socket`, `--pipe` and `--node-ipc` 
 
 ## Install
 
-The server is part of the `smd` command, from version 1.5.0. Install the npm package once (Node.js 18+), from the npm registry or from the tarball attached to the [GitHub release](https://github.com/bislink360/styled-markdown/releases):
+The server is part of the `smd` command, from version 1.5.0. Install the npm package once (Node.js 22+), from the npm registry or from the tarball attached to the [GitHub release](https://github.com/bislink360/styled-markdown/releases):
 
 ```bash
 npm install -g styled-markdown
