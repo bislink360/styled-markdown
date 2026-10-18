@@ -23,7 +23,7 @@ export { tasksToCsv, tasksToGantt, ganttDocument, ganttDate, TASK_CSV_COLUMNS } 
 export type { TaskExportRow, GanttOptions } from './taskExport';
 export { markdownToSmd, fillTemplate } from './fromMarkdown';
 export { agentView, outline, estimateTokens, inlineText } from './agentView';
-export type { AgentViewOptions, AgentViewResult } from './agentView';
+export type { AgentViewOptions, AgentViewResult, InlineTextOptions } from './agentView';
 export type { BudgetResult, OmittedSection, Tokenizer } from './budget';
 export { querySmd, parseSelector, SelectorError } from './query';
 export type { QueryMatch, QueryOptions, Selector, AttributeTest, QueryOperator } from './query';

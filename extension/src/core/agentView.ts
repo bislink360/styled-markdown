@@ -704,15 +704,36 @@ function renderFence(fence: { start: number; body: string[]; info: string }, end
 
 const STATUS_WORDS: Record<string, string> = { green: 'ok', teal: 'ok', red: 'bad', pink: 'bad', orange: 'warn', amber: 'warn', yellow: 'warn' };
 
+/** How {@link inlineText} reads a line. Every field is optional. */
+export interface InlineTextOptions {
+  /** "Today" as YYYY-MM-DD: a `:due[…]` before it, on an open task, reads `(due …, OVERDUE)`. */
+  today?: string;
+  /** The line is an open task's (`- [ ] …`), so a past `:due[…]` is overdue. Default false. */
+  openTask?: boolean;
+  /** The document's figures by id: `:ref[id]` becomes `Figure 2 (id)`. Without them it stays as written. */
+  figures?: ReadonlyMap<string, FigureNumber>;
+  /** The document's front matter: `{{name}}` becomes the value of `name`. Without it, `{{name}}` stays as written. */
+  variables?: Variables;
+  /**
+   * The line's inline math as `[start, end)` offsets, when it is read with the lines around it (see mathOnLine);
+   * by default it is read from the line.
+   */
+  math?: ReadonlyArray<[number, number]>;
+}
+
 /**
  * Strip styling syntax from one line, keeping the words. Code spans and `$inline math$` are left
  * untouched. With the document's figures by id, `:ref[id]` becomes `Figure 2 (id)`; with its front matter,
- * `{{name}}` becomes the value of `name`. `math` is the line's inline math when it is read with the lines around
- * it (see mathOnLine); else it is read from the line.
+ * `{{name}}` becomes the value of `name` (see {@link InlineTextOptions}).
+ *
+ * Since 2.0 the options are one object: 1.x's `inlineText(line, today, true)` is `inlineText(line, { today, openTask: true })`.
  */
-export function inlineText(
-  line: string, today?: string, openTask = false, figures?: ReadonlyMap<string, FigureNumber>, variables?: Variables, math?: ReadonlyArray<[number, number]>,
-): string {
+export function inlineText(line: string, options: InlineTextOptions = {}): string {
+  // JavaScript callers of the 1.x signature get an error, not a line read without their arguments.
+  if (typeof options !== 'object' || options === null) {
+    throw new TypeError('inlineText(line, options): since 2.0 the options are one object, e.g. inlineText(line, { today, openTask: true })');
+  }
+  const { today, openTask = false, figures, variables, math } = options;
   return styledText(line, { today, openTask, figures, variables }, math);
 }
 

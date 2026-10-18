@@ -246,8 +246,8 @@ test('inline math is found as the inline parser reads a line; tasks, meta and qu
   assert.deepEqual(spans('`$a$` [l](u/$b) [m](u/$c) <i title="$d$"> ![alt $e$](i.png) $f$'), ['$f$']);
   assert.deepEqual(spans('[US$]{color=red} or [CA$]{color=blue}'), ['$]{color=red} or [CA$']);
 
-  assert.equal(inlineText(String.raw`:badge[a] $\sqrt[3]{x}$ ==m== {{v}} $y^{{v}}$`, undefined, false, undefined, { v: 2 }), String.raw`[a] $\sqrt[3]{x}$ m 2 $y^{{v}}$`);
-  assert.equal(inlineText('Pay $5 and $10 ==now== [red]{color=red} `==code==` {{v}}', undefined, false, undefined, { v: 2 }), 'Pay $5 and $10 now red `==code==` 2');
+  assert.equal(inlineText(String.raw`:badge[a] $\sqrt[3]{x}$ ==m== {{v}} $y^{{v}}$`, { variables: { v: 2 } }), String.raw`[a] $\sqrt[3]{x}$ m 2 $y^{{v}}$`);
+  assert.equal(inlineText('Pay $5 and $10 ==now== [red]{color=red} `==code==` {{v}}', { variables: { v: 2 } }), 'Pay $5 and $10 now red `==code==` 2');
   assert.equal(convertInline(String.raw`:badge[a] $\sqrt[3]{x}$ ==m==`), '`a` ' + String.raw`$\sqrt[3]{x}$ **m**`);
   assert.equal(convertInline('Pay $5 and $10 ==now== [red]{color=red weight=bold}'), 'Pay $5 and $10 **now** **red**');
 
