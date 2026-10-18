@@ -47,7 +47,9 @@ typography: true             # optional, smd: 2 only: curly quotes, dashes, elli
 
 Unknown keys are allowed (reported as hints, except keys the text shows with `{{key}}`, see §8).
 
-`smd` selects the rules a document is read with. Write `smd: 2` in a new document. It shows text as written: no curly quotes or dashes unless `typography: true`, and only `https://…`, `www.…` and e-mail addresses become links (a bare `example.com` is text). A heading's trailing `{word}` is heading text, any `:name[…]` is a directive, and `\\` in a quoted attribute value is one backslash. A document with `smd: 1` or no `smd` key keeps the v1 rules, so keep an existing document's value when you edit it; `smd migrate <file> --to 2` moves it to spec v2 and keeps what it shows (`--dry-run` reports the plan first).
+`smd` selects the rules a document is read with. Write `smd: 2` in a new document. It shows text as written: no curly quotes or dashes unless `typography: true`, and only `https://…`, `www.…` and e-mail addresses become links (a bare `example.com` is text). A heading's trailing `{word}` is heading text, any `:name[…]` is a directive (write `\:name[…]` to keep the text as written), and `\\` in a quoted attribute value is one backslash. A document with `smd: 1` or no `smd` key keeps the v1 rules, so keep an existing document's value when you edit it; `smd migrate <file> --to 2` moves it to spec v2 and keeps what it shows (`--dry-run` reports the plan first).
+
+Errors in every document, whatever its `smd` value (since 2.0): an attribute, `#id` or class given twice in one list (`{color=red color=blue}`), a container titled both by `title=` and by text (`:::note{title="A"} B`), a Mermaid syntax error, an invalid figure `kind`, and front matter that can't be read (usually a missing closing `---`; it is then shown as written in a red block). `smd validate --fix` fixes the first two and a misspelt `kind`.
 
 ## 2. Block containers — general rules
 
@@ -60,7 +62,7 @@ content (any Markdown, including other blocks)
 - Open with 3+ colons, the name, optional `{attrs}` **immediately** after the name, then an optional title (inline Markdown allowed).
 - Close with a line of 3+ colons and nothing else. It closes the **innermost** open block. In a document with `smd: 2` it closes the innermost block opened with **as many colons**, so write every closing fence with its opener's colons (as `smd fmt` does).
 - Nesting works at any depth. Writing outer blocks with more colons (`::::tabs`) is a readability convention.
-- A `:::` inside a code fence never closes a block.
+- A `:::` inside a code fence or `$$` display math never closes a block.
 - Every block also accepts the style attributes from §12.
 
 ## 3. Callouts and collapsibles
@@ -76,6 +78,8 @@ content (any Markdown, including other blocks)
 | `question` | Unresolved decision (say who decides and by when) |
 
 Attributes: `title`, `collapsible` (`{collapsible}` starts closed, `{collapsible=open}` starts open).
+
+GitHub alerts render as callouts too: a blockquote whose first line is only `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` (`> [!WARNING]`) is the `note`, `tip`, `info`, `warning` or `danger` callout. Prefer `:::` callouts in `.smd`: they take a title and `{collapsible}`.
 
 ```markdown
 :::warning{collapsible} Breaking change in v2
