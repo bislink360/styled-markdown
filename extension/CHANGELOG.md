@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.2 — 2026-10-21
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 2.0.1 — 2026-10-18
 
 A documentation patch for 2.0.0: the guides, the Marketplace and npm pages and the agent skills now cover everything 1.7–2.0 added. The extension, the CLI and the library behave exactly as in 2.0.0.
