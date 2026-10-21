@@ -36,9 +36,11 @@ const CASES: Array<{ name: string; run: (text: string) => unknown }> = [
 ];
 
 /**
- * Median milliseconds allowed, by case and document size: about 10x a local run (Node 24, Windows,
- * 1.0k / 10k lines: render 7 / 65 ms, validate 9 / 73, agentView 8 / 70, outline 10 / 95,
- * getDocumentInfo 9 / 87), with a cold parse cache.
+ * Median milliseconds allowed, by case and document size: about 5-10x the median of a CI runner
+ * (ubuntu, 28 runs before 2.0.2, 1.0k / 10k lines: render 14 / 81 ms, validate 20 / 150,
+ * agentView 14 / 109, outline 17 / 164, getDocumentInfo 19 / 166, extractTasks 0.9 / 8.7,
+ * smdToMarkdown 13 / 119), with a cold parse cache. smdToMarkdown parses the whole document since
+ * 1.10, so its limits match renderSmd's.
  */
 const LIMITS: Record<string, Record<number, number>> = {
   renderSmd: { 1000: 100, 10000: 750 },
@@ -48,7 +50,7 @@ const LIMITS: Record<string, Record<number, number>> = {
   outline: { 1000: 150, 10000: 1000 },
   getDocumentInfo: { 1000: 200, 10000: 1800 },
   extractTasks: { 1000: 15, 10000: 60 },
-  smdToMarkdown: { 1000: 25, 10000: 150 },
+  smdToMarkdown: { 1000: 100, 10000: 750 },
 };
 
 function median(values: number[]): number {
@@ -81,8 +83,11 @@ for (const size of SIZES) {
   const lines = text.split('\n').length;
   for (const c of CASES) {
     // Each run parses from scratch: the parse cache would otherwise turn repeats of the same text into hits.
-    const { median: ms, runs } = time(() => { resetParseCache(); c.run(text); }, 1500);
+    const measure = (budgetMs: number) => time(() => { resetParseCache(); c.run(text); }, budgetMs);
     const limit = LIMITS[c.name]?.[size];
+    let { median: ms, runs } = measure(1500);
+    // A busy runner can slow one measurement: a case over its limit is measured again, longer, and fails only if it stays over.
+    if (limit !== undefined && ms > limit) ({ median: ms, runs } = measure(5000));
     const over = limit !== undefined && ms > limit;
     if (check && over) failures.push(`${c.name} on ${lines} lines: ${ms.toFixed(1)} ms > limit ${limit} ms`);
     rows.push([c.name, String(lines), ms.toFixed(1), String(runs), limit === undefined ? '-' : String(limit), over ? 'OVER' : 'ok']);
