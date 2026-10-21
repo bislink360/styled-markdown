@@ -2,13 +2,7 @@
 
 ## 2.0.2 — 2026-10-21
 
-### ⚠️ Breaking changes
-
-### Added
-
-### Changed
-
-### Deprecated
+A patch for editors that highlight with Tree-sitter, and for CI. The extension, the CLI and the library behave exactly as in 2.0.1.
 
 ### Fixed
 - **The Tree-sitter grammar reads `smd: 2` documents with the spec v2 rules** (`integrations/tree-sitter-smd`), so Neovim, Helix, Zed and Emacs highlight them as they render. Until now it read every document with the v1 rules. Its scanner reads the front matter's `smd` key as `specVersion` does, then follows the v2 rules: a closing fence closes the innermost container opened with as many colons, and the ones inside it; `$$` math opens and closes only on lines that are just `$$`; directive names in any case; and a heading's trailing `{}` or `{word}` is text. Documents without `smd: 2` parse exactly as before. Checked against the renderer on every `.smd` in the repository and 300 fuzz documents, each as written, as `smd: 2` and as spec v1. Container and math ranges agree except where the grammar was already simpler: raw HTML blocks, now listed in its README, and front matter the renderer can't read as YAML.
