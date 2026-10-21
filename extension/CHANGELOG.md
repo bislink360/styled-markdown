@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.0 — 2026-10-21
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 2.0.2 — 2026-10-21
 
 A patch for editors that highlight with Tree-sitter, and for CI. The extension, the CLI and the library behave exactly as in 2.0.1.
