@@ -27,6 +27,7 @@ module.exports = grammar({
 
   externals: ($) => [
     $._container_fence,
+    $._container_end,
     $._code_fence_open,
     $.code_content,
     $._code_fence_close,
@@ -82,12 +83,14 @@ module.exports = grammar({
 
     // ---------------------------------------------------------------- containers (spec §3)
 
-    // A bare `:::` closes the innermost open container; colon counts are cosmetic. An unclosed
-    // container runs to the end of its parent.
+    // Spec v1: a bare `:::` closes the innermost open container; colon counts are cosmetic. Spec v2
+    // (`smd: 2`): it closes the innermost container opened with as many colons, and the scanner ends
+    // the ones inside it first with an empty _container_end. An unclosed container runs to the end
+    // of its parent.
     container: ($) => prec.right(seq(
       field('open', $.container_open),
       repeat($._block),
-      optional(field('close', $.container_close)),
+      optional(choice(field('close', $.container_close), $._container_end)),
     )),
 
     container_open: ($) => seq(
@@ -181,14 +184,14 @@ module.exports = grammar({
     code_span: () => token(choice(/`[^`\r\n]+`/, /``([^`\r\n]|`[^`\r\n])+``/)),
 
     // `:name[content]{attrs}` (spec §4.2). The scanner only starts one when the brackets and the
-    // attribute list are complete.
+    // attribute list are complete, and with a lower-case name in spec v1 (any case in spec v2).
     directive: ($) => seq(
       alias($._directive_marker, ':'),
       field('name', $.directive_name),
       optional(seq('[', optional(field('content', $.directive_content)), ']')),
       optional(field('attributes', $.attribute_list)),
     ),
-    directive_name: () => /[a-z][a-z0-9-]*/,
+    directive_name: () => /[A-Za-z][A-Za-z0-9-]*/,
 
     // `[text]{attrs}` (spec §4.1).
     span: ($) => seq(
