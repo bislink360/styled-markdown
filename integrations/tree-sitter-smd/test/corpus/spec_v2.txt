@@ -1,0 +1,357 @@
+================================================================================
+Spec v2: a closing fence closes the container opened with as many colons
+================================================================================
+---
+smd: 2
+---
+::::tabs
+:::tab npm
+npm i
+::::
+after
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (container
+      (container_open
+        (container_fence)
+        (container_name)
+        (container_title))
+      (line))
+    (container_close
+      (container_fence)))
+  (line))
+
+================================================================================
+Spec v1: the same fence closes the innermost container
+================================================================================
+::::tabs
+:::tab npm
+npm i
+::::
+after
+--------------------------------------------------------------------------------
+
+(document
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (container
+      (container_open
+        (container_fence)
+        (container_name)
+        (container_title))
+      (line)
+      (container_close
+        (container_fence)))
+    (line)))
+
+================================================================================
+Spec v2: a fence that matches no container closes the innermost
+================================================================================
+---
+smd: 2
+---
+:::note
+::::
+after
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (container_close
+      (container_fence)))
+  (line))
+
+================================================================================
+Spec v2: a fence closes every container inside the one it matches
+================================================================================
+---
+smd: 2
+---
+:::::outer
+:::a
+::::b
+:::c
+x
+:::::
+y
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (container
+      (container_open
+        (container_fence)
+        (container_name))
+      (container
+        (container_open
+          (container_fence)
+          (container_name))
+        (container
+          (container_open
+            (container_fence)
+            (container_name))
+          (line))))
+    (container_close
+      (container_fence)))
+  (line))
+
+================================================================================
+Spec v2: a matching inner fence still closes only its own container
+================================================================================
+---
+smd: "2"
+---
+::::tabs
+:::tab npm
+npm i
+:::
+::::
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (container
+    (container_open
+      (container_fence)
+      (container_name))
+    (container
+      (container_open
+        (container_fence)
+        (container_name)
+        (container_title))
+      (line)
+      (container_close
+        (container_fence)))
+    (container_close
+      (container_fence))))
+
+================================================================================
+Spec v2: display math only on lines that are just $$
+================================================================================
+---
+smd: 2
+---
+$$ x
+y $$
+
+$$
+a $$
+$$
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (line)
+  (line)
+  (blank_line)
+  (math_block
+    (math_delimiter)
+    (math_content)
+    (math_delimiter)))
+
+================================================================================
+Spec v2: $$ on one line is still math
+================================================================================
+---
+smd: 2
+---
+$$ x^2 $$
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (math_block
+    (math_delimiter)
+    (math_content)
+    (math_delimiter)))
+
+================================================================================
+Spec v1: a line starting with $$ opens math
+================================================================================
+$$ x
+y $$
+--------------------------------------------------------------------------------
+
+(document
+  (math_block
+    (math_delimiter)
+    (math_content)
+    (math_delimiter)))
+
+================================================================================
+Spec v2: directive names in any case
+================================================================================
+---
+smd: 2
+---
+See :Badge[x] and :badge[y].
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (line
+    (directive
+      (directive_name)
+      (directive_content))
+    (directive
+      (directive_name)
+      (directive_content))))
+
+================================================================================
+Spec v1: an upper-case directive name is text
+================================================================================
+See :Badge[x] and :badge[y].
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (directive
+      (directive_name)
+      (directive_content))))
+
+================================================================================
+Spec v2: a trailing {} or {word} is heading text
+================================================================================
+---
+smd: 2
+---
+## Returns {ok}
+## Empty {}
+## Id {#id .wide key=value}
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (line)
+  (line)
+  (line
+    (attribute_list
+      (attribute_id)
+      (attribute_class)
+      (attribute
+        (attribute_name)
+        (attribute_value)))))
+
+================================================================================
+Spec v1: a trailing {} or {word} is an attribute list
+================================================================================
+## Returns {ok}
+## Empty {}
+--------------------------------------------------------------------------------
+
+(document
+  (line
+    (attribute_list
+      (attribute
+        (attribute_name))))
+  (line
+    (attribute_list)))
+
+================================================================================
+Spec version: a newer whole number reads as spec v2, with a comment
+================================================================================
+---
+title: T
+smd: 3 # newer than this grammar
+---
+See :Badge[x].
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (line
+    (directive
+      (directive_name)
+      (directive_content))))
+
+================================================================================
+Spec version: a value that isn't a whole number is spec v1
+================================================================================
+---
+smd: 2.5
+---
+See :Badge[x].
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (line))
+
+================================================================================
+Spec version: a repeated smd key is spec v1
+================================================================================
+---
+smd: 2
+smd: 2
+---
+See :Badge[x].
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (line))
+
+================================================================================
+Spec version: smd:2 without a space is not the key
+================================================================================
+---
+smd:2
+---
+See :Badge[x].
+--------------------------------------------------------------------------------
+
+(document
+  (front_matter
+    (front_matter_delimiter)
+    (front_matter_content)
+    (front_matter_delimiter))
+  (line))
