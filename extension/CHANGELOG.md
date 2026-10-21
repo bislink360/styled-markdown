@@ -11,6 +11,7 @@
 ### Deprecated
 
 ### Fixed
+- CI: the benchmark gate no longer fails on a slow runner. The `smdToMarkdown` limits (25 / 150 ms for 1k / 10k lines) were set before it parsed the whole document and sat at 90% of what CI measures; they now match `renderSmd` (100 / 750 ms), and a case over its limit is measured again before it fails. Every limit is still 5–10x a CI runner's median, so an accidentally quadratic pass still fails.
 
 ## 2.0.1 — 2026-10-18
 
