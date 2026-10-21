@@ -161,12 +161,21 @@
             "type": "CHOICE",
             "members": [
               {
-                "type": "FIELD",
-                "name": "close",
-                "content": {
-                  "type": "SYMBOL",
-                  "name": "container_close"
-                }
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "FIELD",
+                    "name": "close",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "container_close"
+                    }
+                  },
+                  {
+                    "type": "SYMBOL",
+                    "name": "_container_end"
+                  }
+                ]
               },
               {
                 "type": "BLANK"
@@ -719,7 +728,7 @@
     },
     "directive_name": {
       "type": "PATTERN",
-      "value": "[a-z][a-z0-9-]*"
+      "value": "[A-Za-z][A-Za-z0-9-]*"
     },
     "span": {
       "type": "SEQ",
@@ -1078,6 +1087,10 @@
     {
       "type": "SYMBOL",
       "name": "_container_fence"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_container_end"
     },
     {
       "type": "SYMBOL",

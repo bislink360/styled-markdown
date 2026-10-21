@@ -9,6 +9,12 @@
  *
  * It also scans the bodies of fenced code, `$$` math and front matter as single tokens, so that
  * nothing inside them is parsed as .smd and they can be injected as one range.
+ *
+ * The front matter decides the rules (docs/SPEC.md §10): `smd: 2` (or a higher whole number) reads
+ * the document with the spec v2 rules, anything else with the v1 rules. The v2 rules here: a closing
+ * fence closes the innermost container opened with as many colons; `$$` math opens and closes only on
+ * lines that are just `$$`; directive names in any case; and a heading's trailing `{}` or `{word}` is
+ * text. To pair fences, the scanner keeps the colon counts of the open containers.
  */
 
 #include "tree_sitter/alloc.h"
@@ -19,6 +25,7 @@
 
 enum TokenType {
   CONTAINER_FENCE,
+  CONTAINER_END,
   CODE_FENCE_OPEN,
   CODE_CONTENT,
   CODE_FENCE_CLOSE,
@@ -43,11 +50,21 @@ enum TokenType {
   ERROR_SENTINEL,
 };
 
-/* The open code fence: its character (` or ~) and length, so the right line closes it. */
+/* Open containers whose colon counts are kept; deeper ones pair like spec v1 (the innermost). */
+#define MAX_CONTAINERS 250
+
 typedef struct {
+  /* The open code fence: its character (` or ~) and length, so the right line closes it. */
   uint8_t fence_char;
   uint8_t fence_len;
+  /* The spec version the front matter selects: 1 or 2. */
+  uint8_t spec;
+  /* The open containers, outermost first: how many, and the colon count of each (up to MAX_CONTAINERS). */
+  uint16_t depth;
+  uint8_t colons[MAX_CONTAINERS];
 } Scanner;
+
+static bool v2(const Scanner *scanner) { return scanner->spec >= 2; }
 
 /* ------------------------------------------------------------------ character helpers */
 
@@ -88,24 +105,40 @@ static bool accept(TSLexer *lexer, enum TokenType type) {
 /* ------------------------------------------------------------------ attribute lists and labels */
 
 /* After a `{`: consume through the `}` that closes the attribute list on this line (quotes may hold
- * `}`), as findAttrsEnd does. False for a newline or a `{` first. */
-static bool scan_attrs_rest(TSLexer *lexer) {
+ * `}`), as findAttrsEnd does. False for a newline or a `{` first. `items`, when given, is set to
+ * whether the list has items and each is an `#id`, a `.class` or a `key=value`, which spec v2 asks of
+ * a heading's trailing list (sections.ts headingAttrList): `{}` and `{word}` are heading text there. */
+static bool scan_attrs_items(TSLexer *lexer, bool *items) {
   int32_t quote = 0;
+  bool any = false, ok = true, in_item = false, item_ok = false;
   while (!at_eol(lexer)) {
     int32_t c = lexer->lookahead;
     advance(lexer);
     if (quote) {
       if (c == quote) quote = 0;
-    } else if (c == '"' || c == '\'') {
-      quote = c;
-    } else if (c == '}') {
-      return true;
-    } else if (c == '{') {
-      return false;
+      continue;
     }
+    if (c == '}' || is_blank(c)) {
+      if (in_item && !item_ok) ok = false;
+      in_item = false;
+      if (c == '}') {
+        if (items) *items = any && ok;
+        return true;
+      }
+      continue;
+    }
+    if (c == '{') return false;
+    if (!in_item) {
+      in_item = any = true;
+      item_ok = c == '#' || c == '.';
+    }
+    if (c == '=') item_ok = true;
+    if (c == '"' || c == '\'') quote = c;
   }
   return false;
 }
+
+static bool scan_attrs_rest(TSLexer *lexer) { return scan_attrs_items(lexer, NULL); }
 
 /* After a `[`: consume through its matching `]` on this line (nested brackets balance, `\` escapes). */
 static bool scan_label_rest(TSLexer *lexer) {
@@ -146,10 +179,12 @@ static bool scan_label_content(TSLexer *lexer, enum TokenType type) {
 
 /* ------------------------------------------------------------------ inline openers */
 
-/* After the `:` of a directive: a lower-case name, then a complete `[…]`, a complete `{…}` or both. */
-static bool scan_directive_rest(TSLexer *lexer) {
-  if (!is_lower(lexer->lookahead)) return false;
-  while (is_lower(lexer->lookahead) || is_digit(lexer->lookahead) || lexer->lookahead == '-') advance(lexer);
+/* After the `:` of a directive: a name (lower case in spec v1, any case in v2), then a complete
+ * `[…]`, a complete `{…}` or both. */
+static bool scan_directive_rest(const Scanner *scanner, TSLexer *lexer) {
+  bool (*letter)(int32_t) = v2(scanner) ? is_alpha : is_lower;
+  if (!letter(lexer->lookahead)) return false;
+  while (letter(lexer->lookahead) || is_digit(lexer->lookahead) || lexer->lookahead == '-') advance(lexer);
   bool content = false;
   if (lexer->lookahead == '[') {
     advance(lexer);
@@ -194,14 +229,16 @@ static bool scan_variable_rest(TSLexer *lexer) {
   return lexer->lookahead != '}' && accept(lexer, VARIABLE_OPEN);
 }
 
-/* A `{`: a variable, an attribute list after a name (ATTR_OPEN) or one that ends the line. */
-static bool scan_brace(TSLexer *lexer, const bool *valid) {
+/* A `{`: a variable, an attribute list after a name (ATTR_OPEN) or one that ends the line (in spec
+ * v2 only with recognisable items, see scan_attrs_items). */
+static bool scan_brace(const Scanner *scanner, TSLexer *lexer, const bool *valid) {
   advance(lexer);
   if (lexer->lookahead == '{') return valid[VARIABLE_OPEN] && scan_variable_rest(lexer);
   lexer->mark_end(lexer);
-  if (!scan_attrs_rest(lexer)) return false;
+  bool items = false;
+  if (!scan_attrs_items(lexer, &items)) return false;
   if (valid[ATTR_OPEN]) return accept(lexer, ATTR_OPEN);
-  if (!valid[TRAILING_ATTR_OPEN]) return false;
+  if (!valid[TRAILING_ATTR_OPEN] || (v2(scanner) && !items)) return false;
   skip_blanks(lexer);
   return at_eol(lexer) && accept(lexer, TRAILING_ATTR_OPEN);
 }
@@ -314,23 +351,43 @@ static bool scan_math_line(TSLexer *lexer, MathLine *line) {
   return false;
 }
 
-/* After an opening `$$`: through the line that closes it, as mathBlock does. On the first line,
- * `$$ x $$` closes; `$$` alone (or `$$ $$`) opens a block closed by the next line ending in `$$`. */
-static bool scan_math_block_body(TSLexer *lexer, MathLine *line) {
+/* Spec v2: a line inside `$$` math. True for a line that is only `$$` (and blanks), the closer,
+ * which is left out of the marked text; any other line is math. */
+static bool scan_math_line_v2(TSLexer *lexer, MathLine *line) {
+  skip_blanks(lexer);
+  math_mark(lexer, line);
+  unsigned run = 0;
+  while (lexer->lookahead == '$') {
+    advance(lexer);
+    run++;
+  }
+  skip_blanks(lexer);
+  if (run == 2 && at_eol(lexer)) return true;
+  skip_to_eol(lexer);
+  math_mark(lexer, line);
+  return false;
+}
+
+/* After an opening `$$`: through the line that closes it, as mathBlock does (containers.ts
+ * displayMathOpener and closesDisplayMath). On the first line, `$$ x $$` closes. Spec v1: any other
+ * line starting with `$$` opens a block closed by the next line ending in `$$`. Spec v2: only `$$`
+ * alone opens one (text beside it is not math), closed by the next line that is only `$$`. */
+static bool scan_math_block_body(const Scanner *scanner, TSLexer *lexer, MathLine *line) {
   if (scan_math_line(lexer, line) && (line->text > 0 || line->run > 2)) return true;
+  if (v2(scanner) && (line->text > 0 || line->run > 0)) return false;
   math_mark(lexer, line);
   while (!lexer->eof(lexer)) {
     advance(lexer); /* the newline */
     math_mark(lexer, line);
-    if (scan_math_line(lexer, line)) return true;
+    if (v2(scanner) ? scan_math_line_v2(lexer, line) : scan_math_line(lexer, line)) return true;
   }
   return false;
 }
 
-static bool scan_math_block(TSLexer *lexer, const bool *valid) {
+static bool scan_math_block(const Scanner *scanner, TSLexer *lexer, const bool *valid) {
   if (valid[MATH_BLOCK_CONTENT]) {
     MathLine line = {true, false, 0, 0};
-    if (!scan_math_block_body(lexer, &line)) return false;
+    if (!scan_math_block_body(scanner, lexer, &line)) return false;
     if (line.marked) return accept(lexer, MATH_BLOCK_CONTENT);
     /* `$$$$$`: nothing between the delimiters, so this is the closer. */
     lexer->mark_end(lexer);
@@ -434,26 +491,105 @@ static bool scan_front_matter_open(TSLexer *lexer) {
   return false;
 }
 
-static bool scan_front_matter_body(TSLexer *lexer, const bool *valid) {
+/* At a line start: -1 when the line is not a top-level `smd:` key, else its value as specVersion.ts
+ * reads it. A whole number, plain (`2`, `2.0`) or quoted (`"2"`), with an optional comment; anything
+ * else is 0, which reads as spec v1 like an invalid value. Values above 2 read with the newest rules,
+ * as spec v2. */
+static int scan_smd_key(TSLexer *lexer) {
+  static const char key[] = "smd";
+  for (int i = 0; key[i]; i++) {
+    if (lexer->lookahead != key[i]) return -1;
+    advance(lexer);
+  }
+  skip_blanks(lexer);
+  if (lexer->lookahead != ':') return -1;
+  advance(lexer);
+  /* YAML reads `smd:2` as text, not a key: the colon must be followed by a blank. */
+  if (!is_blank(lexer->lookahead) && !at_eol(lexer)) return -1;
+  skip_blanks(lexer);
+  int32_t quote = lexer->lookahead == '"' || lexer->lookahead == '\'' ? lexer->lookahead : 0;
+  if (quote) advance(lexer);
+  unsigned value = 0;
+  bool digits = false;
+  while (is_digit(lexer->lookahead)) {
+    value = value * 10 + (unsigned)(lexer->lookahead - '0');
+    if (value > 9) value = 9; /* any larger whole number reads as the newest version */
+    digits = true;
+    advance(lexer);
+  }
+  if (!digits) return 0;
+  if (quote) {
+    if (lexer->lookahead != quote) return 0;
+    advance(lexer);
+  } else if (lexer->lookahead == '.') {
+    /* `2.0` is the number 2; `2.5` is not a whole number. */
+    advance(lexer);
+    while (lexer->lookahead == '0') advance(lexer);
+  }
+  bool blank = is_blank(lexer->lookahead);
+  skip_blanks(lexer);
+  if (lexer->lookahead == '#' && blank) skip_to_eol(lexer);
+  return at_eol(lexer) ? (int)value : 0;
+}
+
+static bool scan_front_matter_body(Scanner *scanner, TSLexer *lexer, const bool *valid) {
   if (closes_front_matter(lexer)) {
     lexer->mark_end(lexer);
     return valid[FRONT_MATTER_CLOSE] && accept(lexer, FRONT_MATTER_CLOSE);
   }
   if (!valid[FRONT_MATTER_CONTENT]) return false;
+  int version = 0;
+  unsigned keys = 0;
   for (;;) {
+    int value = lexer->lookahead == 's' ? scan_smd_key(lexer) : -1;
+    if (value >= 0) {
+      version = value;
+      keys++;
+    }
     skip_to_eol(lexer);
     if (lexer->eof(lexer)) return false;
     advance(lexer); /* the newline */
     lexer->mark_end(lexer);
-    if (closes_front_matter(lexer)) return accept(lexer, FRONT_MATTER_CONTENT);
+    if (closes_front_matter(lexer)) {
+      /* A repeated key is a YAML error, and front matter that doesn't parse is spec v1. */
+      scanner->spec = keys == 1 && version >= 2 ? 2 : 1;
+      return accept(lexer, FRONT_MATTER_CONTENT);
+    }
   }
 }
 
 /* ------------------------------------------------------------------ block starts */
 
+/* ------------------------------------------------------------------ containers */
+
+static void push_container(Scanner *scanner, unsigned colons) {
+  if (scanner->depth < MAX_CONTAINERS) scanner->colons[scanner->depth] = (uint8_t)(colons > 255 ? 255 : colons);
+  if (scanner->depth < UINT16_MAX) scanner->depth++;
+}
+
+static void pop_container(Scanner *scanner) {
+  if (scanner->depth > 0) scanner->depth--;
+}
+
+/* Spec v2: whether a closing fence with `colons` colons closes a container around the innermost
+ * one, which then ends without a fence of its own (markdownItRules.ts closeWith). A fence that
+ * matches the innermost container, or none, closes the innermost, as in spec v1. */
+static bool closes_outer(const Scanner *scanner, unsigned colons) {
+  if (!v2(scanner) || scanner->depth < 2 || scanner->depth > MAX_CONTAINERS) return false;
+  uint8_t n = (uint8_t)(colons > 255 ? 255 : colons);
+  unsigned inner = scanner->depth - 1u;
+  if (scanner->colons[inner] == n) return false;
+  while (inner-- > 0) {
+    if (scanner->colons[inner] == n) return true;
+  }
+  return false;
+}
+
 /* A run of colons: a container fence (3+, then a name or the end of the line) or, a single one
- * not preceded by blanks in this token, a directive. */
-static bool scan_colons(TSLexer *lexer, const bool *valid, bool indented) {
+ * not preceded by blanks in this token, a directive. A closing fence that closes a container
+ * around the innermost one first ends the inner ones (CONTAINER_END, empty: the scanner sees the
+ * same fence again after each). */
+static bool scan_colons(Scanner *scanner, TSLexer *lexer, const bool *valid, bool indented) {
   unsigned n = 0;
   while (lexer->lookahead == ':') {
     advance(lexer);
@@ -463,25 +599,32 @@ static bool scan_colons(TSLexer *lexer, const bool *valid, bool indented) {
     while (lexer->lookahead == ' ' || lexer->lookahead == '\t') advance(lexer);
     if (is_alpha(lexer->lookahead)) {
       lexer->mark_end(lexer);
+      push_container(scanner, n);
       return accept(lexer, CONTAINER_FENCE);
     }
     skip_blanks(lexer);
+    if (!at_eol(lexer)) return false;
+    if (valid[CONTAINER_END] && closes_outer(scanner, n)) {
+      pop_container(scanner);
+      return accept(lexer, CONTAINER_END); /* empty: the end was marked at the line start */
+    }
     lexer->mark_end(lexer);
-    return at_eol(lexer) && accept(lexer, CONTAINER_FENCE);
+    pop_container(scanner);
+    return accept(lexer, CONTAINER_FENCE);
   }
   if (n != 1 || indented || !valid[DIRECTIVE_MARKER]) return false;
   lexer->mark_end(lexer);
-  return scan_directive_rest(lexer) && accept(lexer, DIRECTIVE_MARKER);
+  return scan_directive_rest(scanner, lexer) && accept(lexer, DIRECTIVE_MARKER);
 }
 
-static bool scan_dollar(TSLexer *lexer, const bool *valid, bool indented) {
+static bool scan_dollar(const Scanner *scanner, TSLexer *lexer, const bool *valid, bool indented) {
   advance(lexer);
   if (lexer->lookahead == '$') {
     if (!valid[MATH_BLOCK_OPEN]) return false;
     advance(lexer);
     lexer->mark_end(lexer);
     MathLine line = {false, false, 0, 0};
-    return scan_math_block_body(lexer, &line) && accept(lexer, MATH_BLOCK_OPEN);
+    return scan_math_block_body(scanner, lexer, &line) && accept(lexer, MATH_BLOCK_OPEN);
   }
   return !indented && valid[MATH_OPEN] && scan_math_open_rest(lexer);
 }
@@ -491,6 +634,7 @@ static bool scan_opener(Scanner *scanner, TSLexer *lexer, const bool *valid) {
   bool block = valid[CONTAINER_FENCE];
   bool indented = false;
   if (block) {
+    lexer->mark_end(lexer); /* an empty CONTAINER_END ends here */
     while (lexer->lookahead == ' ' || lexer->lookahead == '\t') {
       advance(lexer);
       indented = true;
@@ -498,9 +642,9 @@ static bool scan_opener(Scanner *scanner, TSLexer *lexer, const bool *valid) {
   }
   switch (lexer->lookahead) {
     case ':':
-      return scan_colons(lexer, valid, indented);
+      return scan_colons(scanner, lexer, valid, indented);
     case '$':
-      return scan_dollar(lexer, valid, indented);
+      return scan_dollar(scanner, lexer, valid, indented);
     case '`':
     case '~':
       return block && valid[CODE_FENCE_OPEN] && scan_code_fence_open(scanner, lexer);
@@ -513,7 +657,7 @@ static bool scan_opener(Scanner *scanner, TSLexer *lexer, const bool *valid) {
       /* After a directive name, `[` starts its content (an internal token), not a span. */
       return valid[SPAN_OPEN] && !valid[ATTR_OPEN] && scan_span_open(lexer);
     case '{':
-      return (valid[ATTR_OPEN] || valid[TRAILING_ATTR_OPEN] || valid[VARIABLE_OPEN]) && scan_brace(lexer, valid);
+      return (valid[ATTR_OPEN] || valid[TRAILING_ATTR_OPEN] || valid[VARIABLE_OPEN]) && scan_brace(scanner, lexer, valid);
     case '=':
       return valid[MARK_OPEN] && scan_mark_open(lexer);
     default:
@@ -530,17 +674,35 @@ void *tree_sitter_smd_external_scanner_create(void) {
 
 void tree_sitter_smd_external_scanner_destroy(void *payload) { ts_free(payload); }
 
+/* fence_char, fence_len, spec, depth (2 bytes), then the colon counts kept (at most MAX_CONTAINERS). */
+#define HEADER_SIZE 5
+
 unsigned tree_sitter_smd_external_scanner_serialize(void *payload, char *buffer) {
   Scanner *scanner = payload;
+  unsigned kept = scanner->depth < MAX_CONTAINERS ? scanner->depth : MAX_CONTAINERS;
   buffer[0] = (char)scanner->fence_char;
   buffer[1] = (char)scanner->fence_len;
-  return 2;
+  buffer[2] = (char)scanner->spec;
+  buffer[3] = (char)(scanner->depth & 0xFF);
+  buffer[4] = (char)(scanner->depth >> 8);
+  for (unsigned i = 0; i < kept; i++) buffer[HEADER_SIZE + i] = (char)scanner->colons[i];
+  return HEADER_SIZE + kept;
 }
 
 void tree_sitter_smd_external_scanner_deserialize(void *payload, const char *buffer, unsigned length) {
   Scanner *scanner = payload;
-  scanner->fence_char = length >= 2 ? (uint8_t)buffer[0] : 0;
-  scanner->fence_len = length >= 2 ? (uint8_t)buffer[1] : 0;
+  scanner->fence_char = 0;
+  scanner->fence_len = 0;
+  scanner->spec = 0;
+  scanner->depth = 0;
+  if (length < HEADER_SIZE) return;
+  scanner->fence_char = (uint8_t)buffer[0];
+  scanner->fence_len = (uint8_t)buffer[1];
+  scanner->spec = (uint8_t)buffer[2];
+  scanner->depth = (uint16_t)((uint8_t)buffer[3] | ((uint8_t)buffer[4] << 8));
+  unsigned kept = length - HEADER_SIZE;
+  if (kept > MAX_CONTAINERS) kept = MAX_CONTAINERS;
+  for (unsigned i = 0; i < kept; i++) scanner->colons[i] = (uint8_t)buffer[HEADER_SIZE + i];
 }
 
 bool tree_sitter_smd_external_scanner_scan(void *payload, TSLexer *lexer, const bool *valid) {
@@ -548,8 +710,8 @@ bool tree_sitter_smd_external_scanner_scan(void *payload, TSLexer *lexer, const 
   if (valid[ERROR_SENTINEL]) return false; /* error recovery: let the internal lexer resync */
 
   if (valid[CODE_CONTENT] || valid[CODE_FENCE_CLOSE]) return scan_code(scanner, lexer, valid);
-  if (valid[MATH_BLOCK_CONTENT] || valid[MATH_BLOCK_CLOSE]) return scan_math_block(lexer, valid);
-  if (valid[FRONT_MATTER_CONTENT] || valid[FRONT_MATTER_CLOSE]) return scan_front_matter_body(lexer, valid);
+  if (valid[MATH_BLOCK_CONTENT] || valid[MATH_BLOCK_CLOSE]) return scan_math_block(scanner, lexer, valid);
+  if (valid[FRONT_MATTER_CONTENT] || valid[FRONT_MATTER_CLOSE]) return scan_front_matter_body(scanner, lexer, valid);
   if (valid[DIRECTIVE_CONTENT]) return scan_label_content(lexer, DIRECTIVE_CONTENT);
   if (valid[SPAN_CONTENT]) return scan_label_content(lexer, SPAN_CONTENT);
   if (valid[MARK_CONTENT]) return scan_mark_content(lexer);

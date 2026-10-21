@@ -11,12 +11,25 @@ Markdown in Tree-sitter is already two grammars: [tree-sitter-markdown](https://
 
 - **Parsed here:**
   - front matter (injected as YAML)
-  - `:::name{attrs} Title` … `:::` containers, nested (a bare `:::` closes the innermost one, whatever the colon count, as in spec v1; see below)
+  - `:::name{attrs} Title` … `:::` containers, nested, with closing fences paired as the document's spec version pairs them (see [Spec versions](#spec-versions))
   - fenced code (injected by its info string; `mermaid` included) and `$$` math (injected as LaTeX), so `:::` or `$` inside them is never `.smd` syntax
   - inline directives `:name[content]{attrs}`, styled spans `[text]{attrs}`, `==highlight==`, `$math$`, `{{variables}}`, `[^footnotes]` and their `[^label]:` definitions, task boxes, code spans, and attribute lists, including `{#id}` at the end of a heading
 - **Everything else** is a `line`. `queries/injections.scm` hands all lines to the `markdown` parser as one combined document, so paragraphs, lists, headings and tables work across lines, and Markdown injects `markdown_inline` into its own inline text. The `.smd` constructs inside a line are named nodes, which injections leave out, so Markdown doesn't see them.
 
 Container and directive names are not fixed in the grammar: a name it doesn't know parses like any other, so highlighting keeps working for new or misspelled ones. `queries/highlights.scm` lists the names in [`extension/src/core/spec.ts`](../../extension/src/core/spec.ts) (highlighted as `@tag.builtin` and `@function.builtin`, others as `@tag` and `@function`). A unit test (`extension/test/treeSitter.test.ts`) fails when the two lists differ.
+
+### Spec versions
+
+Like the renderer, the grammar reads a document with the rules its front matter selects ([docs/SPEC.md §10](../../docs/SPEC.md)). `smd: 2` (also `"2"`, `2.0`, or a higher whole number) selects spec v2. No `smd` key, `smd: 1`, or a value that isn't a whole number selects spec v1. In a spec v2 document:
+
+| Rule | Spec v2 (`smd: 2`) | Spec v1 |
+|---|---|---|
+| Closing fences | A `:::` closes the innermost container opened with as many colons, and the ones inside it; one that matches none closes the innermost | A `:::` closes the innermost container, whatever the colon count |
+| `$$` display math | Opens on a line that is only `$$` (or `$$…$$` on one line) and closes on a line that is only `$$`; text beside `$$` is plain text | A line starting with `$$` opens math, and the next line ending with `$$` closes it |
+| Directive names | Any case: `:Badge[x]` is a directive | Lower case: `:Badge[x]` is text |
+| A trailing `{}` or `{word}` | Text, as GitHub shows it; only `#id`, `.class` and `key=value` items make an attribute list | An attribute list |
+
+The scanner reads the `smd` key as one line of YAML: a top-level `smd:` followed by a blank, then the number, plain or quoted, with an optional comment. Front matter that the renderer can't read as YAML (and so reads as spec v1) is still read for its `smd` key here, so in such a document the two can differ until the front matter is fixed.
 
 ### Why `.smd` is the host and Markdown is injected
 
@@ -35,8 +48,9 @@ The scanner ([`src/scanner.c`](src/scanner.c)) follows the renderer's rules (`ex
 - The text inside a span, mark or directive is one node. `.smd` syntax nested in it, such as `:badge[v{{version}}]`, isn't highlighted separately.
 - A `{…}` at the end of any line is highlighted as an attribute list, not only at the end of a heading.
 - Fences, `$$` and `:::` count as blocks at any indentation, including in 4-space indented code.
-- Containers and `$$` math follow the spec v1 rules in every document: a bare `:::` closes the innermost open container, and a line starting with `$$` opens math that the next line ending with `$$` closes. A document with `smd: 2` pairs closing fences by colon count and opens and closes math only on lines that are just `$$` (docs/SPEC.md §3, §4.4). The two read the same where every closing fence has its container's colon count and every `$$` delimiter is on a line of its own, as `smd fmt` and `smd migrate --to 2` write them; elsewhere the highlighting of an `smd: 2` document can differ from how it renders.
-- Directive names follow the renderer's syntax (`[a-z][a-z0-9-]*`), but every such name is highlighted, known or not.
+- Raw HTML blocks aren't recognized. The renderer reads a line such as `<div class="x">` and the lines after it up to a blank line as HTML, so a `:::` or `$$` line among them is text there, but highlighted as a fence here.
+- Containers inside list items and block quotes are read like any other. The renderer starts afresh there: in spec v2, a closing fence in a list item doesn't close a container around the list.
+- Directive names follow the renderer's syntax (`[a-z][a-z0-9-]*`, any case in spec v2), but every such name is highlighted, known or not. `highlights.scm` matches the known names as written, so in a spec v2 document `:Badge[x]` is highlighted as a directive, but not as a built-in one.
 
 There is no `indents.scm`: `.smd` container bodies are not indented by convention, and Markdown's indentation comes from lists, which the Markdown grammar handles.
 
@@ -63,7 +77,7 @@ vim.api.nvim_create_autocmd('User', {
     require('nvim-treesitter.parsers').smd = {
       install_info = {
         url = 'https://github.com/bislink360/styled-markdown',
-        revision = 'v2.0.1',
+        revision = 'v2.0.2',
         location = 'integrations/tree-sitter-smd',
         queries = 'integrations/tree-sitter-smd/queries',
       },
@@ -90,7 +104,7 @@ local parsers = require('nvim-treesitter.parsers').get_parser_configs()
 parsers.smd = {
   install_info = {
     url = 'https://github.com/bislink360/styled-markdown',
-    revision = 'v2.0.1',
+    revision = 'v2.0.2',
     location = 'integrations/tree-sitter-smd',
     files = { 'src/parser.c', 'src/scanner.c' },
   },
@@ -125,7 +139,7 @@ indent = { tab-width = 2, unit = "  " }
 
 [[grammar]]
 name = "smd"
-source = { git = "https://github.com/bislink360/styled-markdown", rev = "v2.0.1", subpath = "integrations/tree-sitter-smd" }
+source = { git = "https://github.com/bislink360/styled-markdown", rev = "v2.0.2", subpath = "integrations/tree-sitter-smd" }
 ```
 
 Then:

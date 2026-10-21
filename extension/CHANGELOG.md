@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.2 — 2026-10-21
+
+A patch for editors that highlight with Tree-sitter, and for CI. The extension, the CLI and the library behave exactly as in 2.0.1.
+
+### Fixed
+- **The Tree-sitter grammar reads `smd: 2` documents with the spec v2 rules** (`integrations/tree-sitter-smd`), so Neovim, Helix, Zed and Emacs highlight them as they render. Until now it read every document with the v1 rules. Its scanner reads the front matter's `smd` key as `specVersion` does, then follows the v2 rules: a closing fence closes the innermost container opened with as many colons, and the ones inside it; `$$` math opens and closes only on lines that are just `$$`; directive names in any case; and a heading's trailing `{}` or `{word}` is text. Documents without `smd: 2` parse exactly as before. Checked against the renderer on every `.smd` in the repository and 300 fuzz documents, each as written, as `smd: 2` and as spec v1. Container and math ranges agree except where the grammar was already simpler: raw HTML blocks, now listed in its README, and front matter the renderer can't read as YAML.
+- CI: the benchmark gate no longer fails on a slow runner. The `smdToMarkdown` limits (25 / 150 ms for 1k / 10k lines) were set before it parsed the whole document and sat at 90% of what CI measures; they now match `renderSmd` (100 / 750 ms), and a case over its limit is measured again before it fails. Every limit is still 5–10x a CI runner's median, so an accidentally quadratic pass still fails.
+
 ## 2.0.1 — 2026-10-18
 
 A documentation patch for 2.0.0: the guides, the Marketplace and npm pages and the agent skills now cover everything 1.7–2.0 added. The extension, the CLI and the library behave exactly as in 2.0.0.

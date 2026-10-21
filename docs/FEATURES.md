@@ -836,7 +836,7 @@ Everything else needs a decision only the author can make (which file was meant,
 
 ### In GitHub Actions
 
-`uses: bislink360/styled-markdown/validate@v2.0.1` validates on every pull request and shows each problem as an inline annotation on the changed lines, plus a job summary with counts per severity and the first 50 problems linked to their lines. It runs the bundled CLI with the runner's Node.js 22+, without installing anything; the inputs (`paths`, `fail-on: error|warning|never`, `strict`, `config`, `mermaid`, `stale-after`, `summary`, `cli`) are in [INSTALL.md](INSTALL.md#github-actions).
+`uses: bislink360/styled-markdown/validate@v2.0.2` validates on every pull request and shows each problem as an inline annotation on the changed lines, plus a job summary with counts per severity and the first 50 problems linked to their lines. It runs the bundled CLI with the runner's Node.js 22+, without installing anything; the inputs (`paths`, `fail-on: error|warning|never`, `strict`, `config`, `mermaid`, `stale-after`, `summary`, `cli`) are in [INSTALL.md](INSTALL.md#github-actions).
 
 Underneath it is `smd validate --format github`, which prints one [workflow command](https://docs.github.com/actions/reference/workflow-commands-for-github-actions) per problem:
 
@@ -1148,7 +1148,7 @@ Review the changes (git diff) before you commit them.
   "format": "smd-index",
   "version": 1,
   "smd": 2,
-  "generator": "smd 2.0.1",
+  "generator": "smd 2.0.2",
   "documents": [
     {
       "path": "docs/api-orders.smd",
@@ -1224,7 +1224,7 @@ Positions are UTF-16 columns, as LSP specifies (UTF-8 or UTF-32 when the client 
 
 ### Syntax highlighting with Tree-sitter
 
-Editors that highlight with Tree-sitter (Neovim, Helix, Zed, Emacs 29+) can use the grammar in [`integrations/tree-sitter-smd`](../integrations/tree-sitter-smd). It highlights front matter, `:::` containers with their names, attributes and titles, inline directives, `[text]{…}` spans, `==highlight==`, `$math$` and `$$` blocks, `{{variables}}`, footnotes, task boxes and `{#id}` attribute lists, and folds containers, code, math and front matter. Known container and directive names (from `spec.ts`) are highlighted differently from unknown ones, which still parse. The grammar parses only the `.smd` syntax: the rest of each document is injected into the editor's own Markdown grammars, the front matter into YAML, math into LaTeX and fenced code into its language. Fenced code and math stay opaque, so a `:::` inside a code block never ends a container. Setup for each editor: [the grammar's README](../integrations/tree-sitter-smd/README.md#editor-setup) and [EDITORS.md](EDITORS.md#syntax-highlighting-with-tree-sitter).
+Editors that highlight with Tree-sitter (Neovim, Helix, Zed, Emacs 29+) can use the grammar in [`integrations/tree-sitter-smd`](../integrations/tree-sitter-smd). It highlights front matter, `:::` containers with their names, attributes and titles, inline directives, `[text]{…}` spans, `==highlight==`, `$math$` and `$$` blocks, `{{variables}}`, footnotes, task boxes and `{#id}` attribute lists, and folds containers, code, math and front matter. Known container and directive names (from `spec.ts`) are highlighted differently from unknown ones, which still parse. The grammar parses only the `.smd` syntax: the rest of each document is injected into the editor's own Markdown grammars, the front matter into YAML, math into LaTeX and fenced code into its language. Fenced code and math stay opaque, so a `:::` inside a code block never ends a container. Since 2.0.2 it reads each document with the rules of its spec version, as the renderer does: in an `smd: 2` document, closing fences pair by colon count, `$$` math opens and closes only on lines that are just `$$`, and directive names are read in any case ([the grammar's README](../integrations/tree-sitter-smd/README.md#spec-versions)). Setup for each editor: [the grammar's README](../integrations/tree-sitter-smd/README.md#editor-setup) and [EDITORS.md](EDITORS.md#syntax-highlighting-with-tree-sitter).
 
 ### What changed: `smd diff`
 
