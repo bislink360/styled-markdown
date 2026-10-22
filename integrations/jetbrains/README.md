@@ -9,7 +9,7 @@ A plugin that gives `.smd` files highlighting and the Styled Markdown language s
 
 | Feature | How |
 |---|---|
-| Highlighting of the `.smd` syntax and the Markdown around it | The VS Code extension's TextMate grammar ([`extension/syntaxes`](../../extension/syntaxes)), with the IDE's own Markdown and YAML TextMate grammars for the text around it and the front matter |
+| Highlighting of the `.smd` syntax and the Markdown around it | The VS Code extension's TextMate grammar ([`extension/syntaxes`](../../extension/syntaxes)), made into one file for the IDE, with its own copy of VS Code's Markdown grammar and the IDE's YAML grammar for the front matter (see [Highlighting](#highlighting)) |
 | Problems as you type, with quick fixes | The language server (`smd lsp`, [docs/EDITORS.md](../../docs/EDITORS.md#what-the-server-does)), the same checks as `smd validate` |
 | Completion: block names after `:::`, attributes, front matter, inline directives, fence languages, link paths and `#anchors` | The language server |
 | Hover, go to definition, the outline (**Structure**), symbol search, **Reformat Code** | The language server |
@@ -34,6 +34,15 @@ Not in the plugin: a live preview pane, the agent view, the tasks view and the B
 | smd CLI script | The CLI shipped with the plugin. To also get Mermaid syntax errors (the npm package includes Mermaid's parser; the single-file CLI doesn't), install the npm package and point this at its `dist/cli.js` |
 
 The server restarts when you apply a change. The IDE's language server widget in the status bar shows whether it runs, and its log.
+
+## Highlighting
+
+The extension highlights `.smd` with two TextMate grammars: [`smd.tmLanguage.json`](../../extension/syntaxes/smd.tmLanguage.json) (front matter, then Markdown) and [`smd-directives.injection.json`](../../extension/syntaxes/smd-directives.injection.json) (containers, directives, spans, marks and math), which VS Code layers over it with `injectTo`. The IDE's TextMate support reads a VS Code grammar's `embeddedLanguages` but not `injectTo`, and its own Markdown bundle may be turned off. So the plugin ships:
+
+- `bundle/syntaxes/smd.tmLanguage.json`: the extension's grammar with the injection grammar's rules as its own `injections`. [`scripts/bundle-grammar.mjs`](scripts/bundle-grammar.mjs) writes it, and a unit test fails when it is out of date (run `node integrations/jetbrains/scripts/bundle-grammar.mjs` after changing either extension grammar).
+- `bundle/syntaxes/markdown.tmLanguage.json`: VS Code's Markdown grammar ([microsoft/vscode-markdown-tm-grammar](https://github.com/microsoft/vscode-markdown-tm-grammar), MIT, [notice](bundle/syntaxes/markdown.LICENSE.txt)) under its own scope, `text.html.markdown.smd`.
+
+Code in fenced blocks is highlighted by the IDE's TextMate grammar for its language, when the IDE has one turned on.
 
 ## Build
 

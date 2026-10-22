@@ -11,6 +11,7 @@
 ### Deprecated
 
 ### Fixed
+- **JetBrains plugin: `.smd` syntax is highlighted.** In 2.1.0 only the front matter was. The IDE's TextMate support doesn't apply VS Code's `injectTo`, which is how the extension's container, directive, span, mark and math rules reach its grammar, and the Markdown around them came from the IDE's own Markdown bundle, which may be turned off. The plugin now ships one grammar with those rules as its own injections (generated from the extension's by `integrations/jetbrains/scripts/bundle-grammar.mjs`; a test keeps it up to date) and its own copy of VS Code's Markdown grammar (MIT).
 
 ## 2.1.0 — 2026-10-21
 
