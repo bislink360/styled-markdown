@@ -235,12 +235,17 @@ function renderToc(headings: Heading[], m: Messages): string {
     .join('')}</ul></nav>`;
 }
 
-/** Render a whole standalone HTML page (used by Export to HTML and the CLI). */
-export function renderStandaloneHtml(text: string, css: string, runtimeJs: string, options: RenderOptions = {}): string {
+/**
+ * Render a whole standalone HTML page (used by Export to HTML and the CLI). The front matter's `theme: light|dark`
+ * picks the page's theme; without one it is `fallbackTheme` (`auto` follows the reader's system).
+ */
+export function renderStandaloneHtml(
+  text: string, css: string, runtimeJs: string, options: RenderOptions = {}, fallbackTheme: 'auto' | 'light' | 'dark' = 'auto',
+): string {
   const result = renderSmd(text, options);
   const title = typeof result.frontMatter.title === 'string' ? result.frontMatter.title : result.headings[0]?.text ?? 'Document';
   const named = String(result.frontMatter.theme).toLowerCase();
-  const theme = ['light', 'dark'].includes(named) ? named : 'auto';
+  const theme = ['light', 'dark'].includes(named) ? named : fallbackTheme;
   return pageHtml({ title, theme, body: result.html, css, runtimeJs, cdn: true, lang: result.lang });
 }
 

@@ -308,7 +308,7 @@ To update, replace the three files and reload the plugin. Settings, what renders
 
 ## JetBrains IDEs
 
-The Styled Markdown plugin for JetBrains IDEs highlights `.smd` files with the VS Code extension's grammar and runs the Styled Markdown language server, which ships with the plugin: problems as you type with quick fixes, completion, hover, go to definition, the outline, workspace symbols and formatting. **Open Styled Markdown Preview in Browser** (editor right-click menu, or **Tools**) shows the rendered page.
+The Styled Markdown plugin for JetBrains IDEs highlights `.smd` files with the VS Code extension's grammar and runs the Styled Markdown language server, which ships with the plugin: problems as you type with quick fixes, completion, hover, go to definition, the outline, workspace symbols and formatting. Since 2.2.0 `.smd` files open with a live preview beside the editor; **Open Styled Markdown Preview in Browser** (editor right-click menu, or **Tools**) shows the page in your browser.
 
 Until it is on the JetBrains Marketplace, install it from the GitHub release:
 

@@ -13,11 +13,18 @@ A plugin that gives `.smd` files highlighting and the Styled Markdown language s
 | Problems as you type, with quick fixes | The language server (`smd lsp`, [docs/EDITORS.md](../../docs/EDITORS.md#what-the-server-does)), the same checks as `smd validate` |
 | Completion: block names after `:::`, attributes, front matter, inline directives, fence languages, link paths and `#anchors` | The language server |
 | Hover, go to definition, the outline (**Structure**), symbol search, **Reformat Code** | The language server |
+| **Live preview** beside the editor (since 2.2.0): the rendered page, updated as you type, in the IDE's light or dark theme | The language server's `smd/renderHtml` (the page `smd export --to html` writes, from the editor's current text) in the IDE's embedded browser (JCEF) |
 | **Open Styled Markdown Preview in Browser** (editor right-click menu, or **Tools**) | `smd export --to html` into a temporary folder, then the default browser |
 
 The language server is the `smd` CLI's, shipped in the plugin as one file (`server/smd.cjs`, the same file as the agent skills' bundle), and runs on Node.js. Everything the server does is the same as in Neovim, Helix or Zed: see [docs/EDITORS.md](../../docs/EDITORS.md).
 
-Not in the plugin: a live preview pane, the agent view, the tasks view and the Block Editor. Those are in the VS Code extension. The **Open Preview in Browser** page doesn't refresh as you type: run the action again.
+### The preview
+
+A `.smd` file opens as a split editor, like Markdown files: the text on the left, the preview on the right. The buttons at the top right of the editor show only the text, both, or only the preview. The preview renders again about 300 ms after you stop typing, keeps its scroll position, and follows the IDE's light or dark theme unless the front matter sets `theme:`. Relative images and code embeds resolve from the document's folder; links open in the system browser. Diagrams (Mermaid) and math styles load from a CDN, as in an exported page, so they need a network connection.
+
+The preview needs the IDE's embedded browser (JCEF), which every desktop IDE has unless it was turned off; without it the pane says so, and **Open Preview in Browser** still works. It needs the language server running, so Node.js too. It doesn't scroll with the editor, and clicking in it doesn't move the cursor.
+
+Not in the plugin: the agent view, the tasks view and the Block Editor. Those are in the VS Code extension.
 
 ## Requirements
 

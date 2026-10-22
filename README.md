@@ -344,7 +344,7 @@ The Styled Markdown plugin for [Obsidian](https://obsidian.md) renders `:::` con
 
 ### JetBrains IDEs
 
-The Styled Markdown plugin for IntelliJ IDEA, PyCharm, WebStorm and the other JetBrains IDEs highlights `.smd` files with the VS Code extension's grammar and runs the Styled Markdown language server: problems with quick fixes, completion, hover, go to definition, the outline and formatting, plus **Open Styled Markdown Preview in Browser**. It needs an IDE with the LSP API (IntelliJ IDEA 2025.3+, the others 2025.1+) and Node.js 22+. Install `styled-markdown-jetbrains-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) with **Settings → Plugins → ⚙ → Install Plugin from Disk…**: [plugin README](integrations/jetbrains/README.md).
+The Styled Markdown plugin for IntelliJ IDEA, PyCharm, WebStorm and the other JetBrains IDEs highlights `.smd` files with the VS Code extension's grammar and runs the Styled Markdown language server: problems with quick fixes, completion, hover, go to definition, the outline and formatting, plus a live preview beside the editor. It needs an IDE with the LSP API (IntelliJ IDEA 2025.3+, the others 2025.1+) and Node.js 22+. Install `styled-markdown-jetbrains-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) with **Settings → Plugins → ⚙ → Install Plugin from Disk…**: [plugin README](integrations/jetbrains/README.md).
 
 ## Token-efficient reading for agents
 

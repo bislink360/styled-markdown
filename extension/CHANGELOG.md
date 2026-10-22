@@ -5,12 +5,15 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- **JetBrains plugin: a live preview.** `.smd` files open as a split editor, text and rendered page side by side (or either alone, with the editor's layout buttons), like Markdown files. The page renders again shortly after each edit, keeps its scroll position and follows the IDE's light or dark theme; relative images and code embeds resolve from the document's folder, and links open in the system browser. It needs the IDE's embedded browser (JCEF).
+- **Language server: `smd/renderHtml`**, a request beyond LSP (announced as `experimental.smdRenderHtml`) that answers the page `smd export --to html` writes, from the client's current text, with an optional `light`/`dark` theme for documents whose front matter names none. The JetBrains preview uses it; other editors can show the page in a webview (docs/EDITORS.md). `renderPage` and `renderStandaloneHtml` take that fallback theme as an optional last argument.
 
 ### Changed
 
 ### Deprecated
 
 ### Fixed
+- **JetBrains plugin: Open Styled Markdown Preview in Browser opened a broken address on Windows** (`file:///C:/%5CUsers%5C…`, "can't reach this page"). It now opens a proper `file:` URI.
 
 ## 2.1.0 — 2026-10-21
 
