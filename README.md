@@ -342,6 +342,10 @@ The `mkdocs-styled-markdown` plugin turns the `.smd` files in an MkDocs site int
 
 The Styled Markdown plugin for [Obsidian](https://obsidian.md) renders `:::` containers, inline directives and styled spans in your notes' reading view, follows your theme in light and dark mode, renders ```` ```smd ```` blocks in Live Preview too, and opens `.smd` files as notes. Unzip `styled-markdown-obsidian-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) into your vault's `.obsidian/plugins/` and turn it on: [plugin README](integrations/obsidian/README.md).
 
+### JetBrains IDEs
+
+The Styled Markdown plugin for IntelliJ IDEA, PyCharm, WebStorm and the other JetBrains IDEs highlights `.smd` files with the VS Code extension's grammar and runs the Styled Markdown language server: problems with quick fixes, completion, hover, go to definition, the outline and formatting, plus **Open Styled Markdown Preview in Browser**. It needs an IDE with the LSP API (IntelliJ IDEA 2025.3+, the others 2025.1+) and Node.js 22+. Install `styled-markdown-jetbrains-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) with **Settings → Plugins → ⚙ → Install Plugin from Disk…**: [plugin README](integrations/jetbrains/README.md).
+
 ## Token-efficient reading for agents
 
 Measured on [`examples/checkout-redesign.smd`](examples/checkout-redesign.smd), a realistic ≈2,400-token PRD:
@@ -398,6 +402,7 @@ styled-markdown/
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
 ├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
 ├── integrations/obsidian/ the Obsidian plugin (id `styled-markdown`)
+├── integrations/jetbrains/ the JetBrains plugin (Kotlin, Gradle): TextMate highlighting and the language server
 ├── integrations/tree-sitter-smd/  Tree-sitter grammar and queries for Neovim, Helix and Zed
 ├── playground/           the web playground: a static page that runs the engine in the browser
 ├── validate/             the GitHub Action (smd validate with pull request annotations)

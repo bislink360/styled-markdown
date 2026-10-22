@@ -1,6 +1,6 @@
 # Installation guide
 
-This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
+This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, the **JetBrains plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
 
 ## Contents
 
@@ -14,6 +14,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 - [MkDocs plugin](#mkdocs-plugin)
 - [Web playground](#web-playground)
 - [Obsidian plugin](#obsidian-plugin)
+- [JetBrains IDEs](#jetbrains-ides)
 - [Update or uninstall](#update-or-uninstall)
 - [Upgrading to 2.0](#upgrading-to-20)
 - [Build from source](#build-from-source)
@@ -27,6 +28,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | CLI and agent skills | **Node.js 22 or newer** |
 | MkDocs plugin | Python 3.9+, MkDocs 1.6+ and **Node.js 22 or newer** on `PATH` |
 | Obsidian plugin | Obsidian **1.4 or newer**, desktop or mobile |
+| JetBrains plugin | A JetBrains IDE with the LSP API: IntelliJ IDEA **2025.3 or newer** (any edition of the unified IDE), or PyCharm, WebStorm, GoLand, RustRover and the others **2025.1 or newer**; not Android Studio. **Node.js 22 or newer** for the language server |
 | Building from source | Node.js 22+, npm, Git |
 | Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd export --to docx` and **Export to Word (.docx)** |
 
@@ -303,6 +305,18 @@ Until it is in Obsidian's community plugin list, install it from the GitHub rele
 3. In Obsidian, **Settings → Community plugins**: turn off Restricted mode if it is on, reload the list of installed plugins and turn on **Styled Markdown**.
 
 To update, replace the three files and reload the plugin. Settings, what renders where, and the limitations (Live Preview, wikilinks and embeds inside containers, `.smd` files and Obsidian's index): [plugin README](../integrations/obsidian/README.md).
+
+## JetBrains IDEs
+
+The Styled Markdown plugin for JetBrains IDEs highlights `.smd` files with the VS Code extension's grammar and runs the Styled Markdown language server, which ships with the plugin: problems as you type with quick fixes, completion, hover, go to definition, the outline, workspace symbols and formatting. **Open Styled Markdown Preview in Browser** (editor right-click menu, or **Tools**) shows the rendered page.
+
+Until it is on the JetBrains Marketplace, install it from the GitHub release:
+
+1. Download `styled-markdown-jetbrains-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest). Don't unzip it.
+2. In the IDE, **Settings → Plugins → ⚙ → Install Plugin from Disk…**, choose the zip, and restart the IDE when asked.
+3. Open a `.smd` file. The language server needs **Node.js 22 or newer**: `node` on the `PATH`, or its path in **Settings → Languages & Frameworks → Styled Markdown**. Without Node.js, highlighting still works, and the IDE says what is missing.
+
+To update, install the new zip the same way. Settings, what the plugin does and doesn't do, and building it: [plugin README](../integrations/jetbrains/README.md).
 
 ## Update or uninstall
 

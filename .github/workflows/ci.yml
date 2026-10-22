@@ -144,6 +144,33 @@ jobs:
       - name: Every .smd file parses without errors
         run: node scripts/parse-all.mjs
 
+  # The JetBrains plugin (integrations/jetbrains): it compiles against the IntelliJ Platform version in its
+  # gradle.properties, its plugin.xml passes the platform's structure checks, and the zip has the server
+  # and the TextMate bundle in it.
+  jetbrains:
+    name: JetBrains plugin
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/jetbrains
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build the plugin
+        run: ./gradlew buildPlugin verifyPluginStructure --console=plain
+      - name: The zip has the plugin jar, the server and the TextMate bundle
+        run: |
+          zip=$(ls build/distributions/styled-markdown-jetbrains-*.zip)
+          unzip -tq "$zip"
+          for file in 'lib/styled-markdown-jetbrains-[0-9.]+\.jar' server/smd.cjs bundle/package.json bundle/language-configuration.json \
+            bundle/syntaxes/smd.tmLanguage.json bundle/syntaxes/smd-directives.injection.json; do
+            unzip -l "$zip" | grep -E " styled-markdown-jetbrains/$file\$" > /dev/null || { echo "::error::$zip has no $file"; exit 1; }
+          done
+
   # Dogfoods the GitHub Action in validate/ from this checkout with the committed bundled CLI
   # (the test job checks that it is up to date), on Linux and on Windows (Git Bash).
   validate-action:

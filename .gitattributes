@@ -2,6 +2,9 @@
 *.png binary
 *.vsix binary
 *.zip binary
+*.jar binary
+# Windows batch files (the JetBrains plugin's gradlew.bat) need CRLF.
+*.bat text eol=crlf
 
 # Generated files: collapsed in diffs and excluded from language stats
 skills/*/scripts/smd.cjs linguist-generated
