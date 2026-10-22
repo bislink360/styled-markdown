@@ -45,7 +45,8 @@ class OpenPreviewInBrowserAction : AnAction() {
                     return fail(project, result.stderr.ifBlank { result.stdout }.ifBlank { "smd export exited with ${result.exitCode}" })
                 }
                 out.writeText(absoluteImages(out.readText(), source.parent))
-                BrowserUtil.browse(out.toFile())
+                // A file: URI (file:///C:/…). Given a File, the IDE built file:///C:/%5CUsers%5C… on Windows (2.1.0).
+                BrowserUtil.browse(out.toUri())
             }
         }.queue()
     }

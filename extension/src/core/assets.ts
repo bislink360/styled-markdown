@@ -23,10 +23,11 @@ export const SMD_SITE_JS: string = typeof __SMD_SITE_JS__ === 'string' ? __SMD_S
 
 /**
  * Render an .smd document to a complete, self-contained HTML page with the default
- * stylesheet and runtime. Mermaid and KaTeX styles load from a CDN.
+ * stylesheet and runtime. Mermaid and KaTeX styles load from a CDN. The page's theme is the front
+ * matter's `theme`, else `fallbackTheme` (`auto`: the reader's system).
  */
-export function renderPage(text: string, options: RenderOptions = {}): string {
-  return renderStandaloneHtml(text, SMD_CSS, SMD_RUNTIME_JS, options);
+export function renderPage(text: string, options: RenderOptions = {}, fallbackTheme: 'auto' | 'light' | 'dark' = 'auto'): string {
+  return renderStandaloneHtml(text, SMD_CSS, SMD_RUNTIME_JS, options, fallbackTheme);
 }
 
 /**

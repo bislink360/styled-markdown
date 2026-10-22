@@ -12,6 +12,7 @@
       <li><b>The Styled Markdown language server</b> (<code>smd lsp</code>, shipped with the plugin): problems as you type with
       quick fixes, completion (block names, attributes, front matter, directives, link paths and anchors), hover, go to
       definition, the document outline and workspace symbols, and formatting.</li>
+      <li><b>A live preview</b> beside the editor: the rendered page, updated as you type, in the IDE's light or dark theme.</li>
       <li><b>Open Preview in Browser</b>: the rendered page, exported with <code>smd export --to html</code>.</li>
     </ul>
     <p>Needs <a href="https://nodejs.org/">Node.js</a> 22 or newer, and an IDE with the LSP API (IntelliJ IDEA 2025.3+,
@@ -25,6 +26,7 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <platform.lsp.serverSupportProvider implementation="com.bislink360.smd.SmdLspServerSupportProvider"/>
+        <fileEditorProvider implementation="com.bislink360.smd.SmdSplitEditorProvider"/>
         <applicationConfigurable parentId="language" instance="com.bislink360.smd.SmdConfigurable"
                                  id="com.bislink360.smd.settings" displayName="Styled Markdown"/>
         <notificationGroup id="Styled Markdown" displayType="BALLOON"/>

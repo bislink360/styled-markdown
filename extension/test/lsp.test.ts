@@ -157,9 +157,10 @@ test('lifecycle: initialize first, shutdown then exit', () => {
   assert.equal(init.serverInfo.version, '9.9.9');
   assert.deepEqual(Object.keys(init.capabilities).sort((a, b) => a.localeCompare(b)), [
     'codeActionProvider', 'completionProvider', 'definitionProvider', 'documentFormattingProvider', 'documentSymbolProvider',
-    'hoverProvider', 'positionEncoding', 'textDocumentSync', 'workspaceSymbolProvider',
+    'experimental', 'hoverProvider', 'positionEncoding', 'textDocumentSync', 'workspaceSymbolProvider',
   ]);
   assert.deepEqual(init.capabilities.textDocumentSync, { openClose: true, change: 1 });
+  assert.deepEqual(init.capabilities.experimental, { smdRenderHtml: true });
   assert.equal(c.request('initialize', {}).error?.code, -32600);
 
   const before = c.sent.length;
@@ -428,6 +429,28 @@ test('formatting: edits produce the formatted document', () => {
   const clean = uriOf(join(root, 'docs', 'clean.smd'));
   c.open(clean, formatSmd(cases[0]));
   assert.deepEqual(c.result('textDocument/formatting', { textDocument: { uri: clean }, options: {} }), []);
+});
+
+test('smd/renderHtml: the page smd export writes, from the sent text or the open document', () => {
+  const c = ready();
+  // The open document, with its code embed read from the document's folder.
+  const open = c.result('smd/renderHtml', { textDocument: { uri: PLAN_URI } }).html as string;
+  assert.match(open, /^<!DOCTYPE html>/i);
+  assert.match(open, /<title>Plan<\/title>/);
+  assert.match(open, /code\.ts:1-2<\/div><pre><code class="language-ts">.*a = .*1/, 'the ```ts file="code.ts"``` embed resolves from docs/');
+  assert.match(open, /data-smd-theme-pref="auto"/);
+  // Sent text wins over the open document (unsaved edits, or a didChange still on its way).
+  const sent = c.result('smd/renderHtml', { textDocument: { uri: PLAN_URI }, text: '# Unsaved\n\n:::note\nHi\n:::\n', theme: 'dark' }).html as string;
+  assert.match(sent, /<title>Unsaved<\/title>/);
+  assert.match(sent, /<p data-line="3">Hi<\/p>/);
+  assert.match(sent, /data-smd-theme-pref="dark"/);
+  // The front matter's theme wins over the client's.
+  const named = c.result('smd/renderHtml', { textDocument: { uri: PLAN_URI }, text: '---\ntheme: light\n---\n# A\n', theme: 'dark' }).html as string;
+  assert.match(named, /data-smd-theme-pref="light"/);
+  // A closed document needs its text; a request without a URI is invalid.
+  assert.equal(c.request('smd/renderHtml', { textDocument: { uri: OTHER_URI } }).error?.code, -32602);
+  assert.match(c.result('smd/renderHtml', { textDocument: { uri: OTHER_URI }, text: '# Other\n' }).html, /<title>Other<\/title>/);
+  assert.equal(c.request('smd/renderHtml', {}).error?.code, -32602);
 });
 
 test('Mermaid syntax errors are published when parsing finishes, unless the document changed', async () => {

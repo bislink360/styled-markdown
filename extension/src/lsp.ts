@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { checkMermaid, formatSmd, parseSmd, validateSmd, type Diagnostic, type ValidateOptions } from './core';
+import { checkMermaid, formatSmd, parseSmd, renderPage, validateSmd, type Diagnostic, type ValidateOptions } from './core';
 import { anchorOrAliasLine } from './core/headingAliases';
 import { isDocumentPath, linkAt, splitTarget } from './core/links';
 import type { MermaidParse } from './core/mermaid';
@@ -10,7 +10,7 @@ import { loadRuleConfig } from './config';
 import { loadMermaidParser } from './mermaidLoader';
 import { completionsAt, hoverAt, type AssistEnv, type FolderEntry } from './lspAssist';
 import { chooseEncoding, TextDocuments, type Position, type PositionEncoding, type Range, type TextDocument } from './lspDocuments';
-import { frame, isObject, LspEndpoint, serveStream, type LspMessage } from './lspProtocol';
+import { frame, isObject, LspEndpoint, LspError, LSP_ERRORS, serveStream, type LspMessage } from './lspProtocol';
 import { collect, readerFor } from './workspace';
 
 /**
@@ -75,6 +75,7 @@ export class SmdLanguageServer {
         'textDocument/completion': handle(this.completion),
         'textDocument/definition': handle(this.definition),
         'textDocument/formatting': handle(this.formatting),
+        'smd/renderHtml': handle(this.renderHtml),
       },
       notifications: {
         'textDocument/didOpen': handle(this.didOpen),
@@ -110,6 +111,8 @@ export class SmdLanguageServer {
         completionProvider: { triggerCharacters: TRIGGER_CHARACTERS },
         definitionProvider: true,
         documentFormattingProvider: true,
+        // Not part of LSP: the `smd/renderHtml` request (see renderHtml), for clients with a preview.
+        experimental: { smdRenderHtml: true },
       },
       serverInfo: { name: 'smd-language-server', version: this.options.version },
     };
@@ -312,6 +315,23 @@ export class SmdLanguageServer {
   private formatting(params: { textDocument: { uri: string } }) {
     const document = this.documents.get(params.textDocument.uri);
     return document ? formattingEdits(document, formatSmd(document.text)) : null;
+  }
+
+  /**
+   * `smd/renderHtml` (not part of LSP; the server announces it as `experimental.smdRenderHtml`): the document as the
+   * standalone page `smd export --to html` writes, for a client's preview. `text` renders the client's current text
+   * (unsaved edits too), so the page never lags behind a `didChange` still on its way; without it, the open document's.
+   * Includes and code embeds resolve from the document's folder. `theme` (`light` or `dark`) is the page's theme when
+   * the front matter names none, e.g. the editor's.
+   */
+  private renderHtml(params: { textDocument?: { uri?: unknown }; text?: unknown; theme?: unknown }) {
+    const uri = isObject(params) && isObject(params.textDocument) && typeof params.textDocument.uri === 'string' ? params.textDocument.uri : undefined;
+    if (!uri) throw new LspError(LSP_ERRORS.invalidParams, 'smd/renderHtml needs textDocument.uri');
+    const text = typeof params.text === 'string' ? params.text : this.documents.get(uri)?.text;
+    if (text === undefined) throw new LspError(LSP_ERRORS.invalidParams, `smd/renderHtml: ${uri} is not open and no text was sent`);
+    const file = filePath(uri);
+    const theme = params.theme === 'light' || params.theme === 'dark' ? params.theme : 'auto';
+    return { html: renderPage(text, { readFile: file ? this.reader(file) : undefined, today: this.options.today }, theme) };
   }
 
   // -------------------------------------------------------------------------

@@ -12,9 +12,12 @@ import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.platform.lsp.api.LspServer
 import com.intellij.platform.lsp.api.LspServerManager
+import com.intellij.platform.lsp.api.LspServerState
 import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.platform.lsp.api.ProjectWideLspServerDescriptor
+import org.eclipse.lsp4j.services.LanguageServer
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -37,6 +40,11 @@ class SmdLspServerSupportProvider : LspServerSupportProvider {
 
     companion object {
         private val warned = AtomicBoolean(false)
+
+        /** The project's running Styled Markdown server, if any (the preview asks it to render). */
+        fun runningServer(project: Project): LspServer? =
+            LspServerManager.getInstance(project).getServersForProvider(SmdLspServerSupportProvider::class.java)
+                .firstOrNull { it.state == LspServerState.Running }
 
         /** Restart the server in every open project, after the settings change. */
         fun restartAll() {
@@ -66,6 +74,9 @@ class SmdLspServerSupportProvider : LspServerSupportProvider {
 
 private class SmdLspServerDescriptor(project: Project) : ProjectWideLspServerDescriptor(project, "Styled Markdown") {
     override fun isSupportedFile(file: VirtualFile): Boolean = file.isSmd()
+
+    // The server's requests beyond LSP, such as smd/renderHtml for the preview.
+    override val lsp4jServerClass: Class<out LanguageServer> = SmdLanguageServerApi::class.java
 
     override fun createCommandLine(): GeneralCommandLine {
         val root = project.basePath?.let { java.nio.file.Path.of(it) }
