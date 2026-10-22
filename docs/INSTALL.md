@@ -1,6 +1,6 @@
 # Installation guide
 
-This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
+This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, the **JetBrains plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
 
 ## Contents
 
@@ -14,6 +14,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 - [MkDocs plugin](#mkdocs-plugin)
 - [Web playground](#web-playground)
 - [Obsidian plugin](#obsidian-plugin)
+- [JetBrains IDEs](#jetbrains-ides)
 - [Update or uninstall](#update-or-uninstall)
 - [Upgrading to 2.0](#upgrading-to-20)
 - [Build from source](#build-from-source)
@@ -27,6 +28,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | CLI and agent skills | **Node.js 22 or newer** |
 | MkDocs plugin | Python 3.9+, MkDocs 1.6+ and **Node.js 22 or newer** on `PATH` |
 | Obsidian plugin | Obsidian **1.4 or newer**, desktop or mobile |
+| JetBrains plugin | A JetBrains IDE with the LSP API: IntelliJ IDEA **2025.3 or newer** (any edition of the unified IDE), or PyCharm, WebStorm, GoLand, RustRover and the others **2025.1 or newer**; not Android Studio. **Node.js 22 or newer** for the language server |
 | Building from source | Node.js 22+, npm, Git |
 | Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd export --to docx` and **Export to Word (.docx)** |
 
@@ -36,13 +38,13 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 
 ### Option A — from the release file (recommended)
 
-1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-2.0.2.vsix`**.
+1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-2.1.0.vsix`**.
 2. Install it with **one** of these methods.
 
    **From the terminal:**
 
    ```bash
-   code --install-extension styled-markdown-2.0.2.vsix
+   code --install-extension styled-markdown-2.1.0.vsix
    ```
 
    **From VS Code:**
@@ -62,7 +64,7 @@ git clone https://github.com/bislink360/styled-markdown.git
 cd styled-markdown/extension
 npm install
 npm run package
-code --install-extension styled-markdown-2.0.2.vsix
+code --install-extension styled-markdown-2.1.0.vsix
 ```
 
 ## Verify the installation
@@ -104,11 +106,11 @@ The CLI is a **single self-contained file** with no dependencies. Pick one metho
 **From the release's npm package (recommended):** npm installs straight from the tarball attached to the release. The npm registry listing is coming soon.
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.0.2/styled-markdown-2.0.2.tgz
-smd --version       # smd 2.0.2 (Styled Markdown spec v2)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.1.0/styled-markdown-2.1.0.tgz
+smd --version       # smd 2.1.0 (Styled Markdown spec v2)
 ```
 
-The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.0.2/styled-markdown-2.0.2.tgz`); see [npm/README.md](../npm/README.md).
+The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.1.0/styled-markdown-2.1.0.tgz`); see [npm/README.md](../npm/README.md).
 
 **Use the copy bundled with the skills (no build needed):**
 
@@ -123,7 +125,7 @@ node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs --version
 cd styled-markdown/extension
 npm install && npm run build
 npm link            # now `smd` works everywhere
-smd --version       # smd 2.0.2 (Styled Markdown spec v2)
+smd --version       # smd 2.1.0 (Styled Markdown spec v2)
 ```
 
 **Without linking:** `node extension/dist/cli.js <command>`.
@@ -159,7 +161,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v2.0.2
+      - uses: bislink360/styled-markdown/validate@v2.1.0
         with:
           paths: |
             docs
@@ -185,7 +187,7 @@ Errors become `::error`, warnings `::warning` and info diagnostics `::notice` an
 ### Any CI
 
 ```bash
-curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.0.2/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.1.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs validate docs/ --strict
 ```
 
@@ -204,7 +206,7 @@ Check `.smd` files before they are committed. `smd validate` and `smd fmt` take 
 ```yaml
 repos:
   - repo: https://github.com/bislink360/styled-markdown
-    rev: v2.0.2
+    rev: v2.1.0
     hooks:
       - id: smd-fmt
       - id: smd-validate
@@ -228,7 +230,7 @@ The hooks use `language: node`: pre-commit installs this repository's root `pack
 For JavaScript projects. The `styled-markdown` package isn't on the npm registry yet, so install it from the release's `.tgz`, which also gives you the Mermaid parser:
 
 ```bash
-npm install --save-dev https://github.com/bislink360/styled-markdown/releases/download/v2.0.2/styled-markdown-2.0.2.tgz
+npm install --save-dev https://github.com/bislink360/styled-markdown/releases/download/v2.1.0/styled-markdown-2.1.0.tgz
 npm install --save-dev lint-staged husky
 npx husky init
 echo "npx lint-staged" > .husky/pre-commit
@@ -244,7 +246,7 @@ and in `package.json`:
 }
 ```
 
-lint-staged appends the staged files to each command, runs them in order and stages the formatting changes. Add `--strict` to `smd validate` to fail on warnings. To use the single-file CLI instead of the package, download it into the repository (`curl -sSLo tools/smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.0.2/skills/styled-markdown-reader/scripts/smd.cjs`) and use `"node tools/smd.cjs fmt"` and `"node tools/smd.cjs validate"`.
+lint-staged appends the staged files to each command, runs them in order and stages the formatting changes. Add `--strict` to `smd validate` to fail on warnings. To use the single-file CLI instead of the package, download it into the repository (`curl -sSLo tools/smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.1.0/skills/styled-markdown-reader/scripts/smd.cjs`) and use `"node tools/smd.cjs fmt"` and `"node tools/smd.cjs validate"`.
 
 ### With a plain Git hook
 
@@ -268,7 +270,7 @@ It checks the files as they are in the working tree and doesn't change them; `--
 Until it is on PyPI, install the wheel from the GitHub release (each release attaches `mkdocs_styled_markdown-X.Y.Z-py3-none-any.whl` and the `.tar.gz` source):
 
 ```bash
-pip install https://github.com/bislink360/styled-markdown/releases/download/v2.0.2/mkdocs_styled_markdown-2.0.2-py3-none-any.whl
+pip install https://github.com/bislink360/styled-markdown/releases/download/v2.1.0/mkdocs_styled_markdown-2.1.0-py3-none-any.whl
 ```
 
 Then add it to `mkdocs.yml`:
@@ -303,6 +305,18 @@ Until it is in Obsidian's community plugin list, install it from the GitHub rele
 3. In Obsidian, **Settings → Community plugins**: turn off Restricted mode if it is on, reload the list of installed plugins and turn on **Styled Markdown**.
 
 To update, replace the three files and reload the plugin. Settings, what renders where, and the limitations (Live Preview, wikilinks and embeds inside containers, `.smd` files and Obsidian's index): [plugin README](../integrations/obsidian/README.md).
+
+## JetBrains IDEs
+
+The Styled Markdown plugin for JetBrains IDEs highlights `.smd` files with the VS Code extension's grammar and runs the Styled Markdown language server, which ships with the plugin: problems as you type with quick fixes, completion, hover, go to definition, the outline, workspace symbols and formatting. **Open Styled Markdown Preview in Browser** (editor right-click menu, or **Tools**) shows the rendered page.
+
+Until it is on the JetBrains Marketplace, install it from the GitHub release:
+
+1. Download `styled-markdown-jetbrains-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest). Don't unzip it.
+2. In the IDE, **Settings → Plugins → ⚙ → Install Plugin from Disk…**, choose the zip, and restart the IDE when asked.
+3. Open a `.smd` file. The language server needs **Node.js 22 or newer**: `node` on the `PATH`, or its path in **Settings → Languages & Frameworks → Styled Markdown**. Without Node.js, highlighting still works, and the IDE says what is missing.
+
+To update, install the new zip the same way. Settings, what the plugin does and doesn't do, and building it: [plugin README](../integrations/jetbrains/README.md).
 
 ## Update or uninstall
 
@@ -343,7 +357,7 @@ npm run build          # esbuild bundles dist/extension.js and dist/cli.js, copi
                        # and refreshes skills/*/scripts/smd.cjs and the MkDocs plugin's bridge.cjs
 npm test               # unit tests
 npm run test:vscode    # integration tests in a real VS Code (uses your installed VS Code, isolated profile)
-npm run package        # styled-markdown-2.0.2.vsix
+npm run package        # styled-markdown-2.1.0.vsix
 ```
 
 Press **F5** with the `extension/` folder open to start an Extension Development Host with the examples loaded.

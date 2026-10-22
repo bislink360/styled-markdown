@@ -186,11 +186,11 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-2.0.2.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+1. Download **`styled-markdown-2.1.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
 2. Install it:
 
    ```bash
-   code --install-extension styled-markdown-2.0.2.vsix
+   code --install-extension styled-markdown-2.1.0.vsix
    ```
 
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
@@ -236,8 +236,8 @@ Try `.smd` in the browser without installing anything: edit on the left; the pre
 Install the package straight from the release:
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.0.2/styled-markdown-2.0.2.tgz   # the smd command
-npm install https://github.com/bislink360/styled-markdown/releases/download/v2.0.2/styled-markdown-2.0.2.tgz      # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.1.0/styled-markdown-2.1.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v2.1.0/styled-markdown-2.1.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -262,7 +262,7 @@ Full instructions, building from source and troubleshooting: **[docs/INSTALL.md]
 ### Agent skills
 
 ```bash
-curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.0.2/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.1.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs skills install --global
 ```
 
@@ -314,7 +314,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v2.0.2
+      - uses: bislink360/styled-markdown/validate@v2.1.0
         with:
           paths: docs        # one per line; default: the whole repository
           fail-on: warning   # error (default), warning or never
@@ -341,6 +341,10 @@ The `mkdocs-styled-markdown` plugin turns the `.smd` files in an MkDocs site int
 ### Obsidian
 
 The Styled Markdown plugin for [Obsidian](https://obsidian.md) renders `:::` containers, inline directives and styled spans in your notes' reading view, follows your theme in light and dark mode, renders ```` ```smd ```` blocks in Live Preview too, and opens `.smd` files as notes. Unzip `styled-markdown-obsidian-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) into your vault's `.obsidian/plugins/` and turn it on: [plugin README](integrations/obsidian/README.md).
+
+### JetBrains IDEs
+
+The Styled Markdown plugin for IntelliJ IDEA, PyCharm, WebStorm and the other JetBrains IDEs highlights `.smd` files with the VS Code extension's grammar and runs the Styled Markdown language server: problems with quick fixes, completion, hover, go to definition, the outline and formatting, plus **Open Styled Markdown Preview in Browser**. It needs an IDE with the LSP API (IntelliJ IDEA 2025.3+, the others 2025.1+) and Node.js 22+. Install `styled-markdown-jetbrains-X.Y.Z.zip` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) with **Settings → Plugins → ⚙ → Install Plugin from Disk…**: [plugin README](integrations/jetbrains/README.md).
 
 ## Token-efficient reading for agents
 
@@ -398,6 +402,7 @@ styled-markdown/
 ├── npm/                  the `styled-markdown` npm package (library + CLI)
 ├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
 ├── integrations/obsidian/ the Obsidian plugin (id `styled-markdown`)
+├── integrations/jetbrains/ the JetBrains plugin (Kotlin, Gradle): TextMate highlighting and the language server
 ├── integrations/tree-sitter-smd/  Tree-sitter grammar and queries for Neovim, Helix and Zed
 ├── playground/           the web playground: a static page that runs the engine in the browser
 ├── validate/             the GitHub Action (smd validate with pull request annotations)
@@ -415,7 +420,7 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-2.0.2.vsix
+npm run package        # → styled-markdown-2.1.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
 npm run build:playground  # → dist/playground (the web playground; open its index.html)
 ```

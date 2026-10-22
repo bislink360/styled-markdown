@@ -729,7 +729,7 @@ The value as YAML reads it decides, so `smd: 2.0`, the number 2, is spec v2, wit
 
 Implementations decide the version in one place: in this repository, `specVersion(text)` (or `specVersion(frontMatterData)`) for tools that have the text, and `isV2(env)` for markdown-it rules, which read the `smdSpec` the renderer puts on the env before parsing (`extension/src/core/specVersion.ts`).
 
-Additive features (new containers, directives, front matter keys) keep the spec version; older renderers degrade gracefully (unknown containers render as a box, with their title since 1.10 (§3), unknown keys are kept, and in spec v2 an unknown directive shows its content). Only breaking changes increment `smd`.
+Additive features (new containers, directives, front matter keys) keep the spec version; older renderers degrade gracefully (unknown containers render as a box, with their title since 1.10 (§3), unknown keys are kept, and in spec v2 an unknown directive shows its content). Only breaking changes increment `smd`. Additive features under discussion are proposed in RFCs before they enter this specification, such as the exploratory collaboration RFC, [COLLABORATION-RFC.smd](COLLABORATION-RFC.smd); nothing in an RFC is part of the specification until it is accepted and written here.
 
 How an inline directive that a reader doesn't know reads (spec v2 RFC, proposal 7b). Since spec v2 reads any name as a directive, a directive added in a later release shows its content, styled as a span, in every 2.x tool; a spec v1 document, and every reader that reads a document with v1 rules, keeps the text:
 

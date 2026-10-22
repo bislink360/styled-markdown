@@ -12,7 +12,7 @@ An [MkDocs](https://www.mkdocs.org) plugin for [Styled Markdown](https://github.
 Until the package is on PyPI, install the wheel attached to the [GitHub Release](https://github.com/bislink360/styled-markdown/releases):
 
 ```bash
-pip install https://github.com/bislink360/styled-markdown/releases/download/v2.0.2/mkdocs_styled_markdown-2.0.2-py3-none-any.whl
+pip install https://github.com/bislink360/styled-markdown/releases/download/v2.1.0/mkdocs_styled_markdown-2.1.0-py3-none-any.whl
 ```
 
 Once it is published to PyPI: `pip install mkdocs-styled-markdown`. The plugin's version is the Styled Markdown release it ships.

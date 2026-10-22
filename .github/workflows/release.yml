@@ -133,6 +133,18 @@ jobs:
           (cd integrations/obsidian && npm ci --no-audit --no-fund && npm run typecheck)
           node integrations/obsidian/scripts/build.mjs --out obsidian-plugin/styled-markdown
           (cd obsidian-plugin && zip -r -q -X "../release-assets/styled-markdown-obsidian-$VERSION.zip" styled-markdown)
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+        with:
+          cache-read-only: true
+      - name: Build the JetBrains plugin
+        working-directory: integrations/jetbrains
+        run: |
+          ./gradlew buildPlugin verifyPluginStructure --console=plain
+          cp "build/distributions/styled-markdown-jetbrains-$VERSION.zip" ../../release-assets/
       - name: Check the artifacts
         working-directory: release-assets
         run: |
@@ -143,7 +155,8 @@ jobs:
           whl="mkdocs_styled_markdown-$VERSION-py3-none-any.whl"
           sdist="mkdocs_styled_markdown-$VERSION.tar.gz"
           obsidian="styled-markdown-obsidian-$VERSION.zip"
-          for zip in "$vsix" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip "$whl" "$obsidian"; do
+          jetbrains="styled-markdown-jetbrains-$VERSION.zip"
+          for zip in "$vsix" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip "$whl" "$obsidian" "$jetbrains"; do
             unzip -tq "$zip"   # a real zip archive, not a tar named .zip
           done
           unzip -l "$vsix" | grep -E ' extension/LICENSE(\.txt)?$' > /dev/null || { echo "::error::$vsix has no LICENSE (Open VSX and the Marketplace show it)"; exit 1; }
@@ -164,6 +177,14 @@ jobs:
             unzip -l "$obsidian" | grep " styled-markdown/$file$" > /dev/null || { echo "::error::$obsidian has no styled-markdown/$file"; exit 1; }
           done
           unzip -p "$obsidian" styled-markdown/manifest.json | node -e "const p=JSON.parse(require('fs').readFileSync(0,'utf8')); if (p.version!==process.env.VERSION) { console.error('::error::Obsidian plugin version '+p.version); process.exit(1); }"
+          for file in "lib/styled-markdown-jetbrains-$VERSION.jar" server/smd.cjs bundle/package.json bundle/syntaxes/smd.tmLanguage.json; do
+            unzip -l "$jetbrains" | grep " styled-markdown-jetbrains/$file$" > /dev/null || { echo "::error::$jetbrains has no styled-markdown-jetbrains/$file"; exit 1; }
+          done
+          # The plugin's server is the tag's CLI bundle, and the plugin declares the release version.
+          unzip -p "$jetbrains" styled-markdown-jetbrains/server/smd.cjs | cmp - ../skills/styled-markdown-reader/scripts/smd.cjs || { echo "::error::$jetbrains ships another smd.cjs"; exit 1; }
+          unzip -p "$jetbrains" "styled-markdown-jetbrains/lib/styled-markdown-jetbrains-$VERSION.jar" > jetbrains.jar
+          unzip -p jetbrains.jar META-INF/plugin.xml | grep "<version>$VERSION</version>" > /dev/null || { echo "::error::$jetbrains is not version $VERSION"; exit 1; }
+          rm jetbrains.jar
           sha256sum -- *
       - name: Release notes from the changelog
         run: node extension/scripts/release/changelog-excerpt.mjs "$VERSION" --downloads -o release-assets/release-notes.md
@@ -194,7 +215,8 @@ jobs:
         run: |
           set -euo pipefail
           assets=("styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip
-            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz" "styled-markdown-obsidian-$VERSION.zip")
+            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz" "styled-markdown-obsidian-$VERSION.zip"
+            "styled-markdown-jetbrains-$VERSION.zip")
           cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
           if [ "$DRY_RUN" = "true" ]; then
             echo "::notice title=GitHub Release::Dry run: would create $TAG with ${assets[*]} (notes in the job summary)."
@@ -215,10 +237,11 @@ jobs:
           set -euo pipefail
           names=$(gh release view "$TAG" --json assets --jq '.assets[].name')
           for asset in "styled-markdown-$VERSION.vsix" "styled-markdown-$VERSION.tgz" styled-markdown-reader.zip styled-markdown-writer.zip styled-markdown-playground.zip \
-            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz" "styled-markdown-obsidian-$VERSION.zip"; do
+            "mkdocs_styled_markdown-$VERSION-py3-none-any.whl" "mkdocs_styled_markdown-$VERSION.tar.gz" "styled-markdown-obsidian-$VERSION.zip" \
+            "styled-markdown-jetbrains-$VERSION.zip"; do
             grep -qxF -- "$asset" <<< "$names" || { echo "::error::Release $TAG has no $asset"; exit 1; }
           done
-          echo "Release $TAG lists all eight assets."
+          echo "Release $TAG lists all nine assets."
 
   # The publish jobs check out only the release scripts (no dependencies are installed) and
   # publish the exact files attached to the GitHub Release. The `release` environment is

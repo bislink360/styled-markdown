@@ -13,8 +13,9 @@ The VS Code extension is the full experience (live preview, agent view, tasks vi
 4. [Helix](#helix)
 5. [Zed](#zed)
 6. [Syntax highlighting with Tree-sitter](#syntax-highlighting-with-tree-sitter)
-7. [Other editors](#other-editors)
-8. [Troubleshooting](#troubleshooting)
+7. [JetBrains IDEs](#jetbrains-ides)
+8. [Other editors](#other-editors)
+9. [Troubleshooting](#troubleshooting)
 
 ## What the server does
 
@@ -42,7 +43,7 @@ The server is part of the `smd` command, from version 1.5.0. Install the npm pac
 ```bash
 npm install -g styled-markdown
 # or
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.0.2/styled-markdown-2.0.2.tgz
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.1.0/styled-markdown-2.1.0.tgz
 ```
 
 This puts two commands on your `PATH`:
@@ -58,7 +59,7 @@ Check it starts (it waits for a client on stdin; press Ctrl+C to stop):
 
 ```bash
 smd-language-server --stdio
-# [smd lsp] smd-language-server 2.0.2 over stdio
+# [smd lsp] smd-language-server 2.1.0 over stdio
 ```
 
 ## Neovim
@@ -274,6 +275,10 @@ The grammar parses only what `.smd` adds, and leaves the rest to the editor's Ma
 - the language of each code fence, `mermaid` included, the same way
 
 Editors build the grammar from this repository's URL, the `integrations/tree-sitter-smd` subdirectory and a release tag (1.7.0 or later). There is nothing to download from the release page. Setup snippets for Neovim (nvim-treesitter's `main` and `master` branches, with `ftdetect`), Helix (`languages.toml`) and Zed are in the [grammar's README](../integrations/tree-sitter-smd/README.md#editor-setup), which also explains the design and its limits. As with the language server setups above, they have not been tested in those editors here.
+
+## JetBrains IDEs
+
+IntelliJ IDEA, PyCharm, WebStorm and the other JetBrains IDEs don't need any of the setup above: the [Styled Markdown plugin](../integrations/jetbrains/README.md) (since 2.1.0) runs this language server itself, with the `smd` CLI shipped inside the plugin, and highlights `.smd` files with the VS Code extension's TextMate grammar. It needs an IDE with the LSP API (IntelliJ IDEA 2025.3 or newer, the others 2025.1 or newer) and Node.js 22 or newer. Install it from the GitHub release: [docs/INSTALL.md](INSTALL.md#jetbrains-ides).
 
 ## Other editors
 
