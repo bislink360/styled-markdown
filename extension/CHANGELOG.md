@@ -2,17 +2,11 @@
 
 ## 2.1.0 — 2026-10-21
 
-### ⚠️ Breaking changes
+Styled Markdown for JetBrains IDEs, and an RFC on collaborative editing. The extension, the CLI, the library and the spec behave exactly as in 2.0.2.
 
 ### Added
 - **A plugin for JetBrains IDEs** (`integrations/jetbrains`, `styled-markdown-jetbrains-X.Y.Z.zip` on the GitHub release): `.smd` highlighting with the VS Code extension's TextMate grammar, and the Styled Markdown language server (problems with quick fixes, completion, hover, go to definition, the outline, symbol search and formatting) through the IDE's LSP support, with the `smd` CLI shipped in the plugin. **Open Styled Markdown Preview in Browser** renders the file with `smd export --to html`. Settings for the Node.js and CLI paths are in **Settings → Languages & Frameworks → Styled Markdown**. Needs IntelliJ IDEA 2025.3+ (or PyCharm, WebStorm and the other JetBrains IDEs 2025.1+; not Android Studio) and Node.js 22+. The release now has nine assets; CI builds the plugin and checks its zip.
 - Documentation: an exploratory RFC for collaborative editing (`docs/COLLABORATION-RFC.smd`), for discussion. It recommends async features first, as small additive 2.x releases: a block-aware Git merge driver (`smd merge`), then `:::comment` and `:::suggestion` containers with an opt-in MCP tool for agents to propose edits, and defers live sync to a later prototype outside the core.
-
-### Changed
-
-### Deprecated
-
-### Fixed
 
 ## 2.0.2 — 2026-10-21
 
