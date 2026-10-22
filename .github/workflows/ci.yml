@@ -167,7 +167,7 @@ jobs:
           zip=$(ls build/distributions/styled-markdown-jetbrains-*.zip)
           unzip -tq "$zip"
           for file in 'lib/styled-markdown-jetbrains-[0-9.]+\.jar' server/smd.cjs bundle/package.json bundle/language-configuration.json \
-            bundle/syntaxes/smd.tmLanguage.json bundle/syntaxes/smd-directives.injection.json; do
+            bundle/syntaxes/smd.tmLanguage.json bundle/syntaxes/markdown.tmLanguage.json bundle/syntaxes/markdown.LICENSE.txt; do
             unzip -l "$zip" | grep -E " styled-markdown-jetbrains/$file\$" > /dev/null || { echo "::error::$zip has no $file"; exit 1; }
           done
 
