@@ -78,6 +78,7 @@ export function downloadsTable(version) {
     `| \`mkdocs_styled_markdown-${version}-py3-none-any.whl\` | MkDocs plugin (Python wheel; needs Node.js 22+) | \`pip install ./mkdocs_styled_markdown-${version}-py3-none-any.whl\` ([guide](${docs}/INSTALL.md#mkdocs-plugin)) |`,
     `| \`mkdocs_styled_markdown-${version}.tar.gz\` | MkDocs plugin source distribution | \`pip install ./mkdocs_styled_markdown-${version}.tar.gz\` |`,
     `| \`styled-markdown-obsidian-${version}.zip\` | Obsidian plugin (a \`styled-markdown\` folder with \`main.js\`, \`manifest.json\` and \`styles.css\`) | Unzip into your vault's \`.obsidian/plugins/\`, then turn it on in Settings → Community plugins ([guide](${docs}/INSTALL.md#obsidian-plugin)) |`,
+    `| \`styled-markdown-jetbrains-${version}.zip\` | JetBrains plugin (IntelliJ IDEA 2025.3+, PyCharm, WebStorm…): highlighting and the language server; needs Node.js 22+ | Settings → Plugins → ⚙ → Install Plugin from Disk… ([guide](${docs}/INSTALL.md#jetbrains-ides)) |`,
   ].join('\n');
 }
 

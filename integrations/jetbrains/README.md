@@ -1,0 +1,50 @@
+# Styled Markdown for JetBrains IDEs
+
+A plugin that gives `.smd` files highlighting and the Styled Markdown language server in IntelliJ IDEA, PyCharm, WebStorm, GoLand, RustRover and the other JetBrains IDEs. Install it from the GitHub release: [docs/INSTALL.md](../../docs/INSTALL.md#jetbrains-ides).
+
+> [!WARNING]
+> The plugin is new in 2.1.0. CI builds it against IntelliJ IDEA 2025.3 and runs the platform's plugin structure checks, and it builds against IntelliJ IDEA 2026.1; the language server it starts is the one tested in this repository. It has not yet been tried in every IDE it supports. If something doesn't work in your IDE, please [open an issue](https://github.com/bislink360/styled-markdown/issues) with the IDE's name and version (**Help → About**) and the log (**Help → Show Log in Explorer/Finder**).
+
+## What it does
+
+| Feature | How |
+|---|---|
+| Highlighting of the `.smd` syntax and the Markdown around it | The VS Code extension's TextMate grammar ([`extension/syntaxes`](../../extension/syntaxes)), with the IDE's own Markdown and YAML TextMate grammars for the text around it and the front matter |
+| Problems as you type, with quick fixes | The language server (`smd lsp`, [docs/EDITORS.md](../../docs/EDITORS.md#what-the-server-does)), the same checks as `smd validate` |
+| Completion: block names after `:::`, attributes, front matter, inline directives, fence languages, link paths and `#anchors` | The language server |
+| Hover, go to definition, the outline (**Structure**), symbol search, **Reformat Code** | The language server |
+| **Open Styled Markdown Preview in Browser** (editor right-click menu, or **Tools**) | `smd export --to html` into a temporary folder, then the default browser |
+
+The language server is the `smd` CLI's, shipped in the plugin as one file (`server/smd.cjs`, the same file as the agent skills' bundle), and runs on Node.js. Everything the server does is the same as in Neovim, Helix or Zed: see [docs/EDITORS.md](../../docs/EDITORS.md).
+
+Not in the plugin: a live preview pane, the agent view, the tasks view and the Block Editor. Those are in the VS Code extension. The **Open Preview in Browser** page doesn't refresh as you type: run the action again.
+
+## Requirements
+
+- A JetBrains IDE with the **LSP API**: IntelliJ IDEA 2025.3 or newer (the unified IDE, with or without a subscription), or PyCharm, WebStorm, PhpStorm, GoLand, RubyMine, CLion, RustRover, DataGrip, Rider 2025.1 or newer. Not Android Studio, and not builds of IntelliJ IDEA from its open-source code ([JetBrains: LSP](https://plugins.jetbrains.com/docs/intellij/language-server-protocol.html)).
+- **Node.js 22 or newer** for the language server and the preview. Highlighting works without it.
+
+## Settings
+
+**Settings → Languages & Frameworks → Styled Markdown**:
+
+| Setting | Empty means |
+|---|---|
+| Node.js executable | `node` on the `PATH` |
+| smd CLI script | The CLI shipped with the plugin. To also get Mermaid syntax errors (the npm package includes Mermaid's parser; the single-file CLI doesn't), install the npm package and point this at its `dist/cli.js` |
+
+The server restarts when you apply a change. The IDE's language server widget in the status bar shows whether it runs, and its log.
+
+## Build
+
+The plugin is a Gradle project (Kotlin, [IntelliJ Platform Gradle Plugin](https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin.html)). It needs a JDK 21 or newer. Its version is always the VS Code extension's (`extension/package.json`).
+
+```sh
+cd integrations/jetbrains
+./gradlew buildPlugin            # downloads IntelliJ IDEA (gradle.properties: platformVersion) to compile against
+./gradlew buildPlugin -PlocalIde="/path/to/an/installed/IDE"   # or compile against an installed IDE
+```
+
+The plugin zip is in `build/distributions/styled-markdown-jetbrains-X.Y.Z.zip`. `./gradlew runIde` opens an IDE with the plugin installed, for trying it. The build copies the language server (`skills/styled-markdown-reader/scripts/smd.cjs`) and the TextMate grammar (`extension/syntaxes`, `extension/language-configuration.json`) into the plugin; `bundle/package.json` lists them for the IDE's TextMate support, and a unit test ([`extension/test/jetbrains.test.ts`](../../extension/test/jetbrains.test.ts)) fails when it no longer matches the extension's `package.json`.
+
+The plugin uses the LSP API's names from before IntelliJ 2026.1.4 (`LspServerSupportProvider`, `ProjectWideLspServerDescriptor`), which every IDE from 2025.1 on has; newer IDEs keep them as deprecated aliases.

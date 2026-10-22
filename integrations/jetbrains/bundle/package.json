@@ -1,0 +1,30 @@
+{
+  "name": "styled-markdown",
+  "displayName": "Styled Markdown",
+  "description": "The VS Code extension's TextMate grammar for .smd files, for the JetBrains TextMate plugin. The build copies syntaxes/ and language-configuration.json from extension/.",
+  "contributes": {
+    "languages": [
+      {
+        "id": "smd",
+        "aliases": ["Styled Markdown", "smd"],
+        "extensions": [".smd"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "smd",
+        "scopeName": "text.html.smd",
+        "path": "./syntaxes/smd.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.frontmatter": "yaml"
+        }
+      },
+      {
+        "scopeName": "text.html.smd.directives",
+        "path": "./syntaxes/smd-directives.injection.json",
+        "injectTo": ["text.html.smd"]
+      }
+    ]
+  }
+}
