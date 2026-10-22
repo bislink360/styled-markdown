@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.0 — 2026-10-22
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 2.1.0 — 2026-10-21
 
 Styled Markdown for JetBrains IDEs, and an RFC on collaborative editing. The extension, the CLI, the library and the spec behave exactly as in 2.0.2.
