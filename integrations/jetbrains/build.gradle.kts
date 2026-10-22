@@ -55,8 +55,9 @@ intellijPlatform {
 }
 
 // What the plugin ships besides its jar: the language server (the self-contained `smd` CLI the agent
-// skills bundle, identical to extension/dist/cli.js) and a TextMate bundle made from the VS Code
-// extension's grammar, so the highlighting is the extension's.
+// skills bundle, identical to extension/dist/cli.js) and the TextMate bundle in bundle/: the VS Code
+// extension's grammar made into one file (scripts/bundle-grammar.mjs; a unit test checks it is up to
+// date) and its own copy of the Markdown grammar, so the highlighting is the extension's.
 val pluginFolder = rootProject.name // the plugin's folder in the sandbox and the zip
 
 tasks.prepareSandbox {
@@ -65,9 +66,6 @@ tasks.prepareSandbox {
     }
     from(layout.projectDirectory.dir("bundle")) {
         into("$pluginFolder/bundle")
-    }
-    from(repoRoot.resolve("extension/syntaxes")) {
-        into("$pluginFolder/bundle/syntaxes")
     }
     from(repoRoot.resolve("extension/language-configuration.json")) {
         into("$pluginFolder/bundle")
