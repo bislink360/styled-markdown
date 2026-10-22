@@ -5,6 +5,7 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- Documentation: an exploratory RFC for collaborative editing (`docs/COLLABORATION-RFC.smd`), for discussion. It recommends async features first, as small additive 2.x releases: a block-aware Git merge driver (`smd merge`), then `:::comment` and `:::suggestion` containers with an opt-in MCP tool for agents to propose edits, and defers live sync to a later prototype outside the core.
 
 ### Changed
 
