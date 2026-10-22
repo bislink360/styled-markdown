@@ -1,0 +1,281 @@
+---
+smd: 2
+title: "RFC: Collaborative editing"
+summary: An exploratory look at how people and AI agents could edit the same .smd document together, from what works today (Git, Live Share, MCP) to live sync. It recommends small, additive async features first, a block-aware Git merge driver and then review and suggestion containers, and defers live sync to a later prototype. For discussion; nothing here is built in 2.1.
+status: draft
+owners: ["@roshanmadhushanka"]
+tags: [rfc, collaboration, exploratory]
+updated: 2026-10-21
+toc: true
+---
+
+## How to read this
+
+The roadmap's last open item is "Real-time collaborative editing" (P3, exploratory). This RFC explores it; 2.1 ships no code for it. Each section ends with a recommendation written as a `:::decision{status=proposed}`. Nothing is accepted until the maintainer reviews it, as was done for the spec v2 RFC ([SPEC-V2-PROPOSALS.smd](SPEC-V2-PROPOSALS.smd)).
+
+Effort is sized :badge[S]{color=green} (up to a week), :badge[M]{color=amber} (two to four weeks) or :badge[L]{color=red} (more than a month, or open-ended). Claims about third-party tools that could not be checked from this repository or their documentation are marked **to verify**.
+
+## Goals and non-goals
+
+### Who collaborates
+
+| Who                | Typical case                                                                                                                    | Sync or async                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| People with people | Two authors finishing an RFC before a review meeting; a reviewer leaving remarks on a draft                                     | Both: a short live session, then review over days                                                      |
+| People with agents | An agent drafts the "API" section while a person edits "Rollout"; an agent applies review remarks                               | Mostly async today (the agent writes the file, the person reloads); live while both have the file open |
+| Agents with agents | Parallel agents working on different sections in separate branches or worktrees, as the version-control skill does for features | Async, through Git merges                                                                              |
+
+### What "real-time" must mean here
+
+- **Converge within seconds** while two editors have the same document open, without saving and reloading.
+- **Presence:** who is in the document and which block they are editing. Character-level cursors inside a block are a nice-to-have.
+- **Concurrent edits to different blocks never conflict.** Concurrent edits to the same block may ask the user to choose, as the Block Editor does today when a text editor changes a block that is being edited.
+- It does not mean Google Docs-style typing in the same sentence at once. That is the expensive part, and for structured documents it is rarely what people need.
+
+:::danger Hard constraints
+1. **A `.smd` file stays a plain-text file in Git.** No CRDT metadata, ids, tombstones or hidden state in the file. History lives in Git.
+2. **Collaboration never rewrites lines nobody edited.** This is the Block Editor's guarantee: it writes only the lines of the block being edited, and nothing is reformatted. Syncing and merging must keep it; `smd fmt` runs only when someone asks for it.
+3. **Nothing leaves the machine by default.** Today `smd` makes no network requests of its own (its only network use is the user's own `gh`, for `smd issues`) and has no telemetry. Any live feature is opt-in per session.
+4. **Spec changes stay additive** in 2.x (SPEC §10): new containers or directives keep `smd: 2`; anything breaking waits for spec v3.
+5. **The core stays dependency-free and browser-safe.** `extension/src/core` has no runtime dependencies, and the CLI is one bundled file (`skills/*/scripts/smd.cjs`). Sync libraries belong in an optional package.
+:::
+
+### Non-goals
+
+- Running a hosted service, accounts or a permission model.
+- Replacing Git or GitHub review as the record of who changed what.
+- WYSIWYG editing (the Block Editor's "Not yet" list) or collaboration on files other than `.smd`.
+
+## What already works
+
+| Workflow                        | Works today                                                                                                                                                                                                                                                                                                                                                               | Gaps                                                                                                                                                                                                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Git branches and pull requests  | Async collaboration on plain text. `smd diff --since <ref>` shows only the sections that changed, in the agent view; `smd fmt --check` and `smd validate` in CI and pre-commit hooks keep layout from drifting                                                                                                                                                            | Line-based merges conflict when two branches edit the same block, neighbouring lines of one list, or rows of one table. `smd fmt` realigns a whole table when one cell grows, so two branches that edit different rows can conflict on every row. Review comments sit on raw lines, not on the rendered document |
+| VS Code Live Share, text editor | Co-editing, cursors and following work as for any text file                                                                                                                                                                                                                                                                                                               | Only in VS Code (and Visual Studio); other editors that use `smd lsp` are left out                                                                                                                                                                                                                               |
+| Live Share, preview             | The preview (`preview.ts`) re-renders on every `onDidChangeTextDocument`, so on the host it should follow guests' edits                                                                                                                                                                                                                                                   | On a guest, the shared file is not a `file:` URI (Live Share uses a `vsls:` scheme, **to verify** for VS Code guests). `readerForUri` returns no reader for other schemes, so `:::include` and code embeds don't render, and images resolve through `Uri.file(fsPath)`, which likely breaks them                 |
+| Live Share, Block Editor        | It is a `CustomTextEditorProvider`: every write is a `WorkspaceEdit` on the shared `TextDocument`, so edits from either side should reach the others as ordinary text edits (**to verify**). An edit carries the block's text when the page got it, and a block that changed meanwhile is reported as a conflict, so concurrent edits to different blocks don't interfere | Live Share draws cursors in text editors, not inside our webview, so there is no presence in the Block Editor (**to verify**). Whether following a participant opens the custom editor is unknown. Image paste is refused for non-`file:` documents ("Save the document first")                                  |
+| Agents through MCP              | `smd mcp` gives agents `outline`, `section`, `agent`, `tasks`, `validate` and `query`, all read-only. Agents write with their own file tools; VS Code picks up the change on disk, the Block Editor re-renders and keeps a block that is being edited                                                                                                                     | If the person has unsaved changes, VS Code's save conflict appears, which is all-or-nothing. An agent has no way to propose a change for a person to accept                                                                                                                                                      |
+
+:::note Live Share findings need a test
+The Live Share rows are reasoned from the extension's code and Live Share's documentation, which says nothing about custom editors or webviews. A one-hour session with a host and a guest, both with the extension installed, would settle them; it is the first exit criterion of phase 2.
+:::
+
+## Options for real-time editing
+
+### A. Rely on Live Share and editor-native collaboration {#option-a}
+
+:badge[S]{color=green} for the fixes, :badge[M]{color=amber} for presence
+
+- **Fit:** nothing new in the sync path. Fix the guest gaps above: read includes, code embeds and images through `vscode.workspace.fs`, which understands non-`file:` schemes. The renderer's file reader is synchronous today, so the extension would read the referenced files before rendering.
+- **Presence in the Block Editor** could use the Live Share extension API (`vsls` on npm), which can share a service between participants (**to verify**), to show "Maya is editing" on a block. The API is described as preliminary.
+- **Risks:** it depends on a Microsoft service and sign-in (**to verify**: which accounts and where content is relayed). It covers VS Code only. It only works while the host is online.
+
+:::decision{status=proposed date=2026-10-21 owner=@roshanmadhushanka} Support Live Share, don't build on it
+Fix the guest-side gaps (includes, embeds, images) and document what works. Don't add a dependency on the Live Share API for presence until phase 4 shows it's needed.
+:::
+
+### B. A text CRDT over the raw `.smd` text {#option-b}
+
+:badge[L]{color=red}
+
+- **Fit:** an optional companion extension binds a shared text type (Yjs `Y.Text` or Automerge text) to the VS Code `TextDocument`: local `onDidChangeTextDocument` changes become CRDT operations, and remote operations become `WorkspaceEdit`s. The preview, the Block Editor and the language server see ordinary text changes and need no change. Operations are character ranges, so lines nobody edited stay as they were. Peers sync through a small relay (a y-websocket-style server, self-hosted) or peer-to-peer over WebRTC, which still needs a signalling server. The CRDT state lives only for the session; saving writes plain text, and Git records it.
+- **Yjs or Automerge** (both **to verify** for current versions and licences): Yjs is JavaScript, has an "awareness" protocol for presence and bindings for several editors. Automerge has a Rust core compiled to WebAssembly, keeps full history, and has a sync-server project, automerge-repo. Either adds a runtime dependency, so neither can go in the core.
+- **Risks:**
+  - **Merges don't know the syntax.** Two people changing one attribute list or container name at once can produce `{color=redblue}` or `:::warningdanger`. The validator catches most such results, but after the fact.
+  - **Undo.** Remote edits applied with `workspace.applyEdit` probably enter the local undo stack (**to verify**), so `Ctrl+Z` could undo a peer's typing. The extension API offers no way to replace the text editor's undo.
+  - **Changes from outside the session:** an agent writing the file, `git checkout` or `smd fmt` during a session need a re-baseline, and there are line-ending differences (CRLF on Windows) and the question of who saves.
+  - It works only in VS Code unless each editor gets its own plugin; LSP has no collaboration protocol.
+- **Offline:** CRDTs merge well after reconnecting, but long offline work is what Git branches already do.
+
+:::decision{status=proposed date=2026-10-21 owner=@roshanmadhushanka} Don't build a text CRDT now
+Its effort and risks are the largest, and the syntax-blind merges conflict with what `.smd` is for. Revisit only if phase 4 shows that block-level sync is too coarse.
+:::
+
+### C. Block-level sync on the Block Editor's model {#option-c}
+
+:badge[M]{color=amber} to :badge[L]{color=red}
+
+- **Fit:** the Block Editor already cuts a document into segments (`extension/src/core/blocks.ts`): the front matter, top-level blocks, and each container's child blocks, covering every line exactly once. Each has a key that is a hash of its kind and text plus its occurrence. Its edits are compare-and-swap: an `edit` message carries the block's key, its old text and the document version, and the session reports a conflict when the block no longer holds that text. Other operations are insert after a block, move among siblings, delete, set a container attribute, set a front matter key, and edit a table cell.
+- **Proposal:** sync those operations instead of characters. A relay, or a Live Share shared service, puts the operations in one order. Each peer applies them with the compare-and-swap it already has; a stale base surfaces as the existing conflict prompt for that block only. Presence is "who has which block open", shown on the block.
+- **Text editor users** take part by diffing each change into the segments it touched, which works because segments cover every line.
+- **Risks:**
+  - It's coarse: two people in one long paragraph or table conflict. Table edits are already per cell (`editTable`), which helps.
+  - Edits that change the segmentation (typing a `:::` opener, splitting a paragraph) replace a range of sibling blocks and need care.
+  - Block keys must stay stable across peers that parse with the same spec version, which ties the protocol to the segmenter's version.
+- **Why it's attractive:** it reuses the conflict model users already know, never merges inside a block, and keeps the "only the edited lines change" guarantee by construction.
+
+:::decision{status=proposed date=2026-10-21 owner=@roshanmadhushanka} Prototype C, later
+If live sync is pursued, prototype block-level sync first, as an opt-in extension with a self-hosted relay (phase 4), not in the core.
+:::
+
+### D. Async-first: a merge driver, and review and suggestion containers {#option-d}
+
+#### D1. `smd merge` as a Git merge driver
+
+Git runs a custom merge driver for files whose `.gitattributes` say `merge=<name>`. The command is defined in the user's or repository's local Git config, not in a committed file, so each clone opts in. Git passes the ancestor (`%O`), the current version (`%A`, where the result is written), the other version (`%B`), the conflict marker size (`%L`) and the path (`%P`); exit 0 means clean, non-zero means conflicts remain.
+
+```ini title=".git/config (local, per clone)"
+[merge "smd"]
+	name = Styled Markdown block merge
+	driver = smd merge %O %A %B %L %P
+```
+
+```text title=".gitattributes (committed)"
+*.smd merge=smd
+```
+
+:::figure{#fig-merge} How `smd merge` resolves a merge
+```mermaid
+flowchart TD
+  A[git merge-file on the three versions] -->|clean| R[Write Git's result unchanged]
+  A -->|conflicts| S[Cut all three into blocks]
+  S --> M{Each conflicting hunk: did only one side change each block?}
+  M -->|yes| T[Take that side's lines byte for byte]
+  M -->|both, the same text| T
+  M -->|both, differently| C[Conflict markers around that block only]
+  T --> V[Exit 0 if no markers are left]
+  C --> X[Exit 1]
+```
+:::
+
+- **Conservative by design:** as :ref[fig-merge] shows, the driver first runs Git's own line merge. When that is clean, its result is written unchanged, so the driver can never disagree with a clean Git merge. It acts only on hunks Git could not merge, and resolves them by blocks. When unsure, it leaves a conflict.
+- **What it resolves:**
+  - Edits to different blocks that touch neighbouring lines: two list items, two blocks in one container, two blocks next to each other.
+  - Different rows of one table.
+  - Different keys of the front matter, merged key by key with comments and order kept, as the Block Editor's front matter form edits them. An `updated:` date bumped on both sides takes the later date.
+- **What it never does:** reformat, realign a table, or run `smd fmt`. A merged table may then fail `smd fmt --check` until someone formats it (see the open questions).
+- **Limits:** GitHub's web merge button and other server-side merges don't run custom drivers (**to verify**), so the driver helps local merges, rebases and agents working in branches, not the PR page.
+- **Install:** `smd merge --install` adds the config to the current repository and the `.gitattributes` line. A `.gitattributes` line alone runs nothing.
+
+#### D2. Review comments and suggestions
+
+| Option                         | How                                                                      | For                                                                                                                                    | Against                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| (i) Containers in the document | `:::comment` and `:::suggestion` after the block they're about           | Plain text in Git; visible in the preview, the Block Editor and to agents; works offline; the merge driver handles them like any block | Noise in diffs. Tools before the release that adds them, and GitHub, show them as a box or as text, so an unresolved comment can reach readers |
+| (ii) HTML comments             | `<!-- smd-comment @maya: … -->`                                          | Invisible on GitHub and in every older tool; the agent view already drops HTML comments                                                | No Markdown inside, `-->` can't appear, suggestions are awkward, easy to lose                                                                  |
+| (iii) A sidecar file           | `name.smd.review.json` anchored by heading id, block key and quoted text | The document stays clean                                                                                                               | Anchors drift as text changes; two files to keep in step; JSON merge conflicts; invisible on GitHub                                            |
+| (iv) GitHub review comments    | Line comments and suggestion blocks on the PR                            | Exists today, no work                                                                                                                  | GitHub only, line-based, not in the preview, not offline; agents need `gh`                                                                     |
+
+A sketch of option (i):
+
+```markdown
+The cache keeps results for 10 minutes.
+
+:::comment{author=@maya date=2026-10-21} Too long?
+Pricing changes hourly; 10 minutes may show stale prices.
+:::
+
+:::suggestion{author=@agent date=2026-10-21}
+The cache keeps results for 5 minutes, and pricing pages bypass it.
+:::
+```
+
+- A `:::suggestion` proposes a replacement for the block just before it. **Accept** in the Block Editor replaces that block with the body and removes the suggestion, as one undoable edit; **Reject** removes it. A suggestion records its target's block key in a `for=` attribute; if the target changed since the suggestion was written, it is shown as stale rather than applied.
+- Exports, `smd build` and `smd to-md` leave comments and suggestions out by default (`--comments` keeps them). The agent view shows them in a compact form, so an agent applying review remarks can find them.
+- `smd validate` reports open comments as a hint, and as an error in a document with `status: approved`, so a reviewed draft can't be published with remarks in it.
+- Spec impact: two new containers, which is additive under spec v2. Tools before them render each as a box with its title (SPEC §3), so the title should carry the gist.
+
+#### Agents as collaborators
+
+- **Agent edits as suggestions.** An opt-in MCP tool (`smd mcp --allow-suggest`) adds `suggest`: it inserts a `:::suggestion` after a block that the agent names by section and text. It refuses if that block's text changed since the agent read it (the Block Editor's compare-and-swap), validates the result, and never edits content directly. The other MCP tools stay read-only, and the server's root sandbox applies.
+- **When no person is in the loop,** agents keep editing files directly, and the merge driver handles parallel branches.
+- The writer skill gets one rule: when a document is under review, propose changes as suggestions.
+
+:::decision{status=proposed date=2026-10-21 owner=@roshanmadhushanka} Build D first
+D1, the merge driver, first: it has no spec impact and helps agents working in parallel today. D2, with option (i) containers and the opt-in `suggest` tool, next. GitHub review (iv) stays the formal review; (i) is for drafts.
+:::
+
+### How the options compare
+
+|                    | A. Live Share                                        | B. Text CRDT                                      | C. Block sync                           | D. Async                         |
+| ------------------ | ---------------------------------------------------- | ------------------------------------------------- | --------------------------------------- | -------------------------------- |
+| Presence           | Cursors in text editors; none in the Block Editor    | Awareness: cursors and names                      | Who has which block open                | None; Git history                |
+| Undo               | Live Share's handling (**to verify**)                | Remote edits may enter local undo (**to verify**) | Per block; remote ops can be kept apart | Git and the editor's own undo    |
+| Offline            | No: needs the host online                            | Yes, merges on reconnect                          | Queue ops; stale ones conflict          | Yes, by design                   |
+| Conflicts          | Character-level, silent                              | Character-level, silent, syntax-blind             | Per block, with the existing prompt     | Per block, with conflict markers |
+| Other editors      | No                                                   | Per-editor plugins                                | Per-editor plugins                      | Yes: Git works everywhere        |
+| Leaves the machine | Content, through Microsoft's service (**to verify**) | Content, through a relay                          | Block ops, through a relay              | Nothing                          |
+| Effort             | S–M                                                  | L                                                 | M–L                                     | M per part                       |
+
+## Security and privacy
+
+- **Today:** nothing leaves the machine. `smd` has no telemetry and makes no network requests; it runs the user's own `git`, `gh` (for `smd issues`) and Pandoc. Every feature in this RFC keeps that default.
+- **Merge driver:** it runs locally on `git merge` and reads only the three files Git gives it. Because the driver command lives in local config, a cloned repository can't make anyone run it.
+- **Review containers:** comments are part of the file, so they stay in Git history even after they are resolved. Private remarks don't belong there. Exports leave them out by default.
+- **MCP:** write access is opt-in per server start, limited to `suggest`, and confined to the server's root as the read tools are.
+- **Live Share:** content goes through Microsoft's service and needs a sign-in (**to verify** the details). Hosts can share read-only and hide files with `.vsls.json`. The include and embed reader stays confined to the workspace as today.
+- **Live sync (B or C):**
+  - No default or project-hosted relay: users run their own, and the URL is set per workspace.
+  - Sessions are opt-in per document, and the extension shows clearly when a document is shared.
+  - The room key never appears in a URL query or in logs.
+  - Encrypt operations end-to-end with a key shared out of band, so the relay sees only ciphertext. This needs design; for Yjs it is a community add-on (**to verify**).
+  - For WebRTC, the default public signalling servers of the libraries (**to verify**) must not be used.
+
+## Recommendation
+
+:::steps
+1. **Phase 0, 2.1 (this RFC):** discuss and decide; no code.
+2. **Phase 1, `smd merge`** :badge[M]{color=amber}, in a 2.x minor. The driver as in :ref[fig-merge], `smd merge --install`, and a "Collaborating on .smd" section in FEATURES.md covering Git, Live Share and agents.
+3. **Phase 2, Live Share fixes** :badge[S]{color=green}: includes, code embeds and images for non-`file:` documents in the preview and the Block Editor.
+4. **Phase 3, review and suggestion containers** :badge[M]{color=amber}, a later 2.x minor. `:::comment` and `:::suggestion` in the spec, every tool, the Block Editor's Accept and Reject, and the opt-in MCP `suggest` tool.
+5. **Phase 4, deferred:** a block-level live sync prototype (option C) as a separate opt-in extension with a self-hosted relay, only if phases 1–3 leave a clear need.
+:::
+
+| Phase | Exit criteria                                                                                                                                                                       |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | Whenever `git merge-file` merges cleanly, the output is byte for byte Git's result (a property test over fuzzed edits of the corpus)                                                |
+|       | Edits to different blocks, table rows and front matter keys merge without markers, and conflicts are scoped to one block                                                            |
+|       | No line that neither side changed differs from the ancestor; CRLF files round-trip; the driver exits non-zero on any parse doubt                                                    |
+| 2     | A recorded host and guest session (both with the extension) shows includes, embeds and images rendering for the guest, and Block Editor edits reaching the other side               |
+|       | The table in "What already works" is corrected from that session; `file:` documents render exactly as before                                                                        |
+| 3     | A SPEC section with a degradation table; the renderer, agent view, `to-md`, validator, `smd fmt`, the Block Editor's segmenter and the Tree-sitter grammar agree on both containers |
+|       | Corpus documents exist first; documents without the new containers render byte for byte as before                                                                                   |
+| 4     | Two VS Code windows converge on block edits within a second over a local relay; concurrent edits to one block show the existing conflict prompt                                     |
+|       | No line outside the edited blocks changes; nothing is sent without an explicit session start                                                                                        |
+
+:::decision{status=proposed date=2026-10-21 owner=@roshanmadhushanka} Async first, live later
+Ship phases 1–3 as small additive 2.x features, starting with the merge driver. Defer live sync (phase 4) to a prototype outside the core, and don't build a text CRDT (option B).
+:::
+
+## Open questions
+
+:::question Is there demand for live editing?
+The roadmap item is P3 and no issue asks for it. Is async review (phases 1–3) enough for the people using `.smd` today? Maintainer, before phase 4 is planned.
+:::
+
+:::question Where do comments live?
+Containers (i) are visible and agent-readable but can reach readers through older tools and GitHub; HTML comments (ii) are invisible everywhere but awkward. Maintainer, before phase 3.
+:::
+
+:::question Tables after a merge
+When the driver merges table rows, the table may no longer be aligned, so `smd fmt --check` fails in CI. Leave that to the author, or let the driver realign the merged table (which changes lines neither side edited)? Maintainer, before phase 1.
+:::
+
+:::question Agents and open comments
+Should the agent view show open comments and suggestions by default, or only with a flag such as `smd agent --comments`? Maintainer, before phase 3.
+:::
+
+:::question Command name
+`smd merge` reads like a general merge tool. Keep it, or call it `smd merge-driver`? Maintainer, before phase 1.
+:::
+
+:::agent Implementation constraints
+- This RFC is exploratory: build nothing from it until a decision here is marked accepted.
+- Never change a line no participant edited; never run `smd fmt` implicitly during sync, merge or accept.
+- No network access, telemetry or relay by default; live features are opt-in per session and self-hosted.
+- No runtime dependencies in `extension/src/core`; sync libraries go in a separate optional package.
+- New syntax is additive under spec v2 and lands in every implementation at once, with corpus documents first.
+- `smd merge` must return Git's result unchanged whenever `git merge-file` merges cleanly, and leave a conflict when in doubt.
+:::
+
+## Background {agent=skip}
+
+The current behaviour was read from the code: the Block Editor provider and session (`extension/src/blockEditor.ts`, `extension/src/blockEditorSession.ts`), its segmenter (`extension/src/core/blocks.ts`), the preview (`extension/src/preview.ts`), the file reader (`extension/src/files.ts`), the MCP tools (`extension/src/mcp.ts`), `smd diff` (`extension/src/core/diff.ts`) and the formatter (`extension/src/core/format.ts`), and from `docs/FEATURES.md` and `docs/SPEC.md`.
+
+External facts were checked against Git's documentation of merge drivers (gitattributes) and Microsoft's Live Share documentation on co-editing and extensions. Neither says how Live Share treats custom editors and webviews, so those rows are marked to verify. Statements about Yjs and Automerge are from general knowledge of the projects and are marked to verify where details matter.
+
+:::glossary Glossary
+- **CRDT**: Conflict-free replicated data type: a data structure that replicas can edit independently and that always merges to the same result
+- **Relay**: A server that forwards sync messages between participants; it can read them unless they are encrypted end to end
+- **Presence**: Showing who else is in a document and where they are working
+:::
