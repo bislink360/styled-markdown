@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mkdocs-styled-markdown"
 # The Styled Markdown release version (extension/scripts/release/check-versions.mjs checks it).
-version = "2.1.0"
+version = "2.2.0"
 description = "MkDocs plugin that renders Styled Markdown (.smd) pages, and optionally .smd syntax in .md pages."
 readme = "README.md"
 license = "MIT"
