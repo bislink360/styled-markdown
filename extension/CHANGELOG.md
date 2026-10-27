@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.3.0 — 2026-10-27
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 2.2.0 — 2026-10-22
 
 The JetBrains plugin gets a live preview and full highlighting, and the language server can render a page for any client's preview. The VS Code extension, the CLI and the spec behave exactly as in 2.1.0.
