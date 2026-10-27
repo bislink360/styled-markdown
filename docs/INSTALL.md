@@ -31,6 +31,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | JetBrains plugin | A JetBrains IDE with the LSP API: IntelliJ IDEA **2025.3 or newer** (any edition of the unified IDE), or PyCharm, WebStorm, GoLand, RustRover and the others **2025.1 or newer**; not Android Studio. **Node.js 22 or newer** for the language server |
 | Building from source | Node.js 22+, npm, Git |
 | Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd export --to docx` and **Export to Word (.docx)** |
+| PDF export | Google Chrome, Microsoft Edge (comes with Windows), Chromium or Brave, for `smd export --to pdf` and **Export to PDF** in VS Code and JetBrains IDEs; or Playwright or Puppeteer |
 
 ## Install the VS Code extension
 

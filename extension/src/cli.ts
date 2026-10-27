@@ -182,7 +182,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
   '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary', '--out', '--base',
-  '--lang', '--to', '--pandoc', '--reference-doc',
+  '--lang', '--to', '--pandoc', '--reference-doc', '--browser',
 ]);
 
 function parseArgs(argv: string[]): Args {

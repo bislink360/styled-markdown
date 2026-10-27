@@ -1002,14 +1002,22 @@ Two utility classes, set with the usual attribute list (no new syntax), control 
 :::card{.no-print} Internal notes   left out of the printout
 ```
 
-**`smd export plan.smd --to pdf [-o plan.pdf] [--format A4|Letter] [--landscape]`** renders the document and prints it to `plan.pdf` (by default next to the document) in A4 (the default) or Letter. It drives a headless Chromium from **Playwright** or **Puppeteer**, which smd does not bundle (the npm package keeps zero dependencies), so install one in your project or globally, as for `--tokenizer`:
+**`smd export plan.smd --to pdf [-o plan.pdf] [--format A4|Letter] [--landscape] [--browser <path>]`** renders the document and prints it to `plan.pdf` (by default next to the document) in A4 (the default) or Letter. It prints with a headless Chromium-based browser, which smd does not bundle (the npm package keeps zero dependencies). It uses the first of:
+
+1. the browser at **`--browser <path>`**, or in the **`SMD_BROWSER`** environment variable (a Chrome, Edge, Chromium or Brave executable; a path that doesn't exist exits with code 2);
+2. **Playwright** or **Puppeteer**, if installed: `playwright`, then `@playwright/test`, then `puppeteer`, in the current folder's `node_modules`, next to smd and in the global npm folder (as for `--tokenizer`);
+3. an **installed browser** (since 2.3.0): Google Chrome, Microsoft Edge, Chromium or Brave, where they install (Windows: Program Files and the user's app data; macOS: `/Applications` and `~/Applications`; Linux: `google-chrome`, `chromium`, `microsoft-edge` or `brave-browser` on the `PATH`). If one won't start, the next is tried.
+
+Edge comes with Windows, so usually there is nothing to install. Otherwise install one of the browsers, or a package:
 
 ```bash
 npm install --save-dev playwright && npx playwright install chromium   # or:
 npm install --save-dev puppeteer
 ```
 
-smd looks for `playwright`, then `@playwright/test`, then `puppeteer`, in the current folder's `node_modules`, next to smd and in the global npm folder. Without any of them, `smd export --to pdf` exits with code 2 and suggests the browser route above.
+With none of them, `smd export --to pdf` exits with code 2 and suggests the browser route above. The message on success names the browser: `Wrote plan.pdf (printed with Google Chrome)`. An installed browser runs headless with a throwaway profile, driven over the DevTools protocol on a pipe; it prints the same page, with the same paper size and margins, as Playwright does.
+
+**In the editors:** **Styled Markdown: Export to PDF** in VS Code (settings `smd.export.browserPath`, `smd.export.pdfFormat`, `smd.export.pdfLandscape`) and **Export Styled Markdown to PDF** in the JetBrains plugin (**Settings → Languages & Frameworks → Styled Markdown → Export to PDF**) find a browser the same way.
 
 It waits until the page has finished rendering: the runtime sets `data-smd-ready` on `<html>` once Mermaid diagrams are drawn and fonts are loaded (after 60 s it prints anyway, with a warning). So **diagrams are in the PDF as vector SVG**, and math as KaTeX text. Mermaid and the KaTeX stylesheet still load from the CDN, so diagrams need a network connection. The page is printed from a temporary file beside the document (removed afterwards), so relative image paths resolve. PDFs always use the light theme.
 
@@ -1080,7 +1088,7 @@ smd export <file> --to <format> [-o <file>] [--lang <tag>]   one export command 
                  (.html, .md, .pdf, .docx) picks the format when --to is missing
 smd export <file> --to html [-o out.html]           standalone page, with a print stylesheet
 smd export <file> --to md [-o out.md]               plain GitHub-flavored Markdown
-smd export <file> --to pdf [-o out.pdf] [--format A4|Letter] [--landscape]   PDF; needs Playwright or Puppeteer
+smd export <file> --to pdf [-o out.pdf] [--format A4|Letter] [--landscape] [--browser <path>]   PDF; an installed Chrome, Edge, Chromium or Brave, or Playwright/Puppeteer
 smd export <file> --to docx [-o out.docx] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only]   Word; needs Pandoc
 smd export <file> --to confluence|notion [-o <file>]   Confluence storage format or Notion API blocks
                  older names, still working: smd render (--to html), smd to-md, smd pdf, smd docx

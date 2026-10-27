@@ -2,15 +2,16 @@
 
 ## 2.3.0 — 2026-10-27
 
-### ⚠️ Breaking changes
+PDF export everywhere, with the browser you already have: `smd export --to pdf` no longer needs Playwright or Puppeteer, and the VS Code extension and the JetBrains plugin get an **Export to PDF** command. No breaking changes: documents, commands, flags, settings and library exports from 2.2.0 keep working, and anyone who prints with Playwright or Puppeteer today gets the same PDF.
 
 ### Added
+- **`smd export --to pdf` prints with an installed browser.** When neither `--browser` nor Playwright or Puppeteer is there, it uses Google Chrome, Microsoft Edge, Chromium or Brave from where they install (Windows: Program Files and the user's app data; macOS: `/Applications` and `~/Applications`; Linux: `google-chrome`, `chromium`, `microsoft-edge` and `brave-browser` on the `PATH`), in that order, and tries the next one when a browser won't start. Edge comes with Windows, so on most machines PDF export now works with nothing to install. The browser runs headless with a throwaway profile and is driven over the DevTools protocol on a pipe, so smd still has no dependencies. The PDF is the same page, waits for diagrams the same way and uses the same paper sizes and margins as with Playwright. The message names the browser: `Wrote plan.pdf (printed with Google Chrome)`.
+- **`--browser <path>`** for `smd export --to pdf` (and `smd pdf`), and the **`SMD_BROWSER`** environment variable: the Chromium-based browser to print with. It is used before Playwright, Puppeteer and the installed browsers, and a path that doesn't exist is a usage error (exit 2).
+- **VS Code: Styled Markdown: Export to PDF** (Command Palette and the editor's context menu). It prints the page **Export to HTML** writes, with diagrams as vectors and collapsed blocks expanded, finding a browser as the CLI does (Playwright or Puppeteer are also looked for in the workspace). New settings: **`smd.export.browserPath`** (a machine setting, like `smd.export.pandocPath`), **`smd.export.pdfFormat`** (`A4` or `Letter`, default `A4`) and **`smd.export.pdfLandscape`** (default `false`). Without a browser, it says so and offers the setting or Export to HTML.
+- **JetBrains plugin: Export Styled Markdown to PDF** (editor right-click menu, or **Tools**). It saves the file, asks where to write the PDF, runs the bundled CLI's `smd export --to pdf` in the background and offers to open the result. New settings under **Settings → Languages & Frameworks → Styled Markdown → Export to PDF**: the browser, the paper size and landscape.
 
 ### Changed
-
-### Deprecated
-
-### Fixed
+- Without `--browser`, Playwright or Puppeteer, `smd export --to pdf` used to exit 2. It now prints with an installed browser, and exits 2 only when there is none; the message lists the browsers, `--browser` and `SMD_BROWSER` before the Playwright and Puppeteer hints it gave before.
 
 ## 2.2.0 — 2026-10-22
 

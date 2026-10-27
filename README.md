@@ -159,7 +159,7 @@ History and research. People see it; agents skip it.
 | `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them), with `smd: 2` |
 | `smd export <file> --to <format> [-o out]` | Every export in one command. Without `--to`, the extension of `-o` picks the format (`.html`, `.md`, `.pdf`, `.docx`). The older names `smd render`, `to-md`, `pdf` and `docx` still work |
 | `… --to html` · `md` | A standalone page with a print stylesheet (Print → Save as PDF), or plain GitHub Markdown |
-| `… --to pdf [--format A4\|Letter] [--landscape]` | PDF with diagrams as vectors, if you have installed Playwright or Puppeteer (smd bundles no browser) |
+| `… --to pdf [--format A4\|Letter] [--landscape] [--browser <path>]` | PDF with diagrams as vectors, printed by an installed Chrome, Edge, Chromium or Brave (or Playwright or Puppeteer, if installed; smd bundles no browser); also **Export to PDF** in VS Code and the JetBrains plugin |
 | `… --to docx [--reference-doc house.docx]` | Word document with real headings, tables, captions, footnotes and equations, if you have installed [Pandoc](https://pandoc.org/installing.html) (smd bundles none); also **Export to Word (.docx)** in VS Code |
 | `… --to confluence` · `notion` | A page for your wiki: Confluence storage format (callouts, code, expands, tasks and statuses as built-in macros) or Notion API blocks cut into request bodies. It only writes the file: no network, no credentials ([mapping](docs/FEATURES.md#confluence-and-notion-smd-export)) |
 | `smd from-md` · `meta` | Upgrade Markdown to `.smd`; a document's full JSON summary |
