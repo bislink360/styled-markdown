@@ -2,7 +2,7 @@
 
 ## 2.4.0 — 2026-10-28
 
-### ⚠️ Breaking changes
+Word export everywhere, with nothing to install: `smd export --to docx` no longer needs Pandoc, and the JetBrains plugin gets an **Export to Word (.docx)** command beside VS Code's. The files open in Word, LibreOffice, Pages and Google Docs. No breaking changes: documents, commands, flags, settings and library exports from 2.3.0 keep working, and anyone with Pandoc set or on the `PATH` gets the same `.docx` as before.
 
 ### Added
 - **`smd export --to docx` writes Word documents with nothing to install.** When Pandoc isn't set (`--pandoc`, `SMD_PANDOC`) or on the `PATH`, a built-in writer makes the `.docx` itself, so smd still has no dependencies. Word, LibreOffice, Apple Pages and Google Docs open it. Headings (Word's own "Heading 1"…), lists (numbered by Word, each ordered list from 1), tables (with a header row that repeats on each page), footnotes (Word footnotes) and links (web links, and `#links` to bookmarks on their headings and figures) are Word's own. PNG, JPEG and GIF images beside the document are embedded at their size, up to the page width. Callouts are a bar in their colour with a tint under a bold title; decisions, risks, cards, details and tabs are expanded under their title; code is monospaced on grey; badges and statuses are bold on their colour; text colours and highlights are kept. Mermaid diagrams keep their source and math its TeX. Agent and `.no-print` blocks are left out, as in print. The style names are Pandoc's, so `--reference-doc` works with both engines. The message says which wrote it: `Wrote plan.docx (written by the built-in writer)`, and each image it couldn't embed is a warning.
@@ -12,10 +12,6 @@
 
 ### Changed
 - Without Pandoc, `smd export --to docx`, `smd docx` and **Export to Word (.docx)** in VS Code used to exit 2 (or show **Install Pandoc**). They now write the document with the built-in writer. With Pandoc set or on the `PATH`, nothing changes: Pandoc converts it, as before. The message for a missing Pandoc, now only after `--engine pandoc`, also suggests leaving that out.
-
-### Deprecated
-
-### Fixed
 
 ## 2.3.0 — 2026-10-27
 
