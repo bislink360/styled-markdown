@@ -160,7 +160,7 @@ History and research. People see it; agents skip it.
 | `smd export <file> --to <format> [-o out]` | Every export in one command. Without `--to`, the extension of `-o` picks the format (`.html`, `.md`, `.pdf`, `.docx`). The older names `smd render`, `to-md`, `pdf` and `docx` still work |
 | `… --to html` · `md` | A standalone page with a print stylesheet (Print → Save as PDF), or plain GitHub Markdown |
 | `… --to pdf [--format A4\|Letter] [--landscape] [--browser <path>]` | PDF with diagrams as vectors, printed by an installed Chrome, Edge, Chromium or Brave (or Playwright or Puppeteer, if installed; smd bundles no browser); also **Export to PDF** in VS Code and the JetBrains plugin |
-| `… --to docx [--reference-doc house.docx]` | Word document with real headings, tables, captions, footnotes and equations, if you have installed [Pandoc](https://pandoc.org/installing.html) (smd bundles none); also **Export to Word (.docx)** in VS Code |
+| `… --to docx [--engine builtin|pandoc] [--reference-doc house.docx]` | Word document (Word, LibreOffice, Google Docs) with real headings, lists, tables, footnotes and links, written by smd with nothing to install, or converted by [Pandoc](https://pandoc.org/installing.html) when you have it (Word equations too); also **Export to Word (.docx)** in VS Code and the JetBrains plugin |
 | `… --to confluence` · `notion` | A page for your wiki: Confluence storage format (callouts, code, expands, tasks and statuses as built-in macros) or Notion API blocks cut into request bodies. It only writes the file: no network, no credentials ([mapping](docs/FEATURES.md#confluence-and-notion-smd-export)) |
 | `smd from-md` · `meta` | Upgrade Markdown to `.smd`; a document's full JSON summary |
 | `smd build <dir> --out site` | Static docs site: a page per doc, sidebar, breadcrumbs, search, backlinks and a task/decision/risk dashboard |
@@ -186,11 +186,11 @@ History and research. People see it; agents skip it.
 
 ### VS Code extension
 
-1. Download **`styled-markdown-2.2.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
+1. Download **`styled-markdown-2.4.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest).
 2. Install it:
 
    ```bash
-   code --install-extension styled-markdown-2.2.0.vsix
+   code --install-extension styled-markdown-2.4.0.vsix
    ```
 
    Or in VS Code: **Extensions** view → **⋯** → **Install from VSIX…**
@@ -236,8 +236,8 @@ Try `.smd` in the browser without installing anything: edit on the left; the pre
 Install the package straight from the release:
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.2.0/styled-markdown-2.2.0.tgz   # the smd command
-npm install https://github.com/bislink360/styled-markdown/releases/download/v2.2.0/styled-markdown-2.2.0.tgz      # the library: render, validate, agent views (zero dependencies)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/styled-markdown-2.4.0.tgz   # the smd command
+npm install https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/styled-markdown-2.4.0.tgz      # the library: render, validate, agent views (zero dependencies)
 ```
 
 ```ts
@@ -262,7 +262,7 @@ Full instructions, building from source and troubleshooting: **[docs/INSTALL.md]
 ### Agent skills
 
 ```bash
-curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.2.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.4.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs skills install --global
 ```
 
@@ -314,7 +314,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v2.2.0
+      - uses: bislink360/styled-markdown/validate@v2.4.0
         with:
           paths: docs        # one per line; default: the whole repository
           fail-on: warning   # error (default), warning or never
@@ -420,7 +420,7 @@ npm install
 npm run build          # bundle extension + CLI; refresh the CLI bundled in skills/*/scripts
 npm test               # 34 unit tests
 npm run test:vscode    # 11 integration checks inside a real VS Code
-npm run package        # → styled-markdown-2.2.0.vsix
+npm run package        # → styled-markdown-2.4.0.vsix
 npm run build:npm      # → ../npm/dist (the npm package)
 npm run build:playground  # → dist/playground (the web playground; open its index.html)
 ```

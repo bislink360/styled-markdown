@@ -30,7 +30,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | Obsidian plugin | Obsidian **1.4 or newer**, desktop or mobile |
 | JetBrains plugin | A JetBrains IDE with the LSP API: IntelliJ IDEA **2025.3 or newer** (any edition of the unified IDE), or PyCharm, WebStorm, GoLand, RustRover and the others **2025.1 or newer**; not Android Studio. **Node.js 22 or newer** for the language server |
 | Building from source | Node.js 22+, npm, Git |
-| Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd export --to docx` and **Export to Word (.docx)** |
+| Word export | Nothing (built in). Optionally [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for Word equations in `smd export --to docx` and **Export to Word (.docx)** |
 | PDF export | Google Chrome, Microsoft Edge (comes with Windows), Chromium or Brave, for `smd export --to pdf` and **Export to PDF** in VS Code and JetBrains IDEs; or Playwright or Puppeteer |
 
 ## Install the VS Code extension
@@ -39,13 +39,13 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 
 ### Option A — from the release file (recommended)
 
-1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-2.2.0.vsix`**.
+1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-2.4.0.vsix`**.
 2. Install it with **one** of these methods.
 
    **From the terminal:**
 
    ```bash
-   code --install-extension styled-markdown-2.2.0.vsix
+   code --install-extension styled-markdown-2.4.0.vsix
    ```
 
    **From VS Code:**
@@ -65,7 +65,7 @@ git clone https://github.com/bislink360/styled-markdown.git
 cd styled-markdown/extension
 npm install
 npm run package
-code --install-extension styled-markdown-2.2.0.vsix
+code --install-extension styled-markdown-2.4.0.vsix
 ```
 
 ## Verify the installation
@@ -107,11 +107,11 @@ The CLI is a **single self-contained file** with no dependencies. Pick one metho
 **From the release's npm package (recommended):** npm installs straight from the tarball attached to the release. The npm registry listing is coming soon.
 
 ```bash
-npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.2.0/styled-markdown-2.2.0.tgz
-smd --version       # smd 2.2.0 (Styled Markdown spec v2)
+npm install -g https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/styled-markdown-2.4.0.tgz
+smd --version       # smd 2.4.0 (Styled Markdown spec v2)
 ```
 
-The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.2.0/styled-markdown-2.2.0.tgz`); see [npm/README.md](../npm/README.md).
+The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/styled-markdown-2.4.0.tgz`); see [npm/README.md](../npm/README.md).
 
 **Use the copy bundled with the skills (no build needed):**
 
@@ -126,7 +126,7 @@ node styled-markdown/skills/styled-markdown-reader/scripts/smd.cjs --version
 cd styled-markdown/extension
 npm install && npm run build
 npm link            # now `smd` works everywhere
-smd --version       # smd 2.2.0 (Styled Markdown spec v2)
+smd --version       # smd 2.4.0 (Styled Markdown spec v2)
 ```
 
 **Without linking:** `node extension/dist/cli.js <command>`.
@@ -135,7 +135,7 @@ smd --version       # smd 2.2.0 (Styled Markdown spec v2)
 
 ### Optional: Pandoc for Word export
 
-`smd export --to docx` and the extension's **Export to Word (.docx)** hand the document to [Pandoc](https://pandoc.org/installing.html), which smd does not bundle (the CLI and the npm package keep zero dependencies). Install Pandoc 3.0 or newer only if you want `.docx` files:
+`smd export --to docx` and **Export to Word (.docx)** in VS Code and the JetBrains plugin write Word documents with nothing to install (since 2.4.0). When [Pandoc](https://pandoc.org/installing.html) is installed they hand the document to it instead, which gives Word's own equations and highlighted code. smd does not bundle Pandoc (the CLI and the npm package keep zero dependencies); install Pandoc 3.0 or newer if you want those:
 
 ```bash
 winget install JohnMacFarlane.Pandoc   # Windows (or the installer or zip from pandoc.org)
@@ -144,7 +144,7 @@ sudo apt install pandoc                # Debian/Ubuntu (check pandoc --version: 
 pandoc --version
 ```
 
-smd finds Pandoc at `--pandoc <path>`, then the `SMD_PANDOC` environment variable, then on the `PATH`; the extension reads the `smd.export.pandocPath` setting first (a user setting, so a workspace can't point it at another program). Without Pandoc, `smd export --to docx` exits with code 2 and says how to install it, and the extension shows the same with an **Install Pandoc** button. `smd export <file.smd> --to docx --html-only -o page.html` writes the HTML smd would give Pandoc, to convert yourself: `pandoc page.html -f html -t docx -o page.docx`.
+smd finds Pandoc at `--pandoc <path>`, then the `SMD_PANDOC` environment variable, then on the `PATH`; the extension reads the `smd.export.pandocPath` setting first (a user setting, so a workspace can't point it at another program). Without Pandoc, the built-in writer is used; `--engine builtin|pandoc` (VS Code: `smd.export.docxEngine`; JetBrains: **Export to Word → Engine**) picks one, and `--engine pandoc` without Pandoc exits with code 2 and says how to install it (the extension offers an **Install Pandoc** button). `smd export <file.smd> --to docx --html-only -o page.html` writes the HTML smd would give Pandoc, to convert yourself: `pandoc page.html -f html -t docx -o page.docx`.
 
 
 ## Use `smd` in CI
@@ -162,7 +162,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: bislink360/styled-markdown/validate@v2.2.0
+      - uses: bislink360/styled-markdown/validate@v2.4.0
         with:
           paths: |
             docs
@@ -188,7 +188,7 @@ Errors become `::error`, warnings `::warning` and info diagnostics `::notice` an
 ### Any CI
 
 ```bash
-curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.2.0/skills/styled-markdown-reader/scripts/smd.cjs
+curl -sSLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.4.0/skills/styled-markdown-reader/scripts/smd.cjs
 node smd.cjs validate docs/ --strict
 ```
 
@@ -207,7 +207,7 @@ Check `.smd` files before they are committed. `smd validate` and `smd fmt` take 
 ```yaml
 repos:
   - repo: https://github.com/bislink360/styled-markdown
-    rev: v2.2.0
+    rev: v2.4.0
     hooks:
       - id: smd-fmt
       - id: smd-validate
@@ -231,7 +231,7 @@ The hooks use `language: node`: pre-commit installs this repository's root `pack
 For JavaScript projects. The `styled-markdown` package isn't on the npm registry yet, so install it from the release's `.tgz`, which also gives you the Mermaid parser:
 
 ```bash
-npm install --save-dev https://github.com/bislink360/styled-markdown/releases/download/v2.2.0/styled-markdown-2.2.0.tgz
+npm install --save-dev https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/styled-markdown-2.4.0.tgz
 npm install --save-dev lint-staged husky
 npx husky init
 echo "npx lint-staged" > .husky/pre-commit
@@ -247,7 +247,7 @@ and in `package.json`:
 }
 ```
 
-lint-staged appends the staged files to each command, runs them in order and stages the formatting changes. Add `--strict` to `smd validate` to fail on warnings. To use the single-file CLI instead of the package, download it into the repository (`curl -sSLo tools/smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.2.0/skills/styled-markdown-reader/scripts/smd.cjs`) and use `"node tools/smd.cjs fmt"` and `"node tools/smd.cjs validate"`.
+lint-staged appends the staged files to each command, runs them in order and stages the formatting changes. Add `--strict` to `smd validate` to fail on warnings. To use the single-file CLI instead of the package, download it into the repository (`curl -sSLo tools/smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.4.0/skills/styled-markdown-reader/scripts/smd.cjs`) and use `"node tools/smd.cjs fmt"` and `"node tools/smd.cjs validate"`.
 
 ### With a plain Git hook
 
@@ -271,7 +271,7 @@ It checks the files as they are in the working tree and doesn't change them; `--
 Until it is on PyPI, install the wheel from the GitHub release (each release attaches `mkdocs_styled_markdown-X.Y.Z-py3-none-any.whl` and the `.tar.gz` source):
 
 ```bash
-pip install https://github.com/bislink360/styled-markdown/releases/download/v2.2.0/mkdocs_styled_markdown-2.2.0-py3-none-any.whl
+pip install https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/mkdocs_styled_markdown-2.4.0-py3-none-any.whl
 ```
 
 Then add it to `mkdocs.yml`:
@@ -358,7 +358,7 @@ npm run build          # esbuild bundles dist/extension.js and dist/cli.js, copi
                        # and refreshes skills/*/scripts/smd.cjs and the MkDocs plugin's bridge.cjs
 npm test               # unit tests
 npm run test:vscode    # integration tests in a real VS Code (uses your installed VS Code, isolated profile)
-npm run package        # styled-markdown-2.2.0.vsix
+npm run package        # styled-markdown-2.4.0.vsix
 ```
 
 Press **F5** with the `extension/` folder open to start an Extension Development Host with the examples loaded.

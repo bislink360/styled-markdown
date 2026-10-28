@@ -2,7 +2,7 @@
   "name": "styled-markdown",
   "displayName": "Styled Markdown (.smd)",
   "description": "Markdown for humans and AI agents: callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "publisher": "bislink360",
   "author": {
     "name": "Roshan Alwis"
@@ -556,7 +556,22 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "Path to the Pandoc executable for **Export to Word (.docx)**, when Pandoc is not on the `PATH` VS Code sees. Empty: the `SMD_PANDOC` environment variable, then the `PATH`. [Install Pandoc](https://pandoc.org/installing.html)."
+          "markdownDescription": "Path to the Pandoc executable for **Export to Word (.docx)**, when Pandoc is not on the `PATH` VS Code sees. Empty: the `SMD_PANDOC` environment variable, then the `PATH`, then the built-in writer (see `#smd.export.docxEngine#`). [Install Pandoc](https://pandoc.org/installing.html)."
+        },
+        "smd.export.docxEngine": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "builtin",
+            "pandoc"
+          ],
+          "enumDescriptions": [
+            "Pandoc when it is set or on the PATH, else the built-in writer.",
+            "The built-in writer: nothing to install; math stays TeX.",
+            "Pandoc, which must be installed: native Word equations."
+          ],
+          "default": "auto",
+          "markdownDescription": "What writes **Export to Word (.docx)**: Pandoc when it is set (`#smd.export.pandocPath#`, `SMD_PANDOC`) or on the `PATH`, else the built-in writer (`auto`); or always one of them."
         },
         "smd.export.browserPath": {
           "type": "string",

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.4.0 — 2026-10-28
+
+Word export everywhere, with nothing to install: `smd export --to docx` no longer needs Pandoc, and the JetBrains plugin gets an **Export to Word (.docx)** command beside VS Code's. The files open in Word, LibreOffice, Pages and Google Docs. No breaking changes: documents, commands, flags, settings and library exports from 2.3.0 keep working, and anyone with Pandoc set or on the `PATH` gets the same `.docx` as before.
+
+### Added
+- **`smd export --to docx` writes Word documents with nothing to install.** When Pandoc isn't set (`--pandoc`, `SMD_PANDOC`) or on the `PATH`, a built-in writer makes the `.docx` itself, so smd still has no dependencies. Word, LibreOffice, Apple Pages and Google Docs open it. Headings (Word's own "Heading 1"…), lists (numbered by Word, each ordered list from 1), tables (with a header row that repeats on each page), footnotes (Word footnotes) and links (web links, and `#links` to bookmarks on their headings and figures) are Word's own. PNG, JPEG and GIF images beside the document are embedded at their size, up to the page width. Callouts are a bar in their colour with a tint under a bold title; decisions, risks, cards, details and tabs are expanded under their title; code is monospaced on grey; badges and statuses are bold on their colour; text colours and highlights are kept. Mermaid diagrams keep their source and math its TeX. Agent and `.no-print` blocks are left out, as in print. The style names are Pandoc's, so `--reference-doc` works with both engines. The message says which wrote it: `Wrote plan.docx (written by the built-in writer)`, and each image it couldn't embed is a warning.
+- **`--engine builtin|pandoc`** for `smd export --to docx` (and `smd docx`): which engine writes the document. `pandoc` without Pandoc exits with code 2 and the install link, as a missing Pandoc did before.
+- **VS Code: `smd.export.docxEngine`** (`auto`, `builtin` or `pandoc`; default `auto`) for **Export to Word (.docx)**, which now works without Pandoc.
+- **JetBrains plugin: Export Styled Markdown to Word (.docx)** (editor right-click menu, or **Tools**). It saves the file, asks where to write the document, runs the bundled CLI's `smd export --to docx` in the background and offers to open the result. New settings under **Settings → Languages & Frameworks → Styled Markdown → Export to Word**: the engine and the Pandoc path.
+
+### Changed
+- Without Pandoc, `smd export --to docx`, `smd docx` and **Export to Word (.docx)** in VS Code used to exit 2 (or show **Install Pandoc**). They now write the document with the built-in writer. With Pandoc set or on the `PATH`, nothing changes: Pandoc converts it, as before. The message for a missing Pandoc, now only after `--engine pandoc`, also suggests leaving that out.
+
 ## 2.3.0 — 2026-10-27
 
 PDF export everywhere, with the browser you already have: `smd export --to pdf` no longer needs Playwright or Puppeteer, and the VS Code extension and the JetBrains plugin get an **Export to PDF** command. No breaking changes: documents, commands, flags, settings and library exports from 2.2.0 keep working, and anyone who prints with Playwright or Puppeteer today gets the same PDF.

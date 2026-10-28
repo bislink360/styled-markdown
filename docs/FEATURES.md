@@ -836,7 +836,7 @@ Everything else needs a decision only the author can make (which file was meant,
 
 ### In GitHub Actions
 
-`uses: bislink360/styled-markdown/validate@v2.2.0` validates on every pull request and shows each problem as an inline annotation on the changed lines, plus a job summary with counts per severity and the first 50 problems linked to their lines. It runs the bundled CLI with the runner's Node.js 22+, without installing anything; the inputs (`paths`, `fail-on: error|warning|never`, `strict`, `config`, `mermaid`, `stale-after`, `summary`, `cli`) are in [INSTALL.md](INSTALL.md#github-actions).
+`uses: bislink360/styled-markdown/validate@v2.4.0` validates on every pull request and shows each problem as an inline annotation on the changed lines, plus a job summary with counts per severity and the first 50 problems linked to their lines. It runs the bundled CLI with the runner's Node.js 22+, without installing anything; the inputs (`paths`, `fail-on: error|warning|never`, `strict`, `config`, `mermaid`, `stale-after`, `summary`, `cli`) are in [INSTALL.md](INSTALL.md#github-actions).
 
 Underneath it is `smd validate --format github`, which prints one [workflow command](https://docs.github.com/actions/reference/workflow-commands-for-github-actions) per problem:
 
@@ -891,7 +891,7 @@ Every export of a document is one command, **`smd export <file> --to <format> [-
 |---|---|
 | **Export to HTML** / `smd export --to html` | A standalone page (Mermaid and KaTeX from a CDN) you can share with anyone. It has a print stylesheet |
 | `smd export --to pdf` | A PDF of that page, printed by a headless browser you install (below) |
-| **Export to Word (.docx)** / `smd export --to docx` | A Word document converted by Pandoc, which you install (below): headings, tables, figure captions, footnotes and equations become Word's own |
+| **Export to Word (.docx)** / `smd export --to docx` | A Word document for Word, LibreOffice or Google Docs: headings, lists, tables, footnotes and links become Word's own. Written by smd itself, or converted by Pandoc when you have it, which adds Word equations (below) |
 | **Export to Plain Markdown** / `smd export --to md` | GitHub-compatible Markdown: callouts → GitHub alerts, badges → code spans, status → 🟢/🔴, embeds inlined |
 | **Export to Confluence (Storage Format)** / `smd export --to confluence` | A Confluence page body: callouts, code, expands, task lists and statuses as Confluence's own macros (below) |
 | **Export to Notion (JSON)** / `smd export --to notion` | Notion API blocks, cut into the request bodies the API takes (below) |
@@ -1023,9 +1023,16 @@ It waits until the page has finished rendering: the runtime sets `data-smd-ready
 
 ### Word (.docx): `smd export --to docx`
 
-**`smd export plan.smd --to docx [-o plan.docx] [--reference-doc house-style.docx]`** writes `plan.docx` (by default next to the document) with [Pandoc](https://pandoc.org/installing.html) 3.0 or newer, which smd does not bundle: install it as described in [INSTALL.md](INSTALL.md#optional-pandoc-for-word-export). smd uses `--pandoc <path>`, else the `SMD_PANDOC` environment variable, else `pandoc` on the `PATH`; without one it exits with code 2 and an install link. In VS Code, **Styled Markdown: Export to Word (.docx)** (command palette and editor context menu) does the same, reading the `smd.export.pandocPath` setting first and offering **Install Pandoc** when it is missing.
+**`smd export plan.smd --to docx [-o plan.docx] [--engine builtin|pandoc] [--reference-doc house-style.docx]`** writes `plan.docx` (by default next to the document), a Word document that Microsoft Word, LibreOffice, Apple Pages and Google Docs (upload it to Drive, then **Open with Google Docs**) open. One of two engines writes it:
 
-smd renders the document as for the preview, reshapes the HTML into a form Pandoc's HTML reader maps well to Word (the library's `smdToPandocHtml`), and runs `pandoc -f html -t docx` on it, with the document's folder as the place to find images. The Word document follows the printout:
+1. **[Pandoc](https://pandoc.org/installing.html)** 3.0 or newer, when you have it: at **`--pandoc <path>`**, else the **`SMD_PANDOC`** environment variable, else `pandoc` on the `PATH` (a `--pandoc` or `SMD_PANDOC` path that doesn't exist exits with code 2). smd does not bundle it; see [INSTALL.md](INSTALL.md#optional-pandoc-for-word-export). Its documents have Word's own equations and syntax-highlighted code.
+2. **The built-in writer** (since 2.4.0), otherwise: smd writes the `.docx` itself, so Word export works with nothing to install. The message names it: `Wrote plan.docx (written by the built-in writer)`.
+
+**`--engine builtin`** or **`--engine pandoc`** picks one (`pandoc` without Pandoc exits with code 2 and an install link). Before 2.4.0 a missing Pandoc was an error; now it means the built-in writer, and anyone with Pandoc gets the same file as before.
+
+**In the editors:** **Styled Markdown: Export to Word (.docx)** in VS Code (command palette and editor context menu; settings `smd.export.docxEngine` and `smd.export.pandocPath`) and **Export Styled Markdown to Word (.docx)** in the JetBrains plugin (editor right-click menu or **Tools**; **Settings → Languages & Frameworks → Styled Markdown → Export to Word**) choose the engine the same way.
+
+With Pandoc, smd renders the document as for the preview, reshapes the HTML into a form Pandoc's HTML reader maps well to Word (the library's `smdToPandocHtml`), and runs `pandoc -f html -t docx` on it, with the document's folder as the place to find images. The built-in writer works from the same document tree as the Confluence and Notion exports. Either way, the Word document follows the printout:
 
 | In the document | In Word |
 |---|---|
@@ -1044,7 +1051,21 @@ smd renders the document as for the preview, reshapes the HTML into a form Pando
 | `[text]{…}` | Bold, italic, underline, strikethrough and monospace are kept; colours, backgrounds and sizes are dropped |
 | `:::agent` | Left out, as in print (`.no-print` blocks too) |
 
-Styles come from Pandoc's default template; **`--reference-doc`** takes a `.docx` whose styles to use instead (fonts, heading colours, "Block Text" for quotes, "Image Caption" and "Table Caption"), for example one made with `pandoc -o custom-reference.docx --print-default-data-file reference.docx` and edited in Word. `--lang <tag>` sets the language of the labels for documents without `lang:`, as for `--to html`.
+The built-in writer differs where Pandoc does more, or less:
+
+| In the document | Built-in writer |
+|---|---|
+| Front matter | `title` → the Title and the document's title property; status, version, `updated`, summary, owners and tags are the first paragraphs; no table of contents |
+| Callouts | A bar in the callout's colour and a tint, under the title in bold and colour |
+| Decisions, risks, cards, `:::details`, tabs, API blocks | Expanded under their title in bold, with a bar on the left |
+| Images | Embedded when they are PNG, JPEG or GIF files beside the document (or `data:` URIs), at their size up to the width of the page; images on the web are links; others keep their alt text. Each one it can't embed is a warning |
+| `$…$`, `$$…$$`, math fences | The TeX, in Cambria Math italics (Pandoc writes Word equations) |
+| Code blocks | Monospaced on a grey background, no highlighting; titles in bold above |
+| `:badge`, `:priority`, `:status` | Bold text on their colour |
+| `[text]{…}` | Bold, italic, underline, strikethrough, monospace, colours and backgrounds are kept; sizes are dropped |
+| `:::figure` | The caption as a paragraph below ("Figure 1: …") |
+
+Styles come from Pandoc's default template, or the built-in writer's (Calibri 11 pt, with the same style names: "Heading 1", "Body Text", "Block Text", "Source Code", "Verbatim Char"…). **`--reference-doc`** takes a `.docx` whose styles to use instead (fonts, heading colours, "Block Text" for quotes, "Image Caption" and "Table Caption"), for example one made with `pandoc -o custom-reference.docx --print-default-data-file reference.docx` and edited in Word; it works with both engines. `--lang <tag>` sets the language of the labels for documents without `lang:`, as for `--to html`.
 
 **`--html-only`** writes that HTML instead (to `-o` or stdout), to run Pandoc yourself or with other options: `smd export plan.smd --to docx --html-only -o plan.html`, then `pandoc plan.html -f html -t docx -o plan.docx` in the document's folder. The HTML has no scripts, classes or styles beyond what Pandoc reads.
 
@@ -1089,7 +1110,7 @@ smd export <file> --to <format> [-o <file>] [--lang <tag>]   one export command 
 smd export <file> --to html [-o out.html]           standalone page, with a print stylesheet
 smd export <file> --to md [-o out.md]               plain GitHub-flavored Markdown
 smd export <file> --to pdf [-o out.pdf] [--format A4|Letter] [--landscape] [--browser <path>]   PDF; an installed Chrome, Edge, Chromium or Brave, or Playwright/Puppeteer
-smd export <file> --to docx [-o out.docx] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only]   Word; needs Pandoc
+smd export <file> --to docx [-o out.docx] [--engine builtin|pandoc] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only]   Word; Pandoc if installed, else built in
 smd export <file> --to confluence|notion [-o <file>]   Confluence storage format or Notion API blocks
                  older names, still working: smd render (--to html), smd to-md, smd pdf, smd docx
 smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [--today YYYY-MM-DD]
@@ -1156,7 +1177,7 @@ Review the changes (git diff) before you commit them.
   "format": "smd-index",
   "version": 1,
   "smd": 2,
-  "generator": "smd 2.2.0",
+  "generator": "smd 2.4.0",
   "documents": [
     {
       "path": "docs/api-orders.smd",
