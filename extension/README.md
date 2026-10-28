@@ -39,6 +39,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | Styled Markdown: Export to HTML / Export to Plain Markdown (.md) | — |
 | Styled Markdown: Export to Confluence (Storage Format) / Export to Notion (JSON) | — |
 | Styled Markdown: Export to Word (.docx) (needs [Pandoc](https://pandoc.org/installing.html)) | — |
+| Styled Markdown: Export to PDF (prints with an installed Chrome, Edge, Chromium or Brave) | — |
 | Styled Markdown: Convert Markdown File to .smd | Explorer context menu |
 | Styled Markdown: Validate All .smd Files in Workspace | — |
 | Styled Markdown: Preview Migration to Spec v2 / Migrate to Spec v2 | — |
@@ -61,6 +62,9 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | `smd.editor.continueLists` | `true` | Enter continues task lists (unchecked, keeping `@owner`), bullets and numbered lists; Enter on an empty item ends the list |
 | `smd.images.folder` | `docs/images` | Where pasted and dropped images are saved, relative to the workspace folder |
 | `smd.export.pandocPath` | `""` | Pandoc for Export to Word (.docx), when it isn't on the `PATH` (user setting; empty: `SMD_PANDOC`, then the `PATH`) |
+| `smd.export.browserPath` | `""` | The browser that prints Export to PDF (user setting; empty: `SMD_BROWSER`, then Playwright or Puppeteer in the workspace, then an installed Chrome, Edge, Chromium or Brave) |
+| `smd.export.pdfFormat` | `A4` | Paper size for Export to PDF: `A4` or `Letter` |
+| `smd.export.pdfLandscape` | `false` | Export to PDF in landscape |
 | `smd.status.updateDate` | `true` | Set Document Status also sets the front matter `updated` date to today, when the document has that key |
 
 ## Syntax at a glance

@@ -2,7 +2,7 @@
   "name": "styled-markdown",
   "displayName": "Styled Markdown (.smd)",
   "description": "Markdown for humans and AI agents: callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "publisher": "bislink360",
   "author": {
     "name": "Roshan Alwis"
@@ -188,6 +188,11 @@
         "category": "Styled Markdown"
       },
       {
+        "command": "smd.exportPdf",
+        "title": "Export to PDF",
+        "category": "Styled Markdown"
+      },
+      {
         "command": "smd.convertFromMarkdown",
         "title": "Convert Markdown File to .smd",
         "category": "Styled Markdown"
@@ -348,6 +353,11 @@
           "group": "smd"
         },
         {
+          "command": "smd.exportPdf",
+          "when": "editorLangId == smd",
+          "group": "smd"
+        },
+        {
           "command": "smd.copyAgentView",
           "when": "editorLangId == smd",
           "group": "smd"
@@ -396,6 +406,10 @@
         },
         {
           "command": "smd.exportDocx",
+          "when": "editorLangId == smd"
+        },
+        {
+          "command": "smd.exportPdf",
           "when": "editorLangId == smd"
         },
         {
@@ -543,6 +557,26 @@
           "default": "",
           "scope": "machine",
           "markdownDescription": "Path to the Pandoc executable for **Export to Word (.docx)**, when Pandoc is not on the `PATH` VS Code sees. Empty: the `SMD_PANDOC` environment variable, then the `PATH`. [Install Pandoc](https://pandoc.org/installing.html)."
+        },
+        "smd.export.browserPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Path to the browser that prints **Export to PDF**: Google Chrome, Microsoft Edge, Chromium or Brave. Empty: the `SMD_BROWSER` environment variable, then Playwright or Puppeteer in the workspace, then an installed Chrome, Edge, Chromium or Brave."
+        },
+        "smd.export.pdfFormat": {
+          "type": "string",
+          "enum": [
+            "A4",
+            "Letter"
+          ],
+          "default": "A4",
+          "description": "Paper size for Export to PDF."
+        },
+        "smd.export.pdfLandscape": {
+          "type": "boolean",
+          "default": false,
+          "description": "Print Export to PDF in landscape orientation."
         }
       }
     }

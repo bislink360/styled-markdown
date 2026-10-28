@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 
 /**
- * Optional packages (js-tiktoken for `--tokenizer`, Playwright or Puppeteer for `smd pdf`). smd has no
+ * Optional packages (js-tiktoken for `--tokenizer`, Playwright or Puppeteer for `smd pdf`, which also prints with an installed browser). smd has no
  * runtime dependencies, so these are never bundled: they are resolved at run time from the working
  * directory (the user's project), next to smd itself, and the global npm folders.
  */

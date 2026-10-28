@@ -50,15 +50,16 @@ test('loadPdfEngine prefers Playwright, then @playwright/test, then Puppeteer', 
   assert.equal(loadPdfEngine({ load: loader({ playwright: {}, puppeteer: { default: puppeteerLike(fake) } }) }).name, 'puppeteer');
 });
 
-test('loadPdfEngine without a browser package says how to install one or print from the browser', () => {
-  assert.throws(() => loadPdfEngine({ load: () => undefined }), (e: Error) => e instanceof PdfError
-    && /needs a headless browser from Playwright or Puppeteer/.test(e.message)
+test('loadPdfEngine without a browser package or an installed browser says how to get one or print from the browser', () => {
+  assert.throws(() => loadPdfEngine({ load: () => undefined, findBrowsers: () => [] }), (e: Error) => e instanceof PdfError
+    && /needs a Chromium-based browser \(Google Chrome, Microsoft Edge, Chromium or Brave\), or a headless browser from Playwright or Puppeteer/.test(e.message)
+    && /--browser <path> \(or the SMD_BROWSER environment variable\)/.test(e.message)
     && /npm install --save-dev playwright && npx playwright install chromium/.test(e.message)
     && /npm install --save-dev puppeteer/.test(e.message)
     && /smd render <file\.smd> -o page\.html[^]*Print → Save as PDF/.test(e.message));
   // Resolving from a folder without node_modules finds nothing either (when no package is installed above it).
   const local = (() => { try { loadPdfEngine(); return true; } catch { return false; } })();
-  if (!local) assert.throws(() => loadPdfEngine({ paths: [__dirname] }), PdfError);
+  if (!local) assert.throws(() => loadPdfEngine({ paths: [__dirname], findBrowsers: () => [] }), PdfError);
 });
 
 test('printPdf with Playwright waits for the page runtime, expands blocks, prints and closes the browser', async () => {
@@ -213,8 +214,11 @@ test('CLI: smd render includes the print stylesheet and readiness signal; smd pd
     if (!installed) {
       const missing = run(['pdf', example, '-o', join(__dirname, 'never.pdf')]);
       assert.equal(missing.status, 2);
-      assert.match(missing.stderr, /smd pdf needs a headless browser from Playwright or Puppeteer/);
+      assert.match(missing.stderr, /smd pdf needs a Chromium-based browser/);
       assert.equal(existsSync(join(__dirname, 'never.pdf')), false);
     }
-    assert.match(run(['--help']).stdout, /\n {6}pdf {9}\[--format A4\|Letter\] \[--landscape\]\n/);
+    assert.match(run(['--help']).stdout, /\n {6}pdf {9}\[--format A4\|Letter\] \[--landscape\] \[--browser <path>\]\n/);
+    const noBrowser = run(['pdf', example, '--browser', join(__dirname, 'no-such-browser.exe')]);
+    assert.equal(noBrowser.status, 2);
+    assert.match(noBrowser.stderr, /No browser was found at .*no-such-browser\.exe \(from --browser\)\./);
   });
