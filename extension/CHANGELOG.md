@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.0 — 2026-10-28
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 2.3.0 — 2026-10-27
 
 PDF export everywhere, with the browser you already have: `smd export --to pdf` no longer needs Playwright or Puppeteer, and the VS Code extension and the JetBrains plugin get an **Export to PDF** command. No breaking changes: documents, commands, flags, settings and library exports from 2.2.0 keep working, and anyone who prints with Playwright or Puppeteer today gets the same PDF.
