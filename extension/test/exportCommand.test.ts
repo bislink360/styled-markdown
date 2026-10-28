@@ -209,18 +209,24 @@ function envWithPath(path: string): NodeJS.ProcessEnv {
   return { ...env, PATH: path };
 }
 
-test('CLI: smd export --to docx without Pandoc exits 2 as smd docx does; -o file.docx picks docx', { skip }, () => {
+test('CLI: smd export --to docx without Pandoc writes the same file as smd docx; -o file.docx picks docx; --engine pandoc exits 2 alike', { skip }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'smd-export-docx-'));
   try {
     const env = envWithPath(dir);
     const old = run(['docx', showcase, '-o', join(dir, 'a.docx')], { env });
+    assert.equal(old.status, 0, old.stderr);
     for (const argv of [['export', showcase, '--to', 'docx', '-o', join(dir, 'b.docx')], ['export', showcase, '-o', join(dir, 'b.docx')]]) {
       const now = run(argv, { env });
-      assert.equal(now.status, 2);
-      assert.equal(now.stderr, old.stderr);
-      assert.equal(now.stderr.trim(), DOCX_MISSING_PANDOC);
+      assert.equal(now.status, 0, now.stderr);
+      assert.match(now.stderr, /\(written by the built-in writer\)\n$/);
+      assert.ok(readFileSync(join(dir, 'a.docx')).equals(readFileSync(join(dir, 'b.docx'))));
     }
-    assert.equal(existsSync(join(dir, 'b.docx')), false);
+    const oldPandoc = run(['docx', showcase, '--engine', 'pandoc', '-o', join(dir, 'c.docx')], { env });
+    const nowPandoc = run(['export', showcase, '--to', 'docx', '--engine', 'pandoc', '-o', join(dir, 'c.docx')], { env });
+    assert.equal(nowPandoc.status, 2);
+    assert.equal(nowPandoc.stderr, oldPandoc.stderr);
+    assert.equal(nowPandoc.stderr.trim(), DOCX_MISSING_PANDOC);
+    assert.equal(existsSync(join(dir, 'c.docx')), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

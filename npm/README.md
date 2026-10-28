@@ -44,7 +44,7 @@ smd report docs/ --since 2026-09-01 -o status.smd # draft a status report: tasks
 smd issues docs/                      # GitHub Issues sync plan via gh (a dry run; --apply [--create] [--close] syncs)
 smd export docs/spec.smd -o spec.html # standalone HTML page (prints well: Print → Save as PDF); -o picks the format
 smd export docs/spec.smd --to pdf     # spec.pdf, printed by an installed Chrome, Edge, Chromium or Brave (--browser <path> picks one)
-smd export docs/spec.smd --to docx    # spec.docx, if Pandoc is installed (not bundled); --html-only for Pandoc's input
+smd export docs/spec.smd --to docx    # spec.docx for Word or Google Docs (Pandoc if installed, else the built-in writer)
 smd export docs/spec.smd -o spec.md   # plain GitHub Markdown (callouts → GitHub alerts)
 smd export docs/spec.smd --to confluence -o spec.xml  # Confluence storage format (built-in macros)
 smd export docs/spec.smd --to notion -o spec.json     # Notion API blocks, as request bodies

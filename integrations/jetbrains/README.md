@@ -16,6 +16,7 @@ A plugin that gives `.smd` files highlighting and the Styled Markdown language s
 | **Live preview** beside the editor (since 2.2.0): the rendered page, updated as you type, in the IDE's light or dark theme | The language server's `smd/renderHtml` (the page `smd export --to html` writes, from the editor's current text) in the IDE's embedded browser (JCEF) |
 | **Open Styled Markdown Preview in Browser** (editor right-click menu, or **Tools**) | `smd export --to html` into a temporary folder, then the default browser |
 | **Export Styled Markdown to PDF** (editor right-click menu, or **Tools**; since 2.3.0): the rendered page as a PDF, with diagrams as vectors | `smd export --to pdf` to the file you choose, printed by an installed Chrome, Edge, Chromium or Brave (or the browser in the settings) |
+| **Export Styled Markdown to Word (.docx)** (editor right-click menu, or **Tools**; since 2.4.0): a Word document for Word, LibreOffice or Google Docs | `smd export --to docx` to the file you choose, written by the CLI's built-in writer, or by Pandoc when it is installed (or set in the settings) |
 
 The language server is the `smd` CLI's, shipped in the plugin as one file (`server/smd.cjs`, the same file as the agent skills' bundle), and runs on Node.js. Everything the server does is the same as in Neovim, Helix or Zed: see [docs/EDITORS.md](../../docs/EDITORS.md).
 
@@ -42,6 +43,8 @@ Not in the plugin: the agent view, the tasks view and the Block Editor. Those ar
 | smd CLI script | The CLI shipped with the plugin. To also get Mermaid syntax errors (the npm package includes Mermaid's parser; the single-file CLI doesn't), install the npm package and point this at its `dist/cli.js` |
 | Export to PDF → Browser | An installed Google Chrome, Microsoft Edge, Chromium or Brave (or Playwright or Puppeteer, if installed). Set it to a Chromium-based browser's executable to print with that one (`--browser`) |
 | Export to PDF → Paper size, Landscape | A4, portrait |
+| Export to Word → Engine | `auto`: Pandoc when it is set or on the `PATH`, else the built-in writer. `builtin` or `pandoc` (`--engine`) always use that one |
+| Export to Word → Pandoc | `SMD_PANDOC`, then `pandoc` on the `PATH` (`--pandoc`) |
 
 The server restarts when you apply a change. The IDE's language server widget in the status bar shows whether it runs, and its log.
 

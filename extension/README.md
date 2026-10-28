@@ -22,7 +22,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 - **Formatter:** Format Document (`Shift+Alt+F`) and `"editor.formatOnSave"` tidy container fences, attribute lists, table columns and blank lines, with the same rules as `smd fmt` in CI.
 - **IntelliSense:** completion for blocks, directives, attributes and allowed values, and for paths and `#anchors` in links, `related:` entries, `file="…"` embeds and `:::include` files, and front matter names after `{{`; hover docs and `{{variable}}` values; color picker; go to definition for anchors, linked files and reference links; find references and rename for headings, which updates every link to them across the workspace; `Ctrl+T` search across every heading, decision, risk and API endpoint in the workspace; hover previews of linked sections, documents and embedded code, and definitions of glossary terms; outline; folding; 41 snippets.
 - **Agent view:** 🤖 shows exactly what an AI agent reads, with styling, layout and human-only sections stripped and meaning kept (typically 37–85% fewer tokens). Copy the whole view or selected sections to any chat tool. A status-bar token counter shows the size.
-- **Export** to standalone HTML, GitHub Markdown, Confluence (storage format), Notion (JSON) or Word (.docx, with [Pandoc](https://pandoc.org/installing.html)), and convert `.md` → `.smd`.
+- **Export** to standalone HTML, PDF, GitHub Markdown, Confluence (storage format), Notion (JSON) or Word (.docx, for Word, LibreOffice or Google Docs), and convert `.md` → `.smd`.
 - **Spec v2 migration:** **Preview Migration to Spec v2** shows what moving a document to `smd: 2` changes so it keeps its meaning; **Migrate to Spec v2** applies it as one edit that Undo reverts.
 
 ![Project management blocks](https://raw.githubusercontent.com/bislink360/styled-markdown/main/docs/images/02-project-management.png)
@@ -38,7 +38,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | Styled Markdown: Copy Agent View / Copy Sections for an Agent… | — |
 | Styled Markdown: Export to HTML / Export to Plain Markdown (.md) | — |
 | Styled Markdown: Export to Confluence (Storage Format) / Export to Notion (JSON) | — |
-| Styled Markdown: Export to Word (.docx) (needs [Pandoc](https://pandoc.org/installing.html)) | — |
+| Styled Markdown: Export to Word (.docx) (built in; uses [Pandoc](https://pandoc.org/installing.html) when installed) | — |
 | Styled Markdown: Export to PDF (prints with an installed Chrome, Edge, Chromium or Brave) | — |
 | Styled Markdown: Convert Markdown File to .smd | Explorer context menu |
 | Styled Markdown: Validate All .smd Files in Workspace | — |
@@ -61,6 +61,7 @@ Every `.md` file is already valid `.smd`, so you can rename a file and start add
 | `smd.validation.staleAfterDays` | `180` | Flag a document as stale when `updated` is older than this and its status isn't archived or deprecated (`0`: off) |
 | `smd.editor.continueLists` | `true` | Enter continues task lists (unchecked, keeping `@owner`), bullets and numbered lists; Enter on an empty item ends the list |
 | `smd.images.folder` | `docs/images` | Where pasted and dropped images are saved, relative to the workspace folder |
+| `smd.export.docxEngine` | `auto` | What writes Export to Word (.docx): `auto` (Pandoc when it is set or on the `PATH`, else the built-in writer), `builtin` or `pandoc` |
 | `smd.export.pandocPath` | `""` | Pandoc for Export to Word (.docx), when it isn't on the `PATH` (user setting; empty: `SMD_PANDOC`, then the `PATH`) |
 | `smd.export.browserPath` | `""` | The browser that prints Export to PDF (user setting; empty: `SMD_BROWSER`, then Playwright or Puppeteer in the workspace, then an installed Chrome, Edge, Chromium or Brave) |
 | `smd.export.pdfFormat` | `A4` | Paper size for Export to PDF: `A4` or `Letter` |

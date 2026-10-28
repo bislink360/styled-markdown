@@ -5,7 +5,7 @@ import {
 import { smdToPandocHtml } from './core/pandoc';
 import { SUPPORTED_LANGUAGES } from './core/i18n';
 import { exportPdf, loadPdfEngine, PdfError, pdfOptions, pdfPath } from './pdf';
-import { DocxError, docxPath, exportDocx, findPandoc } from './docx';
+import { chooseDocxEngine, DocxError, docxPath, exportBuiltinDocx, exportDocx } from './docx';
 import { read, readerFor } from './workspace';
 import { fail, langOption, LANG_USAGE, requireFile, write } from './cliIo';
 
@@ -63,19 +63,31 @@ async function pdf(args: ExportArgs): Promise<number> {
   }
 }
 
-/** `--to docx`, `smd docx`: the Pandoc profile of the document, converted by Pandoc; exit 2 when Pandoc is missing. */
+/**
+ * `--to docx`, `smd docx`: a Word document, from Pandoc when it is set or on the PATH (the Pandoc profile of the
+ * document), else from the built-in writer; `--engine` picks one. Exit 2 when the engine asked for can't run.
+ */
 async function docx(args: ExportArgs): Promise<number> {
   const file = requireFile(args.positional[0]);
   const lang = langOption(option(args, '--lang'));
   if (lang === null) return fail(LANG_USAGE);
-  const page = smdToPandocHtml(read(file), { readFile: readerFor(file), lang });
-  if (args.flags.has('--html-only')) return write(option(args, '-o'), page);
+  const text = read(file);
+  if (args.flags.has('--html-only')) return write(option(args, '-o'), smdToPandocHtml(text, { readFile: readerFor(file), lang }));
   const out = option(args, '-o') ?? docxPath(file);
+  const resourcePath = path.dirname(path.resolve(file));
+  const referenceDoc = option(args, '--reference-doc');
   try {
-    const pandoc = findPandoc({ explicit: option(args, '--pandoc') });
-    const warnings = await exportDocx(pandoc, page, { out, resourcePath: path.dirname(path.resolve(file)), referenceDoc: option(args, '--reference-doc') });
+    const engine = chooseDocxEngine({ explicit: option(args, '--pandoc'), engine: option(args, '--engine') });
+    if (engine.name === 'builtin') {
+      const warnings = exportBuiltinDocx(text, { out, resourcePath, referenceDoc, readFile: readerFor(file), lang });
+      for (const warning of warnings) console.error(warning);
+      console.error(`Wrote ${out} (written by the built-in writer)`);
+      return 0;
+    }
+    const page = smdToPandocHtml(text, { readFile: readerFor(file), lang });
+    const warnings = await exportDocx(engine.pandoc, page, { out, resourcePath, referenceDoc });
     if (warnings) console.error(warnings);
-    console.error(`Wrote ${out} (converted with ${pandoc})`);
+    console.error(`Wrote ${out} (converted with ${engine.pandoc})`);
     return 0;
   } catch (err) {
     if (err instanceof DocxError) return fail(err.message);
@@ -130,13 +142,16 @@ export const EXPORT_HELP = `  smd export <file.smd> --to <format> [-o <file>] [-
                   Chrome, Microsoft Edge, Chromium or Brave. Without any, use
                   smd export <file.smd> --to html -o page.html and the browser's Print → Save as PDF.
                   --browser  a Chromium-based browser's executable (Chrome, Edge, Chromium, Brave)
-      docx        [--pandoc <path>] [--reference-doc <file.docx>] [--html-only]
-                  Word document, converted by Pandoc 3, which smd doesn't bundle: it is found at --pandoc,
-                  the SMD_PANDOC environment variable or on the PATH (https://pandoc.org/installing.html).
-                  Headings, tables, figure captions, footnotes and math become Word's own; callouts and
-                  decisions are quotes under a bold title, tabs and details are expanded, Mermaid diagrams
-                  keep their source.
-                  --reference-doc  a .docx whose styles to use (fonts, headings, captions, quotes)
+      docx        [--engine builtin|pandoc] [--pandoc <path>] [--reference-doc <file.docx>] [--html-only]
+                  Word document (opens in Word, LibreOffice, Pages and Google Docs). Converted by Pandoc 3 when
+                  it is at --pandoc, the SMD_PANDOC environment variable or on the PATH; else written by smd's
+                  built-in writer, with nothing to install. Headings, lists, tables, footnotes and links become
+                  Word's own and images beside the document are embedded; callouts and decisions keep a bold
+                  title, tabs and details are expanded, Mermaid diagrams keep their source. Math is Word's own
+                  with Pandoc, and TeX with the built-in writer.
+                  --engine         builtin or pandoc, to choose (pandoc without Pandoc exits 2)
+                  --reference-doc  a .docx whose styles to use (fonts, headings, captions, quotes); with
+                                   either engine, as the style names are Pandoc's
                   --html-only      write the HTML smd hands Pandoc instead (to -o or stdout), to run Pandoc
                                    yourself: pandoc page.html -f html -t docx -o page.docx, in the
                                    document's folder (for images)

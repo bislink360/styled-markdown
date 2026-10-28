@@ -26,6 +26,12 @@ class SmdSettings : SimplePersistentStateComponent<SmdSettings.Settings>(Setting
 
         /** Export to PDF in landscape. */
         var pdfLandscape by property(false)
+
+        /** What writes Export to Word: auto (Pandoc if set or on the PATH, else built-in), builtin or pandoc. */
+        var docxEngine by string("auto")
+
+        /** Pandoc for Export to Word; empty for SMD_PANDOC, then the PATH. */
+        var pandocPath by string("")
     }
 
     var nodePath: String
@@ -58,9 +64,24 @@ class SmdSettings : SimplePersistentStateComponent<SmdSettings.Settings>(Setting
             state.pdfLandscape = value
         }
 
+    var docxEngine: String
+        get() = state.docxEngine?.takeIf { it in DOCX_ENGINES } ?: DOCX_ENGINES.first()
+        set(value) {
+            state.docxEngine = value
+        }
+
+    var pandocPath: String
+        get() = state.pandocPath.orEmpty()
+        set(value) {
+            state.pandocPath = value.trim()
+        }
+
     companion object {
         /** The paper sizes of `smd export --to pdf --format`. */
         val PDF_FORMATS = listOf("A4", "Letter")
+
+        /** Export to Word's engines: `auto` lets the CLI choose; the others are `smd export --to docx --engine`. */
+        val DOCX_ENGINES = listOf("auto", "builtin", "pandoc")
 
         fun getInstance(): SmdSettings = service()
     }
