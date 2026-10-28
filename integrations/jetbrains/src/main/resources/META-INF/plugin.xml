@@ -16,6 +16,8 @@
       <li><b>Open Preview in Browser</b>: the rendered page, exported with <code>smd export --to html</code>.</li>
       <li><b>Export to PDF</b>: the rendered page as a PDF, with diagrams as vectors, printed by an installed Chrome,
       Edge, Chromium or Brave (<code>smd export --to pdf</code>).</li>
+      <li><b>Export to Word (.docx)</b>: a document for Word, LibreOffice or Google Docs, with nothing to install
+      (<code>smd export --to docx</code>; Pandoc is used when it is installed).</li>
     </ul>
     <p>Needs <a href="https://nodejs.org/">Node.js</a> 22 or newer, and an IDE with the LSP API (IntelliJ IDEA 2025.3+,
     PyCharm, WebStorm and the other JetBrains IDEs since 2025.1; not Android Studio).</p>
@@ -48,6 +50,12 @@
         <action id="com.bislink360.smd.ExportPdf" class="com.bislink360.smd.ExportPdfAction"
                 text="Export Styled Markdown to PDF"
                 description="Render this .smd file and print it to PDF with smd export --to pdf">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action id="com.bislink360.smd.ExportDocx" class="com.bislink360.smd.ExportDocxAction"
+                text="Export Styled Markdown to Word (.docx)"
+                description="Export this .smd file to a Word document with smd export --to docx">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>

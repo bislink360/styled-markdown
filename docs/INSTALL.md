@@ -30,7 +30,7 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | Obsidian plugin | Obsidian **1.4 or newer**, desktop or mobile |
 | JetBrains plugin | A JetBrains IDE with the LSP API: IntelliJ IDEA **2025.3 or newer** (any edition of the unified IDE), or PyCharm, WebStorm, GoLand, RustRover and the others **2025.1 or newer**; not Android Studio. **Node.js 22 or newer** for the language server |
 | Building from source | Node.js 22+, npm, Git |
-| Word export (optional) | [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for `smd export --to docx` and **Export to Word (.docx)** |
+| Word export | Nothing (built in). Optionally [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for Word equations in `smd export --to docx` and **Export to Word (.docx)** |
 | PDF export | Google Chrome, Microsoft Edge (comes with Windows), Chromium or Brave, for `smd export --to pdf` and **Export to PDF** in VS Code and JetBrains IDEs; or Playwright or Puppeteer |
 
 ## Install the VS Code extension
@@ -135,7 +135,7 @@ smd --version       # smd 2.2.0 (Styled Markdown spec v2)
 
 ### Optional: Pandoc for Word export
 
-`smd export --to docx` and the extension's **Export to Word (.docx)** hand the document to [Pandoc](https://pandoc.org/installing.html), which smd does not bundle (the CLI and the npm package keep zero dependencies). Install Pandoc 3.0 or newer only if you want `.docx` files:
+`smd export --to docx` and **Export to Word (.docx)** in VS Code and the JetBrains plugin write Word documents with nothing to install (since 2.4.0). When [Pandoc](https://pandoc.org/installing.html) is installed they hand the document to it instead, which gives Word's own equations and highlighted code. smd does not bundle Pandoc (the CLI and the npm package keep zero dependencies); install Pandoc 3.0 or newer if you want those:
 
 ```bash
 winget install JohnMacFarlane.Pandoc   # Windows (or the installer or zip from pandoc.org)
@@ -144,7 +144,7 @@ sudo apt install pandoc                # Debian/Ubuntu (check pandoc --version: 
 pandoc --version
 ```
 
-smd finds Pandoc at `--pandoc <path>`, then the `SMD_PANDOC` environment variable, then on the `PATH`; the extension reads the `smd.export.pandocPath` setting first (a user setting, so a workspace can't point it at another program). Without Pandoc, `smd export --to docx` exits with code 2 and says how to install it, and the extension shows the same with an **Install Pandoc** button. `smd export <file.smd> --to docx --html-only -o page.html` writes the HTML smd would give Pandoc, to convert yourself: `pandoc page.html -f html -t docx -o page.docx`.
+smd finds Pandoc at `--pandoc <path>`, then the `SMD_PANDOC` environment variable, then on the `PATH`; the extension reads the `smd.export.pandocPath` setting first (a user setting, so a workspace can't point it at another program). Without Pandoc, the built-in writer is used; `--engine builtin|pandoc` (VS Code: `smd.export.docxEngine`; JetBrains: **Export to Word → Engine**) picks one, and `--engine pandoc` without Pandoc exits with code 2 and says how to install it (the extension offers an **Install Pandoc** button). `smd export <file.smd> --to docx --html-only -o page.html` writes the HTML smd would give Pandoc, to convert yourself: `pandoc page.html -f html -t docx -o page.docx`.
 
 
 ## Use `smd` in CI

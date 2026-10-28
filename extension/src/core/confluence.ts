@@ -1,6 +1,7 @@
 import {
-  blockInlines, childBlocks, exportColor, exportTree, type Block, type ExportOptions, type Inline, type ListItem, type Marks,
+  blockInlines, childBlocks, exportTree, type Block, type ExportOptions, type Inline, type ListItem, type Marks,
 } from './exportTree';
+import { BACKGROUNDS, cssColour, TEXT_COLOURS } from './exportColors';
 
 /**
  * Confluence storage format: the XHTML-based markup of Confluence's REST API (`body.storage`) and of
@@ -25,18 +26,6 @@ const CALLOUT_MACROS = new Map([
 const STATUS_COLOURS = new Map([
   ['red', 'Red'], ['orange', 'Red'], ['pink', 'Red'], ['amber', 'Yellow'], ['yellow', 'Yellow'], ['green', 'Green'], ['teal', 'Green'],
   ['blue', 'Blue'], ['cyan', 'Blue'], ['indigo', 'Blue'], ['purple', 'Purple'],
-]);
-
-/** smd named colour → text colour and background tint. `accent` has no fixed value outside the page theme, so it is dropped. */
-const TEXT_COLOURS = new Map([
-  ['red', '#de350b'], ['orange', '#ff8b00'], ['amber', '#ff991f'], ['yellow', '#b38600'], ['green', '#00875a'], ['teal', '#008da6'],
-  ['cyan', '#00a3bf'], ['blue', '#0052cc'], ['indigo', '#403294'], ['purple', '#6554c0'], ['pink', '#c2185b'], ['gray', '#6b778c'],
-  ['muted', '#6b778c'],
-]);
-const BACKGROUNDS = new Map([
-  ['red', '#ffebe6'], ['orange', '#fff4e5'], ['amber', '#fffae6'], ['yellow', '#fff0b3'], ['green', '#e3fcef'], ['teal', '#e6fcff'],
-  ['cyan', '#e6fcff'], ['blue', '#deebff'], ['indigo', '#eae6ff'], ['purple', '#eae6ff'], ['pink', '#ffecf6'], ['gray', '#f4f5f7'],
-  ['muted', '#f4f5f7'],
 ]);
 
 /** Short fence languages spelled as the code macro names them; anything else is passed as written. */
@@ -256,9 +245,8 @@ function marked(inner: string, marks: Marks): string {
 }
 
 /** `color: #de350b;` for a named or CSS colour the renderer accepts, else nothing. */
-function colour(property: string, value: string | undefined, named: Map<string, string>): string {
-  const c = exportColor(value);
-  const css = c?.named ? named.get(c.named) : c?.css;
+function colour(property: string, value: string | undefined, named: ReadonlyMap<string, string>): string {
+  const css = cssColour(value, named);
   return css ? `${property}: ${css};` : '';
 }
 

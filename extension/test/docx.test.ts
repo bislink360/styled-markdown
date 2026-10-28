@@ -9,7 +9,7 @@ import { inflateRawSync } from 'node:zlib';
 import { smdToPandocHtml } from '../src/core';
 import { decodeEntities, parseHtml, serializeHtml, textContent } from '../src/core/htmlTree';
 import {
-  DOCX_MISSING_PANDOC, DocxError, docxPath, exportDocx, findPandoc, PANDOC_INSTALL_URL, pandocArgs, type Spawn,
+  chooseDocxEngine, DOCX_MISSING_PANDOC, DocxError, docxPath, exportDocx, findPandoc, PANDOC_INSTALL_URL, pandocArgs, type Spawn,
 } from '../src/docx';
 
 /** The page's body, and its head. */
@@ -191,6 +191,24 @@ test('findPandoc: a missing Pandoc says how to install it or convert by hand', (
   assert.throws(() => findPandoc({ isFile, env: { SMD_PANDOC: 'gone' } }), /Pandoc was not found at gone \(from SMD_PANDOC\)/);
 });
 
+test('chooseDocxEngine: Pandoc when it is set or on the PATH, else the built-in writer; --engine decides', () => {
+  const posix = { platform: 'linux' as const, isFile: (f: string) => f === '/usr/bin/pandoc' || f === '/custom/pandoc' };
+  const onPath = { ...posix, env: { PATH: '/usr/bin' } };
+  const none = { ...posix, env: { PATH: '/nowhere' } };
+  // Before 2.4.0 a .docx always came from Pandoc: with Pandoc there, it still does.
+  assert.deepEqual(chooseDocxEngine(onPath), { name: 'pandoc', pandoc: '/usr/bin/pandoc' });
+  assert.deepEqual(chooseDocxEngine({ ...none, explicit: '/custom/pandoc' }), { name: 'pandoc', pandoc: '/custom/pandoc' });
+  assert.deepEqual(chooseDocxEngine(none), { name: 'builtin' });
+  assert.deepEqual(chooseDocxEngine({ ...none, engine: 'auto' }), { name: 'builtin' });
+  assert.deepEqual(chooseDocxEngine({ ...onPath, engine: 'Builtin' }), { name: 'builtin' });
+  assert.deepEqual(chooseDocxEngine({ ...onPath, engine: 'pandoc' }), { name: 'pandoc', pandoc: '/usr/bin/pandoc' });
+  // A Pandoc that was asked for but isn't there is an error, not a quiet switch to the built-in writer.
+  assert.throws(() => chooseDocxEngine({ ...none, engine: 'pandoc' }), (e: Error) => e instanceof DocxError && e.message === DOCX_MISSING_PANDOC);
+  assert.throws(() => chooseDocxEngine({ ...none, explicit: '/gone/pandoc' }), /Pandoc was not found at \/gone\/pandoc \(from --pandoc\)/);
+  assert.throws(() => chooseDocxEngine({ ...none, env: { SMD_PANDOC: '/gone' } }), /\(from SMD_PANDOC\)/);
+  assert.throws(() => chooseDocxEngine({ ...none, engine: 'word' }), /--engine must be builtin or pandoc, not "word"\./);
+});
+
 test('pandocArgs and docxPath: HTML on stdin to a .docx next to the document', () => {
   assert.deepEqual(pandocArgs({ out: 'a.docx', resourcePath: 'docs' }), ['--from', 'html', '--to', 'docx', '--output', 'a.docx', '--resource-path', 'docs']);
   assert.deepEqual(pandocArgs({ out: 'a.docx', resourcePath: '.', referenceDoc: 'ref.docx' }).slice(-2), ['--reference-doc', 'ref.docx']);
@@ -242,16 +260,34 @@ function envWithPath(path: string): NodeJS.ProcessEnv {
 
 const run = (args: string[], env: NodeJS.ProcessEnv = process.env) => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', env });
 
-test('CLI: smd docx without Pandoc exits 2 with the install link and writes nothing; --html-only needs no Pandoc',
+test('CLI: smd docx without Pandoc writes with the built-in writer; --engine pandoc exits 2 with the install link; --html-only needs no Pandoc',
   { skip: !existsSync(cli) && 'run npm run build first' }, () => {
     const dir = mkdtempSync(join(tmpdir(), 'smd-docx-'));
     try {
+      const built = join(dir, 'built.docx');
+      const builtin = run(['docx', showcase, '-o', built], envWithPath(dir));
+      assert.equal(builtin.status, 0, builtin.stderr);
+      assert.match(builtin.stderr, /Wrote .*built\.docx \(written by the built-in writer\)/);
+      const document = unzip(built).get('word/document.xml') ?? '';
+      assert.ok(paragraphs(document).some((p) => p.style === 'Title' && p.text === 'Styled Markdown Showcase'));
+      // A reference document's styles: here, the file just written.
+      const styled = join(dir, 'styled.docx');
+      assert.equal(run(['docx', showcase, '--engine', 'builtin', '--reference-doc', built, '-o', styled]).status, 0);
+      assert.equal(unzip(styled).get('word/styles.xml'), unzip(built).get('word/styles.xml'));
+      const badReference = run(['docx', showcase, '--engine', 'builtin', '--reference-doc', showcase, '-o', styled]);
+      assert.equal(badReference.status, 2);
+      assert.match(badReference.stderr, /Reference document .*showcase\.smd is not a \.docx/);
+      assert.match(run(['docx', showcase, '--engine', 'builtin', '--reference-doc', join(dir, 'none.docx'), '-o', styled]).stderr, /Reference document not found/);
+
       const out = join(dir, 'never.docx');
-      const missing = run(['docx', showcase, '-o', out], envWithPath(dir));
+      const missing = run(['docx', showcase, '--engine', 'pandoc', '-o', out], envWithPath(dir));
       assert.equal(missing.status, 2);
-      assert.match(missing.stderr, /smd docx needs Pandoc \(3\.0 or later\), which smd does not bundle/);
+      assert.match(missing.stderr, /smd docx --engine pandoc needs Pandoc \(3\.0 or later\), which smd does not bundle/);
       assert.ok(missing.stderr.includes(PANDOC_INSTALL_URL));
       assert.equal(existsSync(out), false);
+      const badEngine = run(['docx', showcase, '--engine', 'word', '-o', out]);
+      assert.equal(badEngine.status, 2);
+      assert.match(badEngine.stderr, /--engine must be builtin or pandoc/);
 
       const wrongPath = run(['docx', showcase, '--pandoc', join(dir, 'nope.exe'), '-o', out]);
       assert.equal(wrongPath.status, 2);
@@ -272,7 +308,7 @@ test('CLI: smd docx without Pandoc exits 2 with the install link and writes noth
       const noFile = run(['docx', join(dir, 'missing.smd')]);
       assert.equal(noFile.status, 2);
       assert.match(noFile.stderr, /Not found: /);
-      assert.match(run(['--help']).stdout, /\n {6}docx {8}\[--pandoc <path>\] \[--reference-doc <file\.docx>\] \[--html-only\]\n/);
+      assert.match(run(['--help']).stdout, /\n {6}docx {8}\[--engine builtin\|pandoc\] \[--pandoc <path>\] \[--reference-doc <file\.docx>\] \[--html-only\]\n/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

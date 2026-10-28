@@ -34,6 +34,12 @@ export interface ExportOptions {
   header?: boolean;
 }
 
+/** exportTree's options: the public ones, and those only smd's own writers use. */
+export interface TreeOptions extends ExportOptions {
+  /** Leave out `{.no-print}` containers and headings, as printing does (the Word export). Default false. */
+  print?: boolean;
+}
+
 /** Text styles. Colours are as written in the document: a named colour (`red`) or a CSS colour (`#0ea5e9`). */
 export interface Marks {
   bold?: boolean;
@@ -96,7 +102,7 @@ export interface ExportDocument {
 }
 
 /** The export tree of a .smd document. */
-export function exportTree(text: string, options: ExportOptions = {}): ExportDocument {
+export function exportTree(text: string, options: TreeOptions = {}): ExportDocument {
   const parsed = parseSmdTokens(text, { readFile: options.readFile, agentBlocks: options.agentBlocks, lang: options.lang, today: '1970-01-01' });
   const builder = new TreeBuilder(parsed, options);
   const header = options.header === false ? [] : builder.header();
@@ -177,6 +183,12 @@ function closeOf(tokens: Token[], open: number): number {
 
 interface Step { blocks: Block[]; next: number }
 
+/** A container or heading with the `no-print` class (`{.no-print}`). */
+function isNoPrint(t: Token): boolean {
+  if (t.type === 'container_smd_open') return (t.meta as ContainerMeta | null)?.attrs.classes.includes('no-print') ?? false;
+  return t.type === 'heading_open' && (t.attrGet('class') ?? '').split(' ').includes('smd-u-no-print');
+}
+
 /** A container being exported: its meta, its plain title and its body. */
 interface ContainerCall {
   b: TreeBuilder;
@@ -190,7 +202,7 @@ class TreeBuilder {
   readonly m: Messages;
   private readonly inlines: InlineReader;
 
-  constructor(readonly parsed: ParsedTokens, readonly options: ExportOptions) {
+  constructor(readonly parsed: ParsedTokens, readonly options: TreeOptions) {
     this.tokens = parsed.tokens;
     this.m = parsed.messages;
     this.inlines = new InlineReader(this);
@@ -227,6 +239,7 @@ class TreeBuilder {
   private block(i: number): Step {
     const t = this.tokens[i];
     const close = () => closeOf(this.tokens, i);
+    if (this.options.print && isNoPrint(t)) return { blocks: [], next: close() + 1 };
     switch (t.type) {
       case 'heading_open': {
         const id = t.attrGet('id') ?? undefined;

@@ -9,7 +9,7 @@ import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 
-/** Settings | Languages & Frameworks | Styled Markdown: which Node.js and `smd` CLI run the server, and how PDFs print. */
+/** Settings | Languages & Frameworks | Styled Markdown: which Node.js and `smd` CLI run the server, and how exports run. */
 class SmdConfigurable : BoundConfigurable("Styled Markdown") {
     private val settings = SmdSettings.getInstance()
 
@@ -45,6 +45,22 @@ class SmdConfigurable : BoundConfigurable("Styled Markdown") {
             }
             row {
                 checkBox("Landscape").bindSelected(settings::pdfLandscape)
+            }
+        }
+        group("Export to Word") {
+            row("Engine:") {
+                comboBox(SmdSettings.DOCX_ENGINES)
+                    .bindItem({ settings.docxEngine }, { settings.docxEngine = it ?: SmdSettings.DOCX_ENGINES.first() })
+                    .comment(
+                        "<code>auto</code>: Pandoc when it is set or on the PATH, else the built-in writer, which needs " +
+                            "nothing installed. <code>pandoc</code> gives Word's own equations.",
+                    )
+            }
+            row("Pandoc:") {
+                textField()
+                    .bindText(settings::pandocPath)
+                    .columns(COLUMNS_LARGE)
+                    .comment("Empty: the <code>SMD_PANDOC</code> environment variable, then <code>pandoc</code> on the PATH.")
             }
         }
     }
