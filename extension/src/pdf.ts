@@ -2,11 +2,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { requireOptional, searchPaths } from './optionalPackage';
+import { browserEngine, fileExists, findInstalledBrowsers, type FindBrowserOptions, type InstalledBrowser } from './pdfBrowser';
 
 /**
- * `smd pdf`: print a rendered page to PDF with the headless Chromium of Playwright or Puppeteer, when the
- * user has installed one. smd doesn't bundle a browser; the packages are resolved at run time like
- * js-tiktoken (see optionalPackage.ts). Diagrams render in the page, so they print as vector SVG.
+ * `smd pdf`: print a rendered page to PDF with a headless Chromium: the browser given with `--browser` (or
+ * SMD_BROWSER), else Playwright's or Puppeteer's when the user has installed one, else a Chrome, Edge,
+ * Chromium or Brave installed on the machine (pdfBrowser.ts). smd doesn't bundle a browser; the packages are
+ * resolved at run time like js-tiktoken (see optionalPackage.ts). Diagrams render in the page, so they print
+ * as vector SVG.
  */
 export const PDF_FORMATS = ['A4', 'Letter'];
 
@@ -66,8 +69,10 @@ const PACKAGES: Array<{ name: string; adapt: (lib: unknown, name: string) => Pdf
   { name: 'puppeteer', adapt: puppeteerEngine },
 ];
 
-export const PDF_MISSING_BROWSER = 'smd pdf needs a headless browser from Playwright or Puppeteer, which smd does not bundle. '
-  + 'Install one in your project or globally, then run the command again:\n'
+export const PDF_MISSING_BROWSER = 'smd pdf needs a Chromium-based browser (Google Chrome, Microsoft Edge, Chromium or Brave), '
+  + 'or a headless browser from Playwright or Puppeteer, which smd does not bundle. None was found. Install a browser, '
+  + 'or give the one you have with --browser <path> (or the SMD_BROWSER environment variable), or install a package '
+  + 'in your project or globally, then run the command again:\n'
   + '  npm install --save-dev playwright && npx playwright install chromium\n'
   + '  npm install --save-dev puppeteer\n'
   + 'Or print without one: smd render <file.smd> -o page.html, open the page in a browser and choose '
@@ -78,15 +83,36 @@ export interface LoadPdfEngineOptions {
   paths?: string[];
   /** Load a package by name, or return undefined when it isn't installed (replaces resolving from `paths`). */
   load?: (name: string) => unknown;
+  /** A browser executable given by the user (`--browser`, or the editor setting); it must exist. */
+  browser?: string;
+  /** Find the installed browsers (default: findInstalledBrowsers). */
+  findBrowsers?: (options: FindBrowserOptions) => InstalledBrowser[];
+  /** Default: process.env (SMD_BROWSER, and where browsers are installed). */
+  env?: NodeJS.ProcessEnv;
+  /** Default: a file exists at the path. */
+  isFile?: (file: string) => boolean;
 }
 
-/** The first installed browser package. Throws a PdfError with install hints when there is none. */
+/**
+ * The engine to print with: the browser at `browser` or SMD_BROWSER, else the first installed browser package
+ * (Playwright, @playwright/test, Puppeteer), else an installed Chrome, Edge, Chromium or Brave. Throws a
+ * PdfError with install hints when there is none, or when a given browser path doesn't exist.
+ */
 export function loadPdfEngine(options: LoadPdfEngineOptions = {}): PdfEngine {
+  const env = options.env ?? process.env;
+  const isFile = options.isFile ?? fileExists;
+  for (const [given, source] of [[options.browser, '--browser'], [env.SMD_BROWSER, 'SMD_BROWSER']] as const) {
+    if (!given) continue;
+    if (!isFile(given)) throw new PdfError(`No browser was found at ${given} (from ${source}).`);
+    return browserEngine([{ name: given, path: given }]);
+  }
   const load = options.load ?? ((name: string) => requireOptional(name, options.paths ?? searchPaths()));
   for (const candidate of PACKAGES) {
     const engine = candidate.adapt(load(candidate.name), candidate.name);
     if (engine) return engine;
   }
+  const installed = (options.findBrowsers ?? findInstalledBrowsers)({ env, isFile });
+  if (installed.length) return browserEngine(installed);
   throw new PdfError(PDF_MISSING_BROWSER);
 }
 

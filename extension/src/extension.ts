@@ -12,6 +12,7 @@ import { PreviewManager, renderOptions } from './preview';
 import { registerStatusWorkflow } from './statusWorkflow';
 import { registerTasksView } from './tasksView';
 import { registerDocxExport } from './docxExport';
+import { registerPdfExport } from './pdfExport';
 import { migrationPlan } from './core/migrate';
 import { migrationEdit, migrationReport, migrationSummary, planCounts } from './migrateReport';
 
@@ -33,6 +34,7 @@ export function activate(context: vscode.ExtensionContext): SmdExtensionApi {
   registerTasksView(context);
   registerStatusWorkflow(context);
   registerDocxExport(context);
+  registerPdfExport(context);
   registerBlockEditor(context);
 
   const activeSmd = (): vscode.TextDocument | undefined => {

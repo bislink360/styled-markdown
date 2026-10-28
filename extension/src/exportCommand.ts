@@ -43,12 +43,12 @@ function markdown(args: ExportArgs): number {
   return write(option(args, '-o'), smdToMarkdown(read(requireFile(args.positional[0])), { readFile: readerFor(args.positional[0]) }));
 }
 
-/** `--to pdf`, `smd pdf`: render the page and print it with Playwright or Puppeteer; exit 2 when neither is installed. */
+/** `--to pdf`, `smd pdf`: render the page and print it with a headless browser (pdf.ts); exit 2 when there is none. */
 async function pdf(args: ExportArgs): Promise<number> {
   const file = requireFile(args.positional[0]);
   try {
     const options = pdfOptions(option(args, '--format'), args.flags.has('--landscape'));
-    const engine = loadPdfEngine();
+    const engine = loadPdfEngine({ browser: option(args, '--browser') });
     const out = option(args, '-o') ?? pdfPath(file);
     const lang = langOption(option(args, '--lang'));
     if (lang === null) return fail(LANG_USAGE);
@@ -123,10 +123,13 @@ export const EXPORT_HELP = `  smd export <file.smd> --to <format> [-o <file>] [-
                   Every format but md, which stays English.
       html        Standalone HTML page (prints well: it has a print stylesheet)
       md          Plain GitHub-flavored Markdown (callouts → GitHub alerts)
-      pdf         [--format A4|Letter] [--landscape]
-                  PDF of the rendered page, with diagrams as vectors. Needs Playwright or Puppeteer in your
-                  project or installed globally; smd doesn't bundle a browser. Without one, use
+      pdf         [--format A4|Letter] [--landscape] [--browser <path>]
+                  PDF of the rendered page, with diagrams as vectors, printed by a headless browser; smd
+                  doesn't bundle one. It uses --browser (or the SMD_BROWSER environment variable), else
+                  Playwright or Puppeteer from your project or global folder, else an installed Google
+                  Chrome, Microsoft Edge, Chromium or Brave. Without any, use
                   smd export <file.smd> --to html -o page.html and the browser's Print → Save as PDF.
+                  --browser  a Chromium-based browser's executable (Chrome, Edge, Chromium, Brave)
       docx        [--pandoc <path>] [--reference-doc <file.docx>] [--html-only]
                   Word document, converted by Pandoc 3, which smd doesn't bundle: it is found at --pandoc,
                   the SMD_PANDOC environment variable or on the PATH (https://pandoc.org/installing.html).
