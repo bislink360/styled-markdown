@@ -72,7 +72,7 @@ Every new syntax feature must also add a document exercising it to `extension/te
 
    on the release branch, and rename the release branch and tracking PR to match.
 2. Once every planned feature PR is merged into the release branch (or dropped from the train), complete the changelog entry. List every item from the checker's **Breaking** section under `### ⚠️ Breaking changes`, each with a migration note. Delete empty headings.
-3. Update docs for any new syntax: `docs/SPEC.md`, `docs/FEATURES.md`, `skills/styled-markdown-writer/references/syntax.md`, and the README feature list.
+3. Update docs for any new syntax: `docs/SPEC.md`, `docs/FEATURES.md`, the matching `skills/styled-markdown-writer/references/syntax/<topic>.md` (listed in `references/syntax.md`), and the README feature list.
 4. Rebuild (`cd extension && npm run build && npm run build:npm`) and run the **full** check with no skip flags.
 5. Run the **static analysis gate** (sonarqube-scan skill). GitHub CI has no static analysis, so this local SonarQube run is the only check for bugs, vulnerabilities, security hotspots and code smells. It must pass: fix blocking findings, or suppress them with a reasoned `NOSONAR`. Grow `baseline.json` only with the maintainer's approval.
 
