@@ -161,7 +161,14 @@ npm install -g https://github.com/bislink360/styled-markdown/releases/download/v
 smd --version       # smd 2.4.0 (Styled Markdown spec v2)
 ```
 
-The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/styled-markdown-2.4.0.tgz`); see [npm/README.md](../npm/README.md).
+The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/styled-markdown-2.4.0.tgz`); see [Use the npm library](#use-the-npm-library) and [npm/README.md](../npm/README.md).
+
+**Download the single file (no install):**
+
+```bash
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.4.0/skills/styled-markdown-reader/scripts/smd.cjs
+node smd.cjs --version
+```
 
 **Use the copy bundled with the skills (no build needed):**
 
@@ -182,6 +189,33 @@ smd --version       # smd 2.4.0 (Styled Markdown spec v2)
 **Without linking:** `node extension/dist/cli.js <command>`.
 
 **First document:** `smd init docs/plan.smd --template prd` writes a new document from a template (`smd templates` lists the 16). New documents, from `smd init`, `smd from-md` and the other writers, say `smd: 2` since 2.0; existing documents keep their rules until you run `smd migrate <files> --to 2` (SPEC.md §10.1).
+
+### Use the npm library
+
+The package renders, validates and converts documents in your own code, with zero dependencies:
+
+```ts
+import { renderSmd, validateSmd, agentView } from 'styled-markdown';
+```
+
+Already render Markdown with markdown-it (a docs site, a static site generator, a chat UI)? Add the syntax to your own instance with the plugin, and style it with `styled-markdown/smd.css`:
+
+```ts
+import smd from 'styled-markdown/markdown-it';
+md.use(smd);
+```
+
+**Static sites (Astro, Docusaurus, Next.js):** `styled-markdown/remark` and `styled-markdown/rehype` are unified plugins that render documents exactly as `smd export --to html` does, inside remark/rehype pipelines:
+
+```js
+// astro.config.mjs
+import { remarkSmd } from 'styled-markdown/remark';
+export default { markdown: { remarkPlugins: [remarkSmd] } };
+```
+
+They work with `.md` files (MDX parses `.smd` attribute lists as JSX, so `.mdx` files are not supported). The API, the plugins' options and limits, and the setup for Astro, Docusaurus and Next.js: [npm/README.md](../npm/README.md) ([markdown-it plugin](../npm/README.md#markdown-it-plugin), [remark and rehype plugins](../npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs)).
+
+**Other editors:** `smd-language-server`, installed with the package (1.5.0 or later), brings validation, quick fixes, the outline, hover, completion and formatting to Neovim, Helix, Zed and other LSP editors: [EDITORS.md](EDITORS.md).
 
 ### Optional: Pandoc for Word export
 
@@ -347,7 +381,7 @@ The playground needs no installation: it is a static page that runs the engine i
 - **From a release:** download `styled-markdown-playground.zip`, unzip it and open `index.html` in a browser.
 - **From source:** `cd extension && npm ci && npm run build:playground`, then open `extension/dist/playground/index.html`.
 
-It works from `file://` and from any static web server. It needs a current browser (Chrome or Edge 103+, Firefox 113+, Safari 16.4+) for the compressed share links. It is not hosted anywhere yet; publishing it (for example on GitHub Pages) is a separate maintainer decision.
+It works from `file://` and from any static web server. It needs a current browser (Chrome or Edge 103+, Firefox 113+, Safari 16.4+) for the compressed share links. The latest release's playground is also hosted at [bislink360.github.io/styled-markdown/playground/](https://bislink360.github.io/styled-markdown/playground/), published from `main` by the Pages workflow.
 
 ## Obsidian plugin
 

@@ -42,6 +42,36 @@ Press **F5** in `extension/` to run the extension in a development host.
 | Agent skills | `skills/*/SKILL.md`, references and templates. `npm run build` refreshes the bundled `scripts/smd.cjs`. |
 | Preview behaviour | `media/runtime.js`, `src/preview.ts` |
 
+### Repository layout
+
+```text
+styled-markdown/
+├── extension/            VS Code extension + smd CLI (TypeScript)
+│   ├── src/core/         the engine: renderer, validator, agent view, converters (no VS Code dependency)
+│   ├── src/              extension: preview, language features, agent view UI, CLI
+│   ├── media/            preview CSS/runtime, icons
+│   └── test/             unit tests + VS Code integration tests
+├── skills/
+│   ├── styled-markdown-reader/   agent skill: token-efficient reading
+│   └── styled-markdown-writer/   agent skill: authoring, with templates and references
+├── npm/                  the `styled-markdown` npm package (library + CLI)
+├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
+├── integrations/obsidian/ the Obsidian plugin (id `styled-markdown`)
+├── integrations/jetbrains/ the JetBrains plugin (Kotlin, Gradle): TextMate highlighting and the language server
+├── integrations/tree-sitter-smd/  Tree-sitter grammar and queries for Neovim, Helix and Zed
+├── playground/           the web playground: a static page that runs the engine in the browser
+├── site/                 the homepage on GitHub Pages (index.smd, built with smd build)
+├── validate/             the GitHub Action (smd validate with pull request annotations)
+├── examples/             example documents (+ rendered HTML)
+├── docs/                 guides, specification, gallery and screenshots
+├── .claude-plugin/       the Claude Code plugin marketplace (marketplace.json, plugin.json)
+├── server.json           the MCP Registry entry for the npm package's MCP server
+├── .pre-commit-hooks.yaml    hooks for the pre-commit framework
+└── package.json          lets pre-commit install the bundled CLI (not published)
+```
+
+`npm run build:npm` writes the npm package to `npm/dist`, `npm run build:playground` the playground to `extension/dist/playground`, and `npm run package` the `.vsix`. `npm run test:vscode` runs the integration checks inside a real VS Code.
+
 ## Branching: release trains
 
 Work reaches `main` through release branches. For a release, `release/vX.Y.Z` is created from `main`, each major feature or fix gets its own branch from it, feature PRs target the release branch, and after the release is tagged and published the release branch is merged into `main`. See the `version-control` skill (`.claude/skills/version-control/SKILL.md`); `plan-release.mjs` sets up the branches.
