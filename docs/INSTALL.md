@@ -196,6 +196,10 @@ node smd.cjs validate docs/ --strict
 
 Once your documents are on spec v2, `node smd.cjs migrate docs/ --to 2 --check` keeps them there: it writes nothing, lists each document that still needs migrating (a new one written with `smd: 1`, say) and then exits with code **1**.
 
+### Reading `.smd` files on GitHub
+
+GitHub shows `.smd` files as source, not as pages. [GITHUB.md](GITHUB.md) compares the ways around it: Styled Markdown syntax in `.md` files, `.md` copies generated in CI with `smd export --to md` (a complete workflow), and a pull request comment with the changed sections in the agent view.
+
 ## Pre-commit hooks
 
 Check `.smd` files before they are committed. `smd validate` and `smd fmt` take any number of files, so a hook passes them only the staged ones. Pick the setup your project already uses.
