@@ -4,10 +4,12 @@ Styled Markdown ships two **agent skills**: folders of instructions, references,
 
 | Skill | The agent learns to… | Contents |
 |---|---|---|
-| **`styled-markdown-writer`** | **Create and edit `.smd` that follows the rules.** It picks the right template, uses only valid blocks and values, validates and auto-fixes, and writes documents that are cheap for other agents to read. | `SKILL.md`, `references/syntax.md` (complete syntax), `references/style-guide.md` (authoring rules), `assets/templates/*.smd` (13 templates), `scripts/smd.cjs` |
-| **`styled-markdown-reader`** | **Read `.smd` with minimal tokens**, focusing only on meaningful content: outline first, then only the relevant sections through the agent view, and raw lines only when editing. | `SKILL.md`, `scripts/smd.cjs` |
+| **`styled-markdown-writer`** | **Create and edit `.smd` that follows the rules.** It picks the right template, uses only valid blocks and values, validates and auto-fixes, and writes meaning (decisions, risks, tasks, agent rules) rather than styling, so documents stay cheap to write and to read. | `SKILL.md`, `references/syntax.md` (an index of the syntax topics), `references/syntax/*.md` (the complete syntax in 8 topic files), `references/style-guide.md` (authoring rules), `assets/templates/*.smd` (13 templates), `scripts/smd.cjs` |
+| **`styled-markdown-reader`** | **Read `.smd` with minimal tokens**, focusing only on meaningful content: small files directly, otherwise `smd read` (the agent view, or the outline of a large document), then only the relevant sections, and raw lines only when editing. | `SKILL.md`, `references/reading.md` (every marker of the agent view, commands across many documents, reading without Node.js), `scripts/smd.cjs` |
 
 `scripts/smd.cjs` is the complete `smd` CLI in one file (Node.js 22+, no `npm install`).
+
+The skills load in stages to keep their own cost low. Only the two descriptions (≈260 tokens together) are in context every session. The reader's `SKILL.md` (≈480 tokens) loads when a task needs a `.smd` file, and `references/reading.md` only when the agent needs more than the basics. The writer reads its syntax index and then only the topic file for the construct it is writing. Measured costs and the break-even document size: [TOKENS.md](TOKENS.md).
 
 ## Contents
 
@@ -102,7 +104,7 @@ node smd.cjs skills install --target cursor,copilot,agents
 | `agents` | A section in `AGENTS.md` between `<!-- styled-markdown:start -->` and `<!-- styled-markdown:end -->` | Always, by OpenAI Codex and other agents that read `AGENTS.md` |
 | `claude` | The Claude Code skills (the default) | See [Claude Code](#claude-code) |
 
-Pick any combination: repeat `--target` or separate targets with commas. Each run also copies the CLI to `.smd/smd.cjs`, and the rules tell the agent to run `node .smd/smd.cjs outline <file>` and so on, so the agent needs Node.js 22+ and nothing else.
+Pick any combination: repeat `--target` or separate targets with commas. Each run also copies the CLI to `.smd/smd.cjs`, and the rules tell the agent to run `node .smd/smd.cjs read <file>` and so on, so the agent needs Node.js 22+ and nothing else. The rules are short (≈280 tokens) because `AGENTS.md` is in context in every session.
 
 Output:
 
@@ -138,8 +140,8 @@ For other agents, or to customize the text:
    ```markdown
    ## Styled Markdown (.smd)
    Project docs use Styled Markdown. Follow docs/AGENTS.md.
-   - Reading: run `node .smd/smd.cjs outline <file>`, then `node .smd/smd.cjs agent <file> --section "<heading>"`.
-     Don't read .smd files whole.
+   - Reading: run `node .smd/smd.cjs read <file>`, then `node .smd/smd.cjs agent <file> --section "<heading>"`
+     if it printed the outline. Read files under ≈6 KB directly.
    - Writing: start from `node .smd/smd.cjs init <file> --template prd|adr|rfc|runbook|api|status-report|meeting-notes|postmortem|release-notes|okrs|onboarding|test-plan|pr-description`,
      then run `node .smd/smd.cjs validate <file> --fix` until there are 0 errors.
    ```
@@ -152,7 +154,7 @@ Try these prompts in a new session in a repository that contains `.smd` files (t
 
 | Prompt | Expected behaviour |
 |---|---|
-| *"What constraints apply to POST /v1/orders in examples/checkout-redesign.smd, and which @api-team tasks are open?"* | The agent runs `smd outline`, then `smd agent … --section …`. It doesn't read the raw file, and it reports the idempotency, integer-cents and 422 rules plus the two open tasks, one of them overdue. |
+| *"What constraints apply to POST /v1/orders in examples/checkout-redesign.smd, and which @api-team tasks are open?"* | The agent runs `smd read` (the whole agent view fits 2,000 tokens, so one call is enough). It doesn't read the raw file, and it reports the idempotency, integer-cents and 422 rules plus the two open tasks, one of them overdue. |
 | *"Which decisions in the checkout spec are final and what is still open?"* | It lists the accepted and rejected decisions, the open question with its owner and deadline, and the fallback from the agent instructions. |
 | *"Write an ADR for moving our cron jobs to a managed scheduler, as docs/adr-0012-scheduler.smd."* | The agent uses the `adr` template, fills every placeholder, runs `smd validate --fix`, and ends with 0 errors. |
 | *"What's overdue across docs/?"* | It runs `smd tasks docs/`. |
@@ -167,7 +169,7 @@ Three layers, each optional and each adding to the others:
 ```mermaid
 flowchart LR
     A["1 · Authors mark intent<br/>{agent=skip} · :::human · :::agent"] --> B["2 · Agent view<br/>strip presentation<br/>select sections"]
-    B --> C["3 · Reader skill<br/>outline → sections →<br/>raw lines only to edit"]
+    B --> C["3 · Reader skill<br/>smd read → sections →<br/>raw lines only to edit"]
 ```
 
 1. **Author intent.** `## Background {agent=skip}` and `:::human` mark content for people only. `:::agent` holds constraints for implementers and is **always** included, even when an agent reads a single section.
@@ -189,20 +191,20 @@ flowchart LR
 
    Token counts are estimates (characters / 4). `--tokenizer o200k_base` on `smd outline` and `smd agent` adds exact counts for that OpenAI encoding if `js-tiktoken` is installed; there is no public tokenizer for current Claude models, so for Claude they are approximate too. See [Token budgets and exact counts](FEATURES.md#token-budgets-and-exact-counts).
 
-3. **The reader skill** turns this into a habit: `smd outline` (≈100–300 tokens) shows every section's cost, and the agent then pulls only what it needs. For documents with `related:` links, `smd outline --related` adds each related document's summary and cost, so the agent opens one only when the question needs it.
+3. **The reader skill** turns this into a habit. Files under ≈1,500 tokens (≈6 KB) are read directly, since the tools save little there. Larger files go through `smd read`: one call that prints the whole agent view when it fits 2,000 tokens, else the outline (≈100–300 tokens, every section with its cost), and the agent then pulls only the sections it needs. For documents with `related:` links, `smd outline --related` adds each related document's summary and cost, so the agent opens one only when the question needs it.
 
 Measured on the examples:
 
 | Read | ≈ tokens | Saving |
 |---|---:|---:|
-| `checkout-redesign.smd` raw | 2,424 | — |
-| outline | 230 | 90% |
-| full agent view | 1,531 | 37% |
-| one section (+ agent instructions) | 365–542 | 78–85% |
-| `smd tasks examples/` vs. reading all 7 examples | 672 vs 7,258 | 91% |
-| `smd query "decision, risk" examples/` vs. reading all 7 examples | 821 vs 7,258 | 89% |
+| `checkout-redesign.smd` raw | 2,471 | — |
+| outline | 255 | 90% |
+| full agent view (what `smd read` prints here) | 1,540 | 38% |
+| one section (+ agent instructions) | 365–636 | 74–85% |
+| `smd tasks examples/` vs. reading all 7 examples | 690 vs 7,328 | 91% |
+| `smd query "decision, risk" examples/` vs. reading all 7 examples | 821 vs 7,328 | 89% |
 
-**What to expect in practice:** in a head-to-head test on that PRD, agents with and without the reader skill both answered correctly, and total session tokens were within about 1%. On a single ~2k-token document, the skill's own cost (≈900 tokens for SKILL.md plus the outline) roughly cancels the saving. The benefit grows with **larger documents, many documents, and repeated reads**, which is why the skill tells agents to read small files in one call and select sections only when a file is big.
+**What to expect in practice:** the tools cost tokens too. In 2.5.0 the two skill descriptions cost ≈260 tokens per session, the reader `SKILL.md` ≈480 when it loads (≈2,300 before 2.5.0) and the agent rules ≈280 (≈820 before). With the reader skill, answering a question about one section pays off from a document of ≈1,500 tokens; reading a whole document through the agent view pays off from ≈3,000 tokens on one read, or ≈1,000 when a session reads five. The benefit grows with **larger documents, many documents, and repeated reads**. [TOKENS.md](TOKENS.md) has the method, the numbers per document and the break-even table, and `npm run bench:tokens` reproduces them.
 
 ## Writing documents that stay cheap to read
 
@@ -213,6 +215,7 @@ The writer skill applies these rules automatically. Humans can follow them too:
 - Put every hard rule for implementers in **one** `:::agent` block, including the fallback for open questions.
 - Use `:::details` for long logs and lists, and embed code with `file="…" lines="…"` instead of pasting it.
 - Name headings after their content ("Requirements", "API", "Rollout"), because agents select sections by heading.
+- Agents that write should spend their tokens on meaning (decisions, risks, tasks, `:::agent`, `{agent=skip}`) and leave colors and layout to people: output tokens cost about 5× input tokens, and agents reading the document don't see the styling.
 
 ## Update or remove
 
