@@ -1,4 +1,4 @@
-name: smd validate
+name: Styled Markdown validate (smd)
 description: Validate Styled Markdown (.smd) files, annotate problems inline on pull requests and write a job summary.
 author: Bislink360
 branding:
