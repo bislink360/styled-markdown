@@ -28,6 +28,7 @@ Tool (Node 22+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (
    | New team member guide | `onboarding` |
    | Test scope, strategy and cases | `test-plan` |
    | Pull request description | `pr-description` |
+   | Spec-driven work for an agent: spec → plan → tasks | `spec`, `plan`, `tasks` |
 
    Otherwise start from front matter + headings. For a status report on work tracked in `.smd` docs, draft it with `smd report docs/ --since 2026-09-01 -o docs/status.smd --title "Checkout squad"` (or `--since <git-ref>`): tasks done and added, open and overdue tasks, decisions and high-impact risks, each linked. Then write the summary and cut what doesn't matter.
 

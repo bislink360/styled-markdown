@@ -4,7 +4,7 @@ Styled Markdown ships two **agent skills**: folders of instructions, references,
 
 | Skill | The agent learns to… | Contents |
 |---|---|---|
-| **`styled-markdown-writer`** | **Create and edit `.smd` that follows the rules.** It picks the right template, uses only valid blocks and values, validates and auto-fixes, and writes meaning (decisions, risks, tasks, agent rules) rather than styling, so documents stay cheap to write and to read. | `SKILL.md`, `references/syntax.md` (an index of the syntax topics), `references/syntax/*.md` (the complete syntax in 8 topic files), `references/style-guide.md` (authoring rules), `assets/templates/*.smd` (13 templates), `scripts/smd.cjs` |
+| **`styled-markdown-writer`** | **Create and edit `.smd` that follows the rules.** It picks the right template, uses only valid blocks and values, validates and auto-fixes, and writes meaning (decisions, risks, tasks, agent rules) rather than styling, so documents stay cheap to write and to read. | `SKILL.md`, `references/syntax.md` (an index of the syntax topics), `references/syntax/*.md` (the complete syntax in 8 topic files), `references/style-guide.md` (authoring rules), `assets/templates/*.smd` (16 templates), `scripts/smd.cjs` |
 | **`styled-markdown-reader`** | **Read `.smd` with minimal tokens**, focusing only on meaningful content: small files directly, otherwise `smd read` (the agent view, or the outline of a large document), then only the relevant sections, and raw lines only when editing. | `SKILL.md`, `references/reading.md` (every marker of the agent view, commands across many documents, reading without Node.js), `scripts/smd.cjs` |
 
 `scripts/smd.cjs` is the complete `smd` CLI in one file (Node.js 22+, no `npm install`).
@@ -142,7 +142,7 @@ For other agents, or to customize the text:
    Project docs use Styled Markdown. Follow docs/AGENTS.md.
    - Reading: run `node .smd/smd.cjs read <file>`, then `node .smd/smd.cjs agent <file> --section "<heading>"`
      if it printed the outline. Read files under ≈6 KB directly.
-   - Writing: start from `node .smd/smd.cjs init <file> --template prd|adr|rfc|runbook|api|status-report|meeting-notes|postmortem|release-notes|okrs|onboarding|test-plan|pr-description`,
+   - Writing: start from `node .smd/smd.cjs init <file> --template prd|adr|rfc|runbook|api|status-report|meeting-notes|postmortem|release-notes|okrs|onboarding|test-plan|pr-description|spec|plan|tasks`,
      then run `node .smd/smd.cjs validate <file> --fix` until there are 0 errors.
    ```
 

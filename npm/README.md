@@ -12,7 +12,7 @@ This package provides the complete engine as a **library** and the **`smd` CLI**
 
 - 📦 One install gives you the render, validate, fix, convert, agent-view, outline and task-extraction tools
 - 🧩 CommonJS + ESM + TypeScript types; runs in Node 22+ and in bundlers/browsers (the library has no `fs` dependency)
-- 🤖 Built for LLM pipelines: `agentView()` typically cuts **37–85%** of tokens while keeping meaning
+- 🤖 Built for LLM pipelines: `agentView()` cuts 5–37% of tokens from a whole document while keeping meaning, and about 80% when an agent reads only the section it needs ([measured](https://github.com/bislink360/styled-markdown/blob/main/docs/TOKENS.md))
 
 ## Install
 
@@ -51,7 +51,9 @@ smd export docs/spec.smd --to notion -o spec.json     # Notion API blocks, as re
 smd build docs/ --out site            # static docs site: navigation, search, backlinks, task/decision/risk dashboard
 smd init docs/plan.smd --template prd # new document (smd: 2) from one of 16 templates (smd templates lists them)
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
-smd mcp                               # MCP server (stdio) with outline, section, agent, tasks, validate, query
+smd read docs/plan.smd                # the whole agent view if it fits 2,000 tokens, else the outline
+smd init --agent claude               # skills, CLI and MCP config for an agent (also cursor, copilot, agents)
+smd mcp                               # MCP server (stdio) with read, tasks, query, validate (--allow-write adds edits)
 smd lsp --stdio                       # language server for Neovim, Helix, Zed… (also installed as smd-language-server)
 ```
 
