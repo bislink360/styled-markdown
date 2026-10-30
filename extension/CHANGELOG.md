@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.5.0 — 2026-10-30
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 2.4.0 — 2026-10-28
 
 Word export everywhere, with nothing to install: `smd export --to docx` no longer needs Pandoc, and the JetBrains plugin gets an **Export to Word (.docx)** command beside VS Code's. The files open in Word, LibreOffice, Pages and Google Docs. No breaking changes: documents, commands, flags, settings and library exports from 2.3.0 keep working, and anyone with Pandoc set or on the `PATH` gets the same `.docx` as before.
