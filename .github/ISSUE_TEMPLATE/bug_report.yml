@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Styled Markdown doesn't work as documented (CLI, VS Code extension, npm package, MCP server, agent skills, playground, GitHub Action or another integration).
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. A small document that shows the problem is the most useful thing you can add.
+        Found a security problem? Don't open an issue: report it privately as [SECURITY.md](https://github.com/bislink360/styled-markdown/blob/main/SECURITY.md) explains.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Where does it happen?
+      options:
+        - smd CLI
+        - VS Code extension (or Cursor, VSCodium, Windsurf)
+        - npm library (renderSmd, validateSmd, agentView, markdown-it / remark / rehype plugins)
+        - MCP server (smd mcp)
+        - Agent skills (styled-markdown-reader, styled-markdown-writer) or the Claude Code plugin
+        - Web playground
+        - GitHub Action (validate/) or pre-commit hooks
+        - Language server, JetBrains, Obsidian, MkDocs or Tree-sitter
+        - The specification (docs/SPEC.md)
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`smd --version`, the extension's version in VS Code, or the release you downloaded."
+      placeholder: smd 2.5.0 (Styled Markdown spec v2)
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Node.js version (`node --version`), and the editor or agent if it matters.
+      placeholder: Windows 11, Node.js 22.12, VS Code 1.99
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. Paste error messages as text.
+    validations:
+      required: true
+  - type: textarea
+    id: document
+    attributes:
+      label: A document that shows it
+      description: The smallest `.smd` you can make that shows the problem. A playground link (Copy link) works too.
+      render: markdown
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: The command you ran and what it printed, if it is a CLI or MCP problem.
+      render: shell

@@ -2,6 +2,25 @@
 
 Thanks for helping improve Styled Markdown.
 
+- **Questions and ideas:** [Discussions](https://github.com/bislink360/styled-markdown/discussions).
+- **Bugs and feature requests:** [open an issue](https://github.com/bislink360/styled-markdown/issues/new/choose); the forms ask for what we need.
+- **Security problems:** report them privately, as [SECURITY.md](SECURITY.md) explains.
+- Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Good first issues
+
+Issues labelled [`good first issue`](https://github.com/bislink360/styled-markdown/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are small and self-contained, with the files to change named in the issue. [`help wanted`](https://github.com/bislink360/styled-markdown/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) issues are bigger but well defined. Comment on the issue before you start, so two people don't do the same work.
+
+No labelled issue that suits you? These are good places to start, and need no knowledge of the parser:
+
+- **A template:** add a document template to `skills/styled-markdown-writer/assets/templates/` and register it in `TEMPLATES` in `extension/src/skillsBundle.ts`. Copy an existing one; after `smd init x.smd --template <name>`, `smd validate x.smd` must report no errors or warnings.
+- **A quick fix or a clearer message** for a validation rule in `extension/src/core/validate.ts`, with a test.
+- **A language** for the labels smd adds around a document's text (`Note`, `Figure 2`, `overdue`…): copy a locale in `extension/src/core/locales.ts` and translate it.
+- **Docs:** a missing example, a confusing sentence or a broken link in `docs/`.
+- **An example document** in `examples/` that shows a real use (it must pass `smd validate` and `smd fmt --check`).
+
+Pull requests may target the open `release/v*` branch or `main`; the maintainer retargets them. The [pull request template](.github/PULL_REQUEST_TEMPLATE.md) has the checklist.
+
 ## Setup
 
 ```bash

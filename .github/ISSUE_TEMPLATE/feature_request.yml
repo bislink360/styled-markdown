@@ -1,0 +1,40 @@
+name: Feature request
+description: Suggest a new block, directive, command, export or integration, or a change to an existing one.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Open questions and "how do I…?" fit better in [Discussions](https://github.com/bislink360/styled-markdown/discussions).
+        Styled Markdown keeps documents working across releases: new syntax is added, and existing syntax keeps its meaning ([compatibility policy](https://github.com/bislink360/styled-markdown/blob/main/docs/COMPATIBILITY.md)).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do, and what gets in the way today. Who is it for (people writing docs, people reading them, AI agents)?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like
+      description: The syntax, command or behaviour you have in mind. An example document helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Workarounds you use now, or other ways to solve it.
+  - type: textarea
+    id: plain-markdown
+    attributes:
+      label: Plain Markdown and agents
+      description: For new syntax, how should it look in plain Markdown (`smd export --to md`, GitHub) and in the agent view? Leave empty if you're not sure.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to open a pull request for this.
