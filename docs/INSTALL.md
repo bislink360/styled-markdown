@@ -181,7 +181,7 @@ smd --version       # smd 2.4.0 (Styled Markdown spec v2)
 
 **Without linking:** `node extension/dist/cli.js <command>`.
 
-**First document:** `smd init docs/plan.smd --template prd` writes a new document from a template (`smd templates` lists the 13). New documents, from `smd init`, `smd from-md` and the other writers, say `smd: 2` since 2.0; existing documents keep their rules until you run `smd migrate <files> --to 2` (SPEC.md §10.1).
+**First document:** `smd init docs/plan.smd --template prd` writes a new document from a template (`smd templates` lists the 16). New documents, from `smd init`, `smd from-md` and the other writers, say `smd: 2` since 2.0; existing documents keep their rules until you run `smd migrate <files> --to 2` (SPEC.md §10.1).
 
 ### Optional: Pandoc for Word export
 

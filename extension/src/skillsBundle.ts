@@ -18,6 +18,9 @@ import T_OKRS from '../../skills/styled-markdown-writer/assets/templates/okrs.sm
 import T_ONBOARDING from '../../skills/styled-markdown-writer/assets/templates/onboarding.smd';
 import T_TEST_PLAN from '../../skills/styled-markdown-writer/assets/templates/test-plan.smd';
 import T_PR from '../../skills/styled-markdown-writer/assets/templates/pr-description.smd';
+import T_SPEC from '../../skills/styled-markdown-writer/assets/templates/spec.smd';
+import T_PLAN from '../../skills/styled-markdown-writer/assets/templates/plan.smd';
+import T_TASKS from '../../skills/styled-markdown-writer/assets/templates/tasks.smd';
 
 export const TEMPLATES: Record<string, { description: string; text: string }> = {
   prd: { description: 'Product requirements / feature spec', text: T_PRD },
@@ -33,6 +36,10 @@ export const TEMPLATES: Record<string, { description: string; text: string }> = 
   onboarding: { description: 'Onboarding guide for new team members', text: T_ONBOARDING },
   'test-plan': { description: 'Test scope, strategy, cases and exit criteria', text: T_TEST_PLAN },
   'pr-description': { description: 'Pull request summary, testing and rollback', text: T_PR },
+  // Spec-driven workflow (docs/SPEC-DRIVEN.md): spec.smd, plan.smd and tasks.smd side by side in one folder.
+  spec: { description: 'Spec-driven work: requirements, acceptance criteria, open questions', text: T_SPEC },
+  plan: { description: 'Spec-driven work: approach, decisions, risks and phases for a spec', text: T_PLAN },
+  tasks: { description: "Spec-driven work: tasks by phase, the agent's work queue", text: T_TASKS },
 };
 
 export interface SkillBundle {

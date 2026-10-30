@@ -1,0 +1,60 @@
+---
+smd: 2
+title: "Plan: {{title}}"
+summary: How we will build the spec, in phases, with the decisions and risks that shape the work.
+status: draft
+owners: ["@owner"]
+tags: [plan]
+updated: {{today}}
+related: [spec.smd]
+toc: true
+---
+
+## Approach
+
+The design in a few sentences: what changes, where, and why this way. Name the requirements (R1, R2) each part covers.
+
+```mermaid
+flowchart LR
+    U[User] --> A[New component] --> S[(Storage)]
+```
+
+## Decisions
+
+:::decision{status=proposed date={{today}} owner=@owner} What we are deciding
+The choice, why, and the alternatives considered.
+:::
+
+## Risks
+
+:::risk{impact=medium likelihood=medium owner=@owner status=open} What could go wrong
+How we reduce it, or how we notice it early.
+:::
+
+## Phases
+
+:::steps
+1. **Phase 1: Foundation.** The smallest slice that works end to end. Done when AC1 passes.
+2. **Phase 2: Complete.** The remaining requirements and the failure cases. Done when every acceptance criterion passes.
+3. **Phase 3: Release.** Rollout, monitoring and docs. Done when it is live for every user.
+:::
+
+The tasks for each phase are in the task list (`tasks.smd`).
+
+## Testing
+
+How each acceptance criterion is tested (unit, integration, end to end), and what runs in CI.
+
+## Open questions
+
+:::question Question that affects the plan
+Who decides, and by when. Until then: the assumption the plan makes.
+:::
+
+## Rules for following this plan
+
+:::agent Rules for following this plan
+- Accepted decisions are binding. Proposed ones may still change: build what doesn't depend on them first, or ask.
+- Work phase by phase, from the task list. Don't start a phase before the previous one meets its "done when".
+- A change of approach is a new `:::decision` in this plan (with `smd mcp --allow-write`, the `add_decision` tool), not a silent deviation.
+:::

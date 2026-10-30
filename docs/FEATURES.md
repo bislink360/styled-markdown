@@ -1331,6 +1331,11 @@ These are OpenAI encodings. There is no public tokenizer for current Claude mode
 | `onboarding` | Buddy and manager, Start-here tip, Day 1 setup (tasks, steps, code), Week 1, First 90 days (timeline), Key links, People to meet, Team history (agent-skip), Rules (agent) |
 | `test-plan` | Scope, Strategy (table), Environments (table), Test cases (table), Entry and exit criteria (columns), Risks, Schedule (timeline), Testing rules (agent) |
 | `pr-description` | Links and risk, Summary, Changes, Testing, Risk and rollback (warning), Checklist, Screenshots (agent-skip), Review focus (agent) |
+| `spec` | Problem, Goals and non-goals, User stories, Requirements (IDs and priorities), Acceptance criteria (table), Constraints (warning), Open questions, Rules for implementers (agent) |
+| `plan` | `related:` the spec; Approach (diagram), Decisions, Risks, Phases (steps), Testing, Open questions, Rules for following the plan (agent) |
+| `tasks` | `related:` the spec and the plan; work rules (agent) first, then tasks by phase with requirement, priority, owner and due date, and Done when |
+
+`spec`, `plan` and `tasks` are the spec-driven workflow kit: put them side by side in one folder per feature (`specs/saved-searches/spec.smd`, `plan.smd`, `tasks.smd`), so their `related:` links resolve. How an agent works through them: [SPEC-DRIVEN.md](SPEC-DRIVEN.md).
 
 ## 19. Web playground
 

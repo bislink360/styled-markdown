@@ -412,7 +412,7 @@ test('every writer of new documents writes smd: 2', () => {
   assert.match(statusReportMarkdown(statusChanges(null, [{ path: 'a.smd', text: doc('- [ ] Task') }], { today: TODAY })), smd2, 'smd report');
   assert.match(ganttDocument('gantt\n'), smd2, 'smd tasks --gantt --smd');
   for (const name of templates()) assert.match(fs.readFileSync(path.join(TEMPLATE_DIR, name), 'utf8'), smd2, `smd init --template ${name}`);
-  assert.equal(templates().length, 13);
+  assert.equal(templates().length, 16);
   assert.match(fs.readFileSync(path.join(root, 'playground', 'starter.smd'), 'utf8'), smd2, 'the playground');
   const snippets = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'snippets', 'smd.json'), 'utf8')) as Record<string, { body: string[] }>;
   assert.equal(snippets['Front matter'].body[1], 'smd: 2', 'the front matter snippet');

@@ -41,7 +41,7 @@ Markdown is the lingua franca of engineering docs, but teams keep stretching it.
 
 | | Developers | Product & project managers | AI agents |
 |---|---|---|---|
-| Write | API blocks, code highlights, live code embeds, diagrams, math | Decisions, risks, timelines, KPIs, task owners and due dates | A writer skill with 13 templates and a validator |
+| Write | API blocks, code highlights, live code embeds, diagrams, math | Decisions, risks, timelines, KPIs, task owners and due dates | A writer skill with 16 templates and a validator |
 | Read | Syntax-highlighted preview, outline, folding | Status header, colored callouts, overdue tasks in red | A reader skill: outline → only the needed sections |
 | Check | Problems panel + quick fixes, `smd validate` in CI | `smd tasks` across all docs, overdue first | `--json` diagnostics with machine-applicable fixes |
 
@@ -156,7 +156,7 @@ History and research. People see it; agents skip it.
 | `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->`; `--format github` for pull request annotations ([GitHub Action](#github-action)) |
 | `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
 | `smd migrate <paths> --to 2 [--dry-run \| --check]` | Migrate docs to spec v2 (`smd: 2`) so each keeps its meaning: only `.smd` files that need it, each written whole or not at all, then checked; the notes it prints are left to you. `--dry-run` reports the plan, `--check` fails CI when a doc still needs it ([steps](docs/SPEC.md#101-migrating-to-spec-v2)); also **Migrate to Spec v2** in VS Code |
-| `smd init <file> --template prd` | New doc from 13 templates (`smd templates` lists them), with `smd: 2` |
+| `smd init <file> --template prd` | New doc from 16 templates (`smd templates` lists them), with `smd: 2` |
 | `smd export <file> --to <format> [-o out]` | Every export in one command. Without `--to`, the extension of `-o` picks the format (`.html`, `.md`, `.pdf`, `.docx`). The older names `smd render`, `to-md`, `pdf` and `docx` still work |
 | `… --to html` · `md` | A standalone page with a print stylesheet (Print → Save as PDF), or plain GitHub Markdown |
 | `… --to pdf [--format A4\|Letter] [--landscape] [--browser <path>]` | PDF with diagrams as vectors, printed by an installed Chrome, Edge, Chromium or Brave (or Playwright or Puppeteer, if installed; smd bundles no browser); also **Export to PDF** in VS Code and the JetBrains plugin |
