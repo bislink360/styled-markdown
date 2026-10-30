@@ -50,12 +50,12 @@ Measured on 2026-10-30 with the 2.5.0 skills, from `npm run bench:tokens -- --do
 | Skill descriptions (reader + writer) | every Claude Code session | 321 | 256 |
 | Reader `SKILL.md` | when the reader skill triggers | 2,310 | 482 |
 | `agent-rules.md` (as installed) | every session (`AGENTS.md`) or when a `.smd` file is in context (Cursor, Copilot) | 819 | 279 |
-| MCP `tools/list` + instructions | every session with the server | 1,351 | 1,351 |
+| MCP `tools/list` + instructions | every session with the server | 1,351 | 497 |
 | Writer `SKILL.md` | when the writer skill triggers | 2,091 | 1,647 |
 | Writer syntax reference | when the writer needs syntax | 4,545 (one file) | 367 index + one topic (198–944, median 645) |
 | Writer style guide | when the writer reads it | 1,146 | 1,146 |
 
-The MCP row was measured before the slimmer MCP tool list of 2.5.0 (one `read` tool in place of `outline`, `section` and `agent`); run the benchmark again to see the new number.
+The MCP list is smaller because one `read` tool replaced `outline`, `section` and `agent` in it, and the descriptions are shorter. The old tools still answer when called (`smd mcp --legacy-tools` lists them).
 
 ### (a) Answer a question about one section
 
@@ -68,10 +68,10 @@ The MCP row was measured before the slimmer MCP tool list of 2.5.0 (one `read` t
 | examples/runbook-payments-latency.smd | 660 | 4 | 680 | 443 | 572 | 16% | -93% | 92% / 100% / 100% |
 | examples/showcase.smd | 1,549 | 10 | 1,569 | 553 | 1,302 | 17% | -30% | 98% / 99% / 99% |
 | examples/status-report-2026-09.smd | 370 | 5 | 390 | 329 | 371 | 5% | -184% | 100% / 100% / 100% |
-| docs/COLLABORATION-RFC.smd | 7,986 | 15 | 8,006 | 1,407 | 1,407 | 82% | 73% | 100% / 100% / 100% |
-| docs/SPEC-V2-PROPOSALS.smd | 5,975 | 20 | 5,995 | 1,224 | 1,224 | 80% | 67% | 100% / 100% / 100% |
+| docs/COLLABORATION-RFC.smd | 7,986 | 15 | 8,006 | 1,407 | 1,438 | 82% | 73% | 100% / 100% / 100% |
+| docs/SPEC-V2-PROPOSALS.smd | 5,975 | 20 | 5,995 | 1,224 | 1,255 | 79% | 67% | 100% / 100% / 100% |
 
-"saving" compares `smd read` (+ section) with the raw read; "incl. skill" adds the reader skill's fixed cost (descriptions + `SKILL.md`, 738 tokens) to one read. On the small examples `smd read` returns the whole agent view, so outline + section is cheaper for a single question; on the large documents `smd read` returns the outline and the two are the same.
+"saving" compares `smd read` (+ section) with the raw read; "incl. skill" adds the reader skill's fixed cost (descriptions + `SKILL.md`, 738 tokens) to one read. On the small examples `smd read` returns the whole agent view, so outline + section is cheaper for a single question; on the large documents `smd read` returns the outline, and costs about the same (its outline adds one line on the budget).
 
 ### (b) Understand the whole document
 
@@ -84,8 +84,8 @@ The MCP row was measured before the slimmer MCP tool list of 2.5.0 (one `read` t
 | examples/runbook-payments-latency.smd | 680 | 572 | 572 | 572 | 16% | 16% | 96% / 100% / 100% / 100% |
 | examples/showcase.smd | 1,569 | 1,302 | 1,160 | 1,302 | 17% | 26% | 97% / 98% / 78% / 98% |
 | examples/status-report-2026-09.smd | 390 | 371 | 335 | 371 | 5% | 14% | 100% / 100% / 77% / 100% |
-| docs/COLLABORATION-RFC.smd | 8,006 | 6,051 | 5,952 | 641 | 24% | 26% | 99% / 99% / 95% / 10% |
-| docs/SPEC-V2-PROPOSALS.smd | 5,995 | 5,486 | 5,486 | 676 | 8% | 8% | 100% / 100% / 100% / 19% |
+| docs/COLLABORATION-RFC.smd | 8,006 | 6,051 | 5,952 | 672 | 24% | 26% | 99% / 99% / 95% / 10% |
+| docs/SPEC-V2-PROPOSALS.smd | 5,995 | 5,486 | 5,486 | 707 | 8% | 8% | 100% / 100% / 100% / 19% |
 
 `--brief` trades coverage for tokens: it replaces diagrams, long code and done tasks with pointers, which is why its coverage drops to 75–95%. On the two large documents `smd read` returns the outline (10–19% coverage): it is a map for choosing sections, not the whole document.
 
@@ -102,12 +102,12 @@ Net = tokens of the raw read minus tokens of the tools (and the reader skill's f
 | examples/adr-0007-event-bus.smd | 756 | 619 | 157 | -581 | 592 | 184 | -554 |
 | examples/showcase.smd | 1,549 | 1,302 | 267 | -471 | 1,160 | 409 | -329 |
 | examples/checkout-redesign.smd | 2,471 | 1,560 | 931 | 193 | 1,426 | 1,065 | 327 |
-| composite ≈4k | 4,108 | 701 | 3,427 | 2,689 | 2,429 | 1,699 | 961 |
-| docs/SPEC-V2-PROPOSALS.smd | 5,975 | 1,224 | 4,771 | 4,033 | 5,486 | 509 | -229 |
-| docs/COLLABORATION-RFC.smd | 7,986 | 1,407 | 6,599 | 5,861 | 5,952 | 2,054 | 1,316 |
-| composite ≈8k | 9,760 | 1,552 | 8,228 | 7,490 | 6,038 | 3,742 | 3,004 |
-| composite ≈16k | 16,573 | 2,557 | 14,036 | 13,298 | 10,368 | 6,225 | 5,487 |
-| composite ≈32k | 32,499 | 4,818 | 27,701 | 26,963 | 20,811 | 11,708 | 10,970 |
+| composite ≈4k | 4,108 | 732 | 3,396 | 2,658 | 2,429 | 1,699 | 961 |
+| docs/SPEC-V2-PROPOSALS.smd | 5,975 | 1,255 | 4,740 | 4,002 | 5,486 | 509 | -229 |
+| docs/COLLABORATION-RFC.smd | 7,986 | 1,438 | 6,568 | 5,830 | 5,952 | 2,054 | 1,316 |
+| composite ≈8k | 9,760 | 1,583 | 8,197 | 7,459 | 6,038 | 3,742 | 3,004 |
+| composite ≈16k | 16,573 | 2,589 | 14,004 | 13,266 | 10,368 | 6,225 | 5,487 |
+| composite ≈32k | 32,499 | 4,849 | 27,670 | 26,932 | 20,811 | 11,708 | 10,970 |
 
 With the small-document shortcut, an agent with the reader skill reads the five smallest examples raw, so in practice it pays the raw read plus the skill's fixed cost there, not the "(a) net, skill" figure.
 
@@ -117,12 +117,12 @@ The raw size, in tokens, above which the tools cost less than reading the file. 
 
 | Task and method | no fixed cost | skill, 1 read | skill, 5 reads | agent rules | MCP |
 |---|---:|---:|---:|---:|---:|
-| (a) one section: outline + section | 400 | 1,200 | 600 | 700 | 2,000 |
-| (a) one section: `smd read` (+ section) | 700 | 1,500 | 800 | 1,000 | 2,200 |
-| (b) whole doc: agent view | 400 | 3,000 | 1,000 | 1,400 | 5,100 |
-| (b) whole doc: `--brief` | 600 | 2,600 | 1,000 | 1,300 | 4,300 |
+| (a) one section: outline + section | 400 | 1,200 | 600 | 700 | 1,000 |
+| (a) one section: `smd read` (+ section) | 700 | 1,500 | 800 | 1,000 | 1,200 |
+| (b) whole doc: agent view | 400 | 3,000 | 1,000 | 1,400 | 2,100 |
+| (b) whole doc: `--brief` | 600 | 2,600 | 1,000 | 1,300 | 1,900 |
 
-The same table with the 2.4.0 skill files (the MCP column is unchanged):
+The same table with the 2.4.0 skill files and MCP tool list:
 
 | Task and method | no fixed cost | skill, 1 read | skill, 5 reads | agent rules | MCP |
 |---|---:|---:|---:|---:|---:|
