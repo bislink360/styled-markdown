@@ -5,6 +5,7 @@
 //
 // Updates: extension/package.json, extension/package-lock.json, npm/package.json,
 // integrations/obsidian/manifest.json and versions.json, integrations/mkdocs/pyproject.toml,
+// .claude-plugin/plugin.json, server.json (the MCP registry entry),
 // extension/CHANGELOG.md (new "## X.Y.Z — YYYY-MM-DD" section with empty headings).
 // Does not commit, tag or publish.
 
@@ -37,6 +38,13 @@ setVersion(join(ROOT, 'npm', 'package.json'), (j) => { j.version = next; });
 let minAppVersion;
 setVersion(join(ROOT, 'integrations', 'obsidian', 'manifest.json'), (j) => { j.version = next; minAppVersion = j.minAppVersion; });
 if (minAppVersion) setVersion(join(ROOT, 'integrations', 'obsidian', 'versions.json'), (j) => { j[next] = minAppVersion; });
+// The Claude Code plugin (its version pins what users get until the next release) and the MCP registry entry
+// (the server's version and the npm package version it runs).
+setVersion(join(ROOT, '.claude-plugin', 'plugin.json'), (j) => { j.version = next; });
+setVersion(join(ROOT, 'server.json'), (j) => {
+  j.version = next;
+  for (const pkg of j.packages ?? []) if (pkg.registryType === 'npm') pkg.version = next;
+});
 
 // The MkDocs plugin's Python package: the `version = "…"` line of pyproject.toml (check-versions.mjs requires it).
 const setTomlVersion = (path) => {

@@ -103,7 +103,10 @@ test('isReleaseBranch accepts main and release/* only', () => {
   }
 });
 
-const good = { tag: 'v1.5.0', extensionVersion: '1.5.0', lockVersion: '1.5.0', npmVersion: '1.5.0', pythonVersion: '1.5.0', obsidianVersion: '1.5.0', changelog };
+const good = {
+  tag: 'v1.5.0', extensionVersion: '1.5.0', lockVersion: '1.5.0', npmVersion: '1.5.0', pythonVersion: '1.5.0', obsidianVersion: '1.5.0',
+  pluginVersion: '1.5.0', mcpServerVersion: '1.5.0', mcpPackageVersion: '1.5.0', changelog,
+};
 
 test('checkRelease passes a consistent release', () => {
   assert.deepEqual(checkRelease(good), []);
@@ -112,13 +115,16 @@ test('checkRelease passes a consistent release', () => {
 
 test('checkRelease reports every mismatch', () => {
   const problems = checkRelease({ ...good, tag: 'v1.3.0', npmVersion: undefined, pythonVersion: '1.2.0', obsidianVersion: '1.4.0', branches: ['origin/feat/x'] });
-  assert.equal(problems.length, 7);
+  assert.equal(problems.length, 10);
   assert.match(problems[0], /extension\/package\.json has version 1\.5\.0, the tag is v1\.3\.0/);
   assert.match(problems[2], /npm\/package\.json has version \(none\)/);
   assert.match(problems[3], /integrations\/mkdocs\/pyproject\.toml has version 1\.2\.0/);
   assert.match(problems[4], /integrations\/obsidian\/manifest\.json has version 1\.4\.0/);
-  assert.match(problems[5], /no "## 1\.3\.0" section/);
-  assert.match(problems[6], /not on main or a release\/\* branch \(found on: origin\/feat\/x\)/);
+  assert.match(problems[5], /\.claude-plugin\/plugin\.json has version 1\.5\.0/);
+  assert.match(problems[6], /^server\.json has version 1\.5\.0/);
+  assert.match(problems[7], /^server\.json \(npm package\) has version 1\.5\.0/);
+  assert.match(problems[8], /no "## 1\.3\.0" section/);
+  assert.match(problems[9], /not on main or a release\/\* branch \(found on: origin\/feat\/x\)/);
   assert.match(checkRelease({ ...good, branches: [] })[0], /found on: no branch/);
 });
 
@@ -132,6 +138,28 @@ test('the MkDocs plugin has the extension version', () => {
   const root = join(__dirname, '..', '..');
   const python = pyprojectVersion(readFileSync(join(root, 'integrations', 'mkdocs', 'pyproject.toml'), 'utf8'));
   assert.equal(python, JSON.parse(readFileSync(join(root, 'extension', 'package.json'), 'utf8')).version);
+});
+
+test('the Claude Code plugin and the MCP registry entry have the extension version', () => {
+  const root = join(__dirname, '..', '..');
+  const json = (...p: string[]) => JSON.parse(readFileSync(join(root, ...p), 'utf8'));
+  const version = json('extension', 'package.json').version;
+  const plugin = json('.claude-plugin', 'plugin.json');
+  assert.equal(plugin.version, version);
+  const server = json('server.json');
+  assert.equal(server.version, version);
+  assert.deepEqual(server.packages.map((p: { version: string }) => p.version), [version]);
+  // The MCP registry verifies the npm package by its mcpName, which must be the server's name.
+  const npmPkg = json('npm', 'package.json');
+  assert.equal(npmPkg.mcpName, server.name);
+  assert.equal(server.packages[0].identifier, npmPkg.name);
+  // The marketplace's one plugin is the repository root, and its MCP server runs the CLI bundled in the reader skill.
+  const marketplace = json('.claude-plugin', 'marketplace.json');
+  assert.deepEqual(marketplace.plugins.map((p: { name: string; source: string }) => [p.name, p.source]), [[plugin.name, './']]);
+  const [script, command] = plugin.mcpServers.smd.args as string[];
+  assert.equal(script, '${CLAUDE_PLUGIN_ROOT}/skills/styled-markdown-reader/scripts/smd.cjs');
+  assert.equal(command, 'mcp');
+  assert.ok(readFileSync(join(root, script.replace('${CLAUDE_PLUGIN_ROOT}/', ''))).length > 0);
 });
 
 test('checkRelease rejects tags that are not vX.Y.Z', () => {

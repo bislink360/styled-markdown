@@ -1,10 +1,11 @@
-# Installation guide
+# Installing Styled Markdown
 
-This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, the **JetBrains plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
+This guide covers **AI agent setup** (the Claude Code plugin, `smd init --agent` and the MCP server), the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, the **JetBrains plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
 
 ## Contents
 
 - [Requirements](#requirements)
+- [Set up an AI agent](#set-up-an-ai-agent)
 - [Install the VS Code extension](#install-the-vs-code-extension)
 - [Verify the installation](#verify-the-installation)
 - [Recommended settings](#recommended-settings)
@@ -32,6 +33,55 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | Building from source | Node.js 22+, npm, Git |
 | Word export | Nothing (built in). Optionally [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for Word equations in `smd export --to docx` and **Export to Word (.docx)** |
 | PDF export | Google Chrome, Microsoft Edge (comes with Windows), Chromium or Brave, for `smd export --to pdf` and **Export to PDF** in VS Code and JetBrains IDEs; or Playwright or Puppeteer |
+
+## Set up an AI agent
+
+Agents read `.smd` documents through the CLI or the MCP server instead of reading the files whole, and write them from templates with the validator as a check. Pick one way in.
+
+### Claude Code plugin
+
+In Claude Code (2.1 or later), add this repository as a plugin marketplace and install the plugin:
+
+```text
+/plugin marketplace add bislink360/styled-markdown
+/plugin install styled-markdown@styled-markdown
+```
+
+From a shell, the same is `claude plugin marketplace add bislink360/styled-markdown` and `claude plugin install styled-markdown@styled-markdown`. The plugin brings:
+
+- the **`styled-markdown-reader`** and **`styled-markdown-writer`** skills (as `styled-markdown:styled-markdown-reader` and `styled-markdown:styled-markdown-writer`), each with the `smd` CLI bundled;
+- the **`smd` MCP server**, read-only: it serves the `.smd` files under the folder it is started in, your project when you run Claude Code from its root.
+
+It needs Node.js 22 or newer on the `PATH`. The plugin's version is the release's: after a release, `claude plugin marketplace update styled-markdown` and `claude plugin update styled-markdown@styled-markdown` bring it up to date. The two skill descriptions add about 320 tokens to each session; a skill's full instructions load only when a task needs them.
+
+### One command for a project: `smd init --agent`
+
+From your project's root, one command installs everything an agent needs and can be committed for the whole team:
+
+```bash
+npx styled-markdown init --agent claude     # or cursor, copilot, agents
+```
+
+| `--agent` | Writes |
+|---|---|
+| `claude` | The skills in `.claude/skills/`, the MCP server in `.mcp.json` |
+| `cursor` | `.cursor/rules/styled-markdown.mdc`, the MCP server in `.cursor/mcp.json` |
+| `copilot` | `.github/instructions/styled-markdown.instructions.md`, the MCP server in `.vscode/mcp.json` |
+| `agents` | A Styled Markdown section in `AGENTS.md` (Codex, Windsurf and other agents that read it) |
+
+Every target also gets the CLI at `.smd/smd.cjs` and the `AGENTS.md` snippet. `--dir <project>` sets the project folder. Running it again updates the files in place; MCP config files that already exist are merged, so your other servers stay.
+
+`npx styled-markdown` works once the package is on the npm registry. Until then, use the CLI from a release: `node smd.cjs init --agent claude` with the single file from [Install the `smd` CLI](#install-the-smd-cli), or `smd init --agent claude` after installing the release's `.tgz`. The older `smd skills install --target claude,cursor,copilot,agents` still works and installs the skills or rules without the MCP config ([SKILLS.md](SKILLS.md)).
+
+### MCP server only
+
+`smd mcp` serves the reading tools (`read`, `tasks`, `query`, `validate`) over stdio to any MCP client, without shell access:
+
+```bash
+claude mcp add smd -- npx -y -p styled-markdown smd mcp
+```
+
+`smd mcp --allow-write` adds tools that change documents, each checked by the validator and kept inside the root folder: `check_task` (tick or untick a task), `set_status` (the front matter `status`) and `add_decision` (a `:::decision` at the end of a section). Setup for Cursor, VS Code and Claude Desktop, and every tool's arguments: [AGENTS.md](AGENTS.md#mcp-server).
 
 ## Install the VS Code extension
 
