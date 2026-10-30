@@ -45,11 +45,13 @@ npx styled-markdown init --agent cursor    # or copilot, agents
 Writes the rules file, the CLI at `.smd/smd.cjs`, the MCP server config and the `AGENTS.md` snippet into the project.
 :::
 :::tab VS Code
-Search for **Styled Markdown** in the Extensions view (VS Code Marketplace, or Open VSX for Cursor, VSCodium and Windsurf), or install the `.vsix` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest):
+Search for **Styled Markdown** in the Extensions view, or:
 
 ```bash
-code --install-extension styled-markdown-X.Y.Z.vsix
+code --install-extension bislink360.styled-markdown
 ```
+
+Cursor, VSCodium and Windsurf: install the `.vsix` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) until the Open VSX listing is live.
 :::
 :::tab npm and CLI
 ```bash

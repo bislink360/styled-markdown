@@ -85,9 +85,17 @@ claude mcp add smd -- npx -y -p styled-markdown smd mcp
 
 ## Install the VS Code extension
 
-> **Visual Studio Marketplace and Open VSX:** coming once published. [Open VSX](https://open-vsx.org) is the extension registry of VSCodium, Cursor, Windsurf and Gitpod. Until the listings are live, install the `.vsix` from the GitHub release (Option A).
+**From the Visual Studio Marketplace (VS Code):** search for **Styled Markdown** in the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`), or run:
 
-### Option A — from the release file (recommended)
+```bash
+code --install-extension bislink360.styled-markdown
+```
+
+VS Code then keeps it up to date. The [Marketplace page](https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown) lists the versions.
+
+> **Open VSX:** coming once published. [Open VSX](https://open-vsx.org) is the extension registry of VSCodium, Cursor, Windsurf and Gitpod. Until the listing is live, those editors install the `.vsix` from the GitHub release (Option A).
+
+### Option A — from the release file
 
 1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-2.4.0.vsix`**.
 2. Install it with **one** of these methods.

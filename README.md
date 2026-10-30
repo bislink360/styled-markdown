@@ -41,7 +41,7 @@
 npx styled-markdown init --agent claude      # or cursor, copilot, agents
 ```
 
-**VS Code** (and Cursor, VSCodium, Windsurf): download **`styled-markdown-2.4.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest), then `code --install-extension styled-markdown-2.4.0.vsix`. Open a `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS) for the live preview.
+**VS Code:** install **Styled Markdown** from the [Marketplace](https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown), or `code --install-extension bislink360.styled-markdown`. **Cursor, VSCodium, Windsurf:** download **`styled-markdown-2.4.0.vsix`** from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest), then `cursor --install-extension styled-markdown-2.4.0.vsix` (`codium …` for VSCodium), or **Install from VSIX…** in the Extensions view. Open a `.smd` file and press **`Ctrl+K V`** (**`Cmd+K V`** on macOS) for the live preview.
 
 **CLI and library** (Node.js 22+):
 
@@ -50,7 +50,7 @@ npm install -g https://github.com/bislink360/styled-markdown/releases/download/v
 smd validate docs/
 ```
 
-> The npm package, the VS Code Marketplace and Open VSX listings are coming. Until they are live, `npx styled-markdown …` and the Marketplace search don't work yet: use the files from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest), or `node smd.cjs init --agent claude` with the [single-file CLI](docs/INSTALL.md#install-the-smd-cli).
+> The npm registry and Open VSX listings are coming. Until the package is on npm, `npx styled-markdown …` doesn't work yet: use the files from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest), or `node smd.cjs init --agent claude` with the [single-file CLI](docs/INSTALL.md#install-the-smd-cli).
 
 Everything else (the MCP server on its own, JetBrains, Obsidian, MkDocs, Neovim and other editors, the GitHub Action, pre-commit hooks, Astro and Docusaurus): **[docs/INSTALL.md](docs/INSTALL.md)**. Or try it first in the **[web playground](https://bislink360.github.io/styled-markdown/playground/)**, nothing to install.
 
