@@ -387,6 +387,7 @@ Each has a rendered `.html` version next to it that you can open in a browser. M
 | [docs/AGENTS.md](docs/AGENTS.md) | One-page guide to paste into any agent's instructions |
 | [docs/SPEC.md](docs/SPEC.md) | The formal specification (v2, with the v1 rules it keeps) and validation rules |
 | [docs/GITHUB.md](docs/GITHUB.md) | Making `.smd` documents readable on GitHub: `.md` files, generated copies, pull request comments |
+| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | The stability promise: spec v2 is stable, what each release may change, deprecations, release cadence |
 
 ## Repository layout
 
