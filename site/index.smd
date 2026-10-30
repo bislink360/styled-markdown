@@ -91,7 +91,7 @@ Won usability testing on completion rate.
 
 ## For AI agents
 
-- **One read, fewer tokens.** `smd read spec.smd` returns the whole agent view when it is small, else an outline to pick sections from. Measured on the examples: the full agent view is 5–38% smaller than the file (median ≈20%), `--brief` 15–43%, and the outline plus one section up to 84%. Small documents are cheaper to read directly.
+- **One read, fewer tokens.** `smd read spec.smd` returns the whole agent view when it is small, else an outline to pick sections from. Measured: the full agent view is 5–37% smaller than the file on the examples, `--brief` 14–43%, and the outline plus one section about 80% smaller on 6k–8k-token documents. Small documents are cheaper to read directly.
 - **Meaning is explicit.** An agent can tell an accepted decision from a proposal, a hard constraint from a side note, and its own instructions (`:::agent`) from content for people.
 - **A work queue.** `smd tasks docs/` lists open tasks across documents, overdue first; the MCP server can check them off when you allow it.
 - **A gate.** `smd validate` catches broken syntax, links and diagrams in CI, with fixes an agent can apply.

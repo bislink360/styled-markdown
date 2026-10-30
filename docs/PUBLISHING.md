@@ -50,4 +50,4 @@ curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.bis
 
 The `io.github.bislink360/` namespace is granted to members of the `bislink360` GitHub organization; if `publish` refuses the name, make your membership of the organization public and log in again.
 
-**Before the first publish:** `npx styled-markdown mcp` needs the package to have a `styled-markdown` command (npm runs the command named like the package when it has more than one). Check that `npx -y styled-markdown@2.5.0 mcp` starts the server (it waits for input on stdin; stop it with Ctrl+C).
+**Before the first publish:** registry clients run the server as `npx styled-markdown mcp`, which needs the package's `styled-markdown` command (npm runs the command named like the package when there are several; 2.5.0 adds it next to `smd`). Check that `npx -y styled-markdown@2.5.0 mcp` starts the server: it waits for input on stdin; stop it with Ctrl+C.
