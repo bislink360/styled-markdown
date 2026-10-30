@@ -67,6 +67,7 @@
   },
   "bin": {
     "smd": "dist/cli.js",
+    "styled-markdown": "dist/cli.js",
     "smd-language-server": "dist/language-server.js"
   },
   "files": [

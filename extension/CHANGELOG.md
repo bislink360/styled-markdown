@@ -5,12 +5,17 @@
 ### ⚠️ Breaking changes
 
 ### Added
+- **`smd read <file>`: one call to start reading a document.** It prints the whole agent view when it fits 2,000 tokens (`--max-tokens <n>` sets the budget) and otherwise the outline, so an agent no longer needs `smd outline` and then `smd agent`. `--section` (repeatable) reads only those sections, `--outline` and `--full` force one form, and `--brief` and `--no-lines` work as on `smd agent`.
+- **MCP `read` tool.** The same as `smd read`, with `sections`, `mode` (`auto`, `outline`, `full`) and `brief`.
+- **`smd init --agent claude|cursor|copilot|agents`: set up an agent in one command.** It installs the skills (`claude`) or the reading and writing rules (`cursor`, `copilot`, `agents` for AGENTS.md), the CLI, and the MCP server in the agent's own config: `.mcp.json` (Claude Code), `.cursor/mcp.json` (Cursor) or `.vscode/mcp.json` (Copilot in VS Code). Existing config files are merged and other servers kept; a file with comments is left alone and the entry to add is printed. Re-run it to update; `--dir <project>` picks the project and `--no-mcp` skips the MCP config. The npm package gets a `styled-markdown` command for it, so `npx styled-markdown init --agent claude` works once the package is on npm.
+- **Opt-in MCP write tools: `smd mcp --allow-write`.** `check_task` ticks or unticks one task (by the line `tasks` prints, optionally checking the line still has the expected text), `set_status` sets the front matter status (and `updated` when there is one), and `add_decision` appends a `:::decision` block to a section. Each changes only its own lines, keeps line endings, stays inside `--root`, and writes nothing when the result would have more validation errors than before. Without the flag the server stays read-only.
+- **`smd savings <files|dirs…>`: what the agent view saves across a repository.** Tokens per document for the raw file, the agent view and `--brief`, the total saving and its price in dollars (`--price`, USD per million input tokens, default 3), and `--json` for tools. On this repository's `examples/` it reports 25% (31% with `--brief`) for reading every document whole; reading only the needed sections saves more.
 
 ### Changed
+- **The MCP server lists four tools instead of six, and they cost ≈500 tokens instead of ≈1,320.** Every agent session pays for the tool list, so `read` replaces `outline`, `section` and `agent` in it, and the descriptions are shorter. The old tools still work when a client calls them, and `smd mcp --legacy-tools` lists them again; they stay until 3.0. The server's instructions point agents at `read`.
 
 ### Deprecated
-
-### Fixed
+- The MCP tools `outline`, `section` and `agent`: use `read` (with `mode: "outline"`, `sections`, or `mode: "full"`). They keep working, unlisted, until 3.0.
 
 ## 2.4.0 — 2026-10-28
 
