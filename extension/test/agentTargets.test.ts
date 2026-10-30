@@ -34,7 +34,8 @@ test('parseTargets: default, commas, repeats, duplicates and unknown names', () 
 test('rules body: one source, CLI command filled in', () => {
   assert.doesNotMatch(body, /\{\{smd\}\}/);
   assert.match(body, /^## Styled Markdown \(\.smd\)/);
-  assert.match(body, /`node \.smd\/smd\.cjs outline <file>`/);
+  assert.match(body, /`node \.smd\/smd\.cjs read <file>`/);
+  assert.match(body, /`node \.smd\/smd\.cjs validate <file> --fix`/);
   assert.ok(cursorRule(body).endsWith(body));
   assert.ok(copilotInstructions(body).endsWith(body));
 });

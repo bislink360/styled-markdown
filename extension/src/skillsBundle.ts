@@ -1,8 +1,17 @@
 // Skill files and document templates, bundled into the CLI at build time (esbuild text loader),
 // so `smd skills install` and `smd init --template` work from a single self-contained file.
 import READER_SKILL from '../../skills/styled-markdown-reader/SKILL.md';
+import READER_REFERENCE from '../../skills/styled-markdown-reader/references/reading.md';
 import WRITER_SKILL from '../../skills/styled-markdown-writer/SKILL.md';
 import WRITER_SYNTAX from '../../skills/styled-markdown-writer/references/syntax.md';
+import SYNTAX_BASICS from '../../skills/styled-markdown-writer/references/syntax/basics.md';
+import SYNTAX_CALLOUTS from '../../skills/styled-markdown-writer/references/syntax/callouts.md';
+import SYNTAX_PROJECT from '../../skills/styled-markdown-writer/references/syntax/project.md';
+import SYNTAX_DEVELOPER from '../../skills/styled-markdown-writer/references/syntax/developer.md';
+import SYNTAX_LAYOUT from '../../skills/styled-markdown-writer/references/syntax/layout.md';
+import SYNTAX_FIGURES from '../../skills/styled-markdown-writer/references/syntax/figures-and-notes.md';
+import SYNTAX_INLINE from '../../skills/styled-markdown-writer/references/syntax/inline.md';
+import SYNTAX_SPEC_V2 from '../../skills/styled-markdown-writer/references/syntax/spec-v2.md';
 import WRITER_STYLE from '../../skills/styled-markdown-writer/references/style-guide.md';
 import AGENT_RULES_TEMPLATE from '../../skills/agent-rules.md';
 import T_PRD from '../../skills/styled-markdown-writer/assets/templates/prd.smd';
@@ -45,8 +54,8 @@ export interface SkillBundle {
 export const SKILLS: SkillBundle[] = [
   {
     name: 'styled-markdown-reader',
-    summary: 'read .smd token-efficiently (outline → sections → edit)',
-    files: { 'SKILL.md': READER_SKILL },
+    summary: 'read .smd token-efficiently (read → sections → edit)',
+    files: { 'SKILL.md': READER_SKILL, 'references/reading.md': READER_REFERENCE },
   },
   {
     name: 'styled-markdown-writer',
@@ -54,6 +63,14 @@ export const SKILLS: SkillBundle[] = [
     files: {
       'SKILL.md': WRITER_SKILL,
       'references/syntax.md': WRITER_SYNTAX,
+      'references/syntax/basics.md': SYNTAX_BASICS,
+      'references/syntax/callouts.md': SYNTAX_CALLOUTS,
+      'references/syntax/project.md': SYNTAX_PROJECT,
+      'references/syntax/developer.md': SYNTAX_DEVELOPER,
+      'references/syntax/layout.md': SYNTAX_LAYOUT,
+      'references/syntax/figures-and-notes.md': SYNTAX_FIGURES,
+      'references/syntax/inline.md': SYNTAX_INLINE,
+      'references/syntax/spec-v2.md': SYNTAX_SPEC_V2,
       'references/style-guide.md': WRITER_STYLE,
       ...Object.fromEntries(Object.entries(TEMPLATES).map(([name, t]) => [`assets/templates/${name}.smd`, t.text])),
     },
