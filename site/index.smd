@@ -1,0 +1,107 @@
+---
+smd: 2
+title: Styled Markdown
+summary: Markdown that people and AI agents both read well. Callouts, decisions, risks, tasks and diagrams, validated, with an agent view that skips the decoration.
+accent: indigo
+---
+
+:badge[spec v2, stable]{color=indigo} :badge[MIT]{color=green} :badge[Node.js 22+]{color=gray}
+
+**Styled Markdown (`.smd`) is Markdown plus a small, validated vocabulary** (`:::warning`, `:::decision`, `:::risk`, tasks with owners and due dates, Mermaid diagrams, `:::agent` instructions) with a CLI, a VS Code extension, an MCP server and agent skills that let an agent read only what it needs.
+
+:::::columns
+::::column
+:::card{accent=indigo} Try it in the browser
+Edit a document and see the preview, the agent view with its token count, the problems and the Markdown export side by side. Nothing to install, nothing sent to a server.
+
+<!-- The Pages workflow (.github/workflows/pages.yml) builds the playground next to this page. -->
+<!-- smd-disable-next-line link/missing-file -->
+**[Open the playground →](playground/)**
+:::
+::::
+::::column
+:::card{accent=teal} Read the docs
+[Install guide](https://github.com/bislink360/styled-markdown/blob/main/docs/INSTALL.md) · [Feature guide](https://github.com/bislink360/styled-markdown/blob/main/docs/FEATURES.md) · [Specification](https://github.com/bislink360/styled-markdown/blob/main/docs/SPEC.md) · [Agents](https://github.com/bislink360/styled-markdown/blob/main/docs/AGENTS.md) · [GitHub](https://github.com/bislink360/styled-markdown)
+:::
+::::
+:::::
+
+## Install
+
+::::tabs
+:::tab Claude Code
+```text
+/plugin marketplace add bislink360/styled-markdown
+/plugin install styled-markdown@styled-markdown
+```
+
+The two agent skills (reading and writing `.smd`) and the MCP server, in one plugin. Or set up one project with `npx styled-markdown init --agent claude`.
+:::
+:::tab Cursor, Copilot, other agents
+```bash
+npx styled-markdown init --agent cursor    # or copilot, agents
+```
+
+Writes the rules file, the CLI at `.smd/smd.cjs`, the MCP server config and the `AGENTS.md` snippet into the project.
+:::
+:::tab VS Code
+Search for **Styled Markdown** in the Extensions view, or:
+
+```bash
+code --install-extension bislink360.styled-markdown
+```
+
+Cursor, VSCodium and Windsurf: install the `.vsix` from the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) until the Open VSX listing is live.
+:::
+:::tab npm and CLI
+```bash
+npm install -g styled-markdown    # the smd command
+smd validate docs/
+```
+
+The same package is a zero-dependency library (`renderSmd`, `validateSmd`, `agentView`) with markdown-it, remark and rehype plugins.
+:::
+::::
+
+Until the registry listings are live, every [GitHub release](https://github.com/bislink360/styled-markdown/releases/latest) has the `.vsix`, the npm package and the skills: see the [install guide](https://github.com/bislink360/styled-markdown/blob/main/docs/INSTALL.md).
+
+## What it looks like
+
+````markdown
+---
+smd: 2
+title: Saved searches
+status: review
+---
+
+:::warning Breaking change
+`GET /v1/search` requires the `filters` object from 2026-11-01.
+:::
+
+- [ ] Idempotent order creation :priority[P0] @api-team :due[2026-10-03]
+
+:::decision{status=accepted owner=@maya} Accordion layout on mobile
+Won usability testing on completion rate.
+:::
+
+:::agent
+- All prices are integer cents.
+:::
+````
+
+## For AI agents
+
+- **One read, fewer tokens.** `smd read spec.smd` returns the whole agent view when it is small, else an outline to pick sections from. Measured: the full agent view is 5–37% smaller than the file on the examples, `--brief` 14–43%, and the outline plus one section about 80% smaller on 6k–8k-token documents. Small documents are cheaper to read directly.
+- **Meaning is explicit.** An agent can tell an accepted decision from a proposal, a hard constraint from a side note, and its own instructions (`:::agent`) from content for people.
+- **A work queue.** `smd tasks docs/` lists open tasks across documents, overdue first; the MCP server can check them off when you allow it.
+- **A gate.** `smd validate` catches broken syntax, links and diagrams in CI, with fixes an agent can apply.
+
+## For docs-as-code teams
+
+- Every `.md` file is already valid Styled Markdown: rename it and add structure where it helps.
+- `smd export --to md` writes plain GitHub Markdown, `smd build` a static site, and the GitHub Action annotates problems on pull requests.
+- Spec v2 is stable: documents written today keep their meaning in every 2.x release.
+
+---
+
+[GitHub](https://github.com/bislink360/styled-markdown) · [Releases](https://github.com/bislink360/styled-markdown/releases) · [Discussions](https://github.com/bislink360/styled-markdown/discussions) · [Compatibility policy](https://github.com/bislink360/styled-markdown/blob/main/docs/COMPATIBILITY.md) · MIT licence

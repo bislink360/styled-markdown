@@ -1,0 +1,22 @@
+{
+  "name": "styled-markdown",
+  "description": "Styled Markdown (.smd) for Claude Code: agent skills for reading and writing .smd documents, and the smd MCP server.",
+  "owner": {
+    "name": "Roshan Alwis",
+    "url": "https://github.com/roshanmadhushanka"
+  },
+  "plugins": [
+    {
+      "name": "styled-markdown",
+      "source": "./",
+      "description": "Read and write Styled Markdown (.smd) specs, PRDs, ADRs, runbooks and plans with fewer tokens: the reader and writer skills plus the smd MCP server.",
+      "category": "documentation",
+      "tags": [
+        "markdown",
+        "documentation",
+        "specs",
+        "mcp"
+      ]
+    }
+  ]
+}

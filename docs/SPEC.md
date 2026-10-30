@@ -7,6 +7,7 @@ Styled Markdown is a **strict superset of CommonMark + GitHub-Flavored Markdown*
 - Media type (suggested): `text/x-styled-markdown`
 - Encoding: UTF-8
 - Spec version: `2` (declared in front matter as `smd: 2`). A document without `smd: 2` follows spec v1, which Styled Markdown 2.x keeps in full. Where the two differ, a rule says so: see §10
+- Status: **stable**. Spec v2 gets no breaking change; a change that reads existing documents differently needs a spec v3 RFC. The spec is versioned apart from the tools (tools 2.5.0 implement spec v2): see the [compatibility policy](COMPATIBILITY.md)
 
 ---
 

@@ -1,0 +1,38 @@
+---
+smd: 2
+title: "Tasks: {{title}}"
+summary: The work queue for the plan. Tasks by phase, each with the requirement it serves, a priority, an owner and a due date.
+status: draft
+owners: ["@owner"]
+tags: [tasks]
+updated: {{today}}
+related: [spec.smd, plan.smd]
+---
+
+:::agent How to work through this list
+- List the open tasks with `smd tasks tasks.smd` (or the MCP `tasks` tool): overdue first, then by priority. Take the first one that isn't blocked.
+- Read the requirement a task names (R1) in the spec, with `smd agent spec.smd --section requirements`, before you start.
+- When a task is done and its checks pass (the tests, `smd validate`), check it off: change `- [ ]` to `- [x]` on its line, or call `check_task` with the file and line when the MCP server runs with `--allow-write`. Never check off a task whose checks fail.
+- Found more work? Add a task to the right phase, with the requirement, a priority and an owner. Don't do unlisted work silently.
+:::
+
+## Phase 1: Foundation
+
+- [ ] Set up the smallest end-to-end slice (R1) :priority[P0] @owner :due[{{today}}]
+- [ ] Test AC1 (R1) :priority[P0] @owner :due[{{today}}]
+
+## Phase 2: Complete
+
+- [ ] Implement the next requirement (R2) :priority[P1] @owner
+- [ ] Handle the failure cases and test AC2 (R2) :priority[P1] @owner
+
+## Phase 3: Release
+
+- [ ] Roll out behind a flag, then to everyone :priority[P1] @owner
+- [ ] Update the docs and the changelog :priority[P2] @owner
+
+## Done when
+
+- Every P0 and P1 task is checked off.
+- Every acceptance criterion in the spec passes.
+- `smd validate` reports no errors in the spec, the plan and this list.

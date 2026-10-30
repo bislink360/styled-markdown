@@ -1,0 +1,69 @@
+name: Pages
+
+# Publishes https://bislink360.github.io/styled-markdown/: the homepage (site/index.smd, built with `smd build`, so
+# the homepage is itself a Styled Markdown document) at /, and the web playground (playground/) at /playground/.
+# main only changes when a release is merged, so the site always matches the latest release.
+#
+# Until GitHub Pages is turned on for the repository (Settings → Pages → Source: GitHub Actions), only the deploy
+# job fails; the build job still checks that the homepage validates and the playground builds.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push waits rather than cancelling one in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build homepage and playground
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Build the CLI
+        run: npm run build
+      - name: Homepage validates and is formatted
+        run: |
+          node dist/cli.js validate ../site --strict
+          node dist/cli.js fmt --check ../site
+      - name: Build the homepage
+        run: node dist/cli.js build ../site --out ../_site --title "Styled Markdown"
+      - name: Build the playground into /playground/
+        run: node scripts/build-playground.mjs --out ../_site/playground
+      - name: List the site
+        working-directory: _site
+        run: find . -type f | sort
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # Fails with "Get Pages site failed" until Pages is turned on with Source: GitHub Actions.
+      - uses: actions/configure-pages@v5
+      - id: deployment
+        uses: actions/deploy-pages@v4

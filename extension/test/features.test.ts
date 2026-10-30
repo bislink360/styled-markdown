@@ -492,7 +492,7 @@ test('CLI: skills install writes both self-contained skills', { skip: !existsSyn
 test('every template produces a valid document', () => {
   const dir = join(__dirname, '..', '..', 'skills', 'styled-markdown-writer', 'assets', 'templates');
   const names = readdirSync(dir);
-  assert.equal(names.length, 13);
+  assert.equal(names.length, 16);
   for (const name of names) {
     const doc = fillTemplate(readFileSync(join(dir, name), 'utf8'), 'Example', TODAY);
     const problems = validateSmd(doc, { today: TODAY }).filter((d) => d.severity === 'error' || d.severity === 'warning');

@@ -49,7 +49,7 @@ smd export docs/spec.smd -o spec.md   # plain GitHub Markdown (callouts → GitH
 smd export docs/spec.smd --to confluence -o spec.xml  # Confluence storage format (built-in macros)
 smd export docs/spec.smd --to notion -o spec.json     # Notion API blocks, as request bodies
 smd build docs/ --out site            # static docs site: navigation, search, backlinks, task/decision/risk dashboard
-smd init docs/plan.smd --template prd # new document (smd: 2) from one of 13 templates (smd templates lists them)
+smd init docs/plan.smd --template prd # new document (smd: 2) from one of 16 templates (smd templates lists them)
 smd skills install --global           # install the AI agent skills into ~/.claude/skills
 smd mcp                               # MCP server (stdio) with outline, section, agent, tasks, validate, query
 smd lsp --stdio                       # language server for Neovim, Helix, Zed… (also installed as smd-language-server)
@@ -404,7 +404,7 @@ People read this; agents skip it.
 
 ## More
 
-- **VS Code extension:** live preview, Block Editor, validation, IntelliSense and agent view. Install `styled-markdown-X.Y.Z.vsix` from the [latest GitHub release](https://github.com/bislink360/styled-markdown/releases/latest) (Marketplace and Open VSX listings are coming once published); see the [install guide](https://github.com/bislink360/styled-markdown/blob/main/docs/INSTALL.md).
+- **VS Code extension:** live preview, Block Editor, validation, IntelliSense and agent view. Install **Styled Markdown** from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown), or `styled-markdown-X.Y.Z.vsix` from the [latest GitHub release](https://github.com/bislink360/styled-markdown/releases/latest) for Cursor, VSCodium and Windsurf (the Open VSX listing is coming); see the [install guide](https://github.com/bislink360/styled-markdown/blob/main/docs/INSTALL.md).
 - **AI agent skills** for Claude and other agents: [skills guide](https://github.com/bislink360/styled-markdown/blob/main/docs/SKILLS.md)
 - [Feature guide](https://github.com/bislink360/styled-markdown/blob/main/docs/FEATURES.md) · [Specification](https://github.com/bislink360/styled-markdown/blob/main/docs/SPEC.md) · [Examples](https://github.com/bislink360/styled-markdown/tree/main/examples)
 
