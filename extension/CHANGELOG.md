@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.6.0 — 2026-10-31
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 2.5.1 — 2026-10-31
 
 ### Fixed
