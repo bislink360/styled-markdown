@@ -10,6 +10,7 @@ import {
   type BudgetResult, type Diagnostic, type DiffResult, type ReportDocument, type Selector, type Tokenizer,
 } from './core';
 import { MIGRATE_HELP, runMigrate } from './migrateCommand';
+import { MERGE_HELP, runMerge } from './mergeCommand';
 import { loadMermaidParser } from './mermaidLoader';
 import { loadTokenizer, TokenizerError, TOKENIZERS } from './tokenizer';
 import { EXPORT_HELP, runExport } from './exportCommand';
@@ -123,6 +124,7 @@ Syncing with GitHub Issues (a dry run unless --apply):
       --repo    repository for new issues (default: the current folder's, from gh repo view)
       --label   label for new issues (repeatable or comma-separated)
 
+${MERGE_HELP}
 Checking and converting:
   smd validate <files|dirs...> [--json] [--fix] [--strict] [--config <file>] [--no-mermaid] [--stale-after <days>]
       Check .smd files. Exit code 1 on errors (or warnings with --strict). --fix applies safe fixes.
@@ -198,7 +200,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
   '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary', '--out', '--base',
-  '--lang', '--to', '--pandoc', '--reference-doc', '--browser', '--engine', '--price', '--agent',
+  '--lang', '--to', '--pandoc', '--reference-doc', '--browser', '--engine', '--price', '--agent', '--command',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -270,6 +272,8 @@ function main(argv: string[]): number | Promise<number> {
       return validate(positional.length ? positional : ['.'], args, today, staleAfterDays);
     case 'fmt':
       return fmt(positional.length ? positional : ['.'], flags.has('--check'), flags.has('--stdout'));
+    case 'merge':
+      return runMerge(positional, args);
     case 'migrate':
       return runMigrate(positional.length ? positional : ['.'], args);
     case 'build':
