@@ -14,7 +14,7 @@ import {
   PREVIEW_SANDBOX, needsRebuild, previewDocument, previewTheme, updateMessage, type FrameAssets,
 } from '../../playground/src/frame';
 import { diagnosticsSummary, renderPanes } from '../../playground/src/panes';
-import { isPortHandshake, linkAction } from '../../playground/src/previewLinks';
+import { isParentOrigin, isPortHandshake, linkAction } from '../../playground/src/previewLinks';
 import { readStored, themeSetting, writeStored, type KeyValueStore } from '../../playground/src/storage';
 import { appBundleOptions, indexHtml, playgroundAssets, scriptHash } from '../scripts/build-playground.mjs';
 
@@ -269,11 +269,19 @@ test('the preview takes its update port only from the playground page\'s origin'
   const { frame } = await assets();
   const preview = renderPanes('# Hi\n').preview;
   assert.match(previewDocument(preview, 'auto', frame, 'http://localhost:8767'), /data-smd-parent-origin="http:\/\/localhost:8767"/);
-  assert.match(previewDocument(preview, 'auto', frame), /data-smd-parent-origin="null"/, 'file:// pages have the origin "null"');
+  assert.match(previewDocument(preview, 'auto', frame), /data-smd-parent-origin="null"/, 'defaults to the file:// origin');
   const main = readFileSync(join(PLAYGROUND, 'src', 'main.ts'), 'utf8');
   assert.match(main, /previewDocument\(preview, pref, assets, location\.origin\)/);
   const links = readFileSync(join(PLAYGROUND, 'src', 'previewLinks.ts'), 'utf8');
-  assert.match(links, /event\.origin !== PARENT_ORIGIN \|\| event\.source !== window\.parent/);
+  assert.match(links, /!isParentOrigin\(event\.origin, PARENT_ORIGIN\) \|\| event\.source !== window\.parent/);
+  assert.equal(isParentOrigin('http://localhost:8767', 'http://localhost:8767'), true);
+  assert.equal(isParentOrigin('http://evil.example', 'http://localhost:8767'), false);
+  assert.equal(isParentOrigin('null', 'http://localhost:8767'), false, 'a hosted page matches exactly');
+  // Chromium: a file:// page's location.origin is "file://", but its messages arrive with the origin "null".
+  assert.equal(isParentOrigin('null', 'file://'), true);
+  assert.equal(isParentOrigin('null', 'null'), true);
+  assert.equal(isParentOrigin('file://', 'null'), true);
+  assert.equal(isParentOrigin('null', undefined), false);
 });
 
 // ---- Editor helpers and storage --------------------------------------------------------
