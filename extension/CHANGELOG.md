@@ -11,6 +11,7 @@
 - **The release workflow publishes the JetBrains plugin.** A new `publish-jetbrains` job uploads the plugin zip attached to each GitHub Release to the [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/35420-styled-markdown) (`extension/scripts/release/upload-jetbrains.mjs`). Like the other publish jobs it skips with a notice until its secret, `JETBRAINS_TOKEN`, is set, and on a dry run. JetBrains reviews each upload by hand, so a version is listed once it is approved; `wait-for-version.mjs jetbrains X.Y.Z` checks that.
 
 ### Changed
+- **The README opens with a short recording of the playground** (`docs/images/playground.gif`, ≈1 MB): a decision, a risk and tasks appearing in the preview as they are typed, the agent view of the same document in about half the tokens, and Diagnostics catching a misspelled status. It links to the hosted playground.
 
 ### Deprecated
 
