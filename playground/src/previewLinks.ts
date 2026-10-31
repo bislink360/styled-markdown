@@ -39,13 +39,25 @@ export function isPortHandshake(data: unknown, ports: readonly MessagePort[], fr
   return fromParent && ports.length === 1 && (data as { type?: unknown } | null)?.type === 'smd-port';
 }
 
+const FILE_ORIGINS = new Set(['null', 'file://']);
+
+/**
+ * True when a message's origin is the playground page's. A page opened from file:// has no single spelling for its
+ * origin: Chromium reports `location.origin` as "file://" but stamps the page's messages "null", and Firefox uses
+ * "null" for both, so the two count as the same there. Hosted pages must match exactly.
+ */
+export function isParentOrigin(origin: string, parentOrigin: string | undefined): boolean {
+  if (origin === parentOrigin) return true;
+  return FILE_ORIGINS.has(origin) && FILE_ORIGINS.has(parentOrigin ?? '');
+}
+
 let port: MessagePort | undefined;
 
 /** The playground page's origin, written into the frame by previewDocument. */
 const PARENT_ORIGIN = typeof document === 'undefined' ? undefined : document.documentElement.dataset.smdParentOrigin;
 
 function onMessage(event: MessageEvent): void {
-  if (event.origin !== PARENT_ORIGIN || event.source !== window.parent) return;
+  if (!isParentOrigin(event.origin, PARENT_ORIGIN) || event.source !== window.parent) return;
   if (port || !isPortHandshake(event.data, event.ports, true)) return;
   port = event.ports[0];
   port.onmessage = (update) => window.dispatchEvent(new MessageEvent('message', { data: update.data }));
