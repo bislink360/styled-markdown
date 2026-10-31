@@ -1,12 +1,14 @@
 // Tests for the release workflow's scripts (extension/scripts/release).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { changelogExcerpt, downloadsTable, dropEmptyHeadings, releaseNotes, versionFromTag } from '../scripts/release/changelog-excerpt.mjs';
 import { checkRelease, isReleaseBranch, pyprojectVersion } from '../scripts/release/check-versions.mjs';
 import { isListed, listedVersions, registryRequest, waitForVersion } from '../scripts/release/wait-for-version.mjs';
 import { publishDecision } from '../scripts/release/publish-gate.mjs';
+import { uploadOutcome, uploadPlugin, uploadRequest, UPLOAD_URL } from '../scripts/release/upload-jetbrains.mjs';
 import { pickBaseTag, releaseTags } from '../../.claude/skills/smd-release/scripts/base-tag.mjs';
 
 const changelog = [
@@ -173,6 +175,7 @@ test('registryRequest builds the public lookup for each registry', () => {
   assert.equal(marketplace?.init.method, 'POST');
   assert.match(String(marketplace?.init.body), /"value":"bislink360\.styled-markdown"/);
   assert.equal(registryRequest('pypi', '1.5.0')?.url, 'https://pypi.org/pypi/mkdocs-styled-markdown/1.5.0/json');
+  assert.equal(registryRequest('jetbrains', '1.5.0')?.url, 'https://plugins.jetbrains.com/api/plugins/35420/updates?size=100');
   assert.equal(registryRequest('crates', '1.5.0'), undefined);
 });
 
@@ -184,6 +187,8 @@ test('listedVersions reads each registry response', () => {
   assert.deepEqual(listedVersions('marketplace', { results: [{ extensions: [] }] }), []);
   assert.deepEqual(listedVersions('pypi', { info: { version: '1.5.0' } }), ['1.5.0']);
   assert.deepEqual(listedVersions('pypi', { message: 'Not Found' }), []);
+  assert.deepEqual(listedVersions('jetbrains', [{ version: '1.5.0' }, { version: '1.4.0' }]), ['1.5.0', '1.4.0']);
+  assert.deepEqual(listedVersions('jetbrains', { code: 'NOT_FOUND' }), []);
 });
 
 const reply = (ok: boolean, json: unknown) => async () => ({ ok, json: async () => json }) as Response;
@@ -217,6 +222,46 @@ test('publishDecision publishes only with a token, outside a dry run, when not l
   assert.match(String(missing.notice), /^NPM_TOKEN is not set, so 1\.5\.0 was not published to npm\./);
   assert.deepEqual(publishDecision({ ...gate, registry: 'marketplace', listed: true }), { ready: false, notice: 'VS Code Marketplace already lists 1.5.0; nothing to publish.' });
   assert.match(String(publishDecision({ ...gate, registry: 'pypi', secret: 'PYPI_TOKEN', hasToken: false }).notice), /^PYPI_TOKEN is not set, so 1\.5\.0 was not published to PyPI\./);
+});
+
+test('publishDecision names the JetBrains Marketplace', () => {
+  assert.match(String(publishDecision({ ...gate, registry: 'jetbrains', secret: 'JETBRAINS_TOKEN', hasToken: false }).notice), /^JETBRAINS_TOKEN is not set, so 1\.5\.0 was not published to JetBrains Marketplace\./);
+});
+
+test('uploadRequest posts the plugin id and the zip with the token as a bearer header', async () => {
+  const { url, init } = uploadRequest(new Uint8Array([80, 75]), 'styled-markdown-jetbrains-1.5.0.zip', 'secret-token');
+  assert.equal(url, UPLOAD_URL);
+  assert.equal(init.method, 'POST');
+  assert.equal(init.headers.authorization, 'Bearer secret-token');
+  const form = init.body as FormData;
+  assert.equal(form.get('pluginId'), '35420');
+  const file = form.get('file') as File;
+  assert.equal(file.name, 'styled-markdown-jetbrains-1.5.0.zip');
+  assert.equal(file.size, 2);
+});
+
+test('uploadOutcome: success, an already uploaded version, a refused token, other errors', () => {
+  assert.deepEqual(uploadOutcome(200, '{"id":1}', '1.5.0'), { ok: true, message: 'Uploaded 1.5.0 to the JetBrains Marketplace. It is listed once JetBrains approves it.' });
+  const again = uploadOutcome(400, 'Plugin already contains version 1.5.0', '1.5.0');
+  assert.equal(again.ok, true);
+  assert.match(again.message, /already has 1\.5\.0; nothing to upload/);
+  assert.equal(uploadOutcome(401, '', '1.5.0').ok, false);
+  assert.match(uploadOutcome(403, '', '1.5.0').message, /refused the token \(HTTP 403\)/);
+  assert.deepEqual(uploadOutcome(500, '  boom  ', '1.5.0'), { ok: false, message: 'The JetBrains Marketplace upload failed (HTTP 500): boom' });
+});
+
+test('uploadPlugin reads the zip and never reports a network error as success', async () => {
+  const zip = join(mkdtempSync(join(tmpdir(), 'smd-jb-')), 'styled-markdown-jetbrains-1.5.0.zip');
+  writeFileSync(zip, 'PK');
+  let sent: FormData | undefined;
+  const ok = await uploadPlugin(zip, '1.5.0', 't', async (_url: unknown, init?: RequestInit) => {
+    sent = init?.body as FormData;
+    return { status: 200, text: async () => '{}' } as Response;
+  });
+  assert.equal(ok.ok, true);
+  assert.equal((sent?.get('file') as File).size, 2);
+  const offline = await uploadPlugin(zip, '1.5.0', 't', async () => { throw new Error('offline'); });
+  assert.deepEqual(offline, { ok: false, message: 'The JetBrains Marketplace upload failed: offline' });
 });
 
 // ---- release-check.mjs: the tag it compares with (.claude/skills/smd-release/scripts/base-tag.mjs) ----
