@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.5.1 — 2026-10-31
+
+### ⚠️ Breaking changes
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Fixed
+
 ## 2.5.0 — 2026-10-30
 
 Built for developers who use AI coding agents. One command sets an agent up (`smd init --agent`, or the new Claude Code plugin); `smd read` reads a document in one call; and the tools now cost less than they save: the MCP tool list, the reader skill and the agent rules are 63–79% smaller. Also new: opt-in MCP write tools, `smd savings`, a net-tokens benchmark, spec → plan → tasks templates, a compatibility policy that declares spec v2 stable, and community files. No breaking changes: documents, commands, flags, settings, skills and library exports from 2.4.0 keep working, and the MCP tools `outline`, `section` and `agent` still answer when called.
