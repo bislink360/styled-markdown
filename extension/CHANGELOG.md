@@ -7,6 +7,7 @@
 ### Added
 
 ### Changed
+- **The README opens with a short recording of the playground** (`docs/images/playground.gif`, ≈1 MB): a decision, a risk and tasks appearing in the preview as they are typed, the agent view of the same document in about half the tokens, and Diagnostics catching a misspelled status. It links to the hosted playground.
 
 ### Deprecated
 
