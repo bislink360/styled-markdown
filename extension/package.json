@@ -1,8 +1,8 @@
 {
   "name": "styled-markdown",
   "displayName": "Styled Markdown (.smd)",
-  "description": "Markdown for humans and AI agents: callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
-  "version": "2.4.0",
+  "description": "Styled Markdown: Markdown for humans and AI agents. Callouts, colors, diagrams, math, decisions, risks, APIs, KPIs — with live preview, validation, and token-efficient agent views.",
+  "version": "2.5.0",
   "publisher": "bislink360",
   "author": {
     "name": "Roshan Alwis"
@@ -602,6 +602,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test.mjs",
     "bench": "node --import tsx test/bench/bench.ts",
+    "bench:tokens": "node --import tsx test/bench/netTokens.ts",
     "test:vscode": "npm run build && node test/integration/run.mjs",
     "package": "npm run build && vsce package --no-dependencies",
     "vscode:prepublish": "npm run build",

@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and ideas (Discussions)
+    url: https://github.com/bislink360/styled-markdown/discussions
+    about: Ask how to do something, share a document or template, or talk through an idea before opening an issue.
+  - name: Documentation
+    url: https://github.com/bislink360/styled-markdown/tree/main/docs
+    about: Install guide, feature guide, specification, agent setup and the GitHub reading guide.
+  - name: Report a security vulnerability
+    url: https://github.com/bislink360/styled-markdown/security/advisories/new
+    about: Report it privately, not in a public issue. See SECURITY.md.

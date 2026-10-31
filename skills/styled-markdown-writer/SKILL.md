@@ -1,17 +1,17 @@
 ---
 name: styled-markdown-writer
-description: Create and edit Styled Markdown (.smd) documents that follow the .smd rules — PRDs, ADRs, RFCs/design docs, runbooks, API references, status reports, meeting notes, postmortems, release notes, OKRs, onboarding guides, test plans, PR descriptions, specs and plans. Use this skill whenever the user asks to write, draft, create, convert, restructure or update a .smd file, asks for a spec/PRD/ADR/runbook/status report "in smd" or "styled markdown", wants a Markdown doc converted to .smd, or wants a document that both people and AI agents will read. It provides templates, the full syntax, authoring rules and a validator that fixes mistakes.
+description: Create and edit Styled Markdown (.smd) documents (PRDs, ADRs, RFCs/design docs, runbooks, API references, status reports, meeting notes, postmortems, release notes, OKRs, onboarding guides, test plans, PR descriptions, specs and plans) with templates and a validator that fixes mistakes. Use it whenever the user asks to write, draft, create, convert, restructure or update a .smd file, asks for a spec/PRD/ADR/runbook/status report "in smd" or "styled markdown", wants a Markdown doc converted to .smd, or wants a document that both people and AI agents will read.
 ---
 
 # Writing Styled Markdown (.smd)
 
-`.smd` is Markdown plus a small, validated vocabulary: callouts, decisions, risks, API blocks, tasks with owners and due dates, KPIs, diagrams, and audience blocks. Documents are read by **people** in a styled preview and by **AI agents** through a compact "agent view". Write for both.
+`.smd` is Markdown plus a small, validated vocabulary: callouts, decisions, risks, API blocks, tasks with owners and due dates, KPIs, diagrams, and audience blocks. **People** read it in a styled preview, **AI agents** through a compact "agent view". Write for both.
 
 Tool (Node 22+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (or `smd` if it's on PATH).
 
 ## Workflow
 
-1. **Pick a template** that matches the request, and start from it rather than a blank page:
+1. **Start from a template** when one fits: `smd init docs/name.smd --template prd --title "Saved searches"` (today's date filled in; raw files in `assets/templates/`).
 
    | Request | Template |
    |---|---|
@@ -22,64 +22,45 @@ Tool (Node 22+, no install): `node <this-skill-dir>/scripts/smd.cjs <command>` (
    | Endpoint reference | `api` |
    | Weekly/monthly update | `status-report` |
    | Meeting summary with actions | `meeting-notes` |
-   | Incident review, post-incident report | `postmortem` |
-   | Release announcement, what's new, upgrade guide | `release-notes` |
-   | Objectives and key results, quarterly goals | `okrs` |
+   | Incident review | `postmortem` |
+   | Release announcement, upgrade guide | `release-notes` |
+   | Objectives and key results | `okrs` |
    | New team member guide | `onboarding` |
-   | Test scope, strategy and cases, QA plan | `test-plan` |
+   | Test scope, strategy and cases | `test-plan` |
    | Pull request description | `pr-description` |
+   | Spec-driven work for an agent: spec → plan → tasks | `spec`, `plan`, `tasks` |
 
-   `smd init docs/name.smd --template prd --title "Saved searches"` creates the file with today's date filled in. The raw templates are in `assets/templates/`. For anything else, start from front matter + headings.
+   Otherwise start from front matter + headings. For a status report on work tracked in `.smd` docs, draft it with `smd report docs/ --since 2026-09-01 -o docs/status.smd --title "Checkout squad"` (or `--since <git-ref>`): tasks done and added, open and overdue tasks, decisions and high-impact risks, each linked. Then write the summary and cut what doesn't matter.
 
-   For a status report on work tracked in `.smd` docs, start from a draft instead: `smd report docs/ --since 2026-09-01 -o docs/status-2026-09-30.smd --title "Checkout squad"` (or `--since <git-ref>`) lists the tasks done and added since then, open tasks with overdue and due-this-week first, decisions since, decisions needed and high-impact risks, each linked to its section. Then write the summary (and the front matter `summary`), check the status, and cut what doesn't matter.
+2. **Fill it with real content.** Delete sections that don't apply; never leave placeholders such as `—`, `@owner` or `YYYY-MM-DD`. If you don't know a value, ask, or leave a `:::question` that says what's missing.
 
-2. **Fill it with real content.** Delete template sections that don't apply, and never leave placeholder text such as `—`, `@owner` or `YYYY-MM-DD` in a finished document. If you don't know a value (an owner, a date), ask, or leave a `:::question` that says what's missing.
+3. **Format, validate and fix:** `smd fmt docs/name.smd`, then `smd validate docs/name.smd --fix`. `fmt` changes only layout. `--fix` repairs what has one clear repair (typos in names and values, colors, `yes`/`no` booleans, date formats, unclosed `:::` or fences at the end). Fix the rest yourself from each error's line:column, message and rule code. **A document is done only at 0 errors.**
 
-3. **Format, validate and fix:**
+4. **Check what agents will see:** `smd agent docs/name.smd --brief`. If it's long, move narrative into `{agent=skip}` sections or `:::human` blocks.
 
-   ```bash
-   node <skill>/scripts/smd.cjs fmt docs/name.smd
-   node <skill>/scripts/smd.cjs validate docs/name.smd --fix
-   ```
+## Spend tokens on meaning
 
-   `fmt` only changes layout (fence colons, attribute order and quoting, table columns, blank lines), never meaning.
-
-   `--fix` repairs what has one clear repair: typos in names and values, misspelled colors, `yes`/`no` on true/false keys, `2026/9/5`-style dates, and unclosed `:::` or code fences at the end of the file. Fix any remaining errors yourself: each has a line:column, a message and a rule code. **A document is done only when validation reports 0 errors.**
-
-4. **Check what agents will see:** `smd agent docs/name.smd --brief`. If it's still long, move narrative into `{agent=skip}` sections or `:::human` blocks.
+Output tokens cost about 5× input tokens. Write meaning: decisions, risks, tasks, `:::agent` rules, `{agent=skip}` on narrative. Leave colors, badges and layout (tabs, columns, cards) to people unless asked. The syntax reference is split by topic: read `references/syntax.md` (a short index), then only the topic file for the construct you're unsure of, and let `smd validate --fix` catch the rest.
 
 ## Rules you must follow
 
-These are the rules the validator and renderers depend on. `references/syntax.md` has the complete reference with every attribute and allowed value; read it before using a construct you're not sure about.
-
-1. **Front matter first:** `smd: 2` (spec v2, for every new document; keep an existing document's `smd` value, see rule 10), `title`, a precise one- or two-sentence `summary`, `status` (`draft` · `review` · `approved` · `deprecated` · `archived`), `owners`, and `updated` (`YYYY-MM-DD`). Don't repeat the title as a `# H1`; start the body at `##`. A document written in another language adds `lang:` (`de`, `es`, `fr`, `ja`, `pt`, `zh`, or a tag like `pt-BR`) so rendered labels such as callout titles and "Figure 2" match it.
-2. **Blocks** are `:::name{attrs} Title` … `:::`. Attributes go directly after the name with no space. A bare `:::` closes the innermost block. Write outer containers with more colons (`::::tabs`) for readability.
-3. **Only known names:**
-   - Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `figure` `glossary` `quote` `decision` `risk` `risk-matrix` `changelog` `api` `agent` `human` `include`.
-   - Inline: `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention` `:ref`.
-4. **Enumerated values exactly as specified:**
-   - decision `status`: proposed, accepted, rejected, superseded, deprecated
-   - risk `impact`/`likelihood`: low, medium, high, critical
-   - api `method`: GET, POST, PUT, PATCH, DELETE…; `path` is required
-   - figure `kind`: figure, table, listing (`:ref[id]` needs a figure with that `{#id}`)
-   - glossary items: `- **Term**: definition`, every item of the list (otherwise it stays a plain list)
-   - changelog releases: headings `## 1.2.0 — 2026-03-01`, newest first, each followed by its notes
-   - quote: `:::quote{author="…" source="…" cite="https://…"}` with the quoted text as the body (`cite` only http(s) or relative)
-   - priority: P0–P4
-   - dates: `YYYY-MM-DD`
+1. **Front matter first:** `smd: 2` (new documents; keep an existing document's value), `title`, a precise one- or two-sentence `summary`, `status` (`draft` · `review` · `approved` · `deprecated` · `archived`), `owners`, `updated` (`YYYY-MM-DD`). Don't repeat the title as a `# H1`; start at `##`. Another language adds `lang:` (`de`, `es`, `fr`, `ja`, `pt`, `zh`, or a tag like `pt-BR`).
+2. **Blocks** are `:::name{attrs} Title` … `:::`. Attributes go directly after the name, no space. A bare `:::` closes the innermost block. Write outer containers with more colons (`::::tabs`).
+3. **Only known names.** Blocks: `note` `info` `tip` `success` `warning` `danger` `question` `details` `card` `box` `tabs`/`tab` `columns`/`column` `steps` `timeline` `figure` `glossary` `quote` `decision` `risk` `risk-matrix` `changelog` `api` `agent` `human` `include`. Inline: `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention` `:ref`.
+4. **Values exactly as specified:** decision `status` proposed · accepted · rejected · superseded · deprecated; risk `impact`/`likelihood` low · medium · high · critical; api `method` GET, POST… and a required `path`; priority P0–P4; dates `YYYY-MM-DD`. Figures, glossary, quotes and changelogs have their own forms (`syntax/figures-and-notes.md`, `syntax/project.md`).
 5. **Named colors only** (red orange amber yellow green teal cyan blue indigo purple pink gray muted accent) unless a brand hex is required.
-6. **Tasks:** `- [ ] Verb-first task :priority[P1] @owner :due[2026-10-15]`. One owner per task where possible.
-7. **Code:** always give fences a language. Use `title="path"` for file names, `{2,5-7}` to highlight lines, and `file="../src/x.ts" lines="10-24"` (empty body) to embed real source instead of pasting it. Text shared by several documents goes in one `.smd` file, included with `:::include{file="shared/terms.smd" section="Pricing"}` and a link to the file as the body (fallback for older tools) before the closing `:::`.
+6. **Tasks:** `- [ ] Verb-first task :priority[P1] @owner :due[2026-10-15]`, one owner where possible.
+7. **Code:** give fences a language; embed real source with `file="../src/x.ts" lines="10-24"` (empty body) instead of pasting it. Shared text goes in one file, pulled in with `:::include` (`syntax/developer.md`).
 8. **Diagrams:** ```` ```mermaid ```` with a valid first line (`flowchart LR`, `sequenceDiagram`, `gantt`, …).
-9. **Facts that repeat** (version, product name, release date) go in the front matter once and appear in the text as `{{version}}` (nested keys: `{{release.date}}`). Quote versions (`version: "2.10"`). Only defined keys are replaced; write `\{{name}}` or a code span for literal braces.
-10. **Spec v2 (`smd: 2`) shows text as written.** Quotes stay straight and `--` stays two hyphens: type `—` and `’` where you want them, or add `typography: true` to the front matter. Only `https://…`, `www.…` and e-mail addresses become links, so write `[example.com](https://example.com)` for a bare domain. A heading's trailing `{word}` is heading text, any `:name[…]` is a directive (write `\:name[…]` for the literal text), and `\\` in a quoted attribute value is one backslash. A document with `smd: 1` or no `smd` key keeps the v1 rules: don't change its `smd` value while editing it; `smd migrate docs/x.smd --to 2` moves it to spec v2 without changing what it shows (`--dry-run` first to see the plan).
+9. **Facts that repeat** (version, product name, date) go in the front matter once and appear as `{{version}}`. Quote versions (`version: "2.10"`; `syntax/inline.md`).
+10. **Spec v2 shows text as written:** straight quotes stay straight (type `—` or add `typography: true`), only `https://…`, `www.…` and e-mail addresses become links, any `:name[…]` is a directive (`\:name[…]` is text). Don't change an `smd: 1` document's value while editing; `smd migrate FILE --to 2` moves it (`syntax/spec-v2.md`).
 
 ## Writing for both audiences
 
 `references/style-guide.md` covers this in depth. In short:
 
-- **Meaning over decoration.** Use `:::warning`, `:::danger` or `:::decision` for things that matter. Color is decoration and must never be the only signal.
-- **Hard constraints for implementers go in one `:::agent` block** near the end. Agents always receive it, even when they read a single section.
-- **Narrative, history and research go under `## Background {agent=skip}` or in `:::human`.** People still see it; agents skip it, which keeps reads cheap.
-- **Unresolved decisions go in `:::question`**, with who decides and by when. Put the interim fallback in the `:::agent` block.
+- **Meaning over decoration.** Use `:::warning`, `:::danger` or `:::decision` for things that matter. Color must never be the only signal.
+- **Hard constraints for implementers go in one `:::agent` block** near the end. Agents always receive it, even when they read one section.
+- **Narrative, history and research go under `## Background {agent=skip}` or in `:::human`.** People still see it; agents skip it.
+- **Unresolved decisions go in `:::question`**, with who decides and by when; the interim fallback goes in the `:::agent` block.
 - **Headings name the content** ("Requirements", "API", "Rollout") because agents select sections by heading.

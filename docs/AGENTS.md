@@ -6,13 +6,14 @@
 
 Don't read `.smd` files whole with cat/Read. Use the CLI (`smd` on PATH, or `node skills/styled-markdown-reader/scripts/smd.cjs`):
 
+0. **Shortcut:** `smd read <file>` does steps 1–2 in one call. It prints the whole agent view when it fits 2,000 tokens (`--max-tokens <n>` changes the budget), and otherwise the outline, so you can ask for sections next with `smd read <file> --section "<heading>"`.
 1. `smd outline <file>` shows the title, status, summary and every section with its line range and token cost.
 2. If the full agent view is small (≲ 2,000 tokens), read it once with `smd agent <file>`. Otherwise read only what you need with `smd agent <file> --section "<heading>"` (repeatable). `:::agent` instructions from other sections are always included. `--brief` condenses diagrams, long code, details and completed tasks. When you need an overview within a fixed budget, `smd agent <file> --max-tokens 2000` condenses the view and leaves out the least important sections; each one becomes a `[section omitted: …]` line with the `--section` command that reads it.
 3. If the front matter lists `related:` documents, `smd outline <file> --related` adds each one's title, status, summary and token cost. Open a related document only when the question needs it.
 4. Headings in the agent view carry `[L42]` line refs. Open raw lines only when you edit, and only that range.
 5. Across documents: `smd tasks docs/` lists open tasks (priority, owner, due date, overdue first). `smd query "<selector>" docs/` pulls just the blocks you need, e.g. `decision[status=accepted]`, `risk[impact>=high]`, `api[method=POST]` or `question` (`--titles` for a one-line list). `smd decisions docs/ --status accepted` lists the binding decisions across documents, newest first (`--status open` for the ones still to decide). `smd risks docs/` is the risk register: every risk scored impact × likelihood, highest first, with owner, status and a one-line mitigation (`--json` for tools).
 6. Many documents and you don't know which one matters: read the catalog (`smd index docs/`, or a committed `catalog.json`). Each entry has the path, title, summary, status, owners, tags, token costs, sections with ids, and counts of open tasks, decisions, risks, questions and APIs. Pick documents by summary, status and tags, then `smd outline` them or read `smd agent <file> --section "<id>"`.
-7. With the [MCP server](#mcp-server) registered, the same steps are the tools `outline`, `section`, `agent`, `tasks`, `query` and `validate`.
+7. With the [MCP server](#mcp-server) registered, the same steps are the tools `read`, `tasks`, `query` and `validate`.
 8. Catching up on a document you've read before: `smd diff <file> --since <git-ref>` (e.g. `HEAD~3`, `main` or the commit you last saw) prints only the sections that changed, in the agent view, plus front-matter changes and removed headings.
 
 How to interpret what you read:
@@ -33,16 +34,35 @@ Agents that speak the [Model Context Protocol](https://modelcontextprotocol.io) 
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `outline` | `file` | Sections with line ranges and token costs, as `smd outline` |
-| `section` | `file`, `sections[]`, `brief?` | The agent view of only those sections, plus agent instructions from elsewhere |
-| `agent` | `file`, `brief?`, `includeHuman?` | The agent view of the whole document |
+| `read` | `file`, `sections[]?`, `mode?` (`auto`, `outline`, `full`), `brief?` | As `smd read`: the whole agent view when it fits 2,000 tokens, else the outline; with `sections`, only those sections plus agent instructions from elsewhere |
 | `tasks` | `paths[]?`, `all?`, `mine?` | Open tasks, one per line, overdue first |
-| `validate` | `paths[]?` | Diagnostics as JSON, the same shape as `smd validate --json` |
 | `query` | `selector`, `paths[]?`, `brief?`, `titles?` | Matching blocks in the agent view, as `smd query` |
+| `validate` | `paths[]?` | Diagnostics as JSON, the same shape as `smd validate --json` |
 
-Paths are relative to the root folder: `--root <dir>`, or the folder the client starts the server in. The server refuses paths outside the root (symbolic links included), only reads `.smd` files, and embeds code only from files inside the root. `paths` defaults to the whole root. Nothing is written.
+Every session pays for the tool list, so it is kept small: about 500 tokens with the server's instructions (1,320 before 2.5.0, when `read` was three tools). The 2.4 tools `outline`, `section` and `agent` still work when a client calls them; `smd mcp --legacy-tools` lists them again. They stay until 3.0.
 
-Register it with the npm package (`npx` downloads it on first use), or with the CLI bundled in the reader skill:
+Paths are relative to the root folder: `--root <dir>`, or the folder the client starts the server in. The server refuses paths outside the root (symbolic links included), only reads `.smd` files, and embeds code only from files inside the root. `paths` defaults to the whole root. Nothing is written unless you pass `--allow-write`.
+
+### Write tools (opt-in)
+
+`smd mcp --allow-write` adds three tools that edit documents for the agent. Each changes only the lines it is about, keeps the file's line endings, stays inside the root, and refuses (writing nothing) when the result would have more validation errors than before.
+
+| Tool | Arguments | Does |
+|---|---|---|
+| `check_task` | `file`, `line`, `done?`, `text?` | Ticks the task on that line (`line` as `tasks` prints it; `done: false` unticks it). With `text`, it refuses if the line no longer contains it, so a moved line is never ticked by mistake. |
+| `set_status` | `file`, `status` | Sets the front matter `status` (`draft`, `review`, `approved`, `deprecated`, `archived`), and `updated` to today when the document has one. |
+| `add_decision` | `file`, `section`, `title`, `body`, `status?`, `owner?` | Appends a `:::decision{status=… date=… owner=…} Title` block at the end of a section (default status `proposed`). |
+
+### Set it up with one command
+
+`smd init --agent claude|cursor|copilot|agents` (comma-separated for several; `--dir <project>`, default the current folder) installs everything an agent needs in a project: the skills (`claude`) or the reading and writing rules (`cursor`, `copilot`, and `agents` for `AGENTS.md`), the CLI, and the MCP server in the agent's own config file: `.mcp.json` (Claude Code), `.cursor/mcp.json` (Cursor) or `.vscode/mcp.json` (Copilot in VS Code). Existing config files are merged (other servers are kept); a file that isn't plain JSON, such as one with comments, is left alone and the entry to add is printed. Run it again to update. `--no-mcp` skips the MCP config.
+
+```bash
+npx styled-markdown init --agent claude            # once the package is on npm
+node path/to/smd.cjs init --agent cursor,agents    # with the CLI from a release or a skill folder
+```
+
+Or register it by hand with the npm package (`npx` downloads it on first use), or with the CLI bundled in the reader skill:
 
 ```bash
 # Claude Code (add --scope project to share it through .mcp.json)
@@ -74,7 +94,7 @@ Pass `--root` whenever the client may start the server outside your project, suc
 
 ## Writing `.smd` files
 
-Start from a template when one fits: `smd init docs/x.smd --template prd|adr|rfc|runbook|api|status-report|meeting-notes|postmortem|release-notes|okrs|onboarding|test-plan|pr-description --title "…"`. Otherwise, always start with front matter:
+Start from a template when one fits: `smd init docs/x.smd --template prd|adr|rfc|runbook|api|status-report|meeting-notes|postmortem|release-notes|okrs|onboarding|test-plan|pr-description|spec|plan|tasks --title "…"`. Otherwise, always start with front matter:
 
 ```yaml
 ---

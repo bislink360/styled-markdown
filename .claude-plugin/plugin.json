@@ -1,0 +1,31 @@
+{
+  "name": "styled-markdown",
+  "displayName": "Styled Markdown",
+  "version": "2.5.0",
+  "description": "Read and write Styled Markdown (.smd) specs, PRDs, ADRs, runbooks and plans with fewer tokens: the reader and writer skills plus the smd MCP server (read, tasks, query, validate).",
+  "author": {
+    "name": "Roshan Alwis",
+    "url": "https://github.com/roshanmadhushanka"
+  },
+  "homepage": "https://github.com/bislink360/styled-markdown#readme",
+  "repository": "https://github.com/bislink360/styled-markdown",
+  "license": "MIT",
+  "keywords": [
+    "styled-markdown",
+    "smd",
+    "markdown",
+    "specs",
+    "documentation",
+    "mcp",
+    "tokens"
+  ],
+  "mcpServers": {
+    "smd": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/skills/styled-markdown-reader/scripts/smd.cjs",
+        "mcp"
+      ]
+    }
+  }
+}

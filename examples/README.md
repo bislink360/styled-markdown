@@ -1,4 +1,4 @@
-# Examples
+# Styled Markdown examples
 
 Every example is a valid `.smd` file with a rendered `.html` file next to it. Download the HTML and open it in a browser to see the result without VS Code.
 

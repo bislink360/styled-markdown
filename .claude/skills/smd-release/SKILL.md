@@ -64,7 +64,7 @@ Every new syntax feature must also add a document exercising it to `extension/te
 
 ### 4. Finish the release on `release/vX.Y.Z`
 
-1. The release branch was opened at its version when the train was planned: `plan-release.mjs` runs `bump-version.mjs`, which updates `extension/package.json`, `extension/package-lock.json`, `npm/package.json` and the Obsidian plugin's `integrations/obsidian/manifest.json` and `versions.json`, and adds the CHANGELOG heading. Each feature PR added its own changelog bullets under that heading. If the version must change (e.g. a breaking change turned up and it must become a major), run:
+1. The release branch was opened at its version when the train was planned: `plan-release.mjs` runs `bump-version.mjs`, which updates `extension/package.json`, `extension/package-lock.json`, `npm/package.json`, the Obsidian plugin's `integrations/obsidian/manifest.json` and `versions.json`, the MkDocs plugin's `pyproject.toml`, the Claude Code plugin's `.claude-plugin/plugin.json` and the MCP registry entry `server.json`, and adds the CHANGELOG heading. Each feature PR added its own changelog bullets under that heading. If the version must change (e.g. a breaking change turned up and it must become a major), run:
 
    ```bash
    node .claude/skills/smd-release/scripts/bump-version.mjs <patch|minor|major|X.Y.Z>
@@ -72,7 +72,7 @@ Every new syntax feature must also add a document exercising it to `extension/te
 
    on the release branch, and rename the release branch and tracking PR to match.
 2. Once every planned feature PR is merged into the release branch (or dropped from the train), complete the changelog entry. List every item from the checker's **Breaking** section under `### ⚠️ Breaking changes`, each with a migration note. Delete empty headings.
-3. Update docs for any new syntax: `docs/SPEC.md`, `docs/FEATURES.md`, `skills/styled-markdown-writer/references/syntax.md`, and the README feature list.
+3. Update docs for any new syntax: `docs/SPEC.md`, `docs/FEATURES.md`, the matching `skills/styled-markdown-writer/references/syntax/<topic>.md` (listed in `references/syntax.md`), and the README feature list.
 4. Rebuild (`cd extension && npm run build && npm run build:npm`) and run the **full** check with no skip flags.
 5. Run the **static analysis gate** (sonarqube-scan skill). GitHub CI has no static analysis, so this local SonarQube run is the only check for bugs, vulnerabilities, security hotspots and code smells. It must pass: fix blocking findings, or suppress them with a reasoned `NOSONAR`. Grow `baseline.json` only with the maintainer's approval.
 
@@ -105,7 +105,7 @@ Don't proceed until the human approves in chat. For a major release, get approva
 
    | Job | What it does |
    |---|---|
-   | verify | `check-versions.mjs`: the tag equals the version in `extension/package.json`, `package-lock.json`, `npm/package.json`, `integrations/mkdocs/pyproject.toml` and `integrations/obsidian/manifest.json`; the CHANGELOG has a non-empty `## X.Y.Z` section; the tagged commit is on `main` or a `release/*` branch. Then typecheck and unit tests. |
+   | verify | `check-versions.mjs`: the tag equals the version in `extension/package.json`, `package-lock.json`, `npm/package.json`, `integrations/mkdocs/pyproject.toml`, `integrations/obsidian/manifest.json`, `.claude-plugin/plugin.json` and `server.json` (its version and its npm package's); the CHANGELOG has a non-empty `## X.Y.Z` section; the tagged commit is on `main` or a `release/*` branch. Then typecheck and unit tests. |
    | build | `.vsix` (`npm run package`), npm `.tgz` (`npm run build:npm`, `npm pack`) skill zips (`zip -r`), the playground zip (`npm run build:playground`) the MkDocs plugin wheel and sdist (`python -m build integrations/mkdocs`) the Obsidian plugin zip (`main.js`, `manifest.json`, `styles.css` from `integrations/obsidian`) and the JetBrains plugin zip (`./gradlew buildPlugin` in `integrations/jetbrains`, with Java 21; it ships the tag's `smd.cjs`). Checks they are real zips with the LICENSE and the right version, and that `skills/*/scripts/smd.cjs` match a fresh build. Notes: `changelog-excerpt.mjs --downloads` (downloads table + the changelog section). All uploaded as the `release-assets` workflow artifact. |
    | github-release | Creates the GitHub Release with those notes and the nine assets (the `.vsix`, the `.tgz`, both skill zips, `styled-markdown-playground.zip`, the MkDocs plugin wheel and `.tar.gz`, `styled-markdown-obsidian-X.Y.Z.zip` and, since 2.1.0, `styled-markdown-jetbrains-X.Y.Z.zip`). If the release already exists, it keeps its notes and attaches only missing assets. Verifies the release lists all nine. |
    | publish-marketplace, publish-openvsx, publish-npm, publish-pypi | Publish the exact `.vsix` / `.tgz` / wheel and sdist attached to the release (`vsce publish --packagePath`, `ovsx publish`, `npm publish --provenance`, `twine upload` with `PYPI_TOKEN`), then poll the registry until it lists X.Y.Z (`wait-for-version.mjs`). |
