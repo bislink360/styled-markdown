@@ -123,6 +123,7 @@ The short version of this guide; each item is described in full in the sections 
 15. [Validation and quick fixes](#15-validation-and-quick-fixes)
 16. [Export and conversion](#16-export-and-conversion)
 17. [CLI reference](#17-cli-reference)
+    - [Collaborating on .smd](#collaborating-on-smd)
 18. [Templates](#18-templates)
 19. [Web playground](#19-web-playground)
 
@@ -1194,6 +1195,8 @@ smd issues <files|dirs> [--repo owner/name] [--apply] [--create] [--close] [--la
 smd query "<selector>" <files|dirs> [--json] [--titles] [--brief] [--no-lines]   blocks by type and attributes
 smd diff <old.smd> <new.smd> [--json] [--brief] [--no-lines] [--exit-code]          sections that changed
 smd diff <files|dirs> --since <git-ref> [--json] [--brief] [--no-lines] [--exit-code]
+smd merge --install [--dir <repo>] [--command "<cmd>"]   block-aware Git merge driver for *.smd (below); --uninstall removes it
+smd merge <ancestor> <current> <other> [<marker-size>] [<path>]   what Git runs: smd merge %O %A %B %L %P
 smd meta <file> [--no-diagnostics]                   JSON: front matter, outline, tasks, decisions, risks, agent blocks
 smd index <files|dirs> [-o catalog.json] [--compact] JSON catalog of every document, for agent routing
 smd decisions <files|dirs> [--status <list>] [--owner @name] [--json] [--md] [-o <file>] [--title "…"]   decision log, ADR index
@@ -1396,6 +1399,33 @@ Ship to 10% of EU traffic first, then 50%.
 - Only changes an agent can see count: styling, comments and `:::human` content don't. Sections marked `{agent=skip}` are listed without their content.
 - Line refs point into the new version. stderr shows the token cost against the full agent view.
 - `--json` gives front-matter changes and sections (`change`, `heading`, `level`, `id`, `line`, `endLine`, `oldLine`, `oldEndLine`, `oldHeading`, `text`). The exit code is 0; with `--exit-code` it is 1 when something changed.
+
+### Collaborating on .smd
+
+A `.smd` file is plain text, so people and agents collaborate on it the way they do on code. The plan behind this section is [COLLABORATION-RFC.smd](COLLABORATION-RFC.smd).
+
+**Git, with `smd merge`.** Git's line merge conflicts when two branches edit neighbouring lines, even in different blocks: two items of one list, two rows of one table, two front matter keys, a heading and the paragraph under it. `smd merge` is a Git merge driver that resolves those. Set it up once per clone:
+
+```bash
+smd merge --install            # or: smd merge --install --dir path/to/repo
+git add .gitattributes && git commit -m "Merge .smd files by block"
+```
+
+`--install` writes `merge.smd` to the repository's local Git config (`.git/config`, never your global config) and adds `*.smd merge=smd` to `.gitattributes`. The `.gitattributes` line is committed, but it runs nothing by itself: the driver command lives in each clone's own config, so cloning a repository can't make anyone run it, and every clone runs `--install` once. The driver line runs the CLI file that did the install with `node`, by its absolute path (`node "/path/to/smd.cjs" merge %O %A %B %L %P`), so it works from the skills bundle, an npm install or a checkout. If that file moves (an npm upgrade to another folder, an `npx` cache that is cleared), run `--install` again, or pass `--command smd` to run the `smd` on your PATH. Running it again is safe, and `smd merge --uninstall` removes both.
+
+What it does on each merge of a `.smd` file:
+
+- It runs Git's own merge (`git merge-file`) first. When that is clean, its result is written unchanged, byte for byte.
+- Only when Git leaves conflicts does it merge by blocks: front matter keys, list items (at any level), table rows, a container's opening line, children and closing line, and other blocks. A block only one side changed comes from that side as written; the same change on both sides is taken once. Front matter merges key by key, keeping comments and order, and an `updated:` date changed on both sides takes the later date.
+- Where both sides changed one block differently, it leaves conflict markers inside that block only (with your `merge.conflictStyle`, `diff3` included). Exit code 1 tells Git the file still needs resolving.
+- Lines neither side changed stay exactly as they were, line breaks included (LF, CRLF or mixed). It never reformats or realigns a table, so a merged table may fail `smd fmt --check` until you run `smd fmt`.
+- When it is unsure (the versions are read with different spec versions, the file isn't UTF-8, or the merged blocks would read differently, such as a container fence one side removed), it leaves Git's own conflicts.
+
+Limits: the driver runs wherever Git merges locally (`git merge`, `git rebase`, `git cherry-pick`, `git pull`, agents working in branches or worktrees). GitHub's merge button and other server-side merges don't run custom merge drivers: resolve such a pull request locally, or merge the base branch into it locally first. `smd diff --since <ref>` (above) shows what changed after a merge.
+
+**Live Share.** VS Code Live Share co-edits `.smd` files like any text file: cursors, following and the preview on the host. The Block Editor writes every change as an ordinary text edit, so edits from the Block Editor should reach the other participants too. On a guest, includes, code embeds and images may not render yet, because the shared file is not on disk there (phase 2 of the RFC).
+
+**Agents.** Agents edit `.smd` files with their own file tools, or through `smd mcp --allow-write` (`check_task`, `set_status`, `add_decision`, each changing only its own lines). Parallel agents in separate branches or worktrees merge with `smd merge` like people do, and `smd diff --since` lets an agent catch up on what others changed without rereading whole documents.
 
 ### Token budgets and exact counts
 

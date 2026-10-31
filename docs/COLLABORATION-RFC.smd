@@ -1,17 +1,19 @@
 ---
 smd: 2
 title: "RFC: Collaborative editing"
-summary: An exploratory look at how people and AI agents could edit the same .smd document together, from what works today (Git, Live Share, MCP) to live sync. It recommends small, additive async features first, a block-aware Git merge driver and then review and suggestion containers, and defers live sync to a later prototype. For discussion; nothing here is built in 2.1.
-status: draft
+summary: An exploratory look at how people and AI agents could edit the same .smd document together, from what works today (Git, Live Share, MCP) to live sync. It recommends small, additive async features first, a block-aware Git merge driver and then review and suggestion containers, and defers live sync to a later prototype. Accepted on 2026-10-31; phase 1, `smd merge`, ships in 2.6, phases 2 and 3 are accepted but not built yet; live sync stays deferred.
+status: approved
 owners: ["@roshanmadhushanka"]
 tags: [rfc, collaboration, exploratory]
-updated: 2026-10-21
+updated: 2026-10-31
 toc: true
 ---
 
 ## How to read this
 
-The roadmap's last open item is "Real-time collaborative editing" (P3, exploratory). This RFC explores it; 2.1 ships no code for it. Each section ends with a recommendation written as a `:::decision{status=proposed}`. Nothing is accepted until the maintainer reviews it, as was done for the spec v2 RFC ([SPEC-V2-PROPOSALS.smd](SPEC-V2-PROPOSALS.smd)).
+The roadmap's last open item is "Real-time collaborative editing" (P3, exploratory). This RFC explores it; 2.1 shipped no code for it. Each section ends with a recommendation written as a `:::decision`, reviewed by the maintainer as was done for the spec v2 RFC ([SPEC-V2-PROPOSALS.smd](SPEC-V2-PROPOSALS.smd)).
+
+On 2026-10-31 the maintainer accepted the overall plan, "Async first, live later" (see the recommendation), and answered three of the open questions. Phase 1, the `smd merge` driver, is built in 2.6. Phases 2 and 3 are accepted but not built yet, and phase 4 (live sync) stays deferred.
 
 Effort is sized :badge[S]{color=green} (up to a week), :badge[M]{color=amber} (two to four weeks) or :badge[L]{color=red} (more than a month, or open-ended). Claims about third-party tools that could not be checked from this repository or their documentation are marked **to verify**.
 
@@ -143,9 +145,9 @@ flowchart TD
   - Edits to different blocks that touch neighbouring lines: two list items, two blocks in one container, two blocks next to each other.
   - Different rows of one table.
   - Different keys of the front matter, merged key by key with comments and order kept, as the Block Editor's front matter form edits them. An `updated:` date bumped on both sides takes the later date.
-- **What it never does:** reformat, realign a table, or run `smd fmt`. A merged table may then fail `smd fmt --check` until someone formats it (see the open questions).
+- **What it never does:** reformat, realign a table, or run `smd fmt`. A merged table may then fail `smd fmt --check` until someone formats it; alignment is left to the author (decided, see the open questions).
 - **Limits:** GitHub's web merge button and other server-side merges don't run custom drivers (**to verify**), so the driver helps local merges, rebases and agents working in branches, not the PR page.
-- **Install:** `smd merge --install` adds the config to the current repository and the `.gitattributes` line. A `.gitattributes` line alone runs nothing.
+- **Install:** `smd merge --install` adds the config to the current repository and the `.gitattributes` line. A `.gitattributes` line alone runs nothing. As built, the driver line runs the installing CLI file by its absolute path with `node`, so it works from the skills bundle or an npm install alike (`--command` overrides it, e.g. with `smd` when that is on PATH).
 
 #### D2. Review comments and suggestions
 
@@ -215,7 +217,7 @@ D1, the merge driver, first: it has no spec impact and helps agents working in p
 
 :::steps
 1. **Phase 0, 2.1 (this RFC):** discuss and decide; no code.
-2. **Phase 1, `smd merge`** :badge[M]{color=amber}, in a 2.x minor. The driver as in :ref[fig-merge], `smd merge --install`, and a "Collaborating on .smd" section in FEATURES.md covering Git, Live Share and agents.
+2. **Phase 1, `smd merge`** :badge[M]{color=amber}, in 2.6 (built). The driver as in :ref[fig-merge], `smd merge --install`, and a "Collaborating on .smd" section in FEATURES.md covering Git, Live Share and agents.
 3. **Phase 2, Live Share fixes** :badge[S]{color=green}: includes, code embeds and images for non-`file:` documents in the preview and the Block Editor.
 4. **Phase 3, review and suggestion containers** :badge[M]{color=amber}, a later 2.x minor. `:::comment` and `:::suggestion` in the spec, every tool, the Block Editor's Accept and Reject, and the opt-in MCP `suggest` tool.
 5. **Phase 4, deferred:** a block-level live sync prototype (option C) as a separate opt-in extension with a self-hosted relay, only if phases 1–3 leave a clear need.
@@ -233,8 +235,8 @@ D1, the merge driver, first: it has no spec impact and helps agents working in p
 | 4     | Two VS Code windows converge on block edits within a second over a local relay; concurrent edits to one block show the existing conflict prompt                                     |
 |       | No line outside the edited blocks changes; nothing is sent without an explicit session start                                                                                        |
 
-:::decision{status=proposed date=2026-10-21 owner=@roshanmadhushanka} Async first, live later
-Ship phases 1–3 as small additive 2.x features, starting with the merge driver. Defer live sync (phase 4) to a prototype outside the core, and don't build a text CRDT (option B).
+:::decision{status=accepted date=2026-10-31 owner=@roshanmadhushanka} Async first, live later
+Ship phases 1–3 as small additive 2.x features, starting with the merge driver. Defer live sync (phase 4) to a prototype outside the core, and don't build a text CRDT (option B). Proposed on 2026-10-21 and accepted on 2026-10-31: phase 1 is built in 2.6, phases 2 and 3 are accepted but not built yet, and phase 4 stays deferred.
 :::
 
 ## Open questions
@@ -243,24 +245,24 @@ Ship phases 1–3 as small additive 2.x features, starting with the merge driver
 The roadmap item is P3 and no issue asks for it. Is async review (phases 1–3) enough for the people using `.smd` today? Maintainer, before phase 4 is planned.
 :::
 
-:::question Where do comments live?
-Containers (i) are visible and agent-readable but can reach readers through older tools and GitHub; HTML comments (ii) are invisible everywhere but awkward. Maintainer, before phase 3.
+:::decision{status=accepted date=2026-10-31 owner=@roshanmadhushanka} Comments live in containers
+The question was where comments live: containers (i) are visible and agent-readable but can reach readers through older tools and GitHub; HTML comments (ii) are invisible everywhere but awkward. Answer: `:::comment` and `:::suggestion` containers, option (i). They are built in phase 3, not before.
 :::
 
-:::question Tables after a merge
-When the driver merges table rows, the table may no longer be aligned, so `smd fmt --check` fails in CI. Leave that to the author, or let the driver realign the merged table (which changes lines neither side edited)? Maintainer, before phase 1.
+:::decision{status=accepted date=2026-10-31 owner=@roshanmadhushanka} Tables after a merge: left to the author
+The question was whether the driver should realign a table whose rows it merged, so `smd fmt --check` keeps passing in CI, although that changes lines neither side edited. Answer: leave alignment to the author. The driver never touches lines neither side edited, so a merged table may fail `smd fmt --check` until someone runs `smd fmt`.
 :::
 
 :::question Agents and open comments
 Should the agent view show open comments and suggestions by default, or only with a flag such as `smd agent --comments`? Maintainer, before phase 3.
 :::
 
-:::question Command name
-`smd merge` reads like a general merge tool. Keep it, or call it `smd merge-driver`? Maintainer, before phase 1.
+:::decision{status=accepted date=2026-10-31 owner=@roshanmadhushanka} Command name: `smd merge`
+The question was whether `smd merge`, which reads like a general merge tool, should be called `smd merge-driver`. Answer: keep `smd merge`.
 :::
 
 :::agent Implementation constraints
-- This RFC is exploratory: build nothing from it until a decision here is marked accepted.
+- "Async first, live later" is accepted. Phase 1 (`smd merge`) is built in 2.6; phases 2 and 3 are accepted but not built yet; phase 4 stays deferred, so build no live sync without a new accepted decision.
 - Never change a line no participant edited; never run `smd fmt` implicitly during sync, merge or accept.
 - No network access, telemetry or relay by default; live features are opt-in per session and self-hosted.
 - No runtime dependencies in `extension/src/core`; sync libraries go in a separate optional package.
