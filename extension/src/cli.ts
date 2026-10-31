@@ -16,6 +16,9 @@ import { EXPORT_HELP, runExport } from './exportCommand';
 import { fail, langOption, LANG_USAGE, requireFile, write } from './cliIo';
 import { loadRuleConfig, readConfigFile, type LoadedConfig } from './config';
 import { runMcpServer } from './mcp';
+import { readDocument, READ_BUDGET, type ReadMode } from './readView';
+import { MCP_SERVER_NAME, McpConfigError, mcpConfigFor, mergeMcpConfig, type McpConfigSpec } from './agentSetup';
+import { runSavings } from './savings';
 import { runLanguageServer } from './lsp';
 import { runIssues, type GhResult, type IssuesOptions } from './issueSync';
 import { runBuild } from './siteBuild';
@@ -38,6 +41,12 @@ const pkg = { version: typeof __SMD_PKG_VERSION__ === 'string' ? __SMD_PKG_VERSI
 const HELP = `smd — Styled Markdown tool (spec v${LATEST_SPEC})
 
 Reading (token-efficient, for agents):
+  smd read <file.smd> [--max-tokens <n>] [--section "<heading>"]... [--brief] [--outline | --full] [--no-lines]
+      Start here. The whole agent view when it fits n tokens (default ${READ_BUDGET}), else the outline,
+      so one call replaces outline + agent. --section reads only those sections.
+  smd savings <files|dirs...> [--json] [--price <USD per million input tokens>]
+      Tokens an agent saves by reading the agent view instead of the raw files, per document and in
+      total, in tokens and dollars (default price 3).
   smd outline <file.smd> [--related] [--tokenizer <name>]
       Sections with line ranges and token costs, open tasks, where agent instructions are.
       --related    also list the front matter "related:" documents: title, status, summary and cost
@@ -150,9 +159,16 @@ ${MIGRATE_HELP}${EXPORT_HELP}
   smd templates                            List templates
 
 Agent integration:
-  smd mcp [--root <dir>]
-      Model Context Protocol server over stdio with the tools outline, section, agent, tasks, validate
-      and query. Only .smd files inside --root (default: the current directory) can be read.
+  smd init --agent <claude|cursor|copilot|agents>[,…] [--dir <project>] [--no-mcp]
+      One-command setup for an agent in a project (default: the current folder). Installs the skills
+      (claude) or the reading/writing rules (cursor, copilot, agents: AGENTS.md), this CLI, and the
+      MCP server in the agent's config: .mcp.json (claude), .cursor/mcp.json, .vscode/mcp.json
+      (copilot). Existing configs are merged; re-run to update.
+  smd mcp [--root <dir>] [--allow-write] [--legacy-tools]
+      Model Context Protocol server over stdio with the tools read, tasks, query and validate. Only .smd
+      files inside --root (default: the current directory) can be read.
+      --allow-write   add check_task, set_status and add_decision (each refuses edits that add errors)
+      --legacy-tools  also list the older outline, section and agent tools (always callable)
       Register it, e.g.: claude mcp add smd -- npx -y -p styled-markdown smd mcp
 
 Editor integration:
@@ -182,7 +198,7 @@ interface Args { command?: string; positional: string[]; flags: Set<string>; val
 const VALUE_OPTIONS = new Set([
   '--config', '--stale-after', '-o', '--title', '--section', '--dir', '--mine', '--today', '--template', '--only', '--root', '--target', '--since',
   '--max-tokens', '--tokenizer', '--status', '--owner', '--repo', '--label', '--format', '--summary', '--out', '--base',
-  '--lang', '--to', '--pandoc', '--reference-doc', '--browser', '--engine',
+  '--lang', '--to', '--pandoc', '--reference-doc', '--browser', '--engine', '--price', '--agent',
 ]);
 
 function parseArgs(argv: string[]): Args {
@@ -218,6 +234,10 @@ function main(argv: string[]): number | Promise<number> {
   if (staleAfterDays !== undefined && !(staleAfterDays >= 0)) return fail('--stale-after needs a number of days (0 turns the check off).');
 
   switch (command) {
+    case 'read':
+      return readCommand(requireFile(positional[0]), args, today);
+    case 'savings':
+      return runSavings(positional.length ? positional : ['.'], { json: flags.has('--json'), price: value('--price'), today });
     case 'outline':
       return outlineFile(requireFile(positional[0]), flags.has('--related'), today, value('--tokenizer'));
     case 'agent':
@@ -266,6 +286,7 @@ function main(argv: string[]): number | Promise<number> {
       return write(value('-o'), markdownToSmd(read(file), path.basename(file, path.extname(file))));
     }
     case 'init': {
+      if (args.values.has('--agent')) return initAgents(args);
       const file = positional[0];
       if (!file) return fail('init needs a file name, e.g. smd init docs/plan.smd');
       if (fs.existsSync(file)) return fail(`${file} already exists.`);
@@ -281,7 +302,7 @@ function main(argv: string[]): number | Promise<number> {
       for (const [name, t] of Object.entries(TEMPLATES)) console.log(`${name.padEnd(15)} ${t.description}`);
       return 0;
     case 'mcp':
-      return mcp(value('--root'));
+      return mcp(value('--root'), { allowWrite: flags.has('--allow-write'), legacyTools: flags.has('--legacy-tools') });
     case 'lsp':
       return lsp(flags);
     case 'skills':
@@ -509,9 +530,9 @@ function query(selector: string | undefined, targets: string[], flags: QueryFlag
   return rows.length ? 0 : 1;
 }
 
-async function mcp(root = '.'): Promise<number> {
+async function mcp(root = '.', options: { allowWrite: boolean; legacyTools: boolean }): Promise<number> {
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return fail(`--root must be a folder: ${root}`);
-  await runMcpServer({ root, version: pkg.version });
+  await runMcpServer({ root, version: pkg.version, ...options });
   return 0;
 }
 
@@ -544,13 +565,42 @@ function withTokenizer(name: string | undefined, run: (tokenizer?: Tokenizer) =>
   return run(tokenizer);
 }
 
-function agentFile(file: string, args: Args, today?: string): number {
+/** `--max-tokens`: undefined when not given, null when it isn't a positive whole number. */
+function maxTokensOption(args: Args): number | undefined | null {
   const raw = args.values.get('--max-tokens')?.[0];
-  const maxTokens = raw === undefined ? undefined : Number(raw);
-  if (maxTokens !== undefined && !(Number.isInteger(maxTokens) && maxTokens > 0)) {
-    return fail('--max-tokens needs a whole number of tokens, e.g. --max-tokens 2000.');
-  }
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+const MAX_TOKENS_USAGE = '--max-tokens needs a whole number of tokens, e.g. --max-tokens 2000.';
+
+function agentFile(file: string, args: Args, today?: string): number {
+  const maxTokens = maxTokensOption(args);
+  if (maxTokens === null) return fail(MAX_TOKENS_USAGE);
   return withTokenizer(args.values.get('--tokenizer')?.[0], (tokenizer) => printAgentView(file, args, { maxTokens, tokenizer, today }));
+}
+
+/** `smd read`: the whole agent view when it fits the budget, else the outline. */
+function readCommand(file: string, args: Args, today?: string): number {
+  const maxTokens = maxTokensOption(args);
+  if (maxTokens === null) return fail(MAX_TOKENS_USAGE);
+  const { flags } = args;
+  if (flags.has('--outline') && flags.has('--full')) return fail('Use either --outline or --full, not both.');
+  let mode: ReadMode = 'auto';
+  if (flags.has('--outline')) mode = 'outline';
+  else if (flags.has('--full')) mode = 'full';
+  const sections = args.values.get('--section');
+  const result = readDocument(read(file), {
+    mode, maxTokens, sections, brief: flags.has('--brief'), lineRefs: !flags.has('--no-lines'), readFile: readerFor(file), today, file,
+  });
+  if (result.missingSections.length) {
+    console.error(`No section matching: ${result.missingSections.join(', ')}. Run "smd read ${file} --outline" to list sections.`);
+    if (result.missingSections.length === sections?.length) return 1;
+  }
+  process.stdout.write(result.text);
+  console.error(`[smd] ${result.shown} · agent view ≈${result.fullTokens} tokens · file ≈${result.fileTokens} tokens`);
+  return 0;
 }
 
 function printAgentView(file: string, args: Args, extra: Pick<AgentViewOptions, 'maxTokens' | 'tokenizer' | 'today'>): number {
@@ -774,6 +824,52 @@ function installAgentRules(targets: RulesTarget[], root: string): number {
     return fail((e as Error).message);
   }
   return 0;
+}
+
+/** `smd init --agent …`: skills or rules, the CLI, and the MCP server config for each agent. */
+function initAgents(args: Args): number {
+  if (args.positional.length) return fail('smd init --agent sets up agents in a project folder (--dir); create documents in a separate smd init <file.smd>.');
+  let targets: AgentTarget[];
+  try {
+    targets = parseTargets(args.values.get('--agent') ?? []);
+  } catch (e) {
+    return fail((e as Error).message.replace('--target', '--agent'));
+  }
+  const root = args.values.get('--dir')?.[0] ?? '.';
+  fs.mkdirSync(root, { recursive: true });
+  const others = targets.filter((t): t is RulesTarget => t !== 'claude');
+  const code = (targets.includes('claude') ? installSkills(path.join(root, '.claude', 'skills')) : 0)
+    || (others.length ? installAgentRules(others, root) : 0);
+  if (code) return code;
+  if (!args.flags.has('--no-mcp')) {
+    for (const target of targets) {
+      const spec = mcpConfigFor(target);
+      if (spec && !writeMcpConfig(spec, root)) return 1;
+    }
+  }
+  console.log(`Done. Restart the agent (or reload its MCP servers) to pick up the "${MCP_SERVER_NAME}" tools; agents can also run the CLI directly.`);
+  return 0;
+}
+
+function writeMcpConfig(spec: McpConfigSpec, root: string): boolean {
+  const file = path.resolve(root, spec.file);
+  const existing = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
+  let content: string;
+  try {
+    content = mergeMcpConfig(existing, spec);
+  } catch (e) {
+    if (!(e instanceof McpConfigError)) throw e;
+    console.error(e.message);
+    return false;
+  }
+  if (content === existing) {
+    console.log(`Unchanged ${file}  (MCP server "${MCP_SERVER_NAME}")`);
+    return true;
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
+  console.log(`${existing === undefined ? 'Created' : 'Updated'} ${file}  (MCP server "${MCP_SERVER_NAME}")`);
+  return true;
 }
 
 function writeTargetFile(spec: TargetFile, root: string, body: string): void {

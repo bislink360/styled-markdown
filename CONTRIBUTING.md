@@ -2,6 +2,25 @@
 
 Thanks for helping improve Styled Markdown.
 
+- **Questions and ideas:** [Discussions](https://github.com/bislink360/styled-markdown/discussions).
+- **Bugs and feature requests:** [open an issue](https://github.com/bislink360/styled-markdown/issues/new/choose); the forms ask for what we need.
+- **Security problems:** report them privately, as [SECURITY.md](SECURITY.md) explains.
+- Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Good first issues
+
+Issues labelled [`good first issue`](https://github.com/bislink360/styled-markdown/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are small and self-contained, with the files to change named in the issue. [`help wanted`](https://github.com/bislink360/styled-markdown/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) issues are bigger but well defined. Comment on the issue before you start, so two people don't do the same work.
+
+No labelled issue that suits you? These are good places to start, and need no knowledge of the parser:
+
+- **A template:** add a document template to `skills/styled-markdown-writer/assets/templates/` and register it in `TEMPLATES` in `extension/src/skillsBundle.ts`. Copy an existing one; after `smd init x.smd --template <name>`, `smd validate x.smd` must report no errors or warnings.
+- **A quick fix or a clearer message** for a validation rule in `extension/src/core/validate.ts`, with a test.
+- **A language** for the labels smd adds around a document's text (`Note`, `Figure 2`, `overdue`…): copy a locale in `extension/src/core/locales.ts` and translate it.
+- **Docs:** a missing example, a confusing sentence or a broken link in `docs/`.
+- **An example document** in `examples/` that shows a real use (it must pass `smd validate` and `smd fmt --check`).
+
+Pull requests may target the open `release/v*` branch or `main`; the maintainer retargets them. The [pull request template](.github/PULL_REQUEST_TEMPLATE.md) has the checklist.
+
 ## Setup
 
 ```bash
@@ -22,6 +41,36 @@ Press **F5** in `extension/` to run the extension in a development host.
 | Validation rule | `src/core/validate.ts`, with a stable `code` and, when safe, a `fix` |
 | Agent skills | `skills/*/SKILL.md`, references and templates. `npm run build` refreshes the bundled `scripts/smd.cjs`. |
 | Preview behaviour | `media/runtime.js`, `src/preview.ts` |
+
+### Repository layout
+
+```text
+styled-markdown/
+├── extension/            VS Code extension + smd CLI (TypeScript)
+│   ├── src/core/         the engine: renderer, validator, agent view, converters (no VS Code dependency)
+│   ├── src/              extension: preview, language features, agent view UI, CLI
+│   ├── media/            preview CSS/runtime, icons
+│   └── test/             unit tests + VS Code integration tests
+├── skills/
+│   ├── styled-markdown-reader/   agent skill: token-efficient reading
+│   └── styled-markdown-writer/   agent skill: authoring, with templates and references
+├── npm/                  the `styled-markdown` npm package (library + CLI)
+├── integrations/mkdocs/  the MkDocs plugin (Python package `mkdocs-styled-markdown`)
+├── integrations/obsidian/ the Obsidian plugin (id `styled-markdown`)
+├── integrations/jetbrains/ the JetBrains plugin (Kotlin, Gradle): TextMate highlighting and the language server
+├── integrations/tree-sitter-smd/  Tree-sitter grammar and queries for Neovim, Helix and Zed
+├── playground/           the web playground: a static page that runs the engine in the browser
+├── site/                 the homepage on GitHub Pages (index.smd, built with smd build)
+├── validate/             the GitHub Action (smd validate with pull request annotations)
+├── examples/             example documents (+ rendered HTML)
+├── docs/                 guides, specification, gallery and screenshots
+├── .claude-plugin/       the Claude Code plugin marketplace (marketplace.json, plugin.json)
+├── server.json           the MCP Registry entry for the npm package's MCP server
+├── .pre-commit-hooks.yaml    hooks for the pre-commit framework
+└── package.json          lets pre-commit install the bundled CLI (not published)
+```
+
+`npm run build:npm` writes the npm package to `npm/dist`, `npm run build:playground` the playground to `extension/dist/playground`, and `npm run package` the `.vsix`. `npm run test:vscode` runs the integration checks inside a real VS Code.
 
 ## Branching: release trains
 

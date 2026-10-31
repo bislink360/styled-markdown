@@ -472,8 +472,18 @@ test('CLI: skills install writes both self-contained skills', { skip: !existsSyn
   const writer = join(dir, 'styled-markdown-writer');
   assert.match(readFileSync(join(reader, 'SKILL.md'), 'utf8'), /^---\r?\nname: styled-markdown-reader\r?\n/);
   assert.match(readFileSync(join(writer, 'SKILL.md'), 'utf8'), /^---\r?\nname: styled-markdown-writer\r?\n/);
-  for (const f of ['references/syntax.md', 'references/style-guide.md', 'assets/templates/prd.smd', 'scripts/smd.cjs']) {
+  for (const f of ['references/syntax.md', 'references/syntax/basics.md', 'references/style-guide.md', 'assets/templates/prd.smd', 'scripts/smd.cjs']) {
     assert.ok(existsSync(join(writer, f)), f);
+  }
+  assert.ok(existsSync(join(reader, 'references', 'reading.md')));
+  // Every file of the skill folders in the repository is bundled (skillsBundle.ts SKILLS), byte for byte.
+  const repoSkills = join(__dirname, '..', '..', 'skills');
+  const walk = (dir: string, rel = ''): string[] => readdirSync(join(dir, rel), { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? walk(dir, join(rel, e.name)) : [join(rel, e.name)]));
+  for (const name of ['styled-markdown-reader', 'styled-markdown-writer']) {
+    for (const f of walk(join(repoSkills, name)).filter((p) => !p.startsWith('scripts'))) {
+      assert.equal(readFileSync(join(dir, name, f), 'utf8'), readFileSync(join(repoSkills, name, f), 'utf8'), `${name}/${f}`);
+    }
   }
   const out = execFileSync(process.execPath, [join(reader, 'scripts', 'smd.cjs'), 'outline', join(__dirname, '..', '..', 'examples', 'feature-spec.smd')], { encoding: 'utf8' });
   assert.match(out, /Saved Searches · review/);
@@ -482,7 +492,7 @@ test('CLI: skills install writes both self-contained skills', { skip: !existsSyn
 test('every template produces a valid document', () => {
   const dir = join(__dirname, '..', '..', 'skills', 'styled-markdown-writer', 'assets', 'templates');
   const names = readdirSync(dir);
-  assert.equal(names.length, 13);
+  assert.equal(names.length, 16);
   for (const name of names) {
     const doc = fillTemplate(readFileSync(join(dir, name), 'utf8'), 'Example', TODAY);
     const problems = validateSmd(doc, { today: TODAY }).filter((d) => d.severity === 'error' || d.severity === 'warning');

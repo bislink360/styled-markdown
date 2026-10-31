@@ -1,10 +1,11 @@
-# Installation guide
+# Installing Styled Markdown
 
-This guide covers the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, the **JetBrains plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
+This guide covers **AI agent setup** (the Claude Code plugin, `smd init --agent` and the MCP server), the **VS Code extension**, the **`smd` command-line tool**, the **MkDocs plugin**, the **Obsidian plugin**, the **JetBrains plugin**, and building from source. The agent skills have their own guide: [SKILLS.md](SKILLS.md).
 
 ## Contents
 
 - [Requirements](#requirements)
+- [Set up an AI agent](#set-up-an-ai-agent)
 - [Install the VS Code extension](#install-the-vs-code-extension)
 - [Verify the installation](#verify-the-installation)
 - [Recommended settings](#recommended-settings)
@@ -33,11 +34,68 @@ This guide covers the **VS Code extension**, the **`smd` command-line tool**, th
 | Word export | Nothing (built in). Optionally [Pandoc](https://pandoc.org/installing.html) **3.0 or newer**, for Word equations in `smd export --to docx` and **Export to Word (.docx)** |
 | PDF export | Google Chrome, Microsoft Edge (comes with Windows), Chromium or Brave, for `smd export --to pdf` and **Export to PDF** in VS Code and JetBrains IDEs; or Playwright or Puppeteer |
 
+## Set up an AI agent
+
+Agents read `.smd` documents through the CLI or the MCP server instead of reading the files whole, and write them from templates with the validator as a check. Pick one way in.
+
+### Claude Code plugin
+
+In Claude Code (2.1 or later), add this repository as a plugin marketplace and install the plugin:
+
+```text
+/plugin marketplace add bislink360/styled-markdown
+/plugin install styled-markdown@styled-markdown
+```
+
+From a shell, the same is `claude plugin marketplace add bislink360/styled-markdown` and `claude plugin install styled-markdown@styled-markdown`. The plugin brings:
+
+- the **`styled-markdown-reader`** and **`styled-markdown-writer`** skills (as `styled-markdown:styled-markdown-reader` and `styled-markdown:styled-markdown-writer`), each with the `smd` CLI bundled;
+- the **`smd` MCP server**, read-only: it serves the `.smd` files under the folder it is started in, your project when you run Claude Code from its root.
+
+It needs Node.js 22 or newer on the `PATH`. The plugin's version is the release's: after a release, `claude plugin marketplace update styled-markdown` and `claude plugin update styled-markdown@styled-markdown` bring it up to date. The two skill descriptions add about 320 tokens to each session; a skill's full instructions load only when a task needs them.
+
+### One command for a project: `smd init --agent`
+
+From your project's root, one command installs everything an agent needs and can be committed for the whole team:
+
+```bash
+npx styled-markdown init --agent claude     # or cursor, copilot, agents
+```
+
+| `--agent` | Writes |
+|---|---|
+| `claude` | The skills in `.claude/skills/`, the MCP server in `.mcp.json` |
+| `cursor` | `.cursor/rules/styled-markdown.mdc`, the MCP server in `.cursor/mcp.json` |
+| `copilot` | `.github/instructions/styled-markdown.instructions.md`, the MCP server in `.vscode/mcp.json` |
+| `agents` | A Styled Markdown section in `AGENTS.md` (Codex, Windsurf and other agents that read it) |
+
+Every target also gets the CLI at `.smd/smd.cjs` and the `AGENTS.md` snippet. `--dir <project>` sets the project folder. Running it again updates the files in place; MCP config files that already exist are merged, so your other servers stay.
+
+`npx styled-markdown` works once the package is on the npm registry. Until then, use the CLI from a release: `node smd.cjs init --agent claude` with the single file from [Install the `smd` CLI](#install-the-smd-cli), or `smd init --agent claude` after installing the release's `.tgz`. The older `smd skills install --target claude,cursor,copilot,agents` still works and installs the skills or rules without the MCP config ([SKILLS.md](SKILLS.md)).
+
+### MCP server only
+
+`smd mcp` serves the reading tools (`read`, `tasks`, `query`, `validate`) over stdio to any MCP client, without shell access:
+
+```bash
+claude mcp add smd -- npx -y -p styled-markdown smd mcp
+```
+
+`smd mcp --allow-write` adds tools that change documents, each checked by the validator and kept inside the root folder: `check_task` (tick or untick a task), `set_status` (the front matter `status`) and `add_decision` (a `:::decision` at the end of a section). Setup for Cursor, VS Code and Claude Desktop, and every tool's arguments: [AGENTS.md](AGENTS.md#mcp-server).
+
 ## Install the VS Code extension
 
-> **Visual Studio Marketplace and Open VSX:** coming once published. [Open VSX](https://open-vsx.org) is the extension registry of VSCodium, Cursor, Windsurf and Gitpod. Until the listings are live, install the `.vsix` from the GitHub release (Option A).
+**From the Visual Studio Marketplace (VS Code):** search for **Styled Markdown** in the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`), or run:
 
-### Option A — from the release file (recommended)
+```bash
+code --install-extension bislink360.styled-markdown
+```
+
+VS Code then keeps it up to date. The [Marketplace page](https://marketplace.visualstudio.com/items?itemName=bislink360.styled-markdown) lists the versions.
+
+> **Open VSX:** coming once published. [Open VSX](https://open-vsx.org) is the extension registry of VSCodium, Cursor, Windsurf and Gitpod. Until the listing is live, those editors install the `.vsix` from the GitHub release (Option A).
+
+### Option A — from the release file
 
 1. Open the [latest release](https://github.com/bislink360/styled-markdown/releases/latest) and download **`styled-markdown-2.4.0.vsix`**.
 2. Install it with **one** of these methods.
@@ -111,7 +169,14 @@ npm install -g https://github.com/bislink360/styled-markdown/releases/download/v
 smd --version       # smd 2.4.0 (Styled Markdown spec v2)
 ```
 
-The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/styled-markdown-2.4.0.tgz`); see [npm/README.md](../npm/README.md).
+The same package is also a library (`npm install https://github.com/bislink360/styled-markdown/releases/download/v2.4.0/styled-markdown-2.4.0.tgz`); see [Use the npm library](#use-the-npm-library) and [npm/README.md](../npm/README.md).
+
+**Download the single file (no install):**
+
+```bash
+curl -sLo smd.cjs https://raw.githubusercontent.com/bislink360/styled-markdown/v2.4.0/skills/styled-markdown-reader/scripts/smd.cjs
+node smd.cjs --version
+```
 
 **Use the copy bundled with the skills (no build needed):**
 
@@ -131,7 +196,34 @@ smd --version       # smd 2.4.0 (Styled Markdown spec v2)
 
 **Without linking:** `node extension/dist/cli.js <command>`.
 
-**First document:** `smd init docs/plan.smd --template prd` writes a new document from a template (`smd templates` lists the 13). New documents, from `smd init`, `smd from-md` and the other writers, say `smd: 2` since 2.0; existing documents keep their rules until you run `smd migrate <files> --to 2` (SPEC.md §10.1).
+**First document:** `smd init docs/plan.smd --template prd` writes a new document from a template (`smd templates` lists the 16). New documents, from `smd init`, `smd from-md` and the other writers, say `smd: 2` since 2.0; existing documents keep their rules until you run `smd migrate <files> --to 2` (SPEC.md §10.1).
+
+### Use the npm library
+
+The package renders, validates and converts documents in your own code, with zero dependencies:
+
+```ts
+import { renderSmd, validateSmd, agentView } from 'styled-markdown';
+```
+
+Already render Markdown with markdown-it (a docs site, a static site generator, a chat UI)? Add the syntax to your own instance with the plugin, and style it with `styled-markdown/smd.css`:
+
+```ts
+import smd from 'styled-markdown/markdown-it';
+md.use(smd);
+```
+
+**Static sites (Astro, Docusaurus, Next.js):** `styled-markdown/remark` and `styled-markdown/rehype` are unified plugins that render documents exactly as `smd export --to html` does, inside remark/rehype pipelines:
+
+```js
+// astro.config.mjs
+import { remarkSmd } from 'styled-markdown/remark';
+export default { markdown: { remarkPlugins: [remarkSmd] } };
+```
+
+They work with `.md` files (MDX parses `.smd` attribute lists as JSX, so `.mdx` files are not supported). The API, the plugins' options and limits, and the setup for Astro, Docusaurus and Next.js: [npm/README.md](../npm/README.md) ([markdown-it plugin](../npm/README.md#markdown-it-plugin), [remark and rehype plugins](../npm/README.md#remark-and-rehype-plugins-astro-docusaurus-nextjs)).
+
+**Other editors:** `smd-language-server`, installed with the package (1.5.0 or later), brings validation, quick fixes, the outline, hover, completion and formatting to Neovim, Helix, Zed and other LSP editors: [EDITORS.md](EDITORS.md).
 
 ### Optional: Pandoc for Word export
 
@@ -195,6 +287,10 @@ node smd.cjs validate docs/ --strict
 `validate` exits with code **1** on errors (and on warnings with `--strict`). Use `--json` for machine-readable output, or `--format github` for GitHub workflow commands; `--summary <file>` also appends a Markdown summary to a file (e.g. `"$GITHUB_STEP_SUMMARY"`).
 
 Once your documents are on spec v2, `node smd.cjs migrate docs/ --to 2 --check` keeps them there: it writes nothing, lists each document that still needs migrating (a new one written with `smd: 1`, say) and then exits with code **1**.
+
+### Reading `.smd` files on GitHub
+
+GitHub shows `.smd` files as source, not as pages. [GITHUB.md](GITHUB.md) compares the ways around it: Styled Markdown syntax in `.md` files, `.md` copies generated in CI with `smd export --to md` (a complete workflow), and a pull request comment with the changed sections in the agent view.
 
 ## Pre-commit hooks
 
@@ -293,7 +389,7 @@ The playground needs no installation: it is a static page that runs the engine i
 - **From a release:** download `styled-markdown-playground.zip`, unzip it and open `index.html` in a browser.
 - **From source:** `cd extension && npm ci && npm run build:playground`, then open `extension/dist/playground/index.html`.
 
-It works from `file://` and from any static web server. It needs a current browser (Chrome or Edge 103+, Firefox 113+, Safari 16.4+) for the compressed share links. It is not hosted anywhere yet; publishing it (for example on GitHub Pages) is a separate maintainer decision.
+It works from `file://` and from any static web server. It needs a current browser (Chrome or Edge 103+, Firefox 113+, Safari 16.4+) for the compressed share links. The latest release's playground is also hosted at [bislink360.github.io/styled-markdown/playground/](https://bislink360.github.io/styled-markdown/playground/), published from `main` by the Pages workflow.
 
 ## Obsidian plugin
 

@@ -42,3 +42,6 @@ integrations/tree-sitter-smd/log.html
 *.obj
 *.exp
 *.pdb
+
+# GitHub Pages build output (.github/workflows/pages.yml)
+_site/

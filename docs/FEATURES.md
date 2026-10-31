@@ -1,8 +1,104 @@
-# Feature guide
+# Styled Markdown feature guide
 
 Every Styled Markdown feature, with its syntax, what it renders, what an AI agent reads (the **agent view**), and what it becomes in plain GitHub Markdown (`smd export --to md`). The formal rules are in [SPEC.md](SPEC.md).
 
+## At a glance
+
+The short version of this guide; each item is described in full in the sections below.
+
+<details open>
+<summary><b>Format</b></summary>
+
+| Area | Features |
+|---|---|
+| **Foundation** | 100% CommonMark + GFM (tables, task lists, autolinks) · YAML front matter with a status header, owners, tags, TOC and accent color |
+| **Callouts** | `note` `info` `tip` `success` `warning` `danger` `question`, optionally collapsible · `details` · GitHub alerts (`> [!NOTE]`, `> [!WARNING]`…) render as callouts |
+| **Styling** | 14 theme-aware named colors · `[text]{color bg border size weight font style}` · `==highlight==` |
+| **Inline** | `:badge` `:status` `:priority` `:due` `:metric` `:progress` `:kbd` `:mention` · inline and display math (KaTeX) · front matter values in text with `{{version}}` |
+| **Layout** | `tabs` · `columns` · `card` · `box` · `steps` · `timeline` (nest to any depth) |
+| **Project management** | `decision` (ADR records) · `risk` (impact × likelihood) · tasks with owner, priority and due date · overdue detection |
+| **Developers** | `api` endpoint blocks · code titles · line highlights `{2,5-7}` · live source embeds `file="…" lines="…"` · shared text included from other documents `:::include{file="…" section="…"}` · syntax highlighting |
+| **Diagrams** | Every Mermaid type (flowchart, sequence, gantt, ER, state, class, pie, mindmap, timeline, xychart…), themed to match the document |
+| **Audience** | `:::agent` (instructions for AI) · `:::human` (people only) · `## Heading {agent=skip}` |
+| **Safety** | No scripts, whitelisted CSS values, sandboxed file embeds and includes, strict Mermaid |
+
+</details>
+
+<details open>
+<summary><b>VS Code extension</b></summary>
+
+- **Live preview** (`Ctrl+K V`) with scroll sync, double-click to jump to source, clickable task checkboxes, and light/dark themes
+- **[Block Editor (Preview)](#block-editor-preview):** the rendered document, edited one block's source at a time (opt-in through **Open With…**)
+- **Validation** as you type, with **quick fixes** (`:::warnign` → `:::warning`, `flowchat` → `flowchart`, `blu` → `blue`), and Mermaid syntax errors on the exact line
+- **IntelliSense:** completions for blocks, directives, attributes, allowed values and front matter; paths and `#anchors` in links, `related:` and `file="…"` embeds; hover docs; color picker
+- **Go to definition** for `#anchor` and `other.smd#anchor` links, files and reference links
+- **Format Document** and format on save, with the same rules as `smd fmt`: container fences, attribute lists, table columns and blank lines
+- **Find references** (`Shift+F12`) and **rename** (`F2`) for headings: renaming a heading updates every link to its anchor across the workspace
+- **Refactorings** (`Ctrl+.`): wrap a selection in a callout, card, `:::details`, `:::agent` or `:::human`; change a callout's type; convert a `> **Warning:**` or `> [!WARNING]` blockquote into `:::warning`
+- **SMD Tasks view** in the Explorer: open tasks from every `.smd` in the workspace, grouped by owner, due date or document, overdue first, with checkboxes that update the file and an overdue badge
+- **Document status** in the status bar: click it to move a document from `draft` to `review` to `approved` (or `deprecated`, `archived`); only the front matter `status:` (and `updated:`) changes, as one undoable edit
+- **Workspace symbols** (`Ctrl+T`) across every `.smd` heading, decision, risk and API endpoint (`POST /v1/orders`), and **hover previews** of linked sections, linked documents and `file="…"` code embeds
+- **Editing comfort:** Enter continues task lists (unchecked, keeping `@owner`), bullets and numbered lists; paste or drop images to save them in `docs/images/` with a relative link; **Set Up Spell Checking** teaches cSpell to skip directives, attributes and code
+- **Outline, folding** and **41 snippets** (`prd`-style blocks, `decision`, `risk`, `api`, `figure`, `glossary`, `changelog`, `quote`, `mermaid`, `gantt`, `task`, `embed`, `transclude`…)
+- **Agent view** (🤖 button), **brief agent view**, **copy for an agent** (whole doc or picked sections), and a **status-bar token counter**
+- **Export** to standalone HTML, plain GitHub Markdown, Confluence, Notion or Word (.docx) · **Convert** `.md` → `.smd` · **Validate workspace** · **Migrate to Spec v2** (and **Preview Migration to Spec v2**)
+- **Built-in Markdown preview:** `.md` files that opt in with `smd: 1` in their front matter render `.smd` syntax (callouts, directives, attribute lists, Mermaid, code titles) in VS Code's own preview too; `smd.markdownPreview.enabled` set to `always` does it for every `.md` file, `never` for none
+
+</details>
+
+<details open>
+<summary><b>CLI (<code>smd</code>)</b></summary>
+
+| Command | Purpose |
+|---|---|
+| `smd read <file> [--max-tokens N]` | One call for agents: the whole agent view when it fits the budget (default 2,000 tokens), else the outline and how to read single sections |
+| `smd index <dir> [-o catalog.json]` | JSON catalog of every doc (title, summary, status, owners, tags, sections, token costs, open tasks, risks…) so agents pick which docs to read |
+| `smd outline <file> [--related]` | Sections with line ranges and token costs; `--related` adds each `related:` doc's title, status, summary and cost |
+| `smd agent <file> [--section …] [--brief] [--max-tokens N]` | Compact agent view; `--max-tokens` condenses it and leaves out the least important sections (with pointers) to fit |
+| `… --tokenizer o200k_base` | Exact token counts next to the estimate on `outline` and `agent`, if you have installed `js-tiktoken` (OpenAI encodings; approximate for Claude) |
+| `smd tasks <dir> [--mine @me]` | Open tasks across docs, overdue first |
+| `smd issues <dir> [--apply] [--create] [--close]` | Sync tasks with GitHub Issues through your `gh` login. A dry run unless `--apply`: checks off tasks whose issue closed, `--create` opens issues for unlinked tasks (and links them), `--close` closes issues of done tasks |
+| `smd decisions <dir> [--status accepted] [--md]` | Decision log across docs, newest first; `--md -o docs/decisions.smd` writes an ADR index to commit |
+| `smd tasks <dir> --csv` · `--gantt [--smd]` | Export tasks to a spreadsheet, or a Mermaid Gantt chart of due dates (`--smd`: a document `smd export --to html` draws) |
+| `smd risks <dir> [--html]` | Risk register: every risk scored impact × likelihood, highest first, with a matrix; `--html` for a colour-coded page |
+| `smd report <dir> --since <date\|git-ref> [-o status.smd]` | Draft a status report: tasks done and added since, open tasks (overdue and due this week first), decisions since, high-impact risks, linked to their sections |
+| `smd query "<selector>" <paths> [--json]` | Decisions, risks, APIs, callouts, tasks or headings by type and attributes, e.g. `risk[impact>=high]` |
+| `smd diff <paths> --since <git-ref>` / `smd diff <old> <new>` | Only the sections that changed, in the agent view: catch up on a doc without rereading it |
+| `smd validate <paths> [--fix] [--json] [--strict]` | Check files (CI-friendly exit codes); rules configurable in `smd.config.json` / `.smdrc` and with `<!-- smd-disable-next-line code -->`; `--format github` for pull request annotations ([GitHub Action](INSTALL.md#github-actions)) |
+| `smd fmt <paths> [--check]` | Format files in place; `--check` fails CI on unformatted files |
+| `smd migrate <paths> --to 2 [--dry-run \| --check]` | Migrate docs to spec v2 (`smd: 2`) so each keeps its meaning: only `.smd` files that need it, each written whole or not at all, then checked; the notes it prints are left to you. `--dry-run` reports the plan, `--check` fails CI when a doc still needs it ([steps](SPEC.md#101-migrating-to-spec-v2)); also **Migrate to Spec v2** in VS Code |
+| `smd init <file> --template prd` | New doc from 16 templates (`smd templates` lists them), with `smd: 2` |
+| `smd export <file> --to <format> [-o out]` | Every export in one command. Without `--to`, the extension of `-o` picks the format (`.html`, `.md`, `.pdf`, `.docx`). The older names `smd render`, `to-md`, `pdf` and `docx` still work |
+| `… --to html` · `md` | A standalone page with a print stylesheet (Print → Save as PDF), or plain GitHub Markdown |
+| `… --to pdf [--format A4\|Letter] [--landscape] [--browser <path>]` | PDF with diagrams as vectors, printed by an installed Chrome, Edge, Chromium or Brave (or Playwright or Puppeteer, if installed; smd bundles no browser); also **Export to PDF** in VS Code and the JetBrains plugin |
+| `… --to docx [--engine builtin|pandoc] [--reference-doc house.docx]` | Word document (Word, LibreOffice, Google Docs) with real headings, lists, tables, footnotes and links, written by smd with nothing to install, or converted by [Pandoc](https://pandoc.org/installing.html) when you have it (Word equations too); also **Export to Word (.docx)** in VS Code and the JetBrains plugin |
+| `… --to confluence` · `notion` | A page for your wiki: Confluence storage format (callouts, code, expands, tasks and statuses as built-in macros) or Notion API blocks cut into request bodies. It only writes the file: no network, no credentials ([mapping](#confluence-and-notion-smd-export)) |
+| `smd from-md` · `meta` | Upgrade Markdown to `.smd`; a document's full JSON summary |
+| `smd build <dir> --out site` | Static docs site: a page per doc, sidebar, breadcrumbs, search, backlinks and a task/decision/risk dashboard |
+| `smd mcp [--root <dir>] [--allow-write]` | MCP server for agents: `read`, `tasks`, `query` and `validate` as tools (the older `outline`, `section` and `agent` still answer; `--legacy-tools` lists them); `--allow-write` adds `check_task`, `set_status` and `add_decision` ([setup](AGENTS.md#mcp-server)) |
+| `smd lsp --stdio` | Language server for Neovim, Helix, Zed and other LSP editors: diagnostics, quick fixes, outline, hover, completion, go to definition, formatting (also `smd-language-server`; [setup](EDITORS.md)) |
+| `smd init --agent claude|cursor|copilot|agents` | Set up an agent in a project in one command: skills or rules, the CLI at `.smd/smd.cjs`, the MCP server config and the `AGENTS.md` snippet |
+| `smd skills install [--global] [--target …]` | Install the agent skills, or rules for Cursor, Copilot and `AGENTS.md` |
+| `smd savings <dirs> [--json] [--price N]` | Repo-wide token report: raw files vs agent view vs `--brief`, and the saving in tokens and dollars per full read of every document |
+
+**Publish a docs site:** `smd build docs --out site` turns a folder of `.smd` files (and `.md` with `--md`) into a static site in the same folder structure, with links between documents rewritten to pages, a sidebar, previous/next links, backlinks, a search box that works offline, and a dashboard of open tasks, decisions and risks. Open `site/index.html` from disk or upload the folder to any static host (`--base /docs/` for absolute links). It only writes to a new, empty or previously built folder, and `--clean` removes only files of the previous build. See the [feature guide](#publish-a-docs-site-smd-build).
+
+</details>
+
+<details open>
+<summary><b>Agent skills</b></summary>
+
+| Skill | What it teaches an agent |
+|---|---|
+| **`styled-markdown-writer`** | Create and edit `.smd` that follows every rule: choose a template (PRD, ADR, RFC, runbook, API, status report, meeting notes, postmortem, release notes, OKRs, onboarding, test plan, PR description, and spec, plan and tasks for [spec-driven work](SPEC-DRIVEN.md)), fill it, validate with `--fix`, and keep it cheap for agents to read |
+| **`styled-markdown-reader`** | Read `.smd` with minimal tokens: `outline` first, then only the relevant sections through the agent view, and raw lines only when editing |
+
+</details>
+
+
 ## Contents
+
+[At a glance](#at-a-glance)
 
 **Format**
 1. [Documents and front matter](#1-documents-and-front-matter)
@@ -1082,6 +1178,8 @@ Rendered pages (the preview, `smd export --to html`, `smd build` sites and `smd 
 ## 17. CLI reference
 
 ```text
+smd read <file> [--max-tokens <n>]                   one call for agents: the whole agent view if it fits n tokens
+                 (default 2000), else the outline and how to read sections with smd agent --section
 smd outline <file> [--related] [--tokenizer <name>]  sections, line ranges, token costs, markers; --related adds related docs
 smd agent <file> [--section "<heading>"]… [--brief] [--include-human] [--embed] [--no-includes] [--no-lines]
                  [--max-tokens <n>] [--tokenizer <name>]   fit the view into n tokens; exact counts
@@ -1117,9 +1215,13 @@ smd build <dir> [--out site] [--title "…"] [--base /docs/] [--md] [--clean] [-
                  static docs site: pages, sidebar, search, backlinks, dashboard (section 16)
 smd from-md <file.md> [-o out.smd]
 smd init <file> [--template <name>] [--title "…"]
+smd init --agent claude|cursor|copilot|agents [--dir <project>]   set up an agent in a project: skills or rules,
+                 .smd/smd.cjs, the MCP server config and the AGENTS.md snippet (re-run to update; MCP configs are merged)
 smd templates
+smd savings <files|dirs> [--json] [--price <USD per million input tokens>]   tokens (and dollars, default price 3)
+                 saved per full read of every document: raw file vs agent view vs --brief
 smd skills install [--dir <path>] [--global] [--only reader|writer]
-smd mcp [--root <dir>]                               MCP server over stdio (tools below)
+smd mcp [--root <dir>] [--allow-write] [--legacy-tools]   MCP server over stdio (tools below)
 smd lsp [--stdio]                                    language server over stdio for other editors (below); also smd-language-server
 smd skills install --target cursor,copilot,agents [--dir <project>]   rules for other agents + .smd/smd.cjs
 smd --version
@@ -1219,14 +1321,22 @@ How an agent routes with it: read the catalog, pick documents by `summary`, `sta
 
 | Tool | Arguments | Same as |
 |---|---|---|
-| `outline` | `file` | `smd outline` |
-| `section` | `file`, `sections[]`, `brief?` | `smd agent --section …` |
-| `agent` | `file`, `brief?`, `includeHuman?` | `smd agent` |
+| `read` | `file`, `sections?[]`, `brief?`, `mode?` (`auto`, `outline` or `full`) | `smd read`: by default the whole agent view when it is small, else the outline; `sections` reads only those sections, `outline` and `full` force one |
 | `tasks` | `paths[]?`, `all?`, `mine?` | `smd tasks` |
-| `validate` | `paths[]?` | `smd validate --json` |
 | `query` | `selector`, `paths[]?`, `brief?`, `titles?` | `smd query` |
+| `validate` | `paths[]?` | `smd validate --json` |
 
-Paths are relative to `--root` (default: the current folder). Paths outside it are refused, only `.smd` files are read, and nothing is written. Register it with, for example:
+These four are what `tools/list` shows (under 500 tokens with the server's instructions). The tools of earlier versions, `outline` (`file`), `section` (`file`, `sections[]`, `brief?`) and `agent` (`file`, `brief?`, `includeHuman?`), still answer when called, and `smd mcp --legacy-tools` lists them again, until 3.0.
+
+With `--allow-write`, three tools change documents. Each checks the result with the validator and stays inside the root:
+
+| Tool | Arguments | Does |
+|---|---|---|
+| `check_task` | `file`, `line`, `done?` | Ticks the task on that line (`done: false` unticks it) |
+| `set_status` | `file`, `status` | Sets the front matter `status` |
+| `add_decision` | `file`, `section`, `title`, `status?`, `owner?`, `body` | Appends a `:::decision` block at the end of the section |
+
+Paths are relative to `--root` (default: the current folder). Paths outside it are refused, and only `.smd` files are read; without `--allow-write`, nothing is written. Register it with, for example:
 
 ```bash
 claude mcp add smd -- npx -y -p styled-markdown smd mcp
@@ -1331,6 +1441,11 @@ These are OpenAI encodings. There is no public tokenizer for current Claude mode
 | `onboarding` | Buddy and manager, Start-here tip, Day 1 setup (tasks, steps, code), Week 1, First 90 days (timeline), Key links, People to meet, Team history (agent-skip), Rules (agent) |
 | `test-plan` | Scope, Strategy (table), Environments (table), Test cases (table), Entry and exit criteria (columns), Risks, Schedule (timeline), Testing rules (agent) |
 | `pr-description` | Links and risk, Summary, Changes, Testing, Risk and rollback (warning), Checklist, Screenshots (agent-skip), Review focus (agent) |
+| `spec` | Problem, Goals and non-goals, User stories, Requirements (IDs and priorities), Acceptance criteria (table), Constraints (warning), Open questions, Rules for implementers (agent) |
+| `plan` | `related:` the spec; Approach (diagram), Decisions, Risks, Phases (steps), Testing, Open questions, Rules for following the plan (agent) |
+| `tasks` | `related:` the spec and the plan; work rules (agent) first, then tasks by phase with requirement, priority, owner and due date, and Done when |
+
+`spec`, `plan` and `tasks` are the spec-driven workflow kit: put them side by side in one folder per feature (`specs/saved-searches/spec.smd`, `plan.smd`, `tasks.smd`), so their `related:` links resolve. How an agent works through them: [SPEC-DRIVEN.md](SPEC-DRIVEN.md).
 
 ## 19. Web playground
 
@@ -1349,4 +1464,4 @@ The editor is a plain text area: Tab and Shift+Tab indent and outdent (Esc, then
 
 Shared documents are untrusted: the preview renders in a sandboxed frame with an opaque origin, under a Content Security Policy that runs only the playground's own scripts and loads nothing remote (not even images). The threat model is in [playground/README.md](../playground/README.md).
 
-Build it with `npm run build:playground` in `extension/` and open `extension/dist/playground/index.html` (it works from `file://` and from any static host), or unzip `styled-markdown-playground.zip` from a GitHub Release. The playground is not hosted anywhere yet; publishing it, for example on GitHub Pages, is a separate decision.
+Build it with `npm run build:playground` in `extension/` and open `extension/dist/playground/index.html` (it works from `file://` and from any static host), or unzip `styled-markdown-playground.zip` from a GitHub Release. The latest release's playground is hosted at [bislink360.github.io/styled-markdown/playground/](https://bislink360.github.io/styled-markdown/playground/) (the Pages workflow publishes it from `main`, next to the homepage).

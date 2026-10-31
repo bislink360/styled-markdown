@@ -4,6 +4,8 @@ import { agentView, outline, parseSelector, SelectorError, type Diagnostic, type
 import { loadRuleConfig, type LoadedConfig } from './config';
 import { loadMermaidParser } from './mermaidLoader';
 import { McpServer, serveLines, ToolError, type McpTool, type ToolInputSchema } from './mcpProtocol';
+import { writeTools } from './mcpWrite';
+import { readDocument, READ_BUDGET, READ_MODES, type ReadMode } from './readView';
 import { collect, diagnose, queryRows, querySummary, queryText, read, readerFor, taskLine, taskRows, taskSummary } from './workspace';
 
 /**
@@ -16,6 +18,10 @@ export interface McpServerSettings {
   /** Folder that paths are resolved against; nothing outside it is read. */
   root: string;
   version: string;
+  /** List the 1.x reading tools (outline, section, agent) too. */
+  legacyTools?: boolean;
+  /** Add the write tools (check_task, set_status, add_decision). */
+  allowWrite?: boolean;
 }
 
 /** Paths inside one folder, resolved and checked. */
@@ -83,35 +89,84 @@ function isInside(root: string, target: string): boolean {
 }
 
 const FILE = { type: 'string', description: 'Path of a .smd file, relative to the root folder.' } as const;
-const PATHS = {
-  type: 'array', items: { type: 'string' },
-  description: '.smd files or folders (searched recursively), relative to the root folder. Default: the whole root.',
-} as const;
-const BRIEF = { type: 'boolean', description: 'Also condense diagrams, long code blocks, :::details and completed tasks.' } as const;
+const PATHS = { type: 'array', items: { type: 'string' }, description: 'Files or folders. Default: all.' } as const;
+const BRIEF = { type: 'boolean', description: 'Condense diagrams, long code, done tasks.' } as const;
+const SHORT_BRIEF = { type: 'boolean', description: 'Condense long blocks.' } as const;
+/** The 2.5 tools: short descriptions, since every session pays for tools/list. */
+const SHORT_FILE = { type: 'string', description: 'Path under the root.' } as const;
 
 function schema(properties: ToolInputSchema['properties'], required: string[] = []): ToolInputSchema {
   return { type: 'object', properties, required, additionalProperties: false };
 }
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const READ_ONLY_SHORT = { readOnlyHint: true };
 
-/** The tools, reading from `box`. */
-export function smdTools(box: Sandbox): McpTool[] {
-  const tool = (t: Omit<McpTool, 'annotations'>): McpTool => ({ ...t, annotations: READ_ONLY });
+export interface SmdToolOptions {
+  /** List the 1.x tools outline, section and agent too (they can always be called). */
+  legacyTools?: boolean;
+  /** Add the write tools check_task, set_status and add_decision. */
+  allowWrite?: boolean;
+}
+
+/** The tools, reading from `box`: read, tasks, query and validate, then the older reading tools (hidden unless asked for). */
+export function smdTools(box: Sandbox, options: SmdToolOptions = {}): McpTool[] {
+  const tool = (t: Omit<McpTool, 'annotations'>): McpTool => ({ ...t, annotations: READ_ONLY_SHORT });
+  const legacy = (t: Omit<McpTool, 'annotations' | 'hidden'>): McpTool => ({ ...t, annotations: READ_ONLY, hidden: !options.legacyTools });
   return [
     tool({
+      name: 'read',
+      description: `Read a .smd file as an agent view ([L12] = source line): whole if ≤${READ_BUDGET} tokens, else the outline; then pass sections.`,
+      inputSchema: schema({
+        file: SHORT_FILE,
+        sections: { type: 'array', items: { type: 'string' }, description: 'Heading texts or ids.' },
+        mode: { type: 'string', enum: READ_MODES },
+        brief: SHORT_BRIEF,
+      }, ['file']),
+      run: (args) => readTool(box, args),
+    }),
+    tool({
+      name: 'tasks',
+      description: 'Open tasks (owner, priority, due) across .smd files, overdue first.',
+      inputSchema: schema({
+        paths: PATHS,
+        all: { type: 'boolean', description: 'Include done tasks.' },
+        mine: { type: 'string', description: 'Owner, e.g. "@maya".' },
+      }),
+      run: (args) => tasksTool(box, args),
+    }),
+    tool({
+      name: 'query',
+      description: 'Blocks matching a selector across .smd files: decision[status=accepted], risk[impact>=high], '
+        + 'task[owner=@me][done=false], "question, risk". Ops: = != *= ^= $= < <= > >=, a|b.',
+      inputSchema: schema({
+        selector: { type: 'string' },
+        paths: PATHS,
+        brief: SHORT_BRIEF,
+        titles: { type: 'boolean', description: 'One line per match.' },
+      }, ['selector']),
+      run: (args) => queryTool(box, args),
+    }),
+    tool({
+      name: 'validate',
+      description: 'Check .smd files: JSON as smd validate --json (zero-based lines).',
+      inputSchema: schema({ paths: PATHS }),
+      run: (args) => validateTool(box, args),
+    }),
+    ...(options.allowWrite ? writeTools(box) : []),
+    legacy({
       name: 'outline',
       title: 'Outline a .smd document',
-      description: 'Start here for any .smd file. Lists its sections with line ranges and token costs, open tasks and where '
-        + 'agent instructions are, so you can fetch only the sections you need with the "section" tool.',
+      description: 'Lists the sections of a .smd file with line ranges and token costs, open tasks and where agent '
+        + 'instructions are. Same as "read" with mode "outline".',
       inputSchema: schema({ file: FILE }, ['file']),
       run: (args) => outlineTool(box, args),
     }),
-    tool({
+    legacy({
       name: 'section',
       title: 'Read sections of a .smd document',
       description: 'The agent view of only these sections (with their subsections). Agent instructions elsewhere in the '
-        + 'document are always included. Headings or ids come from the "outline" tool.',
+        + 'document are always included. Same as "read" with "sections".',
       inputSchema: schema({
         file: FILE,
         sections: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'Heading text or id of each section, e.g. ["Requirements", "risks"].' },
@@ -119,50 +174,13 @@ export function smdTools(box: Sandbox): McpTool[] {
       }, ['file', 'sections']),
       run: (args) => sectionTool(box, args),
     }),
-    tool({
+    legacy({
       name: 'agent',
       title: 'Read a whole .smd document',
       description: 'The compact agent view of a whole .smd file: styling, layout and human-only content removed, meaning kept; '
-        + 'headings carry [L12] source line references. Prefer "outline" + "section" for long documents.',
+        + 'headings carry [L12] source line references. Same as "read" with mode "full".',
       inputSchema: schema({ file: FILE, brief: BRIEF, includeHuman: { type: 'boolean', description: 'Keep :::human blocks (dropped by default).' } }, ['file']),
       run: (args) => agentTool(box, args),
-    }),
-    tool({
-      name: 'tasks',
-      title: 'List tasks',
-      description: 'Open tasks across .smd documents with owner, priority, due date and section, overdue first. '
-        + 'One line each: file:line  [ ] [priority] text @owners (due date)  — section.',
-      inputSchema: schema({
-        paths: PATHS,
-        all: { type: 'boolean', description: 'Include completed tasks.' },
-        mine: { type: 'string', description: 'Only tasks assigned to this owner, e.g. "@maya".' },
-      }),
-      run: (args) => tasksTool(box, args),
-    }),
-    tool({
-      name: 'validate',
-      title: 'Validate .smd documents',
-      description: 'Checks .smd files for syntax, link, front-matter and diagram problems (same rules and config files as '
-        + '"smd validate"). Returns JSON as "smd validate --json": {files: [{file, diagnostics: [{line, column, endColumn, severity, code, message, fix?}]}], errors, warnings}. '
-        + 'Lines and columns are zero-based.',
-      inputSchema: schema({ paths: PATHS }),
-      run: (args) => validateTool(box, args),
-    }),
-    tool({
-      name: 'query',
-      title: 'Query blocks',
-      description: 'Blocks selected by type and attributes, each in the agent view with its file, lines and section. Selectors: '
-        + 'decision[status=accepted], risk[impact>=high][status!=closed], api[method=POST|PUT], task[owner=@maya][done=false], '
-        + 'task[due<today], heading[level=2], "question, risk". Types: any container (decision, risk, api, note, question, agent…), '
-        + 'callout, task, heading, * (any). Tests: [key] [key=a|b] [key!=v] [key*=v] [key^=v] [key$=v] and < <= > >= for numbers, '
-        + 'dates, priorities and risk levels; every block also has title, section and type.',
-      inputSchema: schema({
-        selector: { type: 'string', description: 'CSS-like selector, e.g. "decision[status=accepted]".' },
-        paths: PATHS,
-        brief: BRIEF,
-        titles: { type: 'boolean', description: 'One line per match (location, type, title, attributes) instead of its content.' },
-      }, ['selector']),
-      run: (args) => queryTool(box, args),
     }),
   ];
 }
@@ -171,6 +189,22 @@ type Args = Record<string, unknown>;
 const text = (args: Args, key: string) => args[key] as string | undefined;
 const list = (args: Args, key: string) => args[key] as string[] | undefined;
 const flag = (args: Args, key: string) => args[key] === true;
+
+function readTool(box: Sandbox, args: Args): string {
+  const file = box.document(text(args, 'file')!);
+  const sections = list(args, 'sections');
+  const mode = text(args, 'mode') as ReadMode | undefined;
+  const result = readDocument(read(file), { mode, sections, brief: flag(args, 'brief'), readFile: box.reader(file) });
+  return withMissing(result.text, result.missingSections, sections?.length ?? 0);
+}
+
+/** The text, with a note on sections that matched nothing; an error when none matched. */
+function withMissing(view: string, missing: string[], asked: number): string {
+  if (!missing.length) return view;
+  const note = `No section matching: ${missing.join(', ')}. Call "read" with mode "outline" to list the sections.`;
+  if (missing.length === asked) throw new ToolError(note);
+  return `${view.trimEnd()}\n\n(${note})\n`;
+}
 
 function outlineTool(box: Sandbox, args: Args): string {
   const file = box.document(text(args, 'file')!);
@@ -181,9 +215,7 @@ function sectionTool(box: Sandbox, args: Args): string {
   const file = box.document(text(args, 'file')!);
   const sections = list(args, 'sections')!;
   const result = agentView(read(file), { sections, brief: flag(args, 'brief'), readFile: box.reader(file) });
-  const missing = `No section matching: ${result.missingSections.join(', ')}. Call "outline" to list the sections.`;
-  if (result.missingSections.length === sections.length) throw new ToolError(missing);
-  return result.missingSections.length ? `${result.text.trimEnd()}\n\n(${missing})\n` : result.text;
+  return withMissing(result.text, result.missingSections, sections.length);
 }
 
 function agentTool(box: Sandbox, args: Args): string {
@@ -232,17 +264,21 @@ async function validateTool(box: Sandbox, args: Args): Promise<string> {
   return JSON.stringify({ files: report, errors, warnings, ...config }) + '\n';
 }
 
-const INSTRUCTIONS = 'Tools for Styled Markdown (.smd) documents: specs, PRDs, ADRs, runbooks and plans. They return a compact '
-  + 'agent view that drops styling and human-only content, so prefer them to reading .smd files directly. Start with '
-  + '"outline", then read only the sections you need with "section"; use "query" to pull decisions, risks, APIs or tasks '
-  + 'across files, "tasks" for open work and "validate" after editing. Follow <agent-instructions> in the results.';
+/** What the client shows the model after initialize. */
+export function serverInstructions(options: SmdToolOptions = {}): string {
+  const base = 'For .smd files (specs, plans, ADRs) call "read", not a file read, then only the sections you need. '
+    + '"query"/"tasks" search across files; "validate" after edits. Follow <agent-instructions>.';
+  return options.allowWrite ? `${base} Write tools change one block and refuse edits that add errors.` : base;
+}
 
 /** Serves the tools over stdio until the input ends. Only protocol messages go to stdout. */
 export async function runMcpServer(settings: McpServerSettings): Promise<void> {
   // Anything else that logs (e.g. Mermaid) must not corrupt the protocol stream.
   console.log = console.info = console.debug = console.warn = console.error;
   const box = new Sandbox(settings.root);
-  const server = new McpServer({ name: 'styled-markdown', version: settings.version, tools: smdTools(box), instructions: INSTRUCTIONS });
-  console.error(`[smd mcp] serving ${box.root} over stdio`);
+  const tools = smdTools(box, settings);
+  const server = new McpServer({ name: 'styled-markdown', version: settings.version, tools, instructions: serverInstructions(settings) });
+  const write = settings.allowWrite ? ', write tools on' : '';
+  console.error(`[smd mcp] serving ${box.root} over stdio${write}`);
   await serveLines(server, process.stdin, (line) => process.stdout.write(line));
 }

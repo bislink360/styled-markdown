@@ -1,0 +1,66 @@
+---
+smd: 2
+title: "Spec: {{title}}"
+summary: What we are building, for whom, and the acceptance criteria that say it works.
+status: draft
+owners: ["@owner"]
+tags: [spec]
+updated: {{today}}
+toc: true
+---
+
+## Problem
+
+Who has the problem, what they do today, and why that is not good enough. Link the evidence.
+
+## Goals and non-goals
+
+**Goals**
+
+1. A measurable outcome (metric, target, date).
+
+**Non-goals**
+
+- What this spec deliberately leaves out.
+
+## User stories
+
+- As a *role*, I want *a capability* so that *an outcome*.
+
+## Requirements
+
+Each requirement has an ID that the plan, the tasks and the tests refer to.
+
+| ID  | Requirement                                    | Priority      |
+| --- | ---------------------------------------------- | ------------- |
+| R1  | The system must do the essential thing.        | :priority[P0] |
+| R2  | The system should do the next important thing. | :priority[P1] |
+| R3  | The system could do the nice-to-have thing.    | :priority[P2] |
+
+## Acceptance criteria
+
+| ID  | Requirement | Given            | When            | Then                |
+| --- | ----------- | ---------------- | --------------- | ------------------- |
+| AC1 | R1          | A starting state | The user acts   | The visible outcome |
+| AC2 | R2          | A starting state | Something fails | The safe outcome    |
+
+## Constraints
+
+:::warning Constraint
+A limit the implementation must respect: a performance budget, a compatibility promise, a security rule.
+:::
+
+## Open questions
+
+:::question Question that still needs an answer
+Who decides, and by when. Until then: the fallback to build.
+:::
+
+## Rules for implementers
+
+:::agent Rules for implementing this spec
+- Build only what the requirements say. Work that no requirement covers is a new requirement: propose it as a `:::question`, don't add it silently.
+- Refer to requirements by ID (R1) in tasks, commits and test names, and test each acceptance criterion (AC1).
+- An open question is not decided: use the fallback it states, or ask.
+- Don't edit the requirements or acceptance criteria to match the code; change the code, or raise a question.
+:::

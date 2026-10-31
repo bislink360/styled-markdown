@@ -144,7 +144,7 @@ test('outline, section and agent return the agent view', async () => {
   assert.match(section, /Keep answers short/); // agent instructions always come along
   assert.doesNotMatch(section, /Write the spec/);
   assert.match(await run('section', { file: 'docs/plan.smd', sections: ['decisions', 'nope'] }), /No section matching: nope/);
-  await rejects('section', { file: 'docs/plan.smd', sections: ['nope'] }, /No section matching: nope\. Call "outline"/);
+  await rejects('section', { file: 'docs/plan.smd', sections: ['nope'] }, /No section matching: nope\. Call "read"/);
 });
 
 test('tasks, validate and query read every .smd file under the root', async () => {
@@ -187,7 +187,8 @@ test('CLI: smd mcp speaks JSON-RPC over stdio', { skip: !existsSync(cli) && 'run
   const text = (id: number) => result(id).content[0].text;
   assert.equal((byId.get(1)!.result as { serverInfo: { name: string } }).serverInfo.name, 'styled-markdown');
   const listed = (byId.get(2)!.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name);
-  assert.deepEqual(listed, ['outline', 'section', 'agent', 'tasks', 'validate', 'query']);
+  // 2.5: read replaced outline, section and agent in the list; the old names are still called above.
+  assert.deepEqual(listed, ['read', 'tasks', 'query', 'validate']);
   assert.match(text(10), /Tasks/);
   assert.match(text(11), /<agent-instructions>/);
   assert.match(text(12), /Write the spec/);

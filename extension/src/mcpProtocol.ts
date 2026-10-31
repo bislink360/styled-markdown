@@ -9,7 +9,8 @@
  *   notifications/*            accepted, never answered
  *
  * Tool arguments are checked against the tool's inputSchema (the subset used here: object properties of
- * type string, boolean or array of strings, `required` and `additionalProperties: false`).
+ * type string (optionally an enum), integer (optionally a minimum), boolean or array of strings, `required` and
+ * `additionalProperties: false`). Tools marked `hidden` can be called but are left out of tools/list.
  */
 
 /** Protocol versions this server speaks, newest first. */
@@ -24,8 +25,11 @@ export const JSONRPC_ERRORS = {
 } as const;
 
 export interface JsonSchemaProperty {
-  type: 'string' | 'boolean' | 'array';
+  type: 'string' | 'boolean' | 'array' | 'integer';
   description?: string;
+  /** Allowed values of a string. */
+  enum?: readonly string[];
+  minimum?: number;
   items?: { type: 'string' };
   minItems?: number;
 }
@@ -48,6 +52,8 @@ export interface McpTool {
   description: string;
   inputSchema: ToolInputSchema;
   annotations?: Record<string, unknown>;
+  /** Callable, but left out of tools/list (an old name kept working for clients that still call it). */
+  hidden?: boolean;
   /** Returns the result text. Throw a ToolError for a failure the caller should see. */
   run(args: Record<string, unknown>): string | Promise<string>;
 }
@@ -137,7 +143,7 @@ export class McpServer {
       case 'ping':
         return {};
       case 'tools/list':
-        return { tools: [...this.tools.values()].map(describeTool) };
+        return { tools: this.listed().map(describeTool) };
       case 'tools/call':
         return this.call(params);
       default:
@@ -153,10 +159,14 @@ export class McpServer {
     return { protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name, version }, ...(instructions ? { instructions } : {}) };
   }
 
+  private listed(): McpTool[] {
+    return [...this.tools.values()].filter((t) => !t.hidden);
+  }
+
   private async call(params: unknown): Promise<ToolResult> {
     if (!isObject(params) || typeof params.name !== 'string') throw new RpcError(JSONRPC_ERRORS.invalidParams, 'tools/call needs a tool "name".');
     const tool = this.tools.get(params.name);
-    if (!tool) throw new RpcError(JSONRPC_ERRORS.invalidParams, `Unknown tool: ${params.name}. Available: ${[...this.tools.keys()].join(', ')}`);
+    if (!tool) throw new RpcError(JSONRPC_ERRORS.invalidParams, `Unknown tool: ${params.name}. Available: ${this.listed().map((t) => t.name).join(', ')}`);
     const args = params.arguments ?? {};
     const problem = isObject(args) ? checkArguments(tool.inputSchema, args) : 'arguments must be an object.';
     if (problem) return errorResult(`Invalid arguments for ${tool.name}: ${problem}`);
@@ -186,9 +196,20 @@ export function checkArguments(schema: ToolInputSchema, args: Record<string, unk
 }
 
 function checkValue(property: JsonSchemaProperty, value: unknown): string | undefined {
-  if (property.type !== 'array') return typeof value === property.type ? undefined : `must be a ${property.type}.`;
+  if (property.type === 'integer') return checkInteger(property, value);
+  if (property.type !== 'array') {
+    if (typeof value !== property.type) return `must be a ${property.type}.`;
+    if (property.enum && !property.enum.includes(value as string)) return `must be one of: ${property.enum.join(', ')}.`;
+    return undefined;
+  }
   if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) return 'must be an array of strings.';
   if (property.minItems && value.length < property.minItems) return `needs at least ${property.minItems} item(s).`;
+  return undefined;
+}
+
+function checkInteger(property: JsonSchemaProperty, value: unknown): string | undefined {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return 'must be a whole number.';
+  if (property.minimum !== undefined && value < property.minimum) return `must be at least ${property.minimum}.`;
   return undefined;
 }
 
@@ -224,8 +245,15 @@ export function serveLines(server: McpServer, input: NodeJS.ReadableStream, writ
   });
 }
 
+/**
+ * A tool as tools/list shows it. Every session pays for this text, so empty `required` lists and
+ * `additionalProperties: false` (still enforced by checkArguments) are left out.
+ */
 function describeTool(tool: McpTool) {
-  const { name, title, description, inputSchema, annotations } = tool;
+  const { name, title, description, annotations } = tool;
+  const { required, additionalProperties, ...schema } = tool.inputSchema;
+  void additionalProperties;
+  const inputSchema = required?.length ? { ...schema, required } : schema;
   return { name, ...(title ? { title } : {}), description, inputSchema, ...(annotations ? { annotations } : {}) };
 }
 

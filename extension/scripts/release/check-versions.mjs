@@ -5,7 +5,9 @@
 //
 // - the tag is a plain vX.Y.Z
 // - extension/package.json, extension/package-lock.json, npm/package.json, the MkDocs plugin's
-//   integrations/mkdocs/pyproject.toml and the Obsidian plugin's integrations/obsidian/manifest.json have version X.Y.Z
+//   integrations/mkdocs/pyproject.toml, the Obsidian plugin's integrations/obsidian/manifest.json, the Claude Code
+//   plugin's .claude-plugin/plugin.json and the MCP registry entry server.json (its version and its npm package's)
+//   have version X.Y.Z
 // - extension/CHANGELOG.md has a non-empty "## X.Y.Z" section
 // - with --branches: the tagged commit (or --commit, e.g. HEAD before tagging) is on origin/main
 //   or an origin/release/* branch
@@ -25,10 +27,10 @@ export function isReleaseBranch(name) {
 
 /**
  * Problems with a release, as messages; empty when it may ship. Without `branches`, the branch isn't checked.
- * @param {{ tag: string, extensionVersion?: string, lockVersion?: string, npmVersion?: string, pythonVersion?: string, obsidianVersion?: string, changelog?: string, branches?: string[] }} release
+ * @param {{ tag: string, extensionVersion?: string, lockVersion?: string, npmVersion?: string, pythonVersion?: string, obsidianVersion?: string, pluginVersion?: string, mcpServerVersion?: string, mcpPackageVersion?: string, changelog?: string, branches?: string[] }} release
  * @returns {string[]}
  */
-export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, pythonVersion, obsidianVersion, changelog, branches }) {
+export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, pythonVersion, obsidianVersion, pluginVersion, mcpServerVersion, mcpPackageVersion, changelog, branches }) {
   const version = versionFromTag(tag);
   if (!version) return [`"${tag}" is not a release tag (expected vX.Y.Z).`];
   const problems = [];
@@ -38,6 +40,9 @@ export function checkRelease({ tag, extensionVersion, lockVersion, npmVersion, p
     ['npm/package.json', npmVersion],
     ['integrations/mkdocs/pyproject.toml', pythonVersion],
     ['integrations/obsidian/manifest.json', obsidianVersion],
+    ['.claude-plugin/plugin.json', pluginVersion],
+    ['server.json', mcpServerVersion],
+    ['server.json (npm package)', mcpPackageVersion],
   ];
   for (const [file, found] of manifests) {
     if (found !== version) problems.push(`${file} has version ${found ?? '(none)'}, the tag is v${version}.`);
@@ -65,6 +70,13 @@ export function pyprojectVersion(text) {
     if (version) return version[1];
   }
   return undefined;
+}
+
+/** server.json's own version and the version of the npm package it runs. */
+function readMcpServerVersions(path) {
+  if (!existsSync(path)) return {};
+  const json = JSON.parse(readFileSync(path, 'utf8'));
+  return { mcpServerVersion: json.version, mcpPackageVersion: json.packages?.find((p) => p.registryType === 'npm')?.version };
 }
 
 function readPyprojectVersion(path) {
@@ -106,6 +118,8 @@ function main(argv) {
     npmVersion: readJsonVersion(join(root, 'npm', 'package.json')),
     pythonVersion: readPyprojectVersion(join(root, 'integrations', 'mkdocs', 'pyproject.toml')),
     obsidianVersion: readJsonVersion(join(root, 'integrations', 'obsidian', 'manifest.json')),
+    pluginVersion: readJsonVersion(join(root, '.claude-plugin', 'plugin.json')),
+    ...readMcpServerVersions(join(root, 'server.json')),
     changelog: readFileSync(join(root, 'extension', 'CHANGELOG.md'), 'utf8'),
     branches: options.branches ? branchesContaining(options.commit ?? `${options.tag}^{commit}`) : undefined,
   });
