@@ -2,15 +2,8 @@
 
 ## 2.5.1 — 2026-10-31
 
-### ⚠️ Breaking changes
-
-### Added
-
-### Changed
-
-### Deprecated
-
 ### Fixed
+- **The playground's preview follows edits again when opened from a file.** Opened from `file://` (as from the release zip) in Chrome or Edge, the preview showed the first render and then ignored every edit until the page was reloaded. The page reports its origin as `file://` but its messages arrive with the origin `null`, so the preview turned down the channel its updates come through. The preview now treats the two as the same for a page opened from a file; a hosted playground still has to match exactly.
 
 ## 2.5.0 — 2026-10-30
 
