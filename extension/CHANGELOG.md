@@ -2,7 +2,7 @@
 
 ## 2.6.0 — 2026-10-31
 
-### ⚠️ Breaking changes
+Collaboration, step one: with `smd merge` set up as a Git merge driver (`smd merge --install`), two branches that edit different blocks, list items, table rows or front matter keys of one `.smd` document no longer conflict. Also new: the release workflow can publish the JetBrains plugin, and the README opens with a recording of the playground. No breaking changes: documents, commands, flags, settings, skills and library exports from 2.5.1 keep working.
 
 ### Added
 - **`smd merge`: a block-aware Git merge driver for `.smd` files.** Git's line merge conflicts when two branches edit neighbouring lines, even in different blocks; `smd merge` resolves those. Git runs it as `smd merge %O %A %B %L %P`. It runs `git merge-file` first and keeps Git's result byte for byte whenever that is clean. Only where Git leaves conflicts does it merge by blocks: a front matter key, list item, table row, container line or other block that only one side changed comes from that side as written, the same change on both sides is taken once, front matter merges key by key (comments and order kept), and an `updated:` date changed on both sides takes the later date. Where both sides changed one block differently, the conflict markers stay inside that block, in the marker size and `merge.conflictStyle` Git asks for. Lines neither side changed stay as they were, line breaks (LF, CRLF or mixed) included, and nothing is reformatted: a merged table may need `smd fmt`. When the block merge is in doubt (different spec versions, text that isn't UTF-8, merged blocks that would read differently), Git's own conflicts are kept. Exit code 0 when merged, 1 when conflicts are left, 2 on errors.
@@ -12,10 +12,6 @@
 
 ### Changed
 - **The README opens with a short recording of the playground** (`docs/images/playground.gif`, ≈1 MB): a decision, a risk and tasks appearing in the preview as they are typed, the agent view of the same document in about half the tokens, and Diagnostics catching a misspelled status. It links to the hosted playground.
-
-### Deprecated
-
-### Fixed
 
 ## 2.5.1 — 2026-10-31
 
