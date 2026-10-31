@@ -1,11 +1,12 @@
 # Release: a pushed vX.Y.Z tag builds the artifacts from the tag, creates the GitHub Release
-# and publishes to the VS Code Marketplace, Open VSX, npm and PyPI (smd-release skill, §6–7).
+# and publishes to the VS Code Marketplace, Open VSX, npm, PyPI and the JetBrains Marketplace
+# (smd-release skill, §6–7).
 #
 # - Run it by hand (Actions → Release → Run workflow) with a tag to rebuild, finish a release
 #   that failed half-way, or rehearse it: `dry_run` (default on) builds and verifies everything
 #   but creates no release and publishes nothing.
-# - Each publish job skips with a notice while its secret (VSCE_PAT, OVSX_PAT, NPM_TOKEN, PYPI_TOKEN)
-#   is missing, so the workflow is safe before the registries are set up.
+# - Each publish job skips with a notice while its secret (VSCE_PAT, OVSX_PAT, NPM_TOKEN, PYPI_TOKEN,
+#   JETBRAINS_TOKEN) is missing, so the workflow is safe before the registries are set up.
 # - Publishing a version that a registry already lists is skipped, so re-running is safe.
 name: Release
 
@@ -405,3 +406,39 @@ jobs:
       - name: Verify PyPI lists the version
         if: steps.gate.outputs.ready == 'true'
         run: node extension/scripts/release/wait-for-version.mjs pypi "$VERSION" --attempts 20 --delay 15
+
+  # JetBrains reviews every upload by hand, so this job uploads and stops: the version is listed on
+  # the Marketplace once JetBrains approves it (check with `wait-for-version.mjs jetbrains X.Y.Z`).
+  publish-jetbrains:
+    name: Publish the JetBrains plugin
+    needs: [verify, github-release]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          sparse-checkout: extension/scripts/release
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Ready to publish?
+        id: gate
+        env:
+          TOKEN: ${{ secrets.JETBRAINS_TOKEN }}
+        run: node extension/scripts/release/publish-gate.mjs jetbrains "$VERSION" JETBRAINS_TOKEN --output "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: steps.gate.outputs.ready == 'true'
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Upload to the JetBrains Marketplace
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          JETBRAINS_TOKEN: ${{ secrets.JETBRAINS_TOKEN }}
+        run: node extension/scripts/release/upload-jetbrains.mjs "release-assets/styled-markdown-jetbrains-$VERSION.zip" "$VERSION"
