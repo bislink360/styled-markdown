@@ -35,6 +35,9 @@ Built for developers who use AI coding agents. One command sets an agent up (`sm
 - **Install docs point VS Code users at the Marketplace listing** (`code --install-extension bislink360.styled-markdown`); the `.vsix` stays the way in for Cursor, VSCodium and Windsurf until the Open VSX listing is live.
 - **Names lead with "Styled Markdown"** for search: the VS Code extension's description ("Styled Markdown: Markdown for humans and AI agents. …"), the GitHub Action's name (`Styled Markdown validate (smd)`; still used as `bislink360/styled-markdown/validate@…`), and the titles of the install guide ("Installing Styled Markdown"), the feature guide ("Styled Markdown feature guide") and the examples README ("Styled Markdown examples"). No ids, package names or paths changed.
 
+### Fixed
+- **The playground's preview follows edits again when opened from a file.** Opened from `file://` (as from the release zip) in Chrome or Edge, the preview showed the first render and then ignored every edit until the page was reloaded. The page reports its origin as `file://` but its messages arrive with the origin `null`, so the preview turned down the channel its updates come through. The preview now treats the two as the same for a page opened from a file; a hosted playground still has to match exactly.
+
 ### Deprecated
 - The MCP tools `outline`, `section` and `agent`: use `read` (with `mode: "outline"`, `sections`, or `mode: "full"`). They keep working, unlisted, until 3.0.
 
