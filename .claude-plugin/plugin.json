@@ -1,7 +1,7 @@
 {
   "name": "styled-markdown",
   "displayName": "Styled Markdown",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "description": "Read and write Styled Markdown (.smd) specs, PRDs, ADRs, runbooks and plans with fewer tokens: the reader and writer skills plus the smd MCP server (read, tasks, query, validate).",
   "author": {
     "name": "Roshan Alwis",

@@ -24,6 +24,10 @@
   <a href="docs/SPEC.md">Specification</a>
 </p>
 
+<p align="center">
+  <a href="https://bislink360.github.io/styled-markdown/playground/"><img src="docs/images/playground.gif" width="800" alt="Writing a short .smd document in the playground: the preview shows a decision, a risk and tasks as they are typed; the agent view gives an agent the same document in about half the tokens, without the people-only notes; Diagnostics catches a misspelled status."></a>
+</p>
+
 ---
 
 ## Install

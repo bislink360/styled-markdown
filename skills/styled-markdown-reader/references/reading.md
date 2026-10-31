@@ -28,6 +28,8 @@ A document with `smd: 2` in its front matter follows the spec v2 rules (no `smd`
 
 `smd diff FILE --since REF` (a commit, branch or tag such as `HEAD~3` or `main`) prints only what changed: front-matter changes, then each changed, renamed or added section in the agent view with `[L42]` refs into the current file, then removed headings. Use it instead of rereading a document you've already read. `smd diff DIR --since REF` covers every `.smd` file below, including new and deleted ones; `smd diff OLD.smd NEW.smd` compares two files.
 
+Branches that edited one document merge block by block once a clone has run `smd merge --install` (a Git merge driver; conflicts stay inside one block).
+
 ## MCP server
 
 If the `smd` MCP server is registered, use its tools instead of the shell. Paths are relative to the server's root folder.
