@@ -1,6 +1,6 @@
 {
   "name": "styled-markdown",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Styled Markdown (.smd): Markdown for developers, PMs and AI agents. Render, validate, convert and create token-efficient agent views — library + `smd` CLI, zero dependencies.",
   "mcpName": "io.github.bislink360/styled-markdown",
   "author": "Roshan Alwis",

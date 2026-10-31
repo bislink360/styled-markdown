@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.1 — 2026-10-31
+
+### Fixed
+- **The playground's preview follows edits again when opened from a file.** Opened from `file://` (as from the release zip) in Chrome or Edge, the preview showed the first render and then ignored every edit until the page was reloaded. The page reports its origin as `file://` but its messages arrive with the origin `null`, so the preview turned down the channel its updates come through. The preview now treats the two as the same for a page opened from a file; a hosted playground still has to match exactly.
+
 ## 2.5.0 — 2026-10-30
 
 Built for developers who use AI coding agents. One command sets an agent up (`smd init --agent`, or the new Claude Code plugin); `smd read` reads a document in one call; and the tools now cost less than they save: the MCP tool list, the reader skill and the agent rules are 63–79% smaller. Also new: opt-in MCP write tools, `smd savings`, a net-tokens benchmark, spec → plan → tasks templates, a compatibility policy that declares spec v2 stable, and community files. No breaking changes: documents, commands, flags, settings, skills and library exports from 2.4.0 keep working, and the MCP tools `outline`, `section` and `agent` still answer when called.
