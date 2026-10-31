@@ -49,7 +49,15 @@ export const isMergeDoubt = (r: BlockMergeResult | BlockMergeDoubt): r is BlockM
 
 /** The lines of a text, each with its line break (`\n` or `\r\n`); a last line without one stays as it is. */
 export function splitLines(text: string): string[] {
-  return text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  const lines: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    const end = text.indexOf('\n', start);
+    const next = end < 0 ? text.length : end + 1;
+    lines.push(text.slice(start, next));
+    start = next;
+  }
+  return lines;
 }
 
 /** a[a0, a1) became b[b0, b1). */
