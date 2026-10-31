@@ -42,8 +42,7 @@ export function parseArgs(argv) {
 function ghApi(path, { paginate = false } = {}) {
   const args = ['api', '-H', 'Accept: application/vnd.github+json', path];
   if (paginate) args.splice(1, 0, '--paginate', '--slurp');
-  // NOSONAR(javascript:S4036): runs the maintainer's or CI runner's own gh, found on PATH like the release scripts
-  const result = spawnSync('gh', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, shell: false });
+  const result = spawnSync('gh', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, shell: false }); // NOSONAR(javascript:S4036): the maintainer's or CI runner's own gh on PATH, as in the release scripts
   if (result.error) throw new Error(result.error.code === 'ENOENT' ? 'the GitHub CLI (gh) is not installed' : result.error.message);
   if (result.status !== 0) throw new Error((result.stderr || result.stdout || `gh exited with ${result.status}`).trim().split('\n')[0]);
   const json = JSON.parse(result.stdout);
@@ -200,7 +199,7 @@ export function markdownReport(data) {
   const r = data.releases;
   if (!failed('GitHub releases', r)) {
     row('GitHub releases', `Asset downloads, all ${fmt(r.releases)} releases`, fmt(r.total));
-    for (const [kind, count] of Object.entries(r.byKind).sort()) row('GitHub releases', `… ${kind}`, fmt(count));
+    for (const [kind, count] of Object.entries(r.byKind).sort(([a], [b]) => a.localeCompare(b))) row('GitHub releases', `… ${kind}`, fmt(count));
     if (r.latest) row('GitHub releases', `Asset downloads, latest (${r.latest.tag})`, fmt(r.latest.downloads));
   }
   const s = data.codeSearch;
@@ -248,5 +247,8 @@ async function main(argv) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
+  main(process.argv.slice(2)).then(
+    (code) => { process.exitCode = code; },
+    (e) => { console.error(e instanceof Error ? e.message : e); process.exitCode = 1; },
+  );
 }
